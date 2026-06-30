@@ -644,14 +644,15 @@ class Action
 
     function save_work_schedule()
     {
-        $id          = intval($_POST['id'] ?? 0);
-        $description = trim($_POST['description'] ?? '');
-        $start_time  = trim($_POST['start_time'] ?? '');
-        $end_time    = trim($_POST['end_time'] ?? '');
-        $total_hours = floatval($_POST['total_hours'] ?? 8);
-        $is_graveyard = intval($_POST['is_graveyard'] ?? 0);
-        $has_nsd     = intval($_POST['has_nsd'] ?? 0);
-        $nsd_rate    = floatval($_POST['nsd_rate'] ?? 0);
+        $id            = intval($_POST['id'] ?? 0);
+        $description   = trim($_POST['description'] ?? '');
+        $start_time    = trim($_POST['start_time'] ?? '');
+        $end_time      = trim($_POST['end_time'] ?? '');
+        $total_hours   = floatval($_POST['total_hours'] ?? 8);
+        $break_minutes = intval($_POST['break_minutes'] ?? 60);
+        $is_graveyard  = intval($_POST['is_graveyard'] ?? 0);
+        $has_nsd       = intval($_POST['has_nsd'] ?? 0);
+        $nsd_rate      = floatval($_POST['nsd_rate'] ?? 0);
 
         if (!$description || !$start_time || !$end_time) {
             return ['result' => false, 'message' => 'Description, start time and end time are required'];
@@ -660,17 +661,17 @@ class Action
         if ($id) {
             $stmt = $this->db->prepare(
                 "UPDATE work_schedules SET description=?, start_time=?, end_time=?, total_hours=?,
-                 is_graveyard=?, has_nsd=?, nsd_rate=? WHERE id=?"
+                 break_minutes=?, is_graveyard=?, has_nsd=?, nsd_rate=? WHERE id=?"
             );
-            $stmt->bind_param('sssdiidi', $description, $start_time, $end_time, $total_hours,
-                              $is_graveyard, $has_nsd, $nsd_rate, $id);
+            $stmt->bind_param('sssdiiidi', $description, $start_time, $end_time, $total_hours,
+                              $break_minutes, $is_graveyard, $has_nsd, $nsd_rate, $id);
         } else {
             $stmt = $this->db->prepare(
                 "INSERT INTO work_schedules (description, start_time, end_time, total_hours,
-                 is_graveyard, has_nsd, nsd_rate) VALUES (?,?,?,?,?,?,?)"
+                 break_minutes, is_graveyard, has_nsd, nsd_rate) VALUES (?,?,?,?,?,?,?,?)"
             );
-            $stmt->bind_param('sssdiid', $description, $start_time, $end_time, $total_hours,
-                              $is_graveyard, $has_nsd, $nsd_rate);
+            $stmt->bind_param('sssdiiid', $description, $start_time, $end_time, $total_hours,
+                              $break_minutes, $is_graveyard, $has_nsd, $nsd_rate);
         }
         $ok = $stmt->execute();
         if (!$ok) return ['result' => false, 'message' => $stmt->error];
@@ -2587,8 +2588,9 @@ class Action
                 $earliest   = min($timestamps);
                 $latest     = max($timestamps);
 
-                $raw_hours  = ($latest - $earliest) / 3600;
-                $work_hours = max(0, $raw_hours - 1); // minus 1hr lunch
+                $raw_hours    = ($latest - $earliest) / 3600;
+                $break_hrs    = ($schedule['break_minutes'] ?? 60) / 60;
+                $work_hours   = max(0, $raw_hours - $break_hrs);
 
                 // Schedule-based calculations
                 $late      = 0;

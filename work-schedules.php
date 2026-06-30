@@ -117,6 +117,12 @@
                             <input type="number" class="form-control" id="sched-hours" name="total_hours"
                                    value="8" min="1" max="24" step="0.5">
                         </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Break (minutes)</label>
+                            <input type="number" class="form-control" id="sched-break" name="break_minutes"
+                                   value="60" min="0" max="120" step="5">
+                            <small class="text-muted">Subtracted from raw hours</small>
+                        </div>
                     </div>
 
                     <div class="row g-3 mb-3">
@@ -192,6 +198,7 @@ function editSchedule(row) {
     document.getElementById('sched-start').value     = row.start_time;
     document.getElementById('sched-end').value       = row.end_time;
     document.getElementById('sched-hours').value     = row.total_hours;
+    document.getElementById('sched-break').value     = row.break_minutes;
     document.getElementById('sched-nsd').value       = row.nsd_rate;
     document.querySelector('input[name="is_graveyard"][value="' + row.is_graveyard + '"]').checked = true;
     document.querySelector('input[name="has_nsd"][value="' + row.has_nsd + '"]').checked = true;

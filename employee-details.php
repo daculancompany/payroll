@@ -127,7 +127,7 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                     <i class="ri-building-3-line me-1 text-success"></i><?= htmlspecialchars($dept_name) ?>
                                     <?php endif; ?>
                                     &nbsp;&bull;&nbsp;
-                                    <span class="badge badge-label <?= $clasification_array[$clasification_id] ?? 'bg-success' ?>" style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle;">
+                                    <span class="badge" style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle;<?= clasif_badge_style($clasification) ?>">
                                         <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
                                     </span>
                                     &nbsp;&bull;&nbsp;
@@ -185,11 +185,11 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                     <i class="ri-subtract-line me-1"></i><span class="d-none d-sm-inline">Deductions</span>
                                 </a>
                             </li>
-                            <li class="nav-item" role="presentation">
+                            <!-- <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-sites" role="tab">
                                     <i class="ri-map-pin-2-line me-1"></i><span class="d-none d-sm-inline">Sites</span>
                                 </a>
-                            </li>
+                            </li> -->
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-leave" role="tab">
                                     <i class="ri-calendar-event-line me-1"></i><span class="d-none d-sm-inline">Leave</span>
@@ -243,7 +243,7 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                         <div class="detail-item">
                                             <div class="detail-label">Classification</div>
                                             <div class="detail-value">
-                                                <span class="badge badge-label <?= $clasification_array[$clasification_id] ?? 'bg-success' ?>" style="display:inline-flex;align-items:center;gap:2px;">
+                                                <span class="badge" style="display:inline-flex;align-items:center;gap:2px;<?= clasif_badge_style($clasification) ?>">
                                                     <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
                                                 </span>
                                             </div>

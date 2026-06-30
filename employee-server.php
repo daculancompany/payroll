@@ -92,7 +92,7 @@ while ($row = mysqli_fetch_array($query)) {
     $subdata[] = '<span class="emp-currency">&#8369; ' . number_format($row['ot_rate'], 2) . '</span>';
     $subdata[] = number_format($row['loan'], 2); // kept but not displayed in table
     $subdata[] = !empty($row['clasification'])
-        ? '<span class="badge bg-info-subtle text-info border border-info-subtle"><i class="ri-shield-check-line me-1"></i>' . htmlspecialchars($row['clasification']) . '</span>'
+        ? '<span class="badge" style="' . clasif_badge_style($row['clasification']) . '"><i class="ri-shield-check-line me-1"></i>' . htmlspecialchars($row['clasification']) . '</span>'
         : '<span class="text-muted">—</span>';
     $subdata[] = ($row['status'] == 1)
         ? '<span class="badge rounded-pill bg-success"><i class="ri-checkbox-circle-line me-1"></i>Active</span>'

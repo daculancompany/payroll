@@ -52,6 +52,13 @@
                         <i class="ri-time-line"></i> <span>Work Schedules</span>
                     </a>
                 </li>
+                <?php if (in_array($login_role, [1, 8, 9], true)): ?>
+                <li class="nav-item">
+                    <a href="pay-settings" class="nav-link <?= $page === 'pay-settings' ? 'active' : '' ?>">
+                        <i class="ri-money-dollar-circle-line"></i> <span>Pay Settings</span>
+                    </a>
+                </li>
+                <?php endif; ?>
                 <!-- <li class="nav-item">
                     <a href="branch" class="nav-link <?= $page === 'branch' ? 'active' : '' ?>">
                         <i class="ri-building-2-line"></i> <span>Branches</span>
@@ -129,19 +136,35 @@
                 </li>
 
                 <!-- Time & Attendance -->
+                <?php $att_pages = ['attendance','biometric-dtr','attendance-requests']; ?>
                 <li class="nav-item">
-                    <a href="attendance" class="nav-link <?= $page === 'attendance' ? 'active' : '' ?>">
+                    <a class="nav-link menu-link <?= in_array($page, $att_pages) ? 'active' : '' ?>"
+                        href="#sidebarAtt" data-bs-toggle="collapse" role="button"
+                        aria-expanded="<?= in_array($page, $att_pages) ? 'true' : 'false' ?>">
                         <i class="ri-calendar-check-line"></i> <span>Attendance</span>
                     </a>
+                    <div class="menu-dropdown collapse <?= in_array($page, $att_pages) ? 'show' : '' ?>" id="sidebarAtt">
+                        <ul class="nav nav-sm flex-column">
+                            <li class="nav-item">
+                                <a href="attendance" class="nav-link <?= $page === 'attendance' ? 'active' : '' ?>">
+                                    <i class="ri-list-check me-1"></i>Attendance Records
+                                </a>
+                            </li>
+                            <?php if (in_array($login_role, [1, 8, 9], true)): ?>
+                            <li class="nav-item">
+                                <a href="biometric-dtr" class="nav-link <?= $page === 'biometric-dtr' ? 'active' : '' ?>">
+                                    <i class="ri-fingerprint-line me-1"></i>DTR Review
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="attendance-requests" class="nav-link <?= $page === 'attendance-requests' ? 'active' : '' ?>">
+                                    <i class="ri-error-warning-line me-1"></i>Attendance Requests
+                                </a>
+                            </li>
+                            <?php endif; ?>
+                        </ul>
+                    </div>
                 </li>
-
-                <?php if (in_array($login_role, [1, 8, 9], true)): ?>
-                <li class="nav-item">
-                    <a href="attendance-requests" class="nav-link <?= $page === 'attendance-requests' ? 'active' : '' ?>">
-                        <i class="ri-error-warning-line"></i> <span>Attendance Requests</span>
-                    </a>
-                </li>
-                <?php endif; ?>
 
                 <!-- Leave Management -->
                 <?php $lv_pages = ['leaves','leave_types','leave_balances','calendar']; ?>

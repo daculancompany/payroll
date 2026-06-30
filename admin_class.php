@@ -2675,6 +2675,17 @@ class Action
             }
         }
 
+        // Detect holiday type from calendar_events
+        $day_type = 'regular';
+        $hol = $this->db->query("
+            SELECT type FROM calendar_events
+            WHERE '$scan_date' BETWEEN start_date AND COALESCE(end_date, start_date)
+            AND type IN (1,3) ORDER BY type ASC LIMIT 1
+        ")->fetch_assoc();
+        if ($hol) {
+            $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
+        }
+
         // Resolve employer_id from site
         $stmt2 = $this->db->prepare("SELECT employer_id FROM sites WHERE id = ? AND status = 1 LIMIT 1");
         $stmt2->bind_param('i', $site_id);
@@ -2726,18 +2737,24 @@ class Action
             $log_entry = ['dateTime' => $scan_time, 'type' => 'biometric'];
 
             if (!$detail) {
-                // First scan — insert row, hours will be calculated on next scan
+                // First scan — time-in only, mark incomplete
                 $logs = json_encode([$log_entry]);
                 $stmt6 = $this->db->prepare(
-                    "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type)
-                     VALUES (?, ?, ?, 0, ?, 'biometric')"
+                    "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, day_type, nsd_hours, is_complete)
+                     VALUES (?, ?, ?, 0, ?, 'biometric', ?, 0, 0)"
                 );
-                $stmt6->bind_param('iiss', $ddtr_id, $employee_id, $scan_date, $logs);
+                $stmt6->bind_param('iisss', $ddtr_id, $employee_id, $scan_date, $logs, $day_type);
                 $stmt6->execute();
                 $this->db->commit();
-                return ['result' => true, 'message' => 'Scan recorded', 'scan_time' => $scan_time];
+                return [
+                    'result'   => true,
+                    'message'  => 'Scan recorded',
+                    'scan'     => 'in',
+                    'day_type' => $day_type,
+                    'scan_time'=> $scan_time,
+                ];
             } else {
-                // Append scan then recalculate: min scan = time-in, max scan = time-out
+                // Subsequent scan — recalculate everything, mark complete
                 $existing_logs = json_decode($detail['logs'], true) ?? [];
                 $existing_logs[] = $log_entry;
 
@@ -2745,58 +2762,63 @@ class Action
                 $earliest   = min($timestamps);
                 $latest     = max($timestamps);
 
-                $raw_hours    = ($latest - $earliest) / 3600;
-                $break_hrs    = ($schedule['break_minutes'] ?? 60) / 60;
-                $work_hours   = max(0, $raw_hours - $break_hrs);
+                $raw_hours  = ($latest - $earliest) / 3600;
+                $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
+                $work_hours = max(0, $raw_hours - $break_hrs);
 
-                // Schedule-based calculations
-                $late      = 0;
-                $undertime = 0;
-                $overtime  = 0;
-                $nsd       = 0;
-
+                // Schedule-based: late, undertime, overtime
+                $late = $undertime = $overtime = 0;
                 if ($schedule) {
                     $sched_start = strtotime(date('Y-m-d', $earliest) . ' ' . $schedule['start_time']);
                     $sched_end   = strtotime(date('Y-m-d', $earliest) . ' ' . $schedule['end_time']);
-                    if ($schedule['is_graveyard']) {
-                        $sched_end = strtotime('+1 day', $sched_end);
-                    }
-                    $late       = round(max(0, ($earliest - $sched_start) / 3600), 2);
-                    $undertime  = round(max(0, ($sched_end   - $latest)   / 3600), 2);
-                    $overtime   = round(max(0, ($latest      - $sched_end) / 3600), 2);
+                    if ($schedule['is_graveyard']) $sched_end = strtotime('+1 day', $sched_end);
+                    $late      = round(max(0, ($earliest - $sched_start) / 3600), 2);
+                    $undertime = round(max(0, ($sched_end - $latest) / 3600), 2);
+                    $overtime  = round(max(0, ($latest - $sched_end) / 3600), 2);
                     $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
-                    if ($schedule['has_nsd']) {
-                        $nsd = round($work_hours * $schedule['nsd_rate'], 2);
-                    }
                 } else {
                     $overtime   = round(max(0, $work_hours - 8), 2);
                     $work_hours = round(min(8, $work_hours), 2);
                 }
 
+                // Proper NSD: count hours between 10PM–6AM only
+                $nsd_hours = 0;
+                $date_str  = date('Y-m-d', $earliest);
+                $nsd_windows = [
+                    [strtotime($date_str . ' 22:00:00'), strtotime($date_str . ' 23:59:59')],
+                    [strtotime($date_str . ' 00:00:00'), strtotime($date_str . ' 06:00:00')],
+                    [strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 00:00:00'),
+                     strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 06:00:00')],
+                ];
+                foreach ($nsd_windows as $w) {
+                    $overlap = max(0, min($latest, $w[1]) - max($earliest, $w[0]));
+                    $nsd_hours += $overlap / 3600;
+                }
+                $nsd_hours = round($nsd_hours, 2);
+
                 $logs = json_encode($existing_logs);
                 $stmt7 = $this->db->prepare(
-                    "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=? WHERE id=?"
+                    "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
+                     day_type=?, nsd_hours=?, is_complete=1 WHERE id=?"
                 );
-                $stmt7->bind_param('sddddi', $logs, $work_hours, $overtime, $late, $undertime, $detail['id']);
+                $stmt7->bind_param('sddddsdi', $logs, $work_hours, $overtime, $late, $undertime,
+                                   $day_type, $nsd_hours, $detail['id']);
                 $stmt7->execute();
                 $this->db->commit();
 
-                $response = [
-                    'result'          => true,
-                    'message'         => 'Scan recorded',
-                    'scan_time'       => $scan_time,
-                    'time_in'         => date('H:i:s', $earliest),
-                    'time_out'        => date('H:i:s', $latest),
-                    'work_hours'      => round($work_hours, 2),   // 2 decimal hrs
-                    'overtime_hours'  => round($overtime, 2),     // 2 decimal hrs
-                    'late_minutes'    => (int) round($late * 60),      // whole minutes
-                    'undertime_minutes' => (int) round($undertime * 60), // whole minutes
+                return [
+                    'result'            => true,
+                    'message'           => 'Scan recorded',
+                    'scan'              => 'out',
+                    'day_type'          => $day_type,
+                    'time_in'           => date('H:i:s', $earliest),
+                    'time_out'          => date('H:i:s', $latest),
+                    'work_hours'        => round($work_hours, 2),
+                    'overtime_hours'    => round($overtime, 2),
+                    'late_minutes'      => (int) round($late * 60),
+                    'undertime_minutes' => (int) round($undertime * 60),
+                    'nsd_hours'         => $nsd_hours,
                 ];
-                if ($schedule && $schedule['has_nsd']) {
-                    $response['nsd_rate']   = $schedule['nsd_rate'];
-                    $response['nsd_amount'] = round($nsd, 2);
-                }
-                return $response;
             }
         } catch (Exception $e) {
             $this->db->rollback();
@@ -3974,6 +3996,106 @@ class Action
      * Calendar / Holidays
      * ────────────────────────────────────────────────────────────── */
 
+    function save_pay_settings()
+    {
+        $uid  = $_SESSION['login_id'] ?? null;
+        $keys = ['legal_holiday_rate','special_holiday_rate','ot_regular_rate','ot_holiday_multiplier','nsd_rate','rest_day_rate'];
+        $this->db->begin_transaction();
+        try {
+            foreach ($keys as $key) {
+                if (!isset($_POST[$key])) continue;
+                $val  = floatval($_POST[$key]);
+                $stmt = $this->db->prepare(
+                    "INSERT INTO pay_settings (setting_key, setting_value, updated_by) VALUES (?,?,?)
+                     ON DUPLICATE KEY UPDATE setting_value=?, updated_by=?"
+                );
+                $stmt->bind_param('sdidi', $key, $val, $uid, $val, $uid);
+                $stmt->execute();
+            }
+            $this->db->commit();
+            return ['result' => true, 'message' => 'Pay settings saved.'];
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    function edit_dtr_time()
+    {
+        $id       = intval($_POST['id'] ?? 0);
+        $date     = trim($_POST['date'] ?? '');
+        $time_in  = trim($_POST['time_in'] ?? '');
+        $time_out = trim($_POST['time_out'] ?? '');
+        if (!$id || !$date || !$time_in) return ['result'=>false,'message'=>'Missing fields'];
+
+        $in_ts  = strtotime($date . ' ' . $time_in);
+        $out_ts = $time_out ? strtotime($date . ' ' . $time_out) : null;
+        if ($out_ts && $out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
+
+        $logs = [['dateTime' => date('Y-m-d H:i:s', $in_ts), 'type' => 'manual']];
+        if ($out_ts) $logs[] = ['dateTime' => date('Y-m-d H:i:s', $out_ts), 'type' => 'manual'];
+
+        // Detect holiday
+        $day_type = 'regular';
+        $hol = $this->db->query("SELECT type FROM calendar_events WHERE '$date' BETWEEN start_date AND COALESCE(end_date,'$date') AND type IN (1,3) LIMIT 1")->fetch_assoc();
+        if ($hol) $day_type = $hol['type']==1 ? 'legal_holiday' : 'special_holiday';
+
+        // Get schedule
+        $schedule = $this->db->query("
+            SELECT ws.* FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id=es.schedule_id
+            INNER JOIN DTR_details d ON d.id=$id
+            WHERE es.employee_id=d.employee_id AND es.effective_from<='$date' AND (es.effective_to IS NULL OR es.effective_to>='$date')
+            ORDER BY es.effective_from DESC LIMIT 1
+        ")->fetch_assoc();
+
+        $raw_hours  = $out_ts ? ($out_ts - $in_ts) / 3600 : 0;
+        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
+        $work_hours = $out_ts ? round(max(0, $raw_hours - $break_hrs), 2) : 0;
+        $overtime   = 0; $late = 0; $undertime = 0; $nsd_hours = 0;
+        $is_complete = $out_ts ? 1 : 0;
+
+        if ($out_ts && $schedule) {
+            $sched_start = strtotime($date . ' ' . $schedule['start_time']);
+            $sched_end   = strtotime($date . ' ' . $schedule['end_time']);
+            if ($schedule['is_graveyard']) $sched_end = strtotime('+1 day', $sched_end);
+            $late      = round(max(0, ($in_ts - $sched_start) / 3600), 2);
+            $undertime = round(max(0, ($sched_end - $out_ts) / 3600), 2);
+            $overtime  = round(max(0, ($out_ts - $sched_end) / 3600), 2);
+            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+
+            foreach ([[$date.' 22:00:00',$date.' 23:59:59'],[$date.' 00:00:00',$date.' 06:00:00']] as $w) {
+                $nsd_hours += max(0, min($out_ts, strtotime($w[1])) - max($in_ts, strtotime($w[0]))) / 3600;
+            }
+            $nsd_hours = round($nsd_hours, 2);
+        }
+
+        $json_logs = json_encode($logs);
+        $stmt = $this->db->prepare(
+            "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
+             day_type=?, nsd_hours=?, is_complete=?, attendance_type='manual' WHERE id=?"
+        );
+        $stmt->bind_param('sddddsdii', $json_logs, $work_hours, $overtime, $late, $undertime,
+                          $day_type, $nsd_hours, $is_complete, $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Saved'];
+    }
+
+    function finalize_dtr()
+    {
+        $id   = intval($_POST['id'] ?? 0);
+        $stmt = $this->db->prepare("UPDATE DTR_details SET is_complete=1 WHERE id=?");
+        $stmt->bind_param('i', $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Finalized'];
+    }
+
+    function delete_dtr_record()
+    {
+        $id   = intval($_POST['id'] ?? 0);
+        $stmt = $this->db->prepare("DELETE FROM DTR_details WHERE id=?");
+        $stmt->bind_param('i', $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
+    }
+
     function save_calendar_event()
     {
         $id          = (int) ($_POST['id'] ?? 0);
@@ -3996,7 +4118,7 @@ class Action
             if ($ts_e < $ts_s) return ['result' => false, 'message' => 'End date cannot be before start date.'];
             $end_sql = "'" . date('Y-m-d', $ts_e) . "'";
         }
-        $color = $type === 1 ? '#dc3545' : '#0d6efd';
+        $color = $type === 1 ? '#dc3545' : ($type === 3 ? '#fd7e14' : '#0d6efd');
 
         if ($id === 0) {
             if ($end_sql === 'NULL') {

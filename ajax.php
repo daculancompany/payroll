@@ -445,6 +445,22 @@ if ($action == 'delete_attendance_request') {
     echo json_encode($crud->delete_attendance_request());
 }
 
+// ── Pay Settings ──
+if ($action == 'save_pay_settings') {
+    echo json_encode($crud->save_pay_settings());
+}
+
+// ── DTR Review ──
+if ($action == 'edit_dtr_time') {
+    echo json_encode($crud->edit_dtr_time());
+}
+if ($action == 'finalize_dtr') {
+    echo json_encode($crud->finalize_dtr());
+}
+if ($action == 'delete_dtr_record') {
+    echo json_encode($crud->delete_dtr_record());
+}
+
 
 
 

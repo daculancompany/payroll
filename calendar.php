@@ -93,7 +93,8 @@
                     <div class="mb-3">
                         <label class="form-label">Type</label>
                         <select class="form-control" id="ev-type" name="type">
-                            <option value="1">🛑 Holiday (blocks leave)</option>
+                            <option value="1">🔴 Legal Holiday (200% pay)</option>
+                            <option value="3">🟡 Special Holiday (130% pay)</option>
                             <option value="2">📌 Activity (informational)</option>
                         </select>
                     </div>

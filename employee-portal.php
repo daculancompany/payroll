@@ -21,7 +21,13 @@ $portal_leave_eligible = $elig_r && in_array($elig_r['c'], LEAVE_ELIGIBLE_CLASSI
 // Processed in-page because ajax.php is gated to admin sessions only.
 $leave_flash = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_leave') {
-    if (!$portal_leave_eligible) {
+    $lt_id_check = (int)($_POST['leave_type_id'] ?? 0);
+    $is_lwop_req = false;
+    if ($lt_id_check > 0) {
+        $lt_check = $conn->query("SELECT is_paid FROM leave_types WHERE id = $lt_id_check LIMIT 1")->fetch_assoc();
+        $is_lwop_req = $lt_check && $lt_check['is_paid'] == 0;
+    }
+    if (!$portal_leave_eligible && !$is_lwop_req) {
         $leave_flash = ['err', 'Only Regular and Executive employees are entitled to leave.'];
     } else {
     $lt_id   = (int)($_POST['leave_type_id'] ?? 0);
@@ -121,8 +127,12 @@ if ($ceq) while ($c = $ceq->fetch_assoc()) $calendar_events_portal[] = $c;
 
 // ── Leave data for the portal Leave tab ─────────────────────────────────
 $leave_types_list = [];
-$ltq = $conn->query("SELECT id, name, days_allowed FROM leave_types WHERE status = 1 ORDER BY name ASC");
-if ($ltq) while ($r = $ltq->fetch_assoc()) $leave_types_list[] = $r;
+$lwop_types_list  = [];
+$ltq = $conn->query("SELECT id, name, days_allowed, is_paid FROM leave_types WHERE status = 1 ORDER BY name ASC");
+if ($ltq) while ($r = $ltq->fetch_assoc()) {
+    if ($r['is_paid'] == 0) $lwop_types_list[] = $r;
+    else $leave_types_list[] = $r;
+}
 
 $leave_balance = [];
 $lbq = $conn->query("
@@ -1280,6 +1290,39 @@ body{
             </form>
         </div>
         <?php endif; // end eligible: balance + request form ?>
+
+        <!-- LWOP — available to ALL employees regardless of classification -->
+        <?php if (!empty($lwop_types_list)): ?>
+        <div class="sec"><i class="ri-close-circle-line"></i>Leave Without Pay (LWOP)</div>
+        <div style="border-radius:12px;padding:12px 16px;margin-bottom:14px;background:#fff0f0;color:#c62828;border:1px solid #f5b5b5;font-size:12.5px;display:flex;align-items:center;gap:10px;">
+            <i class="ri-information-line" style="font-size:20px;"></i>
+            <div>LWOP is available to all employees. <b>Approved LWOP days are deducted from your salary.</b> No leave credits required.</div>
+        </div>
+        <div class="paper" style="border-radius:14px;padding:18px;margin-bottom:18px;">
+            <form method="post" action="employee-portal.php" id="lwop-request-form">
+                <input type="hidden" name="action" value="request_leave">
+                <?php foreach ($lwop_types_list as $lt): ?>
+                <input type="hidden" name="leave_type_id" value="<?= $lt['id'] ?>">
+                <?php endforeach; ?>
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s)</label>
+                        <input type="text" id="lwop-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
+                        <input type="hidden" name="dates" id="lwop-dates-hidden">
+                    </div>
+                    <div class="col-12">
+                        <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Reason</label>
+                        <textarea name="reason" class="form-control" rows="2" placeholder="State the reason for LWOP" required></textarea>
+                    </div>
+                    <div class="col-12 text-end">
+                        <button type="submit" class="btn" style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;padding:8px 22px;border-radius:8px;">
+                            <i class="ri-send-plane-line me-1"></i>Submit LWOP Request
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+        <?php endif; ?>
 
         <!-- My leave history -->
         <div class="sec"><i class="ri-history-line"></i>My Leave Requests</div>

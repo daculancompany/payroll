@@ -3708,6 +3708,7 @@ class Action
         $id           = isset($_POST['id']) ? (int) $_POST['id'] : 0;
         $name         = trim($_POST['name'] ?? '');
         $days_allowed = (int) ($_POST['days_allowed'] ?? 0);
+        $is_paid      = isset($_POST['is_paid']) ? (int) $_POST['is_paid'] : 1;
         $description  = trim($_POST['description'] ?? '');
         $status       = isset($_POST['status']) ? (int) $_POST['status'] : 1;
 
@@ -3719,11 +3720,11 @@ class Action
         }
 
         if ($id === 0) {
-            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, description, status) VALUES (?, ?, ?, ?)");
-            $stmt->bind_param('sisi', $name, $days_allowed, $description, $status);
+            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, is_paid, description, status) VALUES (?, ?, ?, ?, ?)");
+            $stmt->bind_param('siisi', $name, $days_allowed, $is_paid, $description, $status);
         } else {
-            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, description = ?, status = ? WHERE id = ?");
-            $stmt->bind_param('sisii', $name, $days_allowed, $description, $status, $id);
+            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, is_paid = ?, description = ?, status = ? WHERE id = ?");
+            $stmt->bind_param('siisii', $name, $days_allowed, $is_paid, $description, $status, $id);
         }
 
         if ($stmt->execute()) {

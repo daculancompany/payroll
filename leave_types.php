@@ -29,7 +29,8 @@
                                 <thead class="table-dark">
                                     <tr>
                                         <th>Leave Type</th>
-                                        <th class="text-center" style="width:140px;">Days Allowed</th>
+                                        <th class="text-center" style="width:120px;">Days Allowed</th>
+                                        <th class="text-center" style="width:100px;">Paid?</th>
                                         <th>Description</th>
                                         <th class="text-center" style="width:110px;">Status</th>
                                         <th class="text-center" style="width:120px;">Action</th>
@@ -43,7 +44,18 @@
                                     <tr>
                                         <td><b><i class="ri-calendar-event-line me-1 text-success"></i><?= htmlspecialchars($row['name']) ?></b></td>
                                         <td class="text-center">
-                                            <span class="badge bg-success-subtle text-success border border-success-subtle fs-12"><?= (int)$row['days_allowed'] ?> day<?= (int)$row['days_allowed'] == 1 ? '' : 's' ?></span>
+                                            <?php if ($row['is_paid'] == 0): ?>
+                                                <span class="badge bg-secondary-subtle text-secondary border">Unlimited</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-success-subtle text-success border border-success-subtle fs-12"><?= (int)$row['days_allowed'] ?> day<?= (int)$row['days_allowed'] == 1 ? '' : 's' ?></span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if ($row['is_paid'] == 1): ?>
+                                                <span class="badge bg-success rounded-pill"><i class="ri-money-dollar-circle-line me-1"></i>Paid</span>
+                                            <?php else: ?>
+                                                <span class="badge bg-danger rounded-pill"><i class="ri-close-circle-line me-1"></i>Unpaid</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td class="text-muted"><?= htmlspecialchars($row['description'] ?? '') ?></td>
                                         <td class="text-center">
@@ -92,8 +104,22 @@
                         <input type="text" class="form-control" id="ltype-name" name="name" placeholder="e.g. Sick Leave" required>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label fw-semibold">Leave Pay Type <span class="text-danger">*</span></label>
+                        <div class="d-flex gap-3 mt-1">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="is_paid" id="ltype-paid-yes" value="1" checked onchange="toggleDaysAllowed(1)">
+                                <label class="form-check-label" for="ltype-paid-yes"><i class="ri-money-dollar-circle-line me-1 text-success"></i>Paid Leave</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="is_paid" id="ltype-paid-no" value="0" onchange="toggleDaysAllowed(0)">
+                                <label class="form-check-label" for="ltype-paid-no"><i class="ri-close-circle-line me-1 text-danger"></i>Unpaid (LWOP)</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3" id="ltype-days-group">
                         <label class="form-label">Days Allowed (per year) <span class="text-danger">*</span></label>
-                        <input type="number" min="0" step="1" class="form-control" id="ltype-days" name="days_allowed" placeholder="e.g. 15" required>
+                        <input type="number" min="0" step="1" class="form-control" id="ltype-days" name="days_allowed" placeholder="e.g. 15">
+                        <small class="text-muted">Set 0 for unlimited</small>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Description</label>
@@ -125,19 +151,28 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 
+function toggleDaysAllowed(isPaid) {
+    document.getElementById('ltype-days-group').style.display = isPaid ? '' : 'none';
+}
+
 function resetLeaveTypeModal() {
     document.getElementById('ltype-id').value = '';
     document.getElementById('form-leave-type').reset();
     document.getElementById('ltype-status').checked = true;
+    document.getElementById('ltype-paid-yes').checked = true;
+    toggleDaysAllowed(1);
     document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Add Leave Type';
 }
 
 function editLeaveType(row) {
-    document.getElementById('ltype-id').value = row.id;
-    document.getElementById('ltype-name').value = row.name;
-    document.getElementById('ltype-days').value = row.days_allowed;
-    document.getElementById('ltype-desc').value = row.description || '';
+    document.getElementById('ltype-id').value    = row.id;
+    document.getElementById('ltype-name').value  = row.name;
+    document.getElementById('ltype-days').value  = row.days_allowed;
+    document.getElementById('ltype-desc').value  = row.description || '';
     document.getElementById('ltype-status').checked = (row.status == 1);
+    const isPaid = parseInt(row.is_paid ?? 1);
+    document.querySelector('input[name="is_paid"][value="' + isPaid + '"]').checked = true;
+    toggleDaysAllowed(isPaid);
     document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Edit Leave Type';
     new bootstrap.Modal(document.getElementById('modal-leave-type')).show();
 }

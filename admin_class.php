@@ -2407,13 +2407,17 @@ class Action
         }
         $employer_id = $site_row['employer_id'];
 
+        // Get a valid admin user id to satisfy the timekeeper_id FK constraint
+        $admin_row = $this->db->query("SELECT id FROM users WHERE role = 1 LIMIT 1")->fetch_assoc();
+        $admin_id  = $admin_row ? $admin_row['id'] : 1;
+
         $this->db->begin_transaction();
         try {
-            // Find or create the daily DTR record for this device/site
+            // Find or create the daily DTR record for this site (grouped by day + site)
             $stmt3 = $this->db->prepare(
-                "SELECT id FROM DTR WHERE date_from = ? AND site_id = ? AND device_id = ? LIMIT 1"
+                "SELECT id FROM DTR WHERE date_from = ? AND site_id = ? AND device_id = 0 LIMIT 1"
             );
-            $stmt3->bind_param('sii', $scan_date, $site_id, $device_id);
+            $stmt3->bind_param('si', $scan_date, $site_id);
             $stmt3->execute();
             $dtr_row = $stmt3->get_result()->fetch_assoc();
 
@@ -2423,10 +2427,13 @@ class Action
                 $file = 'biometric';
                 $stmt4 = $this->db->prepare(
                     "INSERT INTO DTR (local_id, date_from, date_to, timekeeper_id, site_id, device_id,
-                     file, uploaded_by, employer_id, status) VALUES (0, ?, ?, 0, ?, ?, ?, NULL, ?, 2)"
+                     file, uploaded_by, employer_id, status) VALUES (0, ?, ?, ?, ?, 0, ?, NULL, ?, 2)"
                 );
-                $stmt4->bind_param('ssiisi', $scan_date, $scan_date, $site_id, $device_id, $file, $employer_id);
+                $stmt4->bind_param('ssiisi', $scan_date, $scan_date, $admin_id, $site_id, $file, $employer_id);
                 $stmt4->execute();
+                if ($this->db->insert_id === 0) {
+                    throw new Exception('Failed to create DTR record: ' . $this->db->error);
+                }
                 $ddtr_id = $this->db->insert_id;
             }
 

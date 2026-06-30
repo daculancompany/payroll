@@ -1272,6 +1272,8 @@ body{
                 <i class="ri-close-circle-line me-1"></i>File LWOP
             </button>
         </div>
+        <?php endif; ?>
+
         <!-- My leave history -->
         <div class="sec"><i class="ri-history-line"></i>My Leave Requests</div>
         <?php if (count($my_leaves)): ?>

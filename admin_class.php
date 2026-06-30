@@ -2623,19 +2623,19 @@ class Action
                 $this->db->commit();
 
                 $response = [
-                    'result'     => true,
-                    'message'    => 'Scan recorded',
-                    'scan_time'  => $scan_time,
-                    'time_in'    => date('H:i:s', $earliest),
-                    'time_out'   => date('H:i:s', $latest),
-                    'work_hours' => round($work_hours, 4),
-                    'overtime'   => round($overtime, 4),
-                    'late'       => round($late, 4),
-                    'undertime'  => round($undertime, 4),
+                    'result'          => true,
+                    'message'         => 'Scan recorded',
+                    'scan_time'       => $scan_time,
+                    'time_in'         => date('H:i:s', $earliest),
+                    'time_out'        => date('H:i:s', $latest),
+                    'work_hours'      => round($work_hours, 2),   // 2 decimal hrs
+                    'overtime_hours'  => round($overtime, 2),     // 2 decimal hrs
+                    'late_minutes'    => (int) round($late * 60),      // whole minutes
+                    'undertime_minutes' => (int) round($undertime * 60), // whole minutes
                 ];
                 if ($schedule && $schedule['has_nsd']) {
-                    $response['nsd_amount'] = round($nsd, 4);
                     $response['nsd_rate']   = $schedule['nsd_rate'];
+                    $response['nsd_amount'] = round($nsd, 2);
                 }
                 return $response;
             }

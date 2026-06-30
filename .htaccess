@@ -1,4 +1,9 @@
 RewriteEngine On
+
+# Pass Authorization header through to PHP (Apache strips it by default)
+RewriteCond %{HTTP:Authorization} .
+RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
 # No hardcoded RewriteBase — Apache infers it from the directory this
 # .htaccess lives in, so it works both in a subfolder (e.g. /payroll/ on
 # local XAMPP) and at the web root (live server with no payroll folder).

@@ -27,7 +27,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 require_once __DIR__ . '/db_connect.php';
 
 // ── 3. Bearer token authentication ──────────────────────────────────────────
-$auth_header  = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+// Apache may strip Authorization header; fall back to apache_request_headers()
+$auth_header = $_SERVER['HTTP_AUTHORIZATION']
+    ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
+    ?? (function_exists('apache_request_headers') ? (apache_request_headers()['Authorization'] ?? '') : '');
 $provided_key = '';
 if (preg_match('/^Bearer\s+(\S+)$/i', $auth_header, $m)) {
     $provided_key = $m[1];

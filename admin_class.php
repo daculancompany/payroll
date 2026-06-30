@@ -2602,16 +2602,16 @@ class Action
                     if ($schedule['is_graveyard']) {
                         $sched_end = strtotime('+1 day', $sched_end);
                     }
-                    $late      = max(0, ($earliest - $sched_start) / 3600);
-                    $undertime = max(0, ($sched_end - $latest) / 3600);
-                    $overtime  = max(0, ($latest - $sched_end) / 3600);
-                    $work_hours = min($work_hours, $schedule['total_hours']);
+                    $late       = round(max(0, ($earliest - $sched_start) / 3600), 2);
+                    $undertime  = round(max(0, ($sched_end   - $latest)   / 3600), 2);
+                    $overtime   = round(max(0, ($latest      - $sched_end) / 3600), 2);
+                    $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
                     if ($schedule['has_nsd']) {
-                        $nsd = $work_hours * $schedule['nsd_rate'];
+                        $nsd = round($work_hours * $schedule['nsd_rate'], 2);
                     }
                 } else {
-                    $overtime   = max(0, $work_hours - 8);
-                    $work_hours = min(8, $work_hours);
+                    $overtime   = round(max(0, $work_hours - 8), 2);
+                    $work_hours = round(min(8, $work_hours), 2);
                 }
 
                 $logs = json_encode($existing_logs);

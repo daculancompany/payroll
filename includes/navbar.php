@@ -130,19 +130,9 @@
 
                 <!-- Time & Attendance -->
                 <li class="nav-item">
-                    <a class="nav-link menu-link" href="#sidebarAttendance" data-bs-toggle="collapse" role="button"
-                        aria-expanded="<?= in_array($page, ['attendance','dtr','dtr-details']) ? 'true' : 'false' ?>">
-                        <i class="ri-calendar-line"></i> <span>Time & Attendance</span>
+                    <a href="attendance" class="nav-link <?= $page === 'attendance' ? 'active' : '' ?>">
+                        <i class="ri-calendar-check-line"></i> <span>Attendance</span>
                     </a>
-                    <div class="menu-dropdown collapse <?= in_array($page, ['attendance','dtr','dtr-details']) ? 'show' : '' ?>" id="sidebarAttendance">
-                        <ul class="nav nav-sm flex-column">
-                            <li class="nav-item">
-                                <a href="attendance" class="nav-link <?= $page === 'attendance' ? 'active' : '' ?>">
-                                    <i class="ri-calendar-check-line me-1"></i>Attendance Record
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
                 </li>
 
                 <!-- Leave Management -->

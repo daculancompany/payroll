@@ -2368,6 +2368,122 @@ class Action
 
 
 
+    function save_biometric_attendance()
+    {
+        $employee_id = intval($_POST['employee_id'] ?? 0);
+        $scan_time   = trim($_POST['scan_time'] ?? '');
+
+        if (!$employee_id || !$scan_time) {
+            return ['result' => false, 'message' => 'Missing employee_id or scan_time'];
+        }
+
+        // Validate scan_time format
+        $dt = DateTime::createFromFormat('Y-m-d H:i:s', $scan_time);
+        if (!$dt || $dt->format('Y-m-d H:i:s') !== $scan_time) {
+            return ['result' => false, 'message' => 'Invalid scan_time format. Use Y-m-d H:i:s'];
+        }
+
+        // Validate employee
+        $stmt = $this->db->prepare("SELECT id, time_in, time_out FROM employee WHERE id = ? AND status = 1 LIMIT 1");
+        $stmt->bind_param('i', $employee_id);
+        $stmt->execute();
+        $emp = $stmt->get_result()->fetch_assoc();
+        if (!$emp) {
+            return ['result' => false, 'message' => 'Employee not found or inactive'];
+        }
+
+        $scan_date   = $dt->format('Y-m-d');
+        $site_id     = intval($_POST['site_id'] ?? 0);
+        $device_id   = intval($_POST['device_id'] ?? 0);
+
+        // Resolve employer_id from site
+        $stmt2 = $this->db->prepare("SELECT employer_id FROM sites WHERE id = ? AND status = 1 LIMIT 1");
+        $stmt2->bind_param('i', $site_id);
+        $stmt2->execute();
+        $site_row = $stmt2->get_result()->fetch_assoc();
+        if (!$site_row) {
+            return ['result' => false, 'message' => 'Site not found or inactive'];
+        }
+        $employer_id = $site_row['employer_id'];
+
+        $this->db->begin_transaction();
+        try {
+            // Find or create the daily DTR record for this device/site
+            $stmt3 = $this->db->prepare(
+                "SELECT id FROM DTR WHERE date_from = ? AND site_id = ? AND device_id = ? LIMIT 1"
+            );
+            $stmt3->bind_param('sii', $scan_date, $site_id, $device_id);
+            $stmt3->execute();
+            $dtr_row = $stmt3->get_result()->fetch_assoc();
+
+            if ($dtr_row) {
+                $ddtr_id = $dtr_row['id'];
+            } else {
+                $file = 'biometric';
+                $stmt4 = $this->db->prepare(
+                    "INSERT INTO DTR (local_id, date_from, date_to, timekeeper_id, site_id, device_id,
+                     file, uploaded_by, employer_id, status) VALUES (0, ?, ?, 0, ?, ?, ?, NULL, ?, 2)"
+                );
+                $stmt4->bind_param('ssiisi', $scan_date, $scan_date, $site_id, $device_id, $file, $employer_id);
+                $stmt4->execute();
+                $ddtr_id = $this->db->insert_id;
+            }
+
+            // Check for an existing DTR_details row for this employee today
+            $stmt5 = $this->db->prepare(
+                "SELECT id, logs FROM DTR_details WHERE employee_id = ? AND date_time = ? AND ddtr_id = ? LIMIT 1"
+            );
+            $stmt5->bind_param('isi', $employee_id, $scan_date, $ddtr_id);
+            $stmt5->execute();
+            $detail = $stmt5->get_result()->fetch_assoc();
+
+            $log_entry = ['dateTime' => $scan_time, 'type' => 'biometric'];
+
+            if (!$detail) {
+                // First scan of the day — TIME IN
+                $logs = json_encode([$log_entry]);
+                $stmt6 = $this->db->prepare(
+                    "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type)
+                     VALUES (?, ?, ?, 0, ?, 'biometric')"
+                );
+                $stmt6->bind_param('iiss', $ddtr_id, $employee_id, $scan_date, $logs);
+                $stmt6->execute();
+                $this->db->commit();
+                return ['result' => true, 'scan' => 'in', 'message' => 'Time-in recorded'];
+            } else {
+                // Subsequent scan — TIME OUT (or additional log)
+                $existing_logs = json_decode($detail['logs'], true) ?? [];
+                $existing_logs[] = $log_entry;
+
+                // Work hours = last scan minus first scan minus 1 hr lunch, capped at 8
+                $time_in_ts  = strtotime($existing_logs[0]['dateTime']);
+                $time_out_ts = strtotime($scan_time);
+                $raw_hours   = ($time_out_ts - $time_in_ts) / 3600;
+                $work_hours  = max(0, $raw_hours - 1);
+                $overtime    = max(0, $work_hours - 8);
+                $work_hours  = min(8, $work_hours);
+
+                $logs = json_encode($existing_logs);
+                $stmt7 = $this->db->prepare(
+                    "UPDATE DTR_details SET logs = ?, work_hours = ?, overtime = ? WHERE id = ?"
+                );
+                $stmt7->bind_param('sddi', $logs, $work_hours, $overtime, $detail['id']);
+                $stmt7->execute();
+                $this->db->commit();
+                return [
+                    'result'     => true,
+                    'scan'       => 'out',
+                    'message'    => 'Time-out recorded',
+                    'work_hours' => round($work_hours, 4),
+                    'overtime'   => round($overtime, 4),
+                ];
+            }
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+    }
+
     function updateContributionAmount($contricutions, $dd_id, $value, $id)
     {
         foreach ($contricutions as &$contribution) {

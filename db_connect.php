@@ -66,6 +66,11 @@ $username = "root";
 $password = "";
 $dbname = "payroll";
 
+// Biometric scanner API key — change this before deploying, keep it secret.
+if (!defined('BIOMETRIC_API_KEY')) {
+    define('BIOMETRIC_API_KEY', 'accdad483efc02d030a269bc704cf3230608159f90ff90ba2ee10a3dfda74318');
+}
+
 // Create connection
 $conn = new mysqli($servername, $username, $password, $dbname);
 

@@ -2373,8 +2373,10 @@ class Action
         $employee_id = intval($_POST['employee_id'] ?? 0);
         $scan_time   = trim($_POST['scan_time'] ?? '');
 
-        if (!$employee_id || !$scan_time) {
-            return ['result' => false, 'message' => 'Missing employee_id or scan_time'];
+        $site_id = intval($_POST['site_id'] ?? 0);
+
+        if (!$employee_id || !$scan_time || !$site_id) {
+            return ['result' => false, 'message' => 'Missing employee_id, scan_time or site_id'];
         }
 
         // Validate scan_time format
@@ -2392,20 +2394,18 @@ class Action
             return ['result' => false, 'message' => 'Employee not found or inactive'];
         }
 
-        $scan_date   = $dt->format('Y-m-d');
-        $site_id     = intval($_POST['site_id'] ?? 0);
-        $device_id   = intval($_POST['device_id'] ?? 0);
+        $scan_date = $dt->format('Y-m-d');
+        $device_id = 0;
 
-        // Resolve employer_id from site if provided, otherwise use default employer
-        if ($site_id > 0) {
-            $stmt2 = $this->db->prepare("SELECT employer_id FROM sites WHERE id = ? AND status = 1 LIMIT 1");
-            $stmt2->bind_param('i', $site_id);
-            $stmt2->execute();
-            $site_row = $stmt2->get_result()->fetch_assoc();
-            $employer_id = $site_row ? $site_row['employer_id'] : 1;
-        } else {
-            $employer_id = 1;
+        // Resolve employer_id from site
+        $stmt2 = $this->db->prepare("SELECT employer_id FROM sites WHERE id = ? AND status = 1 LIMIT 1");
+        $stmt2->bind_param('i', $site_id);
+        $stmt2->execute();
+        $site_row = $stmt2->get_result()->fetch_assoc();
+        if (!$site_row) {
+            return ['result' => false, 'message' => 'Site not found or inactive'];
         }
+        $employer_id = $site_row['employer_id'];
 
         $this->db->begin_transaction();
         try {

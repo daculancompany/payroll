@@ -1250,77 +1250,28 @@ body{
         <div class="empty-state" style="padding:20px;"><i class="ri-coins-line"></i><p>No leave types configured yet.</p></div>
         <?php endif; ?>
 
-        <!-- Request form -->
-        <div class="sec"><i class="ri-add-circle-line"></i>Request a Leave</div>
-        <div class="paper" style="border-radius:14px;padding:18px;margin-bottom:18px;">
-            <form method="post" action="employee-portal.php" id="leave-request-form">
-                <input type="hidden" name="action" value="request_leave">
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Type of Leave</label>
-                        <select name="leave_type_id" class="form-control" required>
-                            <option value="">Select leave type…</option>
-                            <?php foreach ($leave_types_list as $t): ?>
-                                <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s)</label>
-                        <input type="text" id="lv-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
-                        <input type="hidden" name="dates" id="lv-dates-hidden">
-                        <div style="font-size:10.5px;color:#999;margin-top:3px;"><i class="ri-information-line"></i> Pick any individual days (e.g. Mon & Wed). Holidays are disabled.</div>
-                    </div>
-                    <div class="col-12 col-md-6" id="lv-dur" style="display:none;align-self:flex-end;font-size:12px;color:#176358;font-weight:700;">
-                        <i class="ri-time-line"></i> Total: <span id="lv-dur-val">0</span> day(s)
-                    </div>
-                    <div class="col-12">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason / Purpose</label>
-                        <textarea name="reason" class="form-control" rows="3" placeholder="State the reason for your leave" required></textarea>
-                    </div>
-                    <div class="col-12 text-end">
-                        <button type="submit" class="btn" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;padding:8px 22px;border-radius:8px;">
-                            <i class="ri-send-plane-line me-1"></i>Submit Request
-                        </button>
-                    </div>
-                </div>
-            </form>
+        <!-- Request Leave Button -->
+        <div class="d-flex gap-2 mb-3">
+            <button type="button" onclick="openLeaveModal()"
+                style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                <i class="ri-add-circle-line me-1"></i>Request a Leave
+            </button>
+            <?php if (!empty($lwop_types_list)): ?>
+            <button type="button" onclick="openLwopModal()"
+                style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                <i class="ri-close-circle-line me-1"></i>File LWOP
+            </button>
+            <?php endif; ?>
         </div>
         <?php endif; // end eligible: balance + request form ?>
 
-        <!-- LWOP — available to ALL employees regardless of classification -->
-        <?php if (!empty($lwop_types_list)): ?>
-        <div class="sec"><i class="ri-close-circle-line"></i>Leave Without Pay (LWOP)</div>
-        <div style="border-radius:12px;padding:12px 16px;margin-bottom:14px;background:#fff0f0;color:#c62828;border:1px solid #f5b5b5;font-size:12.5px;display:flex;align-items:center;gap:10px;">
-            <i class="ri-information-line" style="font-size:20px;"></i>
-            <div>LWOP is available to all employees. <b>Approved LWOP days are deducted from your salary.</b> No leave credits required.</div>
+        <?php if (!empty($lwop_types_list) && !$portal_leave_eligible): ?>
+        <div class="d-flex mb-3">
+            <button type="button" onclick="openLwopModal()"
+                style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                <i class="ri-close-circle-line me-1"></i>File LWOP
+            </button>
         </div>
-        <div class="paper" style="border-radius:14px;padding:18px;margin-bottom:18px;">
-            <form method="post" action="employee-portal.php" id="lwop-request-form">
-                <input type="hidden" name="action" value="request_leave">
-                <?php foreach ($lwop_types_list as $lt): ?>
-                <input type="hidden" name="leave_type_id" value="<?= $lt['id'] ?>">
-                <?php endforeach; ?>
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s)</label>
-                        <input type="text" id="lwop-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
-                        <input type="hidden" name="dates" id="lwop-dates-hidden">
-                    </div>
-                    <div class="col-12">
-                        <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Reason</label>
-                        <textarea name="reason" class="form-control" rows="2" placeholder="State the reason for LWOP" required></textarea>
-                    </div>
-                    <div class="col-12 text-end">
-                        <button type="submit" class="btn" style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;padding:8px 22px;border-radius:8px;">
-                            <i class="ri-send-plane-line me-1"></i>Submit LWOP Request
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
-        <?php endif; ?>
-
         <!-- My leave history -->
         <div class="sec"><i class="ri-history-line"></i>My Leave Requests</div>
         <?php if (count($my_leaves)): ?>
@@ -1618,41 +1569,74 @@ function switchTab(id, btn) {
     }
 }
 
-// ── Leave: multi-date picker (holidays disabled) + auto-open tab after submit ──
-(function () {
-    var BLOCKED = <?= json_encode(array_values(array_unique($blocked_dates))) ?>;
-    function initPicker() {
-        var inp = document.getElementById('lv-dates');
-        if (!inp) return;
-        if (typeof flatpickr === 'undefined') { setTimeout(initPicker, 150); return; }
-        flatpickr(inp, {
-            mode: 'multiple',
-            dateFormat: 'Y-m-d',
-            minDate: 'today',
-            disable: BLOCKED,
-            onChange: function (sel) {
-                document.getElementById('lv-dates-hidden').value = sel.map(function (d) { return flatpickr.formatDate(d, 'Y-m-d'); }).join(',');
-                var box = document.getElementById('lv-dur');
-                if (sel.length) { document.getElementById('lv-dur-val').textContent = sel.length; box.style.display = 'block'; }
-                else box.style.display = 'none';
-            }
-        });
-    }
-    initPicker();
+// ── Leave modals ─────────────────────────────────────────────────────────────
+var BLOCKED = <?= json_encode(array_values(array_unique($blocked_dates))) ?>;
 
-    // require at least one day
-    var form = document.getElementById('leave-request-form');
-    if (form) form.addEventListener('submit', function (e) {
-        if (!document.getElementById('lv-dates-hidden').value) {
-            e.preventDefault();
-            alert('Please select at least one leave day.');
+function openLeaveModal() {
+    var m = new bootstrap.Modal(document.getElementById('modal-leave-request'));
+    m.show();
+    document.getElementById('modal-leave-request').addEventListener('shown.bs.modal', function () {
+        initLeavePicker();
+    }, { once: true });
+}
+
+function openLwopModal() {
+    var m = new bootstrap.Modal(document.getElementById('modal-lwop-request'));
+    m.show();
+    document.getElementById('modal-lwop-request').addEventListener('shown.bs.modal', function () {
+        initLwopPicker();
+    }, { once: true });
+}
+
+function initLeavePicker() {
+    var inp = document.getElementById('lv-dates');
+    if (!inp || inp._flatpickr) return;
+    flatpickr(inp, {
+        mode: 'multiple',
+        dateFormat: 'Y-m-d',
+        minDate: 'today',
+        disable: BLOCKED,
+        onChange: function (sel) {
+            document.getElementById('lv-dates-hidden').value = sel.map(function(d){ return flatpickr.formatDate(d,'Y-m-d'); }).join(',');
+            var box = document.getElementById('lv-dur');
+            if (sel.length) { document.getElementById('lv-dur-val').textContent = sel.length; box.style.display = 'block'; }
+            else box.style.display = 'none';
         }
     });
+}
 
-    <?php if ($leave_flash || (isset($_GET['tab']) && $_GET['tab'] === 'leave')): ?>
-    document.addEventListener('DOMContentLoaded', function () { switchTab('leave', null); window.scrollTo(0, 0); });
-    <?php endif; ?>
-})();
+function initLwopPicker() {
+    var inp = document.getElementById('lwop-dates');
+    if (!inp || inp._flatpickr) return;
+    flatpickr(inp, {
+        mode: 'multiple',
+        dateFormat: 'Y-m-d',
+        minDate: 'today',
+        disable: BLOCKED,
+        onChange: function (sel) {
+            document.getElementById('lwop-dates-hidden').value = sel.map(function(d){ return flatpickr.formatDate(d,'Y-m-d'); }).join(',');
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    var lf = document.getElementById('leave-request-form');
+    if (lf) lf.addEventListener('submit', function (e) {
+        if (!document.getElementById('lv-dates-hidden').value) {
+            e.preventDefault(); alert('Please select at least one leave day.');
+        }
+    });
+    var lwf = document.getElementById('lwop-request-form');
+    if (lwf) lwf.addEventListener('submit', function (e) {
+        if (!document.getElementById('lwop-dates-hidden').value) {
+            e.preventDefault(); alert('Please select at least one LWOP day.');
+        }
+    });
+});
+
+<?php if ($leave_flash || $att_flash || (isset($_GET['tab']) && $_GET['tab'] === 'leave')): ?>
+document.addEventListener('DOMContentLoaded', function () { switchTab('leave', null); window.scrollTo(0, 0); });
+<?php endif; ?>
 
 // ── Payroll charts (ApexCharts) ──────────────────────────────
 var CHART = <?= json_encode($chart) ?>;
@@ -1841,5 +1825,99 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 });
 </script>
+
+<!-- Modal: Request a Leave -->
+<div class="modal fade" id="modal-leave-request" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form method="post" action="employee-portal.php" id="leave-request-form">
+            <input type="hidden" name="action" value="request_leave">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                        <i class="ri-calendar-event-line me-2"></i>Request a Leave
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Type of Leave <span style="color:red">*</span></label>
+                            <select name="leave_type_id" class="form-control" required>
+                                <option value="">Select leave type…</option>
+                                <?php foreach ($leave_types_list as $t): ?>
+                                    <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
+                            <input type="text" id="lv-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
+                            <input type="hidden" name="dates" id="lv-dates-hidden">
+                            <div style="font-size:10.5px;color:#999;margin-top:3px;"><i class="ri-information-line"></i> Holidays are disabled.</div>
+                        </div>
+                        <div class="col-12 col-md-6" id="lv-dur" style="display:none;font-size:12px;color:#176358;font-weight:700;">
+                            <i class="ri-time-line"></i> Total: <span id="lv-dur-val">0</span> day(s)
+                        </div>
+                        <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason / Purpose <span style="color:red">*</span></label>
+                            <textarea name="reason" class="form-control" rows="3" placeholder="State the reason for your leave" required></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
+                        <i class="ri-send-plane-line me-1"></i>Submit Request
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: LWOP -->
+<?php if (!empty($lwop_types_list)): ?>
+<div class="modal fade" id="modal-lwop-request" tabindex="-1">
+    <div class="modal-dialog">
+        <form method="post" action="employee-portal.php" id="lwop-request-form">
+            <input type="hidden" name="action" value="request_leave">
+            <?php foreach ($lwop_types_list as $lt): ?>
+            <input type="hidden" name="leave_type_id" value="<?= $lt['id'] ?>">
+            <?php endforeach; ?>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" style="color:#c62828;font-weight:700;">
+                        <i class="ri-close-circle-line me-2"></i>Leave Without Pay (LWOP)
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-danger py-2" style="font-size:12.5px;">
+                        <i class="ri-information-line me-1"></i>Approved LWOP days are <b>deducted from your salary</b>. No leave credits required.
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
+                            <input type="text" id="lwop-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
+                            <input type="hidden" name="dates" id="lwop-dates-hidden">
+                        </div>
+                        <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red">*</span></label>
+                            <textarea name="reason" class="form-control" rows="2" placeholder="State the reason for LWOP" required></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm" style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;">
+                        <i class="ri-send-plane-line me-1"></i>Submit LWOP Request
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+<?php endif; ?>
+
 </body>
 </html>

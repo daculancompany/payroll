@@ -5,7 +5,7 @@
  *
  * POST  /biometric-api.php
  * Headers:
- *   X-Api-Key: <BIOMETRIC_API_KEY>
+ *   Authorization: Bearer <BIOMETRIC_API_KEY>
  *   Content-Type: application/json   (or application/x-www-form-urlencoded)
  *
  * Body (JSON or form-post):
@@ -26,9 +26,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 // ── 2. Bootstrap (loads BIOMETRIC_API_KEY constant) ─────────────────────────
 require_once __DIR__ . '/db_connect.php';
 
-// ── 3. API key authentication ────────────────────────────────────────────────
-$provided_key = $_SERVER['HTTP_X_API_KEY'] ?? '';
-if (!hash_equals(BIOMETRIC_API_KEY, $provided_key)) {
+// ── 3. Bearer token authentication ──────────────────────────────────────────
+$auth_header  = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+$provided_key = '';
+if (preg_match('/^Bearer\s+(\S+)$/i', $auth_header, $m)) {
+    $provided_key = $m[1];
+}
+if (!$provided_key || !hash_equals(BIOMETRIC_API_KEY, $provided_key)) {
     http_response_code(401);
     exit(json_encode(['result' => false, 'message' => 'Unauthorized']));
 }

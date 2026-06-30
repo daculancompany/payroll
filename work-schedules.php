@@ -32,6 +32,7 @@
                                         <th class="text-center">Start</th>
                                         <th class="text-center">End</th>
                                         <th class="text-center">Hours</th>
+                                        <th class="text-center">Break</th>
                                         <th class="text-center">Graveyard</th>
                                         <th class="text-center">NSD</th>
                                         <th class="text-center">NSD Rate</th>
@@ -48,6 +49,7 @@
                                         <td class="text-center"><?= date('h:i A', strtotime($row['start_time'])) ?></td>
                                         <td class="text-center"><?= date('h:i A', strtotime($row['end_time'])) ?></td>
                                         <td class="text-center"><span class="badge bg-success"><?= $row['total_hours'] ?> hrs</span></td>
+                                        <td class="text-center"><span class="badge bg-secondary"><?= $row['break_minutes'] ?> mins</span></td>
                                         <td class="text-center">
                                             <?php if ($row['is_graveyard']): ?>
                                                 <span class="badge bg-dark"><i class="ri-moon-line me-1"></i>Yes</span>

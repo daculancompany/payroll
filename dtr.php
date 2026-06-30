@@ -88,7 +88,7 @@ if ($login_role === 6) {
                                                 LEFT JOIN users AS timekeeper ON DTR.timekeeper_id = timekeeper.id
                                                 LEFT JOIN users AS uploaded ON DTR.uploaded_by = uploaded.id
                                                 LEFT JOIN employers ON sites.employer_id = employers.id
-                                                WHERE DTR.status = 1
+                                                WHERE DTR.status = 1 AND DTR.file != 'biometric'
                                                 $filter_query
                                                 ORDER BY DTR.id DESC");
                                             while ($row = $query->fetch_assoc()):

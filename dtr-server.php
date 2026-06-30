@@ -7,7 +7,7 @@ $start = $_POST['start'];
 $length = $_POST['length'];
 
 // Query to get total records
-$totalRecordsQuery = "SELECT COUNT(*) as total FROM DTR WHERE status = 2";
+$totalRecordsQuery = "SELECT COUNT(*) as total FROM DTR WHERE status = 2 AND file != 'biometric'";
 $totalRecordsResult = $conn->query($totalRecordsQuery);
 $totalRecords = $totalRecordsResult->fetch_assoc()['total'];
 
@@ -21,7 +21,7 @@ $query = "SELECT DTR.*, sites.site_code, sites.site_name, sites.site_address,
           LEFT JOIN users AS uploaded ON DTR.uploaded_by = uploaded.id 
           LEFT JOIN users AS approved ON DTR.approved_by = approved.id  
           LEFT JOIN employers ON DTR.employer_id = employers.id 
-          WHERE DTR.status = 2 
+          WHERE DTR.status = 2 AND DTR.file != 'biometric'
           ORDER BY DTR.id DESC 
           LIMIT $start, $length";
 

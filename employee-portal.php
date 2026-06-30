@@ -592,6 +592,35 @@ body{
     .help-grid{grid-template-columns:1fr;}
     .gloss-t{min-width:115px;}
 }
+
+/* ── Modal form controls — ensure visible borders and readable text ── */
+.modal .form-control,
+.modal .form-select,
+.modal select.form-control,
+.modal input.form-control,
+.modal textarea.form-control {
+    border: 1.5px solid #b0c4c0 !important;
+    background: #fff !important;
+    color: #2d2d2d !important;
+    border-radius: 8px;
+    font-size: 13px;
+    padding: 8px 11px;
+}
+.modal .form-control:focus,
+.modal select.form-control:focus,
+.modal input.form-control:focus,
+.modal textarea.form-control:focus {
+    border-color: #219688 !important;
+    box-shadow: 0 0 0 2px rgba(33,150,136,.15) !important;
+    outline: none;
+}
+.modal label {
+    color: #333;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: block;
+}
 </style>
 </head>
 <body>

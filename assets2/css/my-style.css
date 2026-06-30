@@ -1,0 +1,565 @@
+.modal-body {
+    /* max-height: 250px; */
+    overflow-y: auto;
+}
+
+.text-bold {
+    font-weight: bold;
+}
+
+/* search */
+.searchbar {
+    margin-bottom: auto;
+    margin-top: auto;
+    height: 60px;
+    background-color: #353b48;
+    border-radius: 30px;
+    padding: 10px;
+}
+
+.search_input {
+    color: white;
+    border: 0;
+    outline: 0;
+    background: none;
+    width: 0;
+    caret-color: transparent;
+    line-height: 40px;
+    transition: width 0.4s linear;
+}
+
+.searchbar:hover > .search_input {
+    padding: 0 10px;
+    width: 450px;
+    caret-color: red;
+    transition: width 0.4s linear;
+}
+
+.searchbar:hover > .search_icon {
+    background: white;
+    color: #e74c3c;
+}
+
+.search_icon {
+    height: 40px;
+    width: 40px;
+    float: right;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 50%;
+    color: white;
+    text-decoration: none;
+}
+
+/* end search */
+
+.search-form {
+    width: 230px;
+}
+
+.dataTables_filter {
+    display: none !important;
+}
+
+#left-sidebar {
+    background: #fff !important;
+}
+
+@media (min-height: 500px) {
+    .modal-body {
+        max-height: 70vh;
+    }
+}
+
+@media (min-height: 800px) {
+    .modal-body {
+        max-height: 600px;
+    }
+}
+
+tbody {
+    border: 1px solid #e7e7e7 !important;
+}
+
+.header-individual {
+    padding: 10px 16px;
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #ced4da;
+}
+
+.dtr-details {
+    margin-left: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 23px;
+}
+
+.dtr-details span {
+    color: #2196f3;
+    font-weight: bold;
+}
+
+div#table-employee_info {
+    padding-bottom: 38px !important;
+}
+
+th.danger-header,
+th.success-header,
+th.info-header,
+th.primary-header {
+    background-color: #217346;
+    color: #ffffff;
+    border: 1px solid #1a5c38;
+}
+
+/* .tooltip-inner {
+    background-color: #f00 !important;
+    color: #fff;
+}
+.bs-tooltip-top .arrow::before,
+.bs-tooltip-auto[x-placement^="top"] .arrow::before {
+    border-top-color: #f00 !important;
+}
+
+.bs-tooltip-right .arrow::before,
+.bs-tooltip-auto[x-placement^="right"] .arrow::before {
+    border-right-color: #f00 !important;
+}
+
+.bs-tooltip-bottom .arrow::before,
+.bs-tooltip-auto[x-placement^="bottom"] .arrow::before {
+    border-bottom-color: #f00 !important;
+}
+
+.bs-tooltip-left .arrow::before,
+.bs-tooltip-auto[x-placement^="left"] .arrow::before {
+    border-left-color: #f00 !important;
+} */
+
+.site-wapper div:nth-child(1) {
+    color: #007bff !important;
+    font-weight: bold;
+}
+
+.site-wapper div:nth-child(2) {
+    font-weight: 200;
+    font-size: 11px;
+}
+
+.site-wapper div:nth-child(3) {
+    font-weight: 200;
+    font-size: 11px;
+    font-style: italic;
+}
+
+/* ════════════════════════════════════════════
+   Payroll Calculations — Excel-style UI
+   ════════════════════════════════════════════ */
+
+/* ── Frozen No. column (col 1) — sticky position only ── */
+#table-1 tbody td:nth-child(1),
+#table-1 tfoot th:nth-child(1),
+#table-1 thead tr:first-child th:nth-child(1) {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 12;
+    transform: translateZ(0);
+}
+#table-1 thead tr:first-child th:nth-child(1) {
+    z-index: 13;
+}
+
+/* No. body/footer cells get a visible right separator */
+#table-1 tbody td:nth-child(1),
+#table-1 tfoot th:nth-child(1) {
+    background-color: #eef6ea !important;
+    color: #009688 !important;
+    font-weight: 700 !important;
+    border-right: 1px solid #107c41 !important;
+}
+
+/* ── Frozen Name column (col 2) — left offset set by JS ── */
+#table-1 tbody td:nth-child(2),
+#table-1 tfoot th:nth-child(2),
+#table-1 thead tr:first-child th:nth-child(2) {
+    position: sticky !important;
+    left: 40px;
+    z-index: 12;
+    background-color: #e2efda !important;
+    color: #009688 !important;
+    border-right: 1px solid #107c41 !important;
+    font-weight: 600 !important;
+    box-shadow: 3px 0 6px -3px rgba(0, 0, 0, 0.22);
+    transform: translateZ(0);
+}
+#table-1 thead tr:first-child th:nth-child(2) {
+    z-index: 13;
+}
+
+/* ── Frozen Net Pay column ── */
+.net-content {
+    position: sticky;
+    right: 0 !important;
+    z-index: 9;
+    background-color: #e2efda !important;
+    color: #009688 !important;
+    font-weight: 700;
+    border-left: 1px solid #107c41 !important;
+    box-shadow: -3px 0 6px -3px rgba(0, 0, 0, 0.22) !important;
+    transform: translateZ(0);
+}
+.net-danger {
+    background-color: #ffcdd2 !important;
+    color: #b71c1c !important;
+    border-left: 2px solid #ef5350 !important;
+    border-right: 2px solid #ef5350 !important;
+}
+
+/* ── Scrollable table container ── */
+.table-responsive2 {
+    height: 400px;
+    min-height: 200px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border: 1px solid #107c41;
+    border-radius: 2px;
+    background: #fff;
+}
+
+/* ── Custom Excel-style table ── */
+#table-1 {
+    width: 100% !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    font-size: 12px !important;
+    font-family: "Segoe UI", "Calibri", Arial, sans-serif !important;
+    color: #1a1a1a !important;
+    table-layout: auto !important;
+}
+#table-1 thead th {
+    position: sticky !important;
+    z-index: 10;
+    padding: 6px 8px !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    font-weight: 600 !important;
+    border-right: 1px solid #0c6b38 !important;
+    border-bottom: 1px solid #0c6b38 !important;
+    box-sizing: border-box;
+    background-color: #107c41 !important;
+    color: #ffffff !important;
+}
+#table-1 thead tr:first-child th {
+    top: 0;
+    font-size: 11px !important;
+    letter-spacing: 0.6px;
+    text-transform: uppercase !important;
+    background-color: #009688 !important;
+    border-bottom: 1px solid #0a5a2e !important;
+}
+#table-1 thead tr:nth-child(2) th {
+    top: 0;
+    font-size: 10px !important;
+    font-weight: 500 !important;
+    background-color: #107c41 !important;
+    border-top: none !important;
+}
+/* All header group colours — uniform Excel green */
+#table-1 thead tr:first-child th.primary-header,
+#table-1 thead tr:first-child th.info-header,
+#table-1 thead tr:first-child th.success-header,
+#table-1 thead tr:first-child th.danger-header {
+    background-color: #009688 !important;
+    border-color: #0a5a2e !important;
+    color: #fff !important;
+}
+
+#table-1 thead tr:nth-child(2) th.primary-header,
+#table-1 thead tr:nth-child(2) th.info-header,
+#table-1 thead tr:nth-child(2) th.success-header,
+#table-1 thead tr:nth-child(2) th.danger-header {
+    background-color: #107c41 !important;
+    border-color: #0c6b38 !important;
+    color: #fff !important;
+}
+
+/* Body rows — Excel gridlines */
+#table-1 tbody tr:nth-child(odd) td {
+    background-color: #ffffff !important;
+}
+#table-1 tbody tr:nth-child(even) td {
+    background-color: #f3f9f1 !important;
+}
+#table-1 tbody tr:hover td {
+    background-color: #d8ecd3 !important;
+    transition: background-color 0.08s ease;
+}
+#table-1 tbody td {
+    padding: 4px 7px !important;
+    border-right: 1px solid #d4d4d4 !important;
+    border-bottom: 1px solid #d4d4d4 !important;
+    vertical-align: middle !important;
+    white-space: nowrap !important;
+    font-size: 12px !important;
+    color: #1a1a1a !important;
+}
+
+/* Footer totals row */
+#table-1 tfoot tr td,
+#table-1 tfoot tr th {
+    background-color: #d9ecd2 !important;
+    color: #009688 !important;
+    font-weight: 700 !important;
+    font-size: 11px !important;
+    padding: 5px 7px !important;
+    border-right: 1px solid #a9d18e !important;
+    border-top: 2px solid #107c41 !important;
+    white-space: nowrap !important;
+    position: sticky !important;
+    bottom: 0;
+    z-index: 8;
+}
+
+/* Inputs inside editable cells */
+#table-1 .input-group {
+    margin-bottom: 0 !important;
+}
+#table-1 input.input-class {
+    font-size: 11px !important;
+    padding: 2px 5px !important;
+    height: 26px !important;
+    min-width: 60px;
+    width: 100%;
+    border: 1px solid #b0bec5 !important;
+    border-radius: 2px !important;
+    box-sizing: border-box;
+    outline: none;
+    background: #fffde7 !important;
+}
+#table-1 input.input-class:focus {
+    border-color: #1976d2 !important;
+    background: #fff !important;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.18) !important;
+}
+
+.input-group-append button {
+    border-radius: 0;
+}
+.text-right {
+    text-align: right;
+}
+
+/* ── Excel-style panel ── */
+.xl-panel {
+    border: 1px solid #c8c6c4;
+    border-radius: 4px;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 16px;
+    overflow: hidden;
+}
+.xl-ribbon {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 12px;
+    background: linear-gradient(180deg, #ffffff 0%, #f3f2f1 100%);
+    border-bottom: 1px solid #e1dfdd;
+    border-top: 3px solid #107c41;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+.xl-ribbon-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #009688;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.xl-ribbon-title i {
+    color: #107c41 !important;
+}
+.xl-ribbon-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-wrap: wrap;
+}
+.xl-ribbon-sep {
+    width: 1px;
+    height: 20px;
+    background: #e1dfdd;
+    margin: 0 4px;
+    flex-shrink: 0;
+}
+.xl-panel-body {
+    padding: 10px 12px;
+    background: #fff;
+}
+
+/* ── Excel search bar ── */
+.xl-search-wrap {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #c8c6c4;
+    border-radius: 3px;
+    background: #fff;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+.xl-search-wrap input {
+    border: none;
+    outline: none;
+    padding: 5px 8px;
+    font-size: 12px;
+    width: 220px;
+    background: transparent;
+    font-family: "Segoe UI", Arial, sans-serif;
+}
+.xl-search-wrap i {
+    padding: 0 8px;
+    color: #107c41;
+    font-size: 14px;
+}
+.xl-search-wrap:focus-within {
+    border-color: #107c41;
+    box-shadow: 0 0 0 2px rgba(16, 124, 65, 0.15);
+}
+
+/* ── Excel ribbon buttons (flat, modern) ── */
+.xl-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-weight: 500;
+    color: #323130;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    transition:
+        background 0.1s,
+        border-color 0.1s,
+        color 0.1s;
+    line-height: 18px;
+    min-width: 28px;
+    justify-content: center;
+}
+.xl-btn i {
+    font-size: 14px;
+    color: #107c41;
+}
+.xl-btn:hover {
+    background: #e8f3ed;
+    border-color: #c3e0cf;
+    color: #009688;
+    text-decoration: none;
+}
+.xl-btn:active {
+    background: #d4ebdd;
+    border-color: #107c41;
+}
+
+/* Danger variant */
+.xl-btn-danger {
+    color: #a4262c;
+}
+.xl-btn-danger i {
+    color: #a4262c;
+}
+.xl-btn-danger:hover {
+    background: #fdeceb;
+    border-color: #f1c0bd;
+    color: #7f0000;
+}
+
+/* Green Save variant — filled, attention-grabbing */
+.xl-btn-save {
+    background: #107c41;
+    border-color: #009688;
+    color: #fff;
+    font-weight: 600;
+    padding: 4px 12px;
+    animation: xl-save-pulse 1.6s ease-in-out infinite;
+}
+.xl-btn-save i {
+    color: #fff;
+}
+.xl-btn-save:hover {
+    background: #009688;
+    border-color: #0a5a2e;
+    color: #fff;
+    animation: none;
+}
+.xl-btn-save #counter-unsaved {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e53935;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    padding: 0 3px;
+    margin-left: 2px;
+    line-height: 1;
+}
+@keyframes xl-save-pulse {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(16, 124, 65, 0.55);
+    }
+    55% {
+        box-shadow: 0 0 0 5px rgba(16, 124, 65, 0);
+    }
+}
+
+/* ── Excel action button (table cell) ── */
+.xl-btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-weight: 500;
+    color: #1a1a1a;
+    background: linear-gradient(180deg, #ffffff 0%, #e8e8e8 100%);
+    border: 1px solid #a0a0a0;
+    border-radius: 2px;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+    transition:
+        background 0.1s,
+        box-shadow 0.1s;
+    line-height: 20px;
+}
+
+/* ── Payroll Details page header ── */
+.payroll-status-badge {
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+.page-title-enhanced {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+

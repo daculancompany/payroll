@@ -654,10 +654,7 @@ body{
             <i class="ri-calendar-check-line"></i><span class="tab-label">Attendance</span>
             <span class="badge-count"><?= count($attendance) ?></span>
         </button>
-        <button class="tab-btn" onclick="switchTab('att-requests',this)">
-            <i class="ri-error-warning-line"></i><span class="tab-label">Requests</span>
-            <?php if (count($my_attendance_requests)): ?><span class="badge-count"><?= count($my_attendance_requests) ?></span><?php endif; ?>
-        </button>
+        <?php /* Requests tab hidden — managed via admin portal */ ?>
         <button class="tab-btn" onclick="switchTab('compare',this)">
             <i class="ri-arrow-left-right-line"></i><span class="tab-label">Compare</span>
         </button>

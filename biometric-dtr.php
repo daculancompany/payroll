@@ -21,6 +21,19 @@ $hol_row = $conn->query("SELECT title, type FROM calendar_events WHERE '$filter_
 $hol_type  = $hol_row ? (int)$hol_row['type'] : 0;
 $hol_title = $hol_row ? $hol_row['title'] : '';
 
+// Load approved half-day leaves for this date (for context column)
+$half_leaves = [];
+$hlq = $conn->query("
+    SELECT lr.employee_id, lr.half_period, lr.duration, lt.name AS leave_type
+    FROM leave_requests lr
+    INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+    WHERE lr.is_half_day = 1 AND lr.status = 1
+    AND '$filter_date' BETWEEN lr.date_from AND lr.date_to
+");
+if ($hlq) while ($hl = $hlq->fetch_assoc()) {
+    $half_leaves[$hl['employee_id']] = $hl;
+}
+
 // Build query
 $where = "AND DATE(d.date_time) = '$filter_date'";
 if ($filter_site) $where .= " AND dt.site_id = $filter_site";
@@ -114,6 +127,7 @@ $dayBadge = [
                                             <th class="text-center">Late</th>
                                             <th class="text-center">Day Type</th>
                                             <th class="text-center">Status</th>
+                                            <th class="text-center">Leave</th>
                                             <?php if ($can_edit): ?><th class="text-center" style="width:120px;">Action</th><?php endif; ?>
                                         </tr>
                                     </thead>
@@ -164,6 +178,16 @@ $dayBadge = [
                                                     <span class="badge bg-success"><i class="ri-checkbox-circle-line me-1"></i>Complete</span>
                                                 <?php else: ?>
                                                     <span class="badge bg-warning text-dark"><i class="ri-error-warning-line me-1"></i>Incomplete</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="text-center">
+                                                <?php if (isset($half_leaves[$row['employee_id']])): $hl = $half_leaves[$row['employee_id']]; ?>
+                                                    <span class="badge bg-warning text-dark" style="font-size:10px;">
+                                                        <?= htmlspecialchars($hl['half_period']) ?> Half<br>
+                                                        <small><?= htmlspecialchars($hl['leave_type']) ?></small>
+                                                    </span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">—</span>
                                                 <?php endif; ?>
                                             </td>
                                             <?php if ($can_edit): ?>

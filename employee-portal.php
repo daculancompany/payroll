@@ -30,36 +30,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reque
     if (!$portal_leave_eligible && !$is_lwop_req) {
         $leave_flash = ['err', 'Only Regular and Executive employees are entitled to leave.'];
     } else {
-    $lt_id   = (int)($_POST['leave_type_id'] ?? 0);
-    $d_from  = trim($_POST['date_from'] ?? '');
-    $d_to    = trim($_POST['date_to'] ?? '');
-    $lreason = trim($_POST['reason'] ?? '');
-    $ts_f = strtotime($d_from); $ts_t = strtotime($d_to);
+    $lt_id      = (int)($_POST['leave_type_id'] ?? 0);
+    $lreason    = trim($_POST['reason'] ?? '');
+    $is_half    = intval($_POST['is_half_day'] ?? 0);
+    $half_per   = in_array($_POST['half_period'] ?? '', ['AM','PM']) ? $_POST['half_period'] : null;
+    $dates_raw  = trim($_POST['dates'] ?? '');
 
-    if ($lt_id <= 0 || !$ts_f || !$ts_t) {
-        $leave_flash = ['err', 'Please complete all leave fields.'];
-    } elseif ($ts_t < $ts_f) {
-        $leave_flash = ['err', 'End date cannot be before start date.'];
-    } elseif ($lreason === '') {
-        $leave_flash = ['err', 'Please state the reason for your leave.'];
+    // Build date list from multi-date picker
+    $days = array_filter(array_map('trim', explode(',', $dates_raw)));
+    if ($lt_id <= 0 || empty($days) || $lreason === '') {
+        $leave_flash = ['err', 'Please complete all fields and select at least one date.'];
     } else {
-        $dur   = (int)floor(($ts_t - $ts_f) / 86400) + 1;
-        $d_from = date('Y-m-d', $ts_f); $d_to = date('Y-m-d', $ts_t);
-        $today = date('Y-m-d');
-        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, reason, status) VALUES (?, ?, ?, ?, ?, ?, ?, 0)");
-        $ins->bind_param('iisssds', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $lreason);
+        sort($days);
+        $d_from = $days[0];
+        $d_to   = end($days);
+        $dur    = $is_half ? count($days) * 0.5 : (float)count($days);
+        $today  = date('Y-m-d');
+        $dates_json = json_encode($days);
+        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, is_half_day, half_period, dates, reason, status) VALUES (?,?,?,?,?,?,?,?,?,?,0)");
+        $ins->bind_param('iisssdisss', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $is_half, $half_per, $dates_json, $lreason);
         if ($ins->execute()) {
-            // Notify all active HR users.
-            $tname_q = $conn->query("SELECT name FROM leave_types WHERE id = " . $lt_id);
+            $tname_q = $conn->query("SELECT name FROM leave_types WHERE id = $lt_id");
             $tname   = ($tname_q && $tr = $tname_q->fetch_assoc()) ? $tr['name'] : 'leave';
-            $erow    = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = " . $emp_id)->fetch_assoc();
+            $erow    = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
             $ename   = $erow['n'] ?? 'Employee';
-            $msg     = $conn->real_escape_string("$ename requested a $tname ($dur day/s) via the portal. Needs HR review.");
-            $title   = $conn->real_escape_string('New leave request');
+            $durLabel = $is_half ? ($dur . ' day — ' . $half_per . ' half') : $dur . ' day/s';
+            $msg   = $conn->real_escape_string("$ename requested $tname ($durLabel) via portal. Needs HR review.");
+            $title = $conn->real_escape_string('New leave request');
             $hrs = $conn->query("SELECT id FROM users WHERE role = 9 AND status = 1");
             if ($hrs) while ($hu = $hrs->fetch_assoc()) {
                 $uid = (int)$hu['id'];
-                $conn->query("INSERT INTO notifications (user_id, title, message, icon, color, link) VALUES ($uid, '$title', '$msg', 'ri-calendar-event-line', 'warning', 'index.php?page=leaves')");
+                $conn->query("INSERT INTO notifications (user_id, title, message, icon, color, link) VALUES ($uid,'$title','$msg','ri-calendar-event-line','warning','index.php?page=leaves')");
             }
             $leave_flash = ['ok', 'Leave request submitted! HR will review it shortly.'];
         } else {
@@ -1619,19 +1620,45 @@ function openLwopModal() {
     }, { once: true });
 }
 
+var _lvPicker = null;
+var _lvIsHalf = false;
+
+function setLvDuration(val) {
+    _lvIsHalf = (val !== 'full');
+    document.getElementById('lv-is-half').value   = _lvIsHalf ? '1' : '0';
+    document.getElementById('lv-half-period').value = _lvIsHalf ? val : '';
+    document.querySelectorAll('.lv-dur-btn').forEach(function(b) {
+        var active = b.dataset.val === val;
+        b.style.background  = active ? '#219688' : '#fff';
+        b.style.color       = active ? '#fff' : '#555';
+        b.style.borderColor = active ? '#219688' : '#b0c4c0';
+    });
+    document.getElementById('lv-half-hint').textContent = _lvIsHalf ? '(Half-day: pick 1 date only)' : '';
+    // Reinit picker with correct mode
+    if (_lvPicker) { _lvPicker.destroy(); _lvPicker = null; }
+    document.getElementById('lv-dates').value = '';
+    document.getElementById('lv-dates-hidden').value = '';
+    document.getElementById('lv-dur').style.display = 'none';
+    initLeavePicker();
+}
+
 function initLeavePicker() {
     var inp = document.getElementById('lv-dates');
-    if (!inp || inp._flatpickr) return;
-    flatpickr(inp, {
-        mode: 'multiple',
+    if (!inp) return;
+    if (_lvPicker) return;
+    _lvPicker = flatpickr(inp, {
+        mode: _lvIsHalf ? 'single' : 'multiple',
         dateFormat: 'Y-m-d',
         minDate: 'today',
         disable: BLOCKED,
         onChange: function (sel) {
             document.getElementById('lv-dates-hidden').value = sel.map(function(d){ return flatpickr.formatDate(d,'Y-m-d'); }).join(',');
             var box = document.getElementById('lv-dur');
-            if (sel.length) { document.getElementById('lv-dur-val').textContent = sel.length; box.style.display = 'block'; }
-            else box.style.display = 'none';
+            if (sel.length) {
+                var days = _lvIsHalf ? sel.length * 0.5 : sel.length;
+                document.getElementById('lv-dur-val').textContent = days;
+                box.style.display = 'block';
+            } else box.style.display = 'none';
         }
     });
 }
@@ -1881,12 +1908,33 @@ document.addEventListener('DOMContentLoaded', function () {
                             </select>
                         </div>
                         <div class="col-12 col-md-6">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Duration <span style="color:red">*</span></label>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="lv-dur-btn active" data-val="full" onclick="setLvDuration('full')"
+                                    style="flex:1;padding:7px;border:1.5px solid #219688;background:#219688;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    Full Day
+                                </button>
+                                <button type="button" class="lv-dur-btn" data-val="AM" onclick="setLvDuration('AM')"
+                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    AM Half
+                                </button>
+                                <button type="button" class="lv-dur-btn" data-val="PM" onclick="setLvDuration('PM')"
+                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    PM Half
+                                </button>
+                            </div>
+                            <input type="hidden" name="is_half_day" id="lv-is-half" value="0">
+                            <input type="hidden" name="half_period" id="lv-half-period" value="">
+                        </div>
+                        <div class="col-12 col-md-6">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
                             <input type="text" id="lv-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
                             <input type="hidden" name="dates" id="lv-dates-hidden">
-                            <div style="font-size:10.5px;color:#999;margin-top:3px;"><i class="ri-information-line"></i> Holidays are disabled.</div>
+                            <div style="font-size:10.5px;color:#999;margin-top:3px;" id="lv-date-hint">
+                                <i class="ri-information-line"></i> Holidays are disabled. <span id="lv-half-hint"></span>
+                            </div>
                         </div>
-                        <div class="col-12 col-md-6" id="lv-dur" style="display:none;font-size:12px;color:#176358;font-weight:700;">
+                        <div class="col-12 col-md-6" id="lv-dur" style="display:none;font-size:12px;color:#176358;font-weight:700;align-self:flex-end;">
                             <i class="ri-time-line"></i> Total: <span id="lv-dur-val">0</span> day(s)
                         </div>
                         <div class="col-12">

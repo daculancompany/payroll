@@ -159,6 +159,11 @@ function stageBadge($status, $by_name, $remarks, $at)
                                             <td><span class="badge bg-info-subtle text-info border border-info-subtle"><?= htmlspecialchars($row['leave_type_name']) ?></span></td>
                                             <td class="text-center">
                                                 <b><?= rtrim(rtrim(number_format($row['duration'], 1), '0'), '.') ?></b> day(s)
+                                                <?php if ($row['is_half_day']): ?>
+                                                    <span class="badge bg-warning text-dark ms-1" style="font-size:10px;">
+                                                        <?= htmlspecialchars($row['half_period']) ?> Half
+                                                    </span>
+                                                <?php endif; ?>
                                                 <div class="text-muted" style="font-size:11px;">
                                                     <?= date('M d', strtotime($row['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($row['date_to'])) ?>
                                                 </div>

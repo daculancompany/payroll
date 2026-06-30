@@ -4159,7 +4159,8 @@ class Action
     function get_calendar_events()
     {
         $events = [];
-        $res = $this->db->query("SELECT * FROM calendar_events ORDER BY start_date ASC");
+        $year = date('Y');
+        $res = $this->db->query("SELECT * FROM calendar_events WHERE YEAR(start_date) = $year ORDER BY start_date ASC");
         if ($res) while ($r = $res->fetch_assoc()) {
             // FullCalendar treats `end` as exclusive for all-day events → add 1 day.
             $end = $r['end_date'] ?: $r['start_date'];

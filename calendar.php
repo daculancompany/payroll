@@ -39,7 +39,7 @@
                             <table class="table table-hover align-middle mb-0" style="font-size:13px;">
                                 <tbody>
                                     <?php
-                                    $up = $conn->query("SELECT * FROM calendar_events WHERE COALESCE(end_date,start_date) >= CURDATE() ORDER BY start_date ASC LIMIT 30");
+                                    $up = $conn->query("SELECT * FROM calendar_events WHERE YEAR(start_date) = YEAR(CURDATE()) AND COALESCE(end_date,start_date) >= CURDATE() ORDER BY start_date ASC LIMIT 30");
                                     if ($up && $up->num_rows) while ($e = $up->fetch_assoc()):
                                         $isHol = $e['type'] == 1;
                                         $range = date('M d, Y', strtotime($e['start_date'])) . ($e['end_date'] && $e['end_date'] != $e['start_date'] ? ' – ' . date('M d, Y', strtotime($e['end_date'])) : '');

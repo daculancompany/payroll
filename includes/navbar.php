@@ -137,11 +137,6 @@
                     <div class="menu-dropdown collapse <?= in_array($page, ['attendance','dtr','dtr-details']) ? 'show' : '' ?>" id="sidebarAttendance">
                         <ul class="nav nav-sm flex-column">
                             <li class="nav-item">
-                                <a href="dtr" class="nav-link <?= in_array($page, ['dtr','dtr-details']) ? 'active' : '' ?>">
-                                    <i class="ri-time-line me-1"></i>Daily Time Record
-                                </a>
-                            </li>
-                            <li class="nav-item">
                                 <a href="attendance" class="nav-link <?= $page === 'attendance' ? 'active' : '' ?>">
                                     <i class="ri-calendar-check-line me-1"></i>Attendance Record
                                 </a>

@@ -529,14 +529,17 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                             <!-- SCHEDULE TAB -->
                             <div class="tab-pane" id="arrow-schedule" role="tabpanel">
                                 <?php
-                                $cur_sched = $conn->query("
-                                    SELECT es.*, ws.description, ws.start_time, ws.end_time,
-                                           ws.total_hours, ws.is_graveyard, ws.has_nsd, ws.nsd_rate
+                                $cur_sched_q = $conn->query("
+                                    SELECT es.effective_from,
+                                           ws.description, ws.start_time, ws.end_time,
+                                           ws.total_hours, ws.break_minutes,
+                                           ws.is_graveyard, ws.has_nsd, ws.nsd_rate
                                     FROM employee_schedules es
                                     INNER JOIN work_schedules ws ON ws.id = es.schedule_id
                                     WHERE es.employee_id = $emp_id AND es.effective_to IS NULL
                                     LIMIT 1
-                                ")->fetch_assoc();
+                                ");
+                                $cur_sched = $cur_sched_q ? $cur_sched_q->fetch_assoc() : null;
                                 ?>
 
                                 <!-- Current Schedule Card -->
@@ -588,8 +591,11 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                         <tbody>
                                             <?php
                                             $hist = $conn->query("
-                                                SELECT es.*, ws.description, ws.start_time, ws.end_time,
-                                                       ws.total_hours, ws.is_graveyard, ws.has_nsd,
+                                                SELECT es.id, es.effective_from, es.effective_to,
+                                                       es.notes, es.created_at,
+                                                       ws.description, ws.start_time, ws.end_time,
+                                                       ws.total_hours, ws.break_minutes,
+                                                       ws.is_graveyard, ws.has_nsd, ws.nsd_rate,
                                                        CONCAT(u.firstname,' ',u.lastname) AS changed_by_name
                                                 FROM employee_schedules es
                                                 INNER JOIN work_schedules ws ON ws.id = es.schedule_id
@@ -597,7 +603,8 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                 WHERE es.employee_id = $emp_id
                                                 ORDER BY es.effective_from DESC
                                             ");
-                                            while ($h = $hist->fetch_assoc()):
+                                            if (!$hist) { echo '<!-- query error: ' . htmlspecialchars($conn->error) . ' -->'; }
+                                            while ($h = $hist && $hist->fetch_assoc()):
                                             ?>
                                             <tr>
                                                 <td>

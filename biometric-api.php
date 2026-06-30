@@ -42,7 +42,7 @@ if (!$provided_key || !hash_equals(BIOMETRIC_API_KEY, $provided_key)) {
 
 // ── 4. Accept JSON body or form-post ────────────────────────────────────────
 $content_type = $_SERVER['CONTENT_TYPE'] ?? '';
-if (str_contains($content_type, 'application/json')) {
+if (strpos($content_type, 'application/json') !== false) {
     $body = json_decode(file_get_contents('php://input'), true) ?? [];
     $_POST = array_merge($_POST, $body);
 }

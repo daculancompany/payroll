@@ -2448,7 +2448,7 @@ class Action
             $log_entry = ['dateTime' => $scan_time, 'type' => 'biometric'];
 
             if (!$detail) {
-                // First scan of the day — TIME IN
+                // First scan — insert row, hours will be calculated on next scan
                 $logs = json_encode([$log_entry]);
                 $stmt6 = $this->db->prepare(
                     "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type)
@@ -2457,19 +2457,20 @@ class Action
                 $stmt6->bind_param('iiss', $ddtr_id, $employee_id, $scan_date, $logs);
                 $stmt6->execute();
                 $this->db->commit();
-                return ['result' => true, 'scan' => 'in', 'message' => 'Time-in recorded'];
+                return ['result' => true, 'message' => 'Scan recorded', 'scan_time' => $scan_time];
             } else {
-                // Subsequent scan — TIME OUT (or additional log)
+                // Append scan then recalculate: min scan = time-in, max scan = time-out
                 $existing_logs = json_decode($detail['logs'], true) ?? [];
                 $existing_logs[] = $log_entry;
 
-                // Work hours = last scan minus first scan minus 1 hr lunch, capped at 8
-                $time_in_ts  = strtotime($existing_logs[0]['dateTime']);
-                $time_out_ts = strtotime($scan_time);
-                $raw_hours   = ($time_out_ts - $time_in_ts) / 3600;
-                $work_hours  = max(0, $raw_hours - 1);
-                $overtime    = max(0, $work_hours - 8);
-                $work_hours  = min(8, $work_hours);
+                $timestamps = array_map(function($l) { return strtotime($l['dateTime']); }, $existing_logs);
+                $earliest   = min($timestamps);
+                $latest     = max($timestamps);
+
+                $raw_hours  = ($latest - $earliest) / 3600;
+                $work_hours = max(0, $raw_hours - 1); // minus 1hr lunch
+                $overtime   = max(0, $work_hours - 8);
+                $work_hours = min(8, $work_hours);
 
                 $logs = json_encode($existing_logs);
                 $stmt7 = $this->db->prepare(
@@ -2480,8 +2481,10 @@ class Action
                 $this->db->commit();
                 return [
                     'result'     => true,
-                    'scan'       => 'out',
-                    'message'    => 'Time-out recorded',
+                    'message'    => 'Scan recorded',
+                    'scan_time'  => $scan_time,
+                    'time_in'    => date('H:i:s', $earliest),
+                    'time_out'   => date('H:i:s', $latest),
                     'work_hours' => round($work_hours, 4),
                     'overtime'   => round($overtime, 4),
                 ];

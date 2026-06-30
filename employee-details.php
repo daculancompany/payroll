@@ -127,7 +127,7 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                     <i class="ri-building-3-line me-1 text-success"></i><?= htmlspecialchars($dept_name) ?>
                                     <?php endif; ?>
                                     &nbsp;&bull;&nbsp;
-                                    <span class="badge badge-label <?= $clasification_array[$clasification_id] ?? 'bg-success' ?>">
+                                    <span class="badge badge-label <?= $clasification_array[$clasification_id] ?? 'bg-success' ?>" style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle;">
                                         <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
                                     </span>
                                     &nbsp;&bull;&nbsp;
@@ -243,7 +243,7 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                         <div class="detail-item">
                                             <div class="detail-label">Classification</div>
                                             <div class="detail-value">
-                                                <span class="badge badge-label <?= $clasification_array[$clasification_id] ?? 'bg-success' ?>">
+                                                <span class="badge badge-label <?= $clasification_array[$clasification_id] ?? 'bg-success' ?>" style="display:inline-flex;align-items:center;gap:2px;">
                                                     <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
                                                 </span>
                                             </div>

@@ -63,6 +63,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reque
     } // end eligible
 }
 
+// ── Handle an attendance request (incident report / OT filing) ──────────
+$att_flash = null;
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_attendance') {
+    $req_type  = trim($_POST['request_type'] ?? '');
+    $req_date  = trim($_POST['request_date'] ?? '');
+    $reason    = trim($_POST['reason'] ?? '');
+    $time_in   = trim($_POST['claimed_time_in'] ?? '') ?: null;
+    $time_out  = trim($_POST['claimed_time_out'] ?? '') ?: null;
+    $ot_hours  = trim($_POST['ot_hours_requested'] ?? '') !== '' ? (float)$_POST['ot_hours_requested'] : null;
+    $att_notes = trim($_POST['notes'] ?? '');
+
+    if (!in_array($req_type, ['incident', 'overtime'], true) || !$req_date || !$reason) {
+        $att_flash = ['err', 'Please complete all required fields.'];
+    } elseif ($req_type === 'incident' && (!$time_in || !$time_out)) {
+        $att_flash = ['err', 'Please provide your claimed time in and time out.'];
+    } elseif ($req_type === 'overtime' && !$ot_hours) {
+        $att_flash = ['err', 'Please provide the number of OT hours requested.'];
+    } else {
+        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes) VALUES (?,?,?,?,?,?,?,?)");
+        $ins->bind_param('isssssds', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $att_notes);
+        if ($ins->execute()) {
+            $erow  = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
+            $ename = $erow['n'] ?? 'Employee';
+            $label = $req_type === 'incident' ? 'attendance incident report' : 'overtime request';
+            $msg   = $conn->real_escape_string("$ename filed a $label for " . date('M d, Y', strtotime($req_date)) . '.');
+            $title = $conn->real_escape_string('New ' . $label);
+            $reviewers = $conn->query("SELECT id FROM users WHERE role IN (1,8,9) AND status = 1");
+            if ($reviewers) while ($ru = $reviewers->fetch_assoc()) {
+                $uid = (int)$ru['id'];
+                $conn->query("INSERT INTO notifications (user_id, title, message, icon, color, link) VALUES ($uid, '$title', '$msg', 'ri-error-warning-line', 'warning', 'index.php?page=attendance-requests')");
+            }
+            $att_flash = ['ok', 'Request submitted! It will be reviewed shortly.'];
+        } else {
+            $att_flash = ['err', 'Could not submit your request. Please try again.'];
+        }
+    }
+}
+
+$my_attendance_requests = [];
+$marq = $conn->prepare("SELECT * FROM attendance_requests WHERE employee_id = ? ORDER BY created_at DESC LIMIT 30");
+$marq->bind_param('i', $emp_id);
+$marq->execute();
+$mar_res = $marq->get_result();
+while ($r = $mar_res->fetch_assoc()) $my_attendance_requests[] = $r;
+
 // Blocked (holiday) dates + upcoming calendar events for the portal.
 $blocked_dates = [];
 $bdq = $conn->query("SELECT title, start_date, end_date FROM calendar_events WHERE blocks_leave = 1 AND COALESCE(end_date,start_date) >= CURDATE()");
@@ -599,6 +644,10 @@ body{
             <i class="ri-calendar-check-line"></i><span class="tab-label">Attendance</span>
             <span class="badge-count"><?= count($attendance) ?></span>
         </button>
+        <button class="tab-btn" onclick="switchTab('att-requests',this)">
+            <i class="ri-error-warning-line"></i><span class="tab-label">Requests</span>
+            <?php if (count($my_attendance_requests)): ?><span class="badge-count"><?= count($my_attendance_requests) ?></span><?php endif; ?>
+        </button>
         <button class="tab-btn" onclick="switchTab('compare',this)">
             <i class="ri-arrow-left-right-line"></i><span class="tab-label">Compare</span>
         </button>
@@ -935,6 +984,133 @@ body{
         </div>
         <?php else: ?>
         <div class="empty-state"><i class="ri-calendar-line"></i><p>No attendance records found.</p></div>
+        <?php endif; ?>
+    </div>
+
+    <!-- ── Tab: Attendance Requests ── -->
+    <div class="tab-panel" id="tab-att-requests">
+        <?php if ($att_flash): ?>
+        <div style="border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;
+            <?= $att_flash[0]==='ok' ? 'background:#e8f7f5;color:#176358;border:1px solid #aad5d0;' : 'background:#fff0f0;color:#c62828;border:1px solid #f5b5b5;' ?>">
+            <i class="<?= $att_flash[0]==='ok' ? 'ri-checkbox-circle-line' : 'ri-error-warning-line' ?>" style="font-size:18px;"></i>
+            <?= htmlspecialchars($att_flash[1]) ?>
+        </div>
+        <?php endif; ?>
+
+        <!-- File Request Form -->
+        <div class="sec"><i class="ri-add-circle-line"></i>File a Request</div>
+        <div class="paper" style="border-radius:14px;padding:18px;margin-bottom:18px;">
+            <form method="post" action="employee-portal.php" id="att-request-form">
+                <input type="hidden" name="action" value="request_attendance">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Request Type <span style="color:red;">*</span></label>
+                        <select name="request_type" class="form-control" id="att-req-type" onchange="toggleAttFields(this.value)" required>
+                            <option value="">— Select type —</option>
+                            <option value="incident">Incident Report (missed/wrong scan)</option>
+                            <option value="overtime">Overtime Authorization Request</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Date <span style="color:red;">*</span></label>
+                        <input type="date" name="request_date" class="form-control" max="<?= date('Y-m-d') ?>" required>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red;">*</span></label>
+                        <select name="reason" class="form-control" required>
+                            <option value="">— Select reason —</option>
+                            <option value="forgot_scan">Forgot to Scan</option>
+                            <option value="device_error">Device / Scanner Error</option>
+                            <option value="system_down">System Down</option>
+                            <option value="overtime">Overtime Authorization</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+
+                    <!-- Incident fields -->
+                    <div class="col-6 att-incident-field" style="display:none;">
+                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time In <span style="color:red;">*</span></label>
+                        <input type="time" name="claimed_time_in" class="form-control">
+                    </div>
+                    <div class="col-6 att-incident-field" style="display:none;">
+                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time Out <span style="color:red;">*</span></label>
+                        <input type="time" name="claimed_time_out" class="form-control">
+                    </div>
+
+                    <!-- OT fields -->
+                    <div class="col-12 col-md-6 att-ot-field" style="display:none;">
+                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
+                        <input type="number" name="ot_hours_requested" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5">
+                    </div>
+
+                    <div class="col-12">
+                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Notes / Explanation</label>
+                        <textarea name="notes" class="form-control" rows="2" placeholder="Describe what happened…"></textarea>
+                    </div>
+                    <div class="col-12 text-end">
+                        <button type="submit" class="btn" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;padding:8px 22px;border-radius:8px;">
+                            <i class="ri-send-plane-line me-1"></i>Submit Request
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- My Request History -->
+        <div class="sec"><i class="ri-history-line"></i>My Requests</div>
+        <?php if (count($my_attendance_requests)): ?>
+        <div class="paper" style="border-radius:14px;overflow:hidden;">
+            <div class="table-responsive">
+            <table class="att-table">
+                <thead>
+                    <tr>
+                        <th>Filed</th>
+                        <th>Type</th>
+                        <th>Date</th>
+                        <th>Reason</th>
+                        <th>Details</th>
+                        <th class="text-center">Status</th>
+                        <th>Reviewer Notes</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php
+                $reasonLabels = ['forgot_scan'=>'Forgot to Scan','device_error'=>'Device Error','system_down'=>'System Down','overtime'=>'Overtime','other'=>'Other'];
+                foreach ($my_attendance_requests as $ar):
+                    $statusMap = [0=>['Pending','#e6a817'],1=>['Approved','#219688'],2=>['Rejected','#c62828']];
+                    [$slabel,$scolor] = $statusMap[$ar['status']] ?? ['Unknown','#aaa'];
+                ?>
+                <tr>
+                    <td style="font-size:11px;"><?= date('M d, Y', strtotime($ar['created_at'])) ?></td>
+                    <td>
+                        <?php if ($ar['request_type']==='incident'): ?>
+                            <span style="background:#fff3cd;color:#856404;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-error-warning-line me-1"></i>Incident</span>
+                        <?php else: ?>
+                            <span style="background:#cff4fc;color:#055160;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-timer-flash-line me-1"></i>OT Request</span>
+                        <?php endif; ?>
+                    </td>
+                    <td style="font-weight:700;"><?= date('M d, Y', strtotime($ar['request_date'])) ?></td>
+                    <td style="font-size:11px;"><?= htmlspecialchars($reasonLabels[$ar['reason']] ?? $ar['reason']) ?></td>
+                    <td style="font-size:11px;">
+                        <?php if ($ar['claimed_time_in']): ?>
+                            <?= date('h:i A', strtotime($ar['claimed_time_in'])) ?> – <?= date('h:i A', strtotime($ar['claimed_time_out'])) ?>
+                        <?php elseif ($ar['ot_hours_requested']): ?>
+                            <?= $ar['ot_hours_requested'] ?> hrs OT
+                        <?php endif; ?>
+                        <?php if ($ar['notes']): ?><div style="color:#aaa;font-size:10px;"><?= htmlspecialchars(mb_strimwidth($ar['notes'],0,40,'…')) ?></div><?php endif; ?>
+                    </td>
+                    <td class="text-center">
+                        <span style="background:<?= $scolor ?>;color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;"><?= $slabel ?></span>
+                    </td>
+                    <td style="font-size:11px;color:#888;"><?= htmlspecialchars($ar['reviewer_remarks'] ?? '—') ?></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+        </div>
+        <?php else: ?>
+        <div class="empty-state"><i class="ri-file-list-3-line"></i><p>No requests filed yet.</p></div>
         <?php endif; ?>
     </div>
 
@@ -1386,6 +1562,11 @@ body{
 <script src="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/js/bootstrap-select.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
+function toggleAttFields(type) {
+    document.querySelectorAll('.att-incident-field').forEach(function(el){ el.style.display = type === 'incident' ? '' : 'none'; });
+    document.querySelectorAll('.att-ot-field').forEach(function(el){ el.style.display = type === 'overtime' ? '' : 'none'; });
+}
+
 function switchTab(id, btn) {
     document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
     document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });

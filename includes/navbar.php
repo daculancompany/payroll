@@ -135,6 +135,14 @@
                     </a>
                 </li>
 
+                <?php if (in_array($login_role, [1, 8, 9], true)): ?>
+                <li class="nav-item">
+                    <a href="attendance-requests" class="nav-link <?= $page === 'attendance-requests' ? 'active' : '' ?>">
+                        <i class="ri-error-warning-line"></i> <span>Attendance Requests</span>
+                    </a>
+                </li>
+                <?php endif; ?>
+
                 <!-- Leave Management -->
                 <?php $lv_pages = ['leaves','leave_types','leave_balances','calendar']; ?>
                 <li class="nav-item">

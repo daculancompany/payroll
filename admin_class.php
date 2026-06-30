@@ -743,6 +743,163 @@ class Action
         return ['result' => true, 'data' => $rows];
     }
 
+    function save_attendance_request()
+    {
+        $employee_id  = intval($_POST['employee_id'] ?? 0);
+        $request_type = trim($_POST['request_type'] ?? '');
+        $request_date = trim($_POST['request_date'] ?? '');
+        $reason       = trim($_POST['reason'] ?? '');
+        $time_in      = trim($_POST['claimed_time_in'] ?? '') ?: null;
+        $time_out     = trim($_POST['claimed_time_out'] ?? '') ?: null;
+        $ot_hours     = isset($_POST['ot_hours_requested']) && $_POST['ot_hours_requested'] !== ''
+                         ? floatval($_POST['ot_hours_requested']) : null;
+        $notes        = trim($_POST['notes'] ?? '');
+
+        if (!$employee_id || !in_array($request_type, ['incident', 'overtime'], true) || !$request_date || !$reason) {
+            return ['result' => false, 'message' => 'Missing required fields'];
+        }
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO attendance_requests
+             (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes)
+             VALUES (?,?,?,?,?,?,?,?)"
+        );
+        $stmt->bind_param('isssssds', $employee_id, $request_type, $request_date, $reason, $time_in, $time_out, $ot_hours, $notes);
+        if (!$stmt->execute()) {
+            return ['result' => false, 'message' => $stmt->error];
+        }
+
+        $erow  = $this->db->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $employee_id")->fetch_assoc();
+        $ename = $erow['n'] ?? 'Employee';
+        $label = $request_type === 'incident' ? 'attendance incident report' : 'overtime request';
+        foreach ([1, 8, 9] as $role) {
+            $this->notifyRole($role, 'New ' . $label, "$ename filed a $label for " . date('M d, Y', strtotime($request_date)) . '.',
+                              'ri-error-warning-line', 'warning', 'index.php?page=attendance-requests');
+        }
+
+        return ['result' => true, 'message' => 'Request submitted. Awaiting approval.'];
+    }
+
+    function decide_attendance_request()
+    {
+        $id      = intval($_POST['id'] ?? 0);
+        $status  = intval($_POST['status'] ?? 0); // 1 approve, 2 reject
+        $remarks = trim($_POST['remarks'] ?? '');
+        $uid     = $_SESSION['login_id'] ?? null;
+        $role    = (int) ($_SESSION['login_role'] ?? 0);
+
+        if (!in_array($role, [1, 8, 9], true)) {
+            return ['result' => false, 'message' => 'Only Admin, Department Head or HR Head can decide.'];
+        }
+        if (!$id || !in_array($status, [1, 2], true)) {
+            return ['result' => false, 'message' => 'Invalid request'];
+        }
+
+        $req = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
+        if (!$req) return ['result' => false, 'message' => 'Request not found'];
+        if ($req['status'] != 0) return ['result' => false, 'message' => 'Request already decided'];
+
+        $this->db->begin_transaction();
+        try {
+            $stmt = $this->db->prepare(
+                "UPDATE attendance_requests SET status=?, reviewed_by=?, reviewed_at=NOW(), reviewer_remarks=? WHERE id=?"
+            );
+            $stmt->bind_param('iisi', $status, $uid, $remarks, $id);
+            $stmt->execute();
+
+            // Incident reports, once approved, write/repair the actual DTR_details row.
+            if ($status == 1 && $req['request_type'] === 'incident' && $req['claimed_time_in'] && $req['claimed_time_out']) {
+                $this->applyIncidentToDtr($req);
+            }
+
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+
+        // Employees use a separate portal login (not in `users`), so no push
+        // notification here — they see the decision on their portal page.
+        return ['result' => true, 'message' => $status == 1 ? 'Request approved' : 'Request rejected'];
+    }
+
+    private function applyIncidentToDtr($req)
+    {
+        $employee_id = $req['employee_id'];
+        $date        = $req['request_date'];
+
+        $site_row = $this->db->query("SELECT site_id FROM employee_bio WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1")->fetch_assoc();
+        $site_id  = $site_row ? $site_row['site_id'] : 0;
+
+        $site = $this->db->query("SELECT employer_id FROM sites WHERE id = $site_id LIMIT 1")->fetch_assoc();
+        $employer_id = $site ? $site['employer_id'] : 1;
+
+        $admin_row = $this->db->query("SELECT id FROM users WHERE role = 1 LIMIT 1")->fetch_assoc();
+        $admin_id  = $admin_row ? $admin_row['id'] : 1;
+
+        $dtr_row = $this->db->query("SELECT id FROM DTR WHERE date_from = '$date' AND site_id = $site_id AND device_id = 0 LIMIT 1")->fetch_assoc();
+        if ($dtr_row) {
+            $ddtr_id = $dtr_row['id'];
+        } else {
+            $stmt = $this->db->prepare(
+                "INSERT INTO DTR (local_id, date_from, date_to, timekeeper_id, site_id, device_id, file, uploaded_by, employer_id, status)
+                 VALUES (0, ?, ?, ?, ?, 0, 'incident', NULL, ?, 2)"
+            );
+            $stmt->bind_param('ssiii', $date, $date, $admin_id, $site_id, $employer_id);
+            $stmt->execute();
+            $ddtr_id = $this->db->insert_id;
+        }
+
+        $time_in_ts  = strtotime($date . ' ' . $req['claimed_time_in']);
+        $time_out_ts = strtotime($date . ' ' . $req['claimed_time_out']);
+        if ($time_out_ts <= $time_in_ts) $time_out_ts = strtotime('+1 day', $time_out_ts);
+
+        $logs = json_encode([
+            ['dateTime' => date('Y-m-d H:i:s', $time_in_ts), 'type' => 'incident'],
+            ['dateTime' => date('Y-m-d H:i:s', $time_out_ts), 'type' => 'incident'],
+        ]);
+
+        $schedule = $this->db->query("
+            SELECT ws.* FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = $employee_id AND es.effective_from <= '$date' AND (es.effective_to IS NULL OR es.effective_to >= '$date')
+            ORDER BY es.effective_from DESC LIMIT 1
+        ")->fetch_assoc();
+
+        $raw_hours  = ($time_out_ts - $time_in_ts) / 3600;
+        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
+        $work_hours = round(max(0, $raw_hours - $break_hrs), 2);
+        if ($schedule) {
+            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+        } else {
+            $work_hours = round(min(8, $work_hours), 2);
+        }
+
+        $existing = $this->db->query("SELECT id FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' AND ddtr_id = $ddtr_id LIMIT 1")->fetch_assoc();
+        if ($existing) {
+            $stmt = $this->db->prepare("UPDATE DTR_details SET logs=?, work_hours=?, attendance_type='incident' WHERE id=?");
+            $stmt->bind_param('sdi', $logs, $work_hours, $existing['id']);
+        } else {
+            $stmt = $this->db->prepare(
+                "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type) VALUES (?,?,?,?,?,'incident')"
+            );
+            $stmt->bind_param('iisds', $ddtr_id, $employee_id, $date, $work_hours, $logs);
+        }
+        $stmt->execute();
+    }
+
+    function delete_attendance_request()
+    {
+        $id   = intval($_POST['id'] ?? 0);
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!in_array($role, [1, 8, 9], true)) {
+            return ['result' => false, 'message' => 'Not authorized'];
+        }
+        $stmt = $this->db->prepare("DELETE FROM attendance_requests WHERE id = ? AND status = 0");
+        $stmt->bind_param('i', $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
+    }
+
     function save_position()
     {
         extract($_POST);

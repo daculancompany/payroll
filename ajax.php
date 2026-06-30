@@ -434,6 +434,17 @@ if ($action == 'get_employee_schedule_history') {
     echo json_encode($crud->get_employee_schedule_history());
 }
 
+// ── Attendance Requests (incident reports / OT filing) ──
+if ($action == 'save_attendance_request') {
+    echo json_encode($crud->save_attendance_request());
+}
+if ($action == 'decide_attendance_request') {
+    echo json_encode($crud->decide_attendance_request());
+}
+if ($action == 'delete_attendance_request') {
+    echo json_encode($crud->delete_attendance_request());
+}
+
 
 
 

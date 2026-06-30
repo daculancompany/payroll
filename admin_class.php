@@ -642,6 +642,106 @@ class Action
         }
     }
 
+    function save_work_schedule()
+    {
+        $id          = intval($_POST['id'] ?? 0);
+        $description = trim($_POST['description'] ?? '');
+        $start_time  = trim($_POST['start_time'] ?? '');
+        $end_time    = trim($_POST['end_time'] ?? '');
+        $total_hours = floatval($_POST['total_hours'] ?? 8);
+        $is_graveyard = intval($_POST['is_graveyard'] ?? 0);
+        $has_nsd     = intval($_POST['has_nsd'] ?? 0);
+        $nsd_rate    = floatval($_POST['nsd_rate'] ?? 0);
+
+        if (!$description || !$start_time || !$end_time) {
+            return ['result' => false, 'message' => 'Description, start time and end time are required'];
+        }
+
+        if ($id) {
+            $stmt = $this->db->prepare(
+                "UPDATE work_schedules SET description=?, start_time=?, end_time=?, total_hours=?,
+                 is_graveyard=?, has_nsd=?, nsd_rate=? WHERE id=?"
+            );
+            $stmt->bind_param('sssdiidi', $description, $start_time, $end_time, $total_hours,
+                              $is_graveyard, $has_nsd, $nsd_rate, $id);
+        } else {
+            $stmt = $this->db->prepare(
+                "INSERT INTO work_schedules (description, start_time, end_time, total_hours,
+                 is_graveyard, has_nsd, nsd_rate) VALUES (?,?,?,?,?,?,?)"
+            );
+            $stmt->bind_param('sssdiid', $description, $start_time, $end_time, $total_hours,
+                              $is_graveyard, $has_nsd, $nsd_rate);
+        }
+        $ok = $stmt->execute();
+        if (!$ok) return ['result' => false, 'message' => $stmt->error];
+        return ['result' => true, 'message' => 'Saved'];
+    }
+
+    function delete_work_schedule()
+    {
+        $id = intval($_POST['id'] ?? 0);
+        $stmt = $this->db->prepare("UPDATE work_schedules SET status=0 WHERE id=?");
+        $stmt->bind_param('i', $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
+    }
+
+    function assign_employee_schedule()
+    {
+        $employee_id    = intval($_POST['employee_id'] ?? 0);
+        $schedule_id    = intval($_POST['schedule_id'] ?? 0);
+        $effective_from = trim($_POST['effective_from'] ?? date('Y-m-d'));
+        $notes          = trim($_POST['notes'] ?? '');
+        $changed_by     = $_SESSION['login_id'] ?? null;
+
+        if (!$employee_id || !$schedule_id) {
+            return ['result' => false, 'message' => 'employee_id and schedule_id are required'];
+        }
+
+        $this->db->begin_transaction();
+        try {
+            // Close the currently active schedule (if any)
+            $prev_date = date('Y-m-d', strtotime($effective_from . ' -1 day'));
+            $stmt1 = $this->db->prepare(
+                "UPDATE employee_schedules SET effective_to=? WHERE employee_id=? AND effective_to IS NULL"
+            );
+            $stmt1->bind_param('si', $prev_date, $employee_id);
+            $stmt1->execute();
+
+            // Insert new assignment
+            $stmt2 = $this->db->prepare(
+                "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, changed_by)
+                 VALUES (?,?,?,?,?)"
+            );
+            $stmt2->bind_param('iissi', $employee_id, $schedule_id, $effective_from, $notes, $changed_by);
+            $stmt2->execute();
+
+            $this->db->commit();
+            return ['result' => true, 'message' => 'Schedule assigned'];
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    function get_employee_schedule_history()
+    {
+        $employee_id = intval($_POST['employee_id'] ?? 0);
+        $stmt = $this->db->prepare(
+            "SELECT es.*, ws.description, ws.start_time, ws.end_time, ws.total_hours,
+                    ws.is_graveyard, ws.has_nsd, ws.nsd_rate,
+                    CONCAT(u.firstname,' ',u.lastname) AS changed_by_name
+             FROM employee_schedules es
+             INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+             LEFT JOIN users u ON u.id = es.changed_by
+             WHERE es.employee_id = ?
+             ORDER BY es.effective_from DESC"
+        );
+        $stmt->bind_param('i', $employee_id);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        return ['result' => true, 'data' => $rows];
+    }
+
     function save_position()
     {
         extract($_POST);
@@ -2395,7 +2495,27 @@ class Action
         }
 
         $scan_date = $dt->format('Y-m-d');
+        $scan_ts   = $dt->getTimestamp();
         $device_id = 0;
+
+        // Resolve employee's current schedule
+        $stmt_sched = $this->db->prepare("
+            SELECT ws.* FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = ? AND es.effective_from <= ? AND (es.effective_to IS NULL OR es.effective_to >= ?)
+            ORDER BY es.effective_from DESC LIMIT 1
+        ");
+        $stmt_sched->bind_param('iss', $employee_id, $scan_date, $scan_date);
+        $stmt_sched->execute();
+        $schedule = $stmt_sched->get_result()->fetch_assoc();
+
+        // For graveyard shifts, scans after midnight belong to the previous day's shift
+        if ($schedule && $schedule['is_graveyard']) {
+            $end_ts = strtotime($scan_date . ' ' . $schedule['end_time']);
+            if ($scan_ts <= $end_ts) {
+                $scan_date = date('Y-m-d', strtotime('-1 day', strtotime($scan_date)));
+            }
+        }
 
         // Resolve employer_id from site
         $stmt2 = $this->db->prepare("SELECT employer_id FROM sites WHERE id = ? AND status = 1 LIMIT 1");
@@ -2469,17 +2589,40 @@ class Action
 
                 $raw_hours  = ($latest - $earliest) / 3600;
                 $work_hours = max(0, $raw_hours - 1); // minus 1hr lunch
-                $overtime   = max(0, $work_hours - 8);
-                $work_hours = min(8, $work_hours);
+
+                // Schedule-based calculations
+                $late      = 0;
+                $undertime = 0;
+                $overtime  = 0;
+                $nsd       = 0;
+
+                if ($schedule) {
+                    $sched_start = strtotime(date('Y-m-d', $earliest) . ' ' . $schedule['start_time']);
+                    $sched_end   = strtotime(date('Y-m-d', $earliest) . ' ' . $schedule['end_time']);
+                    if ($schedule['is_graveyard']) {
+                        $sched_end = strtotime('+1 day', $sched_end);
+                    }
+                    $late      = max(0, ($earliest - $sched_start) / 3600);
+                    $undertime = max(0, ($sched_end - $latest) / 3600);
+                    $overtime  = max(0, ($latest - $sched_end) / 3600);
+                    $work_hours = min($work_hours, $schedule['total_hours']);
+                    if ($schedule['has_nsd']) {
+                        $nsd = $work_hours * $schedule['nsd_rate'];
+                    }
+                } else {
+                    $overtime   = max(0, $work_hours - 8);
+                    $work_hours = min(8, $work_hours);
+                }
 
                 $logs = json_encode($existing_logs);
                 $stmt7 = $this->db->prepare(
-                    "UPDATE DTR_details SET logs = ?, work_hours = ?, overtime = ? WHERE id = ?"
+                    "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=? WHERE id=?"
                 );
-                $stmt7->bind_param('sddi', $logs, $work_hours, $overtime, $detail['id']);
+                $stmt7->bind_param('sddddi', $logs, $work_hours, $overtime, $late, $undertime, $detail['id']);
                 $stmt7->execute();
                 $this->db->commit();
-                return [
+
+                $response = [
                     'result'     => true,
                     'message'    => 'Scan recorded',
                     'scan_time'  => $scan_time,
@@ -2487,7 +2630,14 @@ class Action
                     'time_out'   => date('H:i:s', $latest),
                     'work_hours' => round($work_hours, 4),
                     'overtime'   => round($overtime, 4),
+                    'late'       => round($late, 4),
+                    'undertime'  => round($undertime, 4),
                 ];
+                if ($schedule && $schedule['has_nsd']) {
+                    $response['nsd_amount'] = round($nsd, 4);
+                    $response['nsd_rate']   = $schedule['nsd_rate'];
+                }
+                return $response;
             }
         } catch (Exception $e) {
             $this->db->rollback();

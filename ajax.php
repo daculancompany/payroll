@@ -420,6 +420,20 @@ if ($action == "mark_all_notifications_read") {
 	echo json_encode($crud->mark_all_notifications_read());
 }
 
+// ── Work Schedules ──
+if ($action == 'save_work_schedule') {
+    echo json_encode($crud->save_work_schedule());
+}
+if ($action == 'delete_work_schedule') {
+    echo json_encode($crud->delete_work_schedule());
+}
+if ($action == 'assign_employee_schedule') {
+    echo json_encode($crud->assign_employee_schedule());
+}
+if ($action == 'get_employee_schedule_history') {
+    echo json_encode($crud->get_employee_schedule_history());
+}
+
 
 
 

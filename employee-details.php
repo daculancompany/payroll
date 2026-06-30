@@ -191,6 +191,11 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                 </a>
                             </li> -->
                             <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-schedule" role="tab">
+                                    <i class="ri-time-line me-1"></i><span class="d-none d-sm-inline">Schedule</span>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-leave" role="tab">
                                     <i class="ri-calendar-event-line me-1"></i><span class="d-none d-sm-inline">Leave</span>
                                 </a>
@@ -521,6 +526,104 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                 </div>
                             </div>
 
+                            <!-- SCHEDULE TAB -->
+                            <div class="tab-pane" id="arrow-schedule" role="tabpanel">
+                                <?php
+                                $cur_sched = $conn->query("
+                                    SELECT es.*, ws.description, ws.start_time, ws.end_time,
+                                           ws.total_hours, ws.is_graveyard, ws.has_nsd, ws.nsd_rate
+                                    FROM employee_schedules es
+                                    INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+                                    WHERE es.employee_id = $emp_id AND es.effective_to IS NULL
+                                    LIMIT 1
+                                ")->fetch_assoc();
+                                ?>
+
+                                <!-- Current Schedule Card -->
+                                <div class="d-flex align-items-center justify-content-between mb-3 mt-2">
+                                    <h6 class="mb-0 fw-semibold"><i class="ri-time-line me-1 text-success"></i>Current Schedule</h6>
+                                    <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modal-assign-schedule">
+                                        <i class="ri-edit-line me-1"></i>Change Schedule
+                                    </button>
+                                </div>
+
+                                <?php if ($cur_sched): ?>
+                                <div class="alert alert-success d-flex gap-4 align-items-center py-3">
+                                    <i class="ri-time-fill fs-2"></i>
+                                    <div>
+                                        <div class="fw-bold fs-6"><?= htmlspecialchars($cur_sched['description']) ?></div>
+                                        <div class="text-muted" style="font-size:13px;">
+                                            <?= date('h:i A', strtotime($cur_sched['start_time'])) ?> –
+                                            <?= date('h:i A', strtotime($cur_sched['end_time'])) ?>
+                                            &nbsp;|&nbsp; <?= $cur_sched['total_hours'] ?> hrs
+                                            <?php if ($cur_sched['is_graveyard']): ?>
+                                                &nbsp;<span class="badge bg-dark"><i class="ri-moon-line me-1"></i>Graveyard</span>
+                                            <?php endif; ?>
+                                            <?php if ($cur_sched['has_nsd']): ?>
+                                                &nbsp;<span class="badge bg-info">NSD <?= ($cur_sched['nsd_rate'] * 100) ?>%</span>
+                                            <?php endif; ?>
+                                        </div>
+                                        <div style="font-size:12px;color:#666;">Effective: <?= date('F d, Y', strtotime($cur_sched['effective_from'])) ?></div>
+                                    </div>
+                                </div>
+                                <?php else: ?>
+                                <div class="alert alert-warning"><i class="ri-alert-line me-2"></i>No schedule assigned yet.</div>
+                                <?php endif; ?>
+
+                                <!-- History Table -->
+                                <h6 class="fw-semibold mt-4 mb-2"><i class="ri-history-line me-1 text-muted"></i>Schedule History</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-sm table-hover table-bordered align-middle">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th>Shift</th>
+                                                <th class="text-center">Time</th>
+                                                <th class="text-center">Hours</th>
+                                                <th class="text-center">Effective From</th>
+                                                <th class="text-center">Effective To</th>
+                                                <th>Changed By</th>
+                                                <th>Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php
+                                            $hist = $conn->query("
+                                                SELECT es.*, ws.description, ws.start_time, ws.end_time,
+                                                       ws.total_hours, ws.is_graveyard, ws.has_nsd,
+                                                       CONCAT(u.firstname,' ',u.lastname) AS changed_by_name
+                                                FROM employee_schedules es
+                                                INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+                                                LEFT JOIN users u ON u.id = es.changed_by
+                                                WHERE es.employee_id = $emp_id
+                                                ORDER BY es.effective_from DESC
+                                            ");
+                                            while ($h = $hist->fetch_assoc()):
+                                            ?>
+                                            <tr>
+                                                <td>
+                                                    <span class="fw-semibold"><?= htmlspecialchars($h['description']) ?></span>
+                                                    <?php if ($h['is_graveyard']): ?>
+                                                        <span class="badge bg-dark ms-1"><i class="ri-moon-line"></i></span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="text-center" style="font-size:12px;white-space:nowrap;">
+                                                    <?= date('h:i A', strtotime($h['start_time'])) ?> –
+                                                    <?= date('h:i A', strtotime($h['end_time'])) ?>
+                                                </td>
+                                                <td class="text-center"><span class="badge bg-success"><?= $h['total_hours'] ?></span></td>
+                                                <td class="text-center"><?= date('M d, Y', strtotime($h['effective_from'])) ?></td>
+                                                <td class="text-center">
+                                                    <?= $h['effective_to'] ? date('M d, Y', strtotime($h['effective_to'])) : '<span class="badge bg-success">Current</span>' ?>
+                                                </td>
+                                                <td><?= htmlspecialchars($h['changed_by_name'] ?? '—') ?></td>
+                                                <td><small class="text-muted"><?= htmlspecialchars($h['notes'] ?? '') ?></small></td>
+                                            </tr>
+                                            <?php endwhile; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
                             <!-- LEAVE TAB -->
                             <div class="tab-pane" id="arrow-leave" role="tabpanel">
 
@@ -737,6 +840,66 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
             </div>
         </div>
     </div>
+
+    <!-- Assign Schedule Modal -->
+    <div class="modal fade" id="modal-assign-schedule" tabindex="-1">
+        <div class="modal-dialog">
+            <form id="form-assign-schedule">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title"><i class="ri-time-line me-2 text-success"></i>Assign Work Schedule</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="employee_id" value="<?= $emp_id ?>">
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Shift <span class="text-danger">*</span></label>
+                            <select class="form-select" name="schedule_id" required>
+                                <option value="">— Select shift —</option>
+                                <?php
+                                $scheds = $conn->query("SELECT id, description, start_time, end_time FROM work_schedules WHERE status=1 ORDER BY start_time ASC");
+                                while ($s = $scheds->fetch_assoc()):
+                                ?>
+                                <option value="<?= $s['id'] ?>">
+                                    <?= htmlspecialchars($s['description']) ?>
+                                    (<?= date('h:i A', strtotime($s['start_time'])) ?> – <?= date('h:i A', strtotime($s['end_time'])) ?>)
+                                </option>
+                                <?php endwhile; ?>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Effective From <span class="text-danger">*</span></label>
+                            <input type="date" class="form-control" name="effective_from"
+                                   value="<?= date('Y-m-d') ?>" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Notes</label>
+                            <input type="text" class="form-control" name="notes" placeholder="Optional reason for change">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('form-assign-schedule').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const data = new FormData(this);
+            const res  = await fetch('ajax.php?action=assign_employee_schedule', { method: 'POST', body: new URLSearchParams(data) });
+            const json = await res.json();
+            if (json?.result) {
+                bootstrap.Modal.getInstance(document.getElementById('modal-assign-schedule')).hide();
+                location.reload();
+            } else {
+                alert(json?.message || 'Failed to assign schedule.');
+            }
+        });
+    </script>
 
     <script>
         let employee_id = "<?= $emp_id ?>";

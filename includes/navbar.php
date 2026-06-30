@@ -47,6 +47,11 @@
                         <i class="ri-briefcase-4-line"></i> <span>Position</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="work-schedules" class="nav-link <?= $page === 'work-schedules' ? 'active' : '' ?>">
+                        <i class="ri-time-line"></i> <span>Work Schedules</span>
+                    </a>
+                </li>
                 <!-- <li class="nav-item">
                     <a href="branch" class="nav-link <?= $page === 'branch' ? 'active' : '' ?>">
                         <i class="ri-building-2-line"></i> <span>Branches</span>

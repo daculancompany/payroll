@@ -85,7 +85,9 @@ $(document).ready(function () {
                             text: "Attendace  successfully saved.",
                         }).then((result) => {
                             if (result.isConfirmed) {
-                                location.reload();
+                                $("#modal").modal("hide");
+                                form[0].reset();
+                                if (typeof refreshDtrPanel === "function") refreshDtrPanel();
                             }
                         });
                     } else {
@@ -138,8 +140,8 @@ async function deleteDTRLogs(id) {
                         title: "Success!",
                         text: "Selected payroll successfully deleted.",
                     }).then((result) => {
-                        if (result.isConfirmed) {
-                            location.reload();
+                        if (result.isConfirmed && typeof refreshDtrPanel === "function") {
+                            refreshDtrPanel();
                         }
                     });
                 } else {
@@ -281,7 +283,8 @@ async function updateDTRField(el, id, fieldType) {
     }
 }
 
-// Optional: Update UI without page reload for better user experience
+// Update UI without a page reload: flash the edited field, then re-fetch the
+// panel so per-day/per-employee/grand totals recompute server-side and stay accurate.
 function updateUIAfterSuccess(el, value, config) {
     // Update the input field visually
     const inputField = $(el).closest(".input-group").find('input[type="text"]');
@@ -290,9 +293,7 @@ function updateUIAfterSuccess(el, value, config) {
     inputField.addClass("update-success");
     setTimeout(() => inputField.removeClass("update-success"), 2000);
 
-    // If you want to update totals without reloading, you could add that logic here
-    // For now, we'll keep the reload for data consistency
-    location.reload();
+    if (typeof refreshDtrPanel === "function") refreshDtrPanel();
 }
 
 // Individual wrapper functions for backward compatibility
@@ -418,6 +419,74 @@ $(document).ready(function () {
     });
 });
 
+// ── Resolve a disputed review (shared shape with payroll page) ──
+function openResolveDispute(type, reviewId, empName) {
+    Swal.fire({
+        title: "Resolve dispute",
+        html: 'Reply to <b>' + (empName || 'employee') + '</b>. They will be notified.',
+        input: "textarea",
+        inputPlaceholder: "Explain what was checked / corrected…",
+        inputAttributes: { "aria-label": "Reply" },
+        showCancelButton: true,
+        confirmButtonColor: "#0f9d58",
+        confirmButtonText: "Resolve & notify",
+        preConfirm: (val) => {
+            if (!val || !val.trim()) {
+                Swal.showValidationMessage("A reply is required.");
+                return false;
+            }
+            return val.trim();
+        },
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        Swal.fire({ title: "Saving…", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.ajax({
+            url: "ajax.php?action=resolve_review_dispute",
+            method: "POST",
+            dataType: "JSON",
+            data: { type: type, id: reviewId, reply: result.value },
+            error: (xhr, status, error) => { Swal.close(); handleError(error || ""); },
+            success: function (res) {
+                if (res?.result) {
+                    Swal.fire({ icon: "success", title: "Resolved", text: res.message })
+                        .then((r) => { if (r.isConfirmed) location.reload(); });
+                } else {
+                    Swal.close(); handleError(res?.message || "");
+                }
+            },
+        });
+    });
+}
+
+// ── Remind employees who haven't reviewed this DTR yet ──
+function remindDtrReview(id) {
+    Swal.fire({
+        title: "Send reminder?",
+        text: "Only employees who haven't reviewed yet will be notified.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonColor: "#f7b84b",
+        confirmButtonText: "Yes, remind them",
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        Swal.fire({ title: "Sending…", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.ajax({
+            url: "ajax.php?action=remind_dtr_review",
+            method: "POST",
+            dataType: "JSON",
+            data: { id: id },
+            error: (xhr, status, error) => { Swal.close(); handleError(error || ""); },
+            success: function (res) {
+                if (res?.result) {
+                    Swal.fire({ icon: "success", title: "Reminder sent", text: res.message });
+                } else {
+                    Swal.close(); handleError(res?.message || "");
+                }
+            },
+        });
+    });
+}
+
 function approveDtr(id) {
     if (isduplicate == "1") {
         Swal.fire({
@@ -481,4 +550,253 @@ function approveDtr(id) {
             });
         }
     });
+}
+
+// Send the whole DTR batch to employees for review (status 1 → 3).
+function sendDtrForReview(id) {
+    if (isduplicate == "1") {
+        Swal.fire({
+            icon: "error",
+            title: "Duplicate detected",
+            text: "Resolve the duplicate attendance entries before sending this DTR for review.",
+        });
+        return;
+    }
+    Swal.fire({
+        title: "Send for Employee Review?",
+        text: "Employees on this DTR will be notified to confirm their own attendance before final approval.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonColor: "#0dcaf0",
+        cancelButtonColor: "#6c757d",
+        confirmButtonText: "Yes, send for review",
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+        Swal.fire({
+            title: "Sending, please wait...",
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading(),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        $.ajax({
+            url: "ajax.php?action=send_dtr_for_review",
+            method: "POST",
+            dataType: "JSON",
+            data: { id: id },
+            error: (xhr, status, error) => {
+                Swal.close();
+                handleError(error || "");
+            },
+            success: function (res) {
+                if (res?.result) {
+                    Swal.fire({
+                        icon: "success",
+                        title: "Sent for Review",
+                        text: res.message || "Employees have been notified.",
+                    }).then((r) => {
+                        if (r.isConfirmed) location.reload();
+                    });
+                } else {
+                    Swal.fire({ icon: "error", title: "Error!", text: res.message });
+                }
+            },
+        });
+    });
+}
+
+// ── Approve / disapprove attendance records (DTR_details.status) ──────────────
+// decision: 1 = approve, 2 = disapprove. Updates the DOM in place — no page reload.
+
+function _recBadge(status) {
+    if (status === 1) return '<span class="badge bg-success" style="font-size:10px;"><i class="ri-checkbox-circle-line me-1"></i>Approved</span>';
+    if (status === 2) return '<span class="badge bg-danger" style="font-size:10px;"><i class="ri-close-circle-line me-1"></i>Disapproved</span>';
+    return '<span class="badge bg-warning text-dark" style="font-size:10px;"><i class="ri-time-line me-1"></i>Pending</span>';
+}
+
+// Update a record's status badge + button states, live — in BOTH the
+// By Day table row and the By Employee card entry (same data-rec-id).
+function _applyRowStatus(id, status) {
+    document.querySelectorAll('[data-rec-id="' + id + '"]').forEach(function (el) {
+        el.dataset.recStatus = status;
+        var appr = el.querySelector(".btn-rec-approve");
+        var disa = el.querySelector(".btn-rec-disapprove");
+        if (appr) appr.disabled = (status === 1);
+        if (disa) disa.disabled = (status === 2);
+        var chk = el.querySelector(".rec-check");
+        if (chk) chk.checked = false;
+        // subtle row/entry tint
+        el.classList.toggle("is-approved", status === 1);
+        el.classList.toggle("is-disapproved", status === 2);
+        if (el.tagName === "TR") {
+            el.style.background = status === 1 ? "rgba(15,157,88,.06)" : (status === 2 ? "rgba(198,40,40,.06)" : "");
+        }
+    });
+    document.querySelectorAll('[data-rec-badge="' + id + '"]').forEach(function (badge) {
+        badge.innerHTML = _recBadge(status);
+    });
+}
+
+// Recompute summary cards, batch-approve button and per-day buttons from the DOM.
+function _recomputeTotals() {
+    var appr = 0, disa = 0, pend = 0, perDay = {};
+    document.querySelectorAll("tr[data-rec-id]").forEach(function (tr) {
+        var s = parseInt(tr.dataset.recStatus || "0", 10);
+        if (s === 1) appr++;
+        else if (s === 2) disa++;
+        else { pend++; var d = tr.dataset.recDate; perDay[d] = (perDay[d] || 0) + 1; }
+    });
+    var setTxt = function (idv, val) { var el = document.getElementById(idv); if (el) el.textContent = val; };
+    setTxt("stat-approved", appr);
+    setTxt("stat-disapproved", disa);
+    setTxt("stat-pending", pend);
+
+    var b = document.getElementById("btn-batch-approve");
+    if (b) {
+        b.disabled = (pend > 0) || (b.dataset.dup === "1");
+        var badge = document.getElementById("batch-pending-badge");
+        var cnt   = document.getElementById("batch-pending-count");
+        if (cnt) cnt.textContent = pend;
+        if (badge) badge.style.display = (pend > 0) ? "" : "none";
+    }
+
+    document.querySelectorAll(".approveday-btn").forEach(function (btn) {
+        var d = btn.dataset.approvedayDate;
+        var c = perDay[d] || 0;
+        var span = btn.querySelector(".approveday-count");
+        if (span) span.textContent = c;
+        btn.style.display = (c > 0) ? "" : "none";
+    });
+
+    // Per-employee summary chips + Approve All button on each card
+    document.querySelectorAll("#view-by-employee .ecard").forEach(function (card) {
+        var a = 0, p = 0, d = 0;
+        card.querySelectorAll(".ecard-entry[data-rec-id]").forEach(function (en) {
+            var s = parseInt(en.dataset.recStatus || "0", 10);
+            if (s === 1) a++; else if (s === 2) d++; else p++;
+        });
+        var set = function (cls, val) { var el = card.querySelector(cls); if (el) el.textContent = val; };
+        set(".emp-sum-appr", a);
+        set(".emp-sum-pend", p);
+        set(".emp-sum-disa", d);
+        var btn = card.querySelector(".ecard-approve-all");
+        if (btn) {
+            btn.style.display = (p > 0) ? "" : "none";
+            var c = btn.querySelector(".emp-appr-count");
+            if (c) c.textContent = p;
+        }
+    });
+}
+
+function _toast(msg) {
+    Swal.fire({ toast: true, position: "top-end", icon: "success", title: msg, timer: 1600, showConfirmButton: false });
+}
+
+function _postDecision(payload, decision, confirmText, applyFn) {
+    var label = decision === 1 ? "Approve" : "Disapprove";
+    Swal.fire({
+        title: label + "?",
+        text: confirmText,
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonColor: decision === 1 ? "#0f9d58" : "#c62828",
+        confirmButtonText: "Yes, " + label.toLowerCase(),
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        payload.decision = decision;
+        $.ajax({
+            url: "ajax.php?action=decide_dtr_details",
+            method: "POST",
+            dataType: "JSON",
+            data: payload,
+            error: function () { handleError(""); },
+            success: function (res) {
+                if (res && res.result) {
+                    applyFn();
+                    _recomputeTotals();
+                    _resetRecSelection();
+                    _toast((res.affected || 0) + " record(s) " + (decision === 1 ? "approved" : "disapproved"));
+                } else {
+                    Swal.fire({ icon: "error", title: "Error!", text: (res && res.message) || "Failed." });
+                }
+            },
+        });
+    });
+}
+
+// Single record
+function decideRecord(id, decision) {
+    _postDecision({ ids: [id] }, decision,
+        "This attendance record will be " + (decision === 1 ? "approved." : "disapproved."),
+        function () { _applyRowStatus(id, decision); });
+}
+
+// All pending records for one day
+function approveDay(ddtrId, date) {
+    _postDecision({ ddtr_id: ddtrId, date: date }, 1,
+        "All pending records for " + date + " will be approved.",
+        function () {
+            document.querySelectorAll('tr[data-rec-id][data-rec-date="' + date + '"]').forEach(function (tr) {
+                if (parseInt(tr.dataset.recStatus || "0", 10) === 0) _applyRowStatus(tr.dataset.recId, 1);
+            });
+        });
+}
+
+// ── Checkbox selection ────────────────────────────────────────────────────────
+// A record can appear in BOTH views (table row + employee card), so ids are
+// deduped and checkbox state is mirrored across the two views.
+function _selectedRecIds() {
+    var seen = {}, ids = [];
+    document.querySelectorAll(".rec-check:checked").forEach(function (c) {
+        if (!seen[c.value]) { seen[c.value] = true; ids.push(c.value); }
+    });
+    return ids;
+}
+function _refreshRecSelCount() {
+    var n    = _selectedRecIds().length;
+    var cnt  = document.getElementById("rec-sel-count");
+    var appr = document.getElementById("btn-approve-selected");
+    var disa = document.getElementById("btn-disapprove-selected");
+    if (cnt)  cnt.textContent = n;
+    if (appr) appr.disabled = (n === 0);
+    if (disa) disa.disabled = (n === 0);
+}
+function _resetRecSelection() {
+    var all = document.getElementById("chk-all-records");
+    if (all) all.checked = false;
+    _refreshRecSelCount();
+}
+document.addEventListener("change", function (e) {
+    if (!e.target) return;
+    if (e.target.id === "chk-all-records") {
+        document.querySelectorAll(".rec-check").forEach(function (c) { c.checked = e.target.checked; });
+        _refreshRecSelCount();
+    } else if (e.target.classList && e.target.classList.contains("rec-check")) {
+        // mirror the same record's checkbox in the other view
+        var v = e.target.value, on = e.target.checked;
+        document.querySelectorAll('.rec-check[value="' + v + '"]').forEach(function (c) { c.checked = on; });
+        _refreshRecSelCount();
+    }
+});
+
+// Bulk approve/disapprove selected checkboxes
+function decideSelected(decision) {
+    var ids = _selectedRecIds();
+    if (!ids.length) return;
+    _postDecision({ ids: ids }, decision,
+        ids.length + " selected record(s) will be " + (decision === 1 ? "approved." : "disapproved."),
+        function () { ids.forEach(function (id) { _applyRowStatus(id, decision); }); });
+}
+
+// Approve every pending record of one employee (By Employee card header button)
+function approveEmployee(btn, name) {
+    var card = btn.closest(".ecard");
+    if (!card) return;
+    var ids = [];
+    card.querySelectorAll(".ecard-entry[data-rec-id]").forEach(function (en) {
+        if (parseInt(en.dataset.recStatus || "0", 10) === 0) ids.push(en.dataset.recId);
+    });
+    if (!ids.length) return;
+    _postDecision({ ids: ids }, 1,
+        ids.length + " pending record(s) of " + name + " will be approved.",
+        function () { ids.forEach(function (id) { _applyRowStatus(id, 1); }); });
 }

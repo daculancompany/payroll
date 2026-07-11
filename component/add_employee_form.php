@@ -277,9 +277,9 @@
                                 <?php endwhile; ?>
                             </select>
                         </div>
-                        <div class="col-12" style="display:none;" id="dfield">
+                        <div class="col-12" id="dfield">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
-                                Effective Date
+                                Start Date <small style="text-transform:none;color:#888;">(first deduction)</small>
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text"><i class="ri-calendar-2-line"></i></span>
@@ -297,6 +297,16 @@
                                 <input type="text" id="amount" name="amount[]" class="form-control filterme"
                                     placeholder="0.00"
                                     data-parsley-required-message="Please enter amount." required>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                                Total <small style="text-transform:none;color:#888;">(leave 0 for a recurring deduction; set an amount to amortize like a loan)</small>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text">&#8369;</span>
+                                <input type="text" id="total_amount" name="total_amount[]" class="form-control"
+                                    placeholder="0.00" value="0">
                             </div>
                         </div>
                     </div>

@@ -51,7 +51,14 @@ $(function () {
         width: '100%',
     });
 
-    
+    $('#date-picker').select2({
+        dropdownParent: $('#form-add'),
+    });
+    $('#employee_id').select2({
+        dropdownParent: $('#form-add'),
+    });
+
+
     // oTable = $('#table-attendance').DataTable( {
     //     "order": [[ 0, "asc" ]]
     // } );
@@ -154,7 +161,7 @@ if ($('#attendance-table').length) {
                 '<div class="att-empty">',
                   '<div class="att-empty-icon"><i class="ri-calendar-check-line"></i></div>',
                   '<h6>No Attendance Records</h6>',
-                  '<p>Select employees and a date range,<br>then apply the filter to view records.</p>',
+                  '<p>No records found for the selected date range.<br>Try a different range or employee filter.</p>',
                   '<button class="att-empty-btn" type="button" onclick="document.getElementById(\'att-daterange\').click()">',
                     '<i class="ri-filter-3-line"></i> Choose Date Range',
                   '</button>',
@@ -217,20 +224,17 @@ if ($('#attendance-table').length) {
     });
 
     $('#btn-clear-filter').on('click', function () {
-        attFilter = { from: '', to: '', employee_ids: '', site_id: '', emp_label: '', site_label: '' };
+        // "Clear" resets to today rather than an unbounded view — an unfiltered
+        // query would force COUNT/SUM aggregates across the entire attendance
+        // history on every draw, which is what caused the lag this replaces.
+        var todayStr = new Date().toISOString().slice(0, 10);
+        attFilter = { from: todayStr, to: todayStr, employee_ids: '', site_id: '', emp_label: '', site_label: '' };
         $('#employee-select').val(null).trigger('change');
-        $('#att-range-label').text('Select date range…');
-        $('#from').val('');
-        $('#to').val('');
-        $('#att-stats-row, #att-filter-bar').hide();
-        $(this).hide();
+        $('#att-range-label').text('Today');
+        $('#from').val(todayStr);
+        $('#to').val(todayStr);
         attTable.draw();
     });
-
-    // Auto-draw if URL params were present on page load
-    if (attFilter.from && attFilter.to) {
-        attTable.draw();
-    }
 }
 
 

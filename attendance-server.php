@@ -1,17 +1,22 @@
 <?php
 include 'db_connect.php';
 
-$draw       = intval($_POST['draw'] ?? 1);
-$start      = intval($_POST['start'] ?? 0);
-$length     = intval($_POST['length'] ?? 25);
-$search     = $_POST['search']['value'] ?? '';
-$orderCol   = intval($_POST['order'][0]['column'] ?? 0);
-$orderDir   = in_array(strtolower($_POST['order'][0]['dir'] ?? 'desc'), ['asc','desc'])
-              ? strtolower($_POST['order'][0]['dir'])
-              : 'desc';
+$draw        = intval($_POST['draw'] ?? 1);
+$start       = intval($_POST['start'] ?? 0);
+$length      = intval($_POST['length'] ?? 25);
+$search      = $_POST['search']['value'] ?? '';
+$orderCol    = intval($_POST['order'][0]['column'] ?? 0);
+$orderDirRaw = strtolower($_POST['order'][0]['dir'] ?? 'desc');
+$orderDir    = in_array($orderDirRaw, ['asc', 'desc']) ? $orderDirRaw : 'desc';
 
-$from         = mysqli_real_escape_string($conn, $_POST['from'] ?? '');
-$to           = mysqli_real_escape_string($conn, $_POST['to'] ?? '');
+// Default to today so a request with no date filter (e.g. hitting this
+// endpoint directly) can't force an unbounded scan/aggregate over the
+// entire attendance history — that was the source of the reported lag.
+$today        = date('Y-m-d');
+$fromRaw      = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['from'] ?? '') ? $_POST['from'] : $today;
+$toRaw        = preg_match('/^\d{4}-\d{2}-\d{2}$/', $_POST['to'] ?? '')   ? $_POST['to']   : $today;
+$from         = mysqli_real_escape_string($conn, $fromRaw);
+$to           = mysqli_real_escape_string($conn, $toRaw);
 $employee_ids = preg_replace('/[^0-9,]/', '', $_POST['employee_ids'] ?? '');
 $site_id      = intval($_POST['site_id'] ?? 0);
 

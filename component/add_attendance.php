@@ -13,7 +13,6 @@
 							<div class="form-group">
 								<label>Employee</label>
 								<select id="employee_id" name="employee_id" class="form-control show-tick ms select2" data-placeholder="Select employee" data-parsley-required-message="Please select employee." required>
-									<option value=""></option>
 									<?php
 									$employee = $conn->query("SELECT *,concat(lastname,', ',firstname,' ',middlename) as ename FROM employee order by concat(lastname,', ',firstname,' ',middlename) asc");
 									while ($row = $employee->fetch_assoc()) :
@@ -31,8 +30,7 @@
 								$dateTo = new DateTime($dtr['date_to']);
 								// Generate the dropdown
 								echo '<select id="date-picker" name="date_time"  class="form-control show-tick ms select2" data-placeholder="Select Date" data-parsley-required-message="Please select date." required>';
-								echo '<option value="">Select a date</option>'; // Add empty option
-								for ($date = $dateFrom; $date < $dateTo; $date->modify('+1 day')) {
+								for ($date = $dateFrom; $date <= $dateTo; $date->modify('+1 day')) {
 									$dateValue = $date->format('Y-m-d');
 									echo "<option value=\"$dateValue\">$dateValue</option>";
 								}
@@ -60,10 +58,16 @@
 							</div>
 						</div>
 						</div>
+						<div class="col-md-12">
+							<div class="form-group">
+								<label>Notes</label>
+								<textarea name="notes" class="form-control" rows="2" maxlength="100" placeholder="Optional note about this attendance entry"></textarea>
+							</div>
+						</div>
 						<!-- <div class="col-md-12">
-							<div class="form-group">   
-								<label>Date</label>   
-								<input   id="reportrange" class="form-control" autocomplete="off" >                              
+							<div class="form-group">
+								<label>Date</label>
+								<input   id="reportrange" class="form-control" autocomplete="off" >
 							</div>
 						</div> -->
 					</div>

@@ -21,21 +21,27 @@ $stmt->execute();
 $payroll = $stmt->get_result()->fetch_assoc();
 
 $contributions_settings = json_decode($payroll['settings'], true) ?: [];
-$perMinute        = $payroll['per_minute'];
+// Per-minute rate = daily rate / (8h × 60m). (Matches payroll_calculations.php /
+// admin_class.php; NOT the stored per_minute column, which is per_day/1440.)
+$perMinute        = $payroll['per_day'] / (8 * 60);
 $overtime_amount  = $payroll['ot'] * $payroll['ot_rate'];
-$undertime_amount = $payroll['under_time'] * $perMinute;
+$undertime_amount = $payroll['under_time'] * $perMinute;   // informational only — not deducted in semi-monthly payroll
 $late_amount      = $payroll['late'] * $perMinute;
 $absent_amount    = $payroll['absent'] * $payroll['per_day'];
 $allowance_amount = $payroll['allowance_amount'] * $payroll['allowance_days'];
-$total_basic_rate = $payroll['present'] * $payroll['per_day'];
+$monthly_basic    = $payroll['basic_pay'];
 
 $legal_holiday_amt   = $payroll['legal_holiday']   * $payroll['per_day'];
 $sunday_duty_amt     = $payroll['sunday_duty']      * $payroll['per_day'];
 $special_holiday_amt = (($payroll['per_day'] / 8) * 2.4) * $payroll['special_holiday'];
 
-$gross_salary = ($total_basic_rate + $allowance_amount - $absent_amount)
+// Semi-monthly (type 5) computation — mirrors payroll_calculations.php Table-1 /
+// admin_class.php: semi_monthly = (monthly basic + allowance − absent) / 2, then
+// add OT + holiday premiums, less late. Undertime is NOT deducted.
+$semi_monthly_amount = ($monthly_basic + $allowance_amount - $absent_amount) / 2;
+$gross_salary = $semi_monthly_amount
               + $overtime_amount + $legal_holiday_amt + $sunday_duty_amt + $special_holiday_amt
-              - $late_amount - $undertime_amount;
+              - $late_amount;
 
 // Build deductions breakdown
 $contributions_list = [];
@@ -82,6 +88,8 @@ $total_all_deductions = $total_contributions + $total_deductions + $total_loans
 $net_pay = $payroll['net'];
 
 // ── Net pay amount in words (Philippine Peso) ──
+// Guarded so this page can be include()'d multiple times (bulk payslip printing).
+if (!function_exists('jp_num_to_words')):
 function jp_num_to_words($num) {
     $num = (int)$num;
     if ($num == 0) return 'zero';
@@ -104,14 +112,19 @@ function jp_peso_words($amount) {
     if ($cents > 0) $words .= ' and '.ucwords(jp_num_to_words($cents)).' Centavo'.($cents == 1 ? '' : 's');
     return $words.' Only';
 }
+endif;
 $net_in_words = jp_peso_words($net_pay);
 ?>
+<?php if (empty($GLOBALS['PAYSLIP_EMBED'])): ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Payslip — <?= htmlspecialchars($payroll['lastname'].', '.$payroll['firstname']) ?></title>
 <link href="assets/css/icons.min.css" rel="stylesheet">
+<?php endif; ?>
+<?php if (empty($GLOBALS['PAYSLIP_STYLES_DONE'])): $GLOBALS['PAYSLIP_STYLES_DONE'] = true; ?>
 <style>
 /* ── Force backgrounds & colors to print in ALL browsers ── */
 * {
@@ -438,25 +451,84 @@ body {
 .tb-btn.close:hover { background: rgba(255,255,255,.28); }
 body.has-toolbar { padding-top: 50px; }
 @media print { .ps-toolbar { display: none !important; } body.has-toolbar { padding-top: 0 !important; } }
-</style>
-</head>
-<body class="has-toolbar">
+.ps-page-break { break-after: page; page-break-after: always; }
+.ps-page-break:last-child { break-after: auto; page-break-after: auto; }
 
+/* ─────────────── MOBILE (screen only — print stays A4) ─────────────── */
+@media screen and (max-width: 600px) {
+    body { background: #e8e8e8; }
+    .ps-wrap { width: 100% !important; margin: 0 !important; border-width: 1px; box-shadow: none; }
+
+    /* Period bar → stacked */
+    .ps-period, .ps-period tr, .ps-period td { display: block; width: 100%; white-space: normal; }
+    .ps-period .sep { display: none; }
+    .ps-period td { padding: 3px 14px; }
+
+    /* Employee info → stacked full-width cells */
+    .ps-emp, .ps-emp tr, .ps-emp td { display: block; width: 100% !important; }
+    .ps-emp td { border-right: none; border-bottom: 1px solid #c8e6e2; }
+    .ps-emp td:last-child { border-bottom: none; }
+
+    /* Attendance summary: 7-col table → labelled list rows (Label ··· value) */
+    .ps-summary, .ps-summary tbody, .ps-summary tr, .ps-summary td { display: block; width: 100% !important; }
+    .ps-summary td {
+        display: flex; align-items: center; justify-content: space-between;
+        text-align: left; padding: 9px 16px;
+        border-right: none; border-bottom: 1px solid #d9ece9;
+    }
+    .ps-summary td:last-child { border-bottom: none; }
+    .ps-summary .sum-lbl { order: -1; margin-top: 0; font-size: 9.5pt; }
+    .ps-summary .sum-val { font-size: 12pt; }
+
+    /* Earnings / Deductions: two columns → stacked full-width sections */
+    .ps-body, .ps-body > tbody, .ps-body > tbody > tr { display: block; width: 100%; }
+    .ps-body > tbody > tr > td { display: block; width: 100% !important; border-right: none; }
+    .ps-body > tbody > tr > td:first-child { border-bottom: 2px solid #219688; }
+
+    /* Totals: 3-col → stacked label ··· value rows */
+    .ps-totals, .ps-totals tbody, .ps-totals tr, .ps-totals td { display: block; width: 100% !important; }
+    .ps-totals td {
+        display: flex; align-items: center; justify-content: space-between;
+        text-align: left; padding: 11px 16px; border-right: none;
+        border-bottom: 1px solid #c8e6e2;
+    }
+    .ps-totals td:last-child { border-bottom: none; }
+    .ps-totals .tot-lbl { margin-bottom: 0; }
+
+    /* Signature → stacked */
+    .ps-sig, .ps-sig tr, .ps-sig td { display: block; width: 100% !important; }
+    .ps-sig td { border-right: none; text-align: left; }
+    .ps-sig td:last-child { text-align: left; border-top: 1px solid #e8e8e8; }
+
+    /* Footer → stacked */
+    .ps-foot, .ps-foot tr, .ps-foot td { display: block; width: 100%; }
+    .ps-foot td:last-child { text-align: left; }
+}
+</style>
+<?php endif; ?>
+<?php if (empty($GLOBALS['PAYSLIP_EMBED'])): ?>
+</head>
+<body class="<?= empty($_GET['preview']) ? 'has-toolbar' : '' ?>">
+
+<?php if (empty($_GET['preview'])): // hidden when shown inside the portal preview modal ?>
 <!-- ══ SCREEN TOOLBAR (not printed) ══ -->
 <div class="ps-toolbar">
     <div class="tb-title"><i class="ri-file-text-line"></i> Payslip <small><?= htmlspecialchars($payroll['ref_no'] ?? '') ?></small></div>
     <button class="tb-btn print" onclick="window.print()"><i class="ri-printer-line"></i> Print</button>
     <a class="tb-btn close" href="javascript:void(0);" onclick="window.close(); history.back();"><i class="ri-close-line"></i> Close</a>
 </div>
+<?php endif; ?>
+<?php endif; ?>
 
+<?php if (!empty($GLOBALS['PAYSLIP_EMBED'])): ?><div class="ps-page-break"><?php endif; ?>
 <div class="ps-wrap">
 
 <!-- ══ HEADER ══ -->
 <div class="ps-hdr">
     <div class="ps-hdr-logo-cell"><img src="assets/images/logo.jpeg" alt="Logo"></div>
     <div class="ps-hdr-text-cell">
-        <div class="ps-hdr-company">JEJORS CONSTRUCTION CORPORATION</div>
-        <div class="ps-hdr-addr">Tiu Sons, Building Barangay 33, Guillermo Cogon, Cagayan de Oro City</div>
+        <div class="ps-hdr-company">COMC</div>
+        <div class="ps-hdr-addr">Tiano Brothers Street, Nacalaban Street, Cagayan De Oro City, 9000 Misamis Oriental</div>
     </div>
     <div class="ps-hdr-badge-cell">
         <div class="ps-hdr-badge">PAYSLIP</div>
@@ -517,13 +589,16 @@ body.has-toolbar { padding-top: 50px; }
 <td>
     <div class="col-title">Earnings</div>
 
-    <div class="grp-lbl">Basic Pay</div>
-    <table class="item bold"><tr><td>Days Present</td><td class="amt"><?= number_format($payroll['present'], 1) ?> days</td></tr></table>
-    <table class="item bold"><tr><td>Daily Rate</td><td class="amt">₱ <?= number_format($payroll['per_day'], 2) ?></td></tr></table>
-    <table class="item bold"><tr><td>Basic Salary</td><td class="amt">₱ <?= number_format($total_basic_rate, 2) ?></td></tr></table>
+    <div class="grp-lbl">Basic Pay (Semi-Monthly)</div>
+    <table class="item"><tr><td class="sub-lbl">Days Present</td><td class="sub-amt"><?= number_format($payroll['present'], 1) ?> days</td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Daily Rate</td><td class="sub-amt">₱ <?= number_format($payroll['per_day'], 2) ?></td></tr></table>
+    <table class="item bold"><tr><td>Monthly Basic</td><td class="amt">₱ <?= number_format($monthly_basic, 2) ?></td></tr></table>
     <?php if ($allowance_amount > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Allowance (<?= $payroll['allowance_days'] ?>d × ₱<?= number_format($payroll['allowance_amount'],2) ?>)</td><td class="sub-amt">₱ <?= number_format($allowance_amount, 2) ?></td></tr></table>
+    <?php endif; if ($payroll['absent'] > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Less: Absences (<?= $payroll['absent'] ?> day)</td><td class="sub-amt red">– ₱ <?= number_format($absent_amount, 2) ?></td></tr></table>
     <?php endif; ?>
+    <table class="item bold"><tr><td>Semi-Monthly Amount (÷2)</td><td class="amt">₱ <?= number_format($semi_monthly_amount, 2) ?></td></tr></table>
 
     <?php if ($payroll['legal_holiday'] > 0 || $payroll['sunday_duty'] > 0 || $payroll['special_holiday'] > 0): ?>
     <div class="grp-lbl">Holidays &amp; Extra</div>
@@ -540,14 +615,12 @@ body.has-toolbar { padding-top: 50px; }
     <table class="item"><tr><td class="sub-lbl"><?= number_format($payroll['ot'], 2) ?> hrs × ₱<?= number_format($payroll['ot_rate'],2) ?>/hr</td><td class="sub-amt">₱ <?= number_format($overtime_amount, 2) ?></td></tr></table>
     <?php endif; ?>
 
-    <?php if ($payroll['absent'] > 0 || $late_amount > 0 || $undertime_amount > 0): ?>
-    <div class="grp-lbl red">Adjustments (deducted)</div>
-    <?php if ($payroll['absent'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Absences (<?= $payroll['absent'] ?> day)</td><td class="sub-amt red">– ₱ <?= number_format($absent_amount, 2) ?></td></tr></table>
-    <?php endif; if ($late_amount > 0): ?>
+    <?php if ($late_amount > 0 || $payroll['under_time'] > 0): ?>
+    <div class="grp-lbl red">Adjustments</div>
+    <?php if ($late_amount > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Late (<?= number_format($payroll['late']) ?> min)</td><td class="sub-amt red">– ₱ <?= number_format($late_amount, 2) ?></td></tr></table>
-    <?php endif; if ($undertime_amount > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Undertime (<?= number_format($payroll['under_time']) ?> min)</td><td class="sub-amt red">– ₱ <?= number_format($undertime_amount, 2) ?></td></tr></table>
+    <?php endif; if ($payroll['under_time'] > 0): ?>
+    <table class="item"><tr><td class="sub-lbl" style="color:#999;">Undertime (<?= number_format($payroll['under_time']) ?> min)</td><td class="sub-amt" style="color:#999;">not deducted</td></tr></table>
     <?php endif; endif; ?>
 </td>
 
@@ -637,13 +710,16 @@ body.has-toolbar { padding-top: 50px; }
 <!-- ══ FOOTER ══ -->
 <table class="ps-foot" cellspacing="0" cellpadding="0">
 <tr>
-    <td>JEJORS CONSTRUCTION CORPORATION — Confidential Payroll Document</td>
+    <td>COMC — Confidential Payroll Document</td>
     <td>Generated: <?= date('M d, Y g:i A') ?></td>
 </tr>
 </table>
 
 </div><!-- .ps-wrap -->
+<?php if (!empty($GLOBALS['PAYSLIP_EMBED'])): ?></div><!-- .ps-page-break --><?php endif; ?>
 
+<?php if (empty($GLOBALS['PAYSLIP_EMBED'])): ?>
+<?php if (empty($_GET['preview'])): // no auto-print inside the portal preview modal ?>
 <script>
 // Go straight to the print dialog, then close the window automatically once
 // the dialog is dismissed — whether the user printed OR cancelled.
@@ -661,5 +737,7 @@ body.has-toolbar { padding-top: 50px; }
     });
 })();
 </script>
+<?php endif; ?>
 </body>
 </html>
+<?php endif; ?>

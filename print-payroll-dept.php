@@ -172,8 +172,8 @@ body { font-family: Arial, sans-serif; font-size: 7.5pt; color: #111; background
   <div class="hdr-bar">
     <img src="assets/images/logo.jpeg" alt="">
     <div>
-      <div class="hdr-co">JEJORS CONSTRUCTION CORPORATION</div>
-      <div class="hdr-addr">Tiu Sons, Building Barangay 33, Guillermo Cogon, Cagayan de Oro City</div>
+      <div class="hdr-co">COMC</div>
+      <div class="hdr-addr">Tiano Brothers Street, Nacalaban Street, Cagayan De Oro City, 9000 Misamis Oriental</div>
     </div>
     <div class="hdr-badge">PAYROLL SUMMARY<br>BY DEPARTMENT</div>
   </div>
@@ -302,7 +302,7 @@ body { font-family: Arial, sans-serif; font-size: 7.5pt; color: #111; background
 
   <!-- Footer -->
   <div class="pg-foot">
-    <span>JEJORS CONSTRUCTION CORPORATION — Confidential Payroll Document</span>
+    <span>COMC — Confidential Payroll Document</span>
     <span>Generated: <?= date('M d, Y g:i A') ?></span>
   </div>
 

@@ -220,8 +220,7 @@ if ($action == "save_payroll") {
 }
 if ($action == "delete_payroll") {
 	$save = $crud->delete_payroll();
-	if ($save)
-		echo $save;
+	echo json_encode($save);
 }
 if ($action == "calculate_payroll") {
 	$save = $crud->calculate_payroll();
@@ -276,6 +275,14 @@ if ($action == "update_status_dtr") {
 	$save = $crud->update_status_dtr();
 	if ($save)
 		echo json_encode($save);
+}
+
+if ($action == "send_dtr_for_review") {
+	echo json_encode($crud->send_dtr_for_review());
+}
+
+if ($action == "dtr_review_progress") {
+	echo json_encode($crud->dtr_review_progress());
 }
 
 if ($action == "delete_dtr") {
@@ -348,6 +355,42 @@ if ($action == "active_employee_loan") {
 if ($action == "update_payroll_status") {
 	$save = $crud->update_payroll_status();
 	echo json_encode($save);
+}
+
+if ($action == "send_payroll_for_review") {
+	echo json_encode($crud->send_payroll_for_review());
+}
+
+if ($action == "resolve_review_dispute") {
+	echo json_encode($crud->resolve_review_dispute());
+}
+
+if ($action == "bulk_send_dtr_for_review") {
+	echo json_encode($crud->bulk_send_dtr_for_review());
+}
+
+if ($action == "bulk_send_payroll_for_review") {
+	echo json_encode($crud->bulk_send_payroll_for_review());
+}
+
+if ($action == "remind_dtr_review") {
+	echo json_encode($crud->remind_dtr_review());
+}
+
+if ($action == "remind_payroll_review") {
+	echo json_encode($crud->remind_payroll_review());
+}
+
+if ($action == "export_dtr_reviews") {
+	ob_end_clean();
+	$crud->export_dtr_reviews();
+	exit;
+}
+
+if ($action == "export_payroll_reviews") {
+	ob_end_clean();
+	$crud->export_payroll_reviews();
+	exit;
 }
 
 if ($action == "loan_history_details") {
@@ -430,6 +473,24 @@ if ($action == 'delete_work_schedule') {
 if ($action == 'assign_employee_schedule') {
     echo json_encode($crud->assign_employee_schedule());
 }
+if ($action == 'roster_assign_schedule') {
+    echo json_encode($crud->roster_assign_schedule());
+}
+if ($action == 'plan_add_schedule') {
+    echo json_encode($crud->plan_add_schedule());
+}
+if ($action == 'plan_list') {
+    echo json_encode($crud->plan_list());
+}
+if ($action == 'plan_remove') {
+    echo json_encode($crud->plan_remove());
+}
+if ($action == 'plan_clear') {
+    echo json_encode($crud->plan_clear());
+}
+if ($action == 'plan_apply_all') {
+    echo json_encode($crud->plan_apply_all());
+}
 if ($action == 'get_employee_schedule_history') {
     echo json_encode($crud->get_employee_schedule_history());
 }
@@ -456,6 +517,12 @@ if ($action == 'edit_dtr_time') {
 }
 if ($action == 'finalize_dtr') {
     echo json_encode($crud->finalize_dtr());
+}
+if ($action == 'finalize_dtr_bulk') {
+    echo json_encode($crud->finalize_dtr_bulk());
+}
+if ($action == 'decide_dtr_details') {
+    echo json_encode($crud->decide_dtr_details());
 }
 if ($action == 'delete_dtr_record') {
     echo json_encode($crud->delete_dtr_record());

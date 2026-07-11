@@ -100,6 +100,8 @@ let tloan = $("#table-loan").DataTable();
 let tcontribution = $("#table-contributions").DataTable();
 let tdeductions = $("#table-deductions").DataTable();
 let tsites = $("#table-sites").DataTable();
+let tleave = $("#table-leave").DataTable({ order: [[0, "desc"]] });
+let tschedhist = $("#table-schedule-history").DataTable({ order: [[3, "desc"]] });
 // $("#search-input").keyup(function () {
 //     oTable.search($(this).val()).draw();
 // });

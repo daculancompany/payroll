@@ -1,7 +1,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=Edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-<meta name="description" content="JEJORS Payroll">
+<meta name="description" content="COMC Payroll">
 <meta name="author" content="design by: Niel Daculan">
 <link rel="icon" href="favicon.ico" type="image/x-icon">
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -174,7 +174,7 @@ $payroll_type = $payroll['type'];
                             <img style="width: 60px;" src="assets2/images/logo.jpeg" alt="Logo">
                         </div>
                         <div>
-                            <div>JEJORS CONSTRUCTION CORPORATION</div>
+                            <div>COMC</div>
                             <div>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</h4>
                             </div>
                             <div class="text-center">PAYROLL PERIOD:

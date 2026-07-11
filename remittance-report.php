@@ -84,6 +84,7 @@ if ($sel_id) {
             $line_total = $b['SSS'] + $b['PhilHealth'] + $b['Pag-IBIG'] + $sssfund + $tax + array_sum($extra);
 
             $rows[] = [
+                'employee_id' => $row['employee_id'],
                 'name' => $row['name'], 'employee_no' => $row['employee_no'],
                 'sss_no' => $row['sss_no'], 'ph_no' => $row['ph_no'], 'hdmf_no' => $row['hdmf_no'], 'tin_no' => $row['tin_no'],
                 'SSS' => $b['SSS'], 'PhilHealth' => $b['PhilHealth'], 'Pag-IBIG' => $b['Pag-IBIG'],
@@ -101,17 +102,10 @@ if ($sel_id) {
 function rr_money($v){ return '₱'.number_format((float)$v, 2); }
 ?>
 <style>
-    .rr-card { border:1px solid #e2e8f0; border-radius:10px; }
     .rr-stat { background:#fff; border:1px solid #e9eef5; border-radius:12px; padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 6px rgba(0,0,0,.05); height:100%; }
     .rr-stat .ic { width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
     .rr-stat .lbl { font-size:10px; color:#9aa3ad; text-transform:uppercase; letter-spacing:.4px; }
     .rr-stat .val { font-size:16px; font-weight:800; line-height:1.15; }
-    #rr-table thead th { background:#176358; color:#fff; font-size:11px; border:none; padding:9px 10px; white-space:nowrap; position:sticky; top:0; }
-    #rr-table td { font-size:12px; padding:7px 10px; vertical-align:middle; }
-    #rr-table tbody tr:hover td { background:#f4fbfa; }
-    #rr-table tfoot td { background:#eef6f4; font-weight:800; color:#176358; border-top:2px solid #cde7e2; }
-    .rr-num { text-align:right; font-variant-numeric:tabular-nums; }
-    .rr-gov { font-family:monospace; font-size:10px; color:#888; }
 </style>
 
 <div class="main-content">
@@ -129,7 +123,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
     </div></div>
 
     <!-- Period selector -->
-    <div class="card rr-card mb-3" style="border-top:3px solid #009688;">
+    <div class="card rpt-card mb-3" style="border-top:3px solid #009688;">
         <div class="card-body py-3">
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="remittance-report">
@@ -161,7 +155,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
     </div>
 
     <?php if (!$sel_id): ?>
-        <div class="card rr-card"><div class="card-body text-center py-5 text-muted">
+        <div class="card rpt-card"><div class="card-body text-center py-5 text-muted">
             <i class="ri-government-line" style="font-size:40px;opacity:.4;display:block;margin-bottom:8px;"></i>
             Select a payroll period to view SSS, PhilHealth, Pag-IBIG and Tax remittances.
         </div></div>
@@ -199,20 +193,20 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
     </div>
 
     <!-- Detail table -->
-    <div class="card rr-card">
+    <div class="card rpt-card mb-4">
         <div class="card-body p-0">
-            <div class="table-responsive" style="max-height:62vh;">
-                <table class="table table-hover table-sm mb-0" id="rr-table">
+            <div class="rpt-scroll">
+                <table class="table table-sm mb-0 rpt-table" id="rr-table">
                     <thead>
                         <tr>
                             <th>#</th>
                             <th>Employee</th>
-                            <th class="rr-num">SSS</th>
-                            <th class="rr-num">PhilHealth</th>
-                            <th class="rr-num">Pag-IBIG</th>
-                            <th class="rr-num">SSS Fund</th>
-                            <th class="rr-num">Tax</th>
-                            <th class="rr-num">Total</th>
+                            <th class="rpt-num">SSS</th>
+                            <th class="rpt-num">PhilHealth</th>
+                            <th class="rpt-num">Pag-IBIG</th>
+                            <th class="rpt-num">SSS Fund</th>
+                            <th class="rpt-num">Tax</th>
+                            <th class="rpt-num rpt-net">Total</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -222,31 +216,31 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                         <tr>
                             <td style="color:#aaa;"><?= $i ?></td>
                             <td>
-                                <div style="font-weight:700;"><?= htmlspecialchars($r['name']) ?></div>
-                                <div class="rr-gov">
+                                <div><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['name']) ?></a></div>
+                                <div class="rpt-gov">
                                     <?= htmlspecialchars($r['employee_no']) ?>
                                     <?php if ($r['sss_no']): ?> &bull; SSS <?= htmlspecialchars($r['sss_no']) ?><?php endif; ?>
                                     <?php if ($r['tin_no']): ?> &bull; TIN <?= htmlspecialchars($r['tin_no']) ?><?php endif; ?>
                                 </div>
                             </td>
-                            <td class="rr-num"><?= $r['SSS'] ? rr_money($r['SSS']) : '<span style="color:#ddd;">—</span>' ?></td>
-                            <td class="rr-num"><?= $r['PhilHealth'] ? rr_money($r['PhilHealth']) : '<span style="color:#ddd;">—</span>' ?></td>
-                            <td class="rr-num"><?= $r['Pag-IBIG'] ? rr_money($r['Pag-IBIG']) : '<span style="color:#ddd;">—</span>' ?></td>
-                            <td class="rr-num"><?= $r['SSS Fund'] ? rr_money($r['SSS Fund']) : '<span style="color:#ddd;">—</span>' ?></td>
-                            <td class="rr-num"><?= $r['Tax'] ? rr_money($r['Tax']) : '<span style="color:#ddd;">—</span>' ?></td>
-                            <td class="rr-num" style="font-weight:700;"><?= rr_money($r['total']) ?></td>
+                            <td class="rpt-num"><?= $r['SSS'] ? rr_money($r['SSS']) : '<span style="color:#ddd;">—</span>' ?></td>
+                            <td class="rpt-num"><?= $r['PhilHealth'] ? rr_money($r['PhilHealth']) : '<span style="color:#ddd;">—</span>' ?></td>
+                            <td class="rpt-num"><?= $r['Pag-IBIG'] ? rr_money($r['Pag-IBIG']) : '<span style="color:#ddd;">—</span>' ?></td>
+                            <td class="rpt-num"><?= $r['SSS Fund'] ? rr_money($r['SSS Fund']) : '<span style="color:#ddd;">—</span>' ?></td>
+                            <td class="rpt-num"><?= $r['Tax'] ? rr_money($r['Tax']) : '<span style="color:#ddd;">—</span>' ?></td>
+                            <td class="rpt-num rpt-net"><?= rr_money($r['total']) ?></td>
                         </tr>
                         <?php endforeach; endif; ?>
                     </tbody>
                     <tfoot>
                         <tr>
                             <td colspan="2">TOTAL (<?= count($rows) ?>)</td>
-                            <td class="rr-num"><?= rr_money($totals['SSS']) ?></td>
-                            <td class="rr-num"><?= rr_money($totals['PhilHealth']) ?></td>
-                            <td class="rr-num"><?= rr_money($totals['Pag-IBIG']) ?></td>
-                            <td class="rr-num"><?= rr_money($totals['SSS Fund']) ?></td>
-                            <td class="rr-num"><?= rr_money($totals['Tax']) ?></td>
-                            <td class="rr-num"><?= rr_money($totals['grand']) ?></td>
+                            <td class="rpt-num"><?= rr_money($totals['SSS']) ?></td>
+                            <td class="rpt-num"><?= rr_money($totals['PhilHealth']) ?></td>
+                            <td class="rpt-num"><?= rr_money($totals['Pag-IBIG']) ?></td>
+                            <td class="rpt-num"><?= rr_money($totals['SSS Fund']) ?></td>
+                            <td class="rpt-num"><?= rr_money($totals['Tax']) ?></td>
+                            <td class="rpt-num rpt-net"><?= rr_money($totals['grand']) ?></td>
                         </tr>
                     </tfoot>
                 </table>

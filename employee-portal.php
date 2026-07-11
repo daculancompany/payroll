@@ -17,96 +17,8 @@ $elig_q = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c FROM em
 $elig_r = $elig_q ? $elig_q->fetch_assoc() : null;
 $portal_leave_eligible = $elig_r && in_array($elig_r['c'], LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
 
-// ── Handle a leave request submitted from the portal (self-service) ──────
-// Processed in-page because ajax.php is gated to admin sessions only.
-$leave_flash = null;
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_leave') {
-    $lt_id_check = (int)($_POST['leave_type_id'] ?? 0);
-    $is_lwop_req = false;
-    if ($lt_id_check > 0) {
-        $lt_check = $conn->query("SELECT is_paid FROM leave_types WHERE id = $lt_id_check LIMIT 1")->fetch_assoc();
-        $is_lwop_req = $lt_check && $lt_check['is_paid'] == 0;
-    }
-    if (!$portal_leave_eligible && !$is_lwop_req) {
-        $leave_flash = ['err', 'Only Regular and Executive employees are entitled to leave.'];
-    } else {
-    $lt_id      = (int)($_POST['leave_type_id'] ?? 0);
-    $lreason    = trim($_POST['reason'] ?? '');
-    $is_half    = intval($_POST['is_half_day'] ?? 0);
-    $half_per   = in_array($_POST['half_period'] ?? '', ['AM','PM']) ? $_POST['half_period'] : null;
-    $dates_raw  = trim($_POST['dates'] ?? '');
-
-    // Build date list from multi-date picker
-    $days = array_filter(array_map('trim', explode(',', $dates_raw)));
-    if ($lt_id <= 0 || empty($days) || $lreason === '') {
-        $leave_flash = ['err', 'Please complete all fields and select at least one date.'];
-    } else {
-        sort($days);
-        $d_from = $days[0];
-        $d_to   = end($days);
-        $dur    = $is_half ? count($days) * 0.5 : (float)count($days);
-        $today  = date('Y-m-d');
-        $dates_json = json_encode($days);
-        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, is_half_day, half_period, dates, reason, status) VALUES (?,?,?,?,?,?,?,?,?,?,0)");
-        $ins->bind_param('iisssdisss', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $is_half, $half_per, $dates_json, $lreason);
-        if ($ins->execute()) {
-            $tname_q = $conn->query("SELECT name FROM leave_types WHERE id = $lt_id");
-            $tname   = ($tname_q && $tr = $tname_q->fetch_assoc()) ? $tr['name'] : 'leave';
-            $erow    = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
-            $ename   = $erow['n'] ?? 'Employee';
-            $durLabel = $is_half ? ($dur . ' day — ' . $half_per . ' half') : $dur . ' day/s';
-            $msg   = $conn->real_escape_string("$ename requested $tname ($durLabel) via portal. Needs HR review.");
-            $title = $conn->real_escape_string('New leave request');
-            $hrs = $conn->query("SELECT id FROM users WHERE role = 9 AND status = 1");
-            if ($hrs) while ($hu = $hrs->fetch_assoc()) {
-                $uid = (int)$hu['id'];
-                $conn->query("INSERT INTO notifications (user_id, title, message, icon, color, link) VALUES ($uid,'$title','$msg','ri-calendar-event-line','warning','index.php?page=leaves')");
-            }
-            $leave_flash = ['ok', 'Leave request submitted! HR will review it shortly.'];
-        } else {
-            $leave_flash = ['err', 'Could not submit your request. Please try again.'];
-        }
-    }
-    } // end eligible
-}
-
-// ── Handle an attendance request (incident report / OT filing) ──────────
-$att_flash = null;
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'request_attendance') {
-    $req_type  = trim($_POST['request_type'] ?? '');
-    $req_date  = trim($_POST['request_date'] ?? '');
-    $reason    = trim($_POST['reason'] ?? '');
-    $time_in   = trim($_POST['claimed_time_in'] ?? '') ?: null;
-    $time_out  = trim($_POST['claimed_time_out'] ?? '') ?: null;
-    $ot_hours  = trim($_POST['ot_hours_requested'] ?? '') !== '' ? (float)$_POST['ot_hours_requested'] : null;
-    $att_notes = trim($_POST['notes'] ?? '');
-
-    if (!in_array($req_type, ['incident', 'overtime'], true) || !$req_date || !$reason) {
-        $att_flash = ['err', 'Please complete all required fields.'];
-    } elseif ($req_type === 'incident' && (!$time_in || !$time_out)) {
-        $att_flash = ['err', 'Please provide your claimed time in and time out.'];
-    } elseif ($req_type === 'overtime' && !$ot_hours) {
-        $att_flash = ['err', 'Please provide the number of OT hours requested.'];
-    } else {
-        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes) VALUES (?,?,?,?,?,?,?,?)");
-        $ins->bind_param('isssssds', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $att_notes);
-        if ($ins->execute()) {
-            $erow  = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
-            $ename = $erow['n'] ?? 'Employee';
-            $label = $req_type === 'incident' ? 'attendance incident report' : 'overtime request';
-            $msg   = $conn->real_escape_string("$ename filed a $label for " . date('M d, Y', strtotime($req_date)) . '.');
-            $title = $conn->real_escape_string('New ' . $label);
-            $reviewers = $conn->query("SELECT id FROM users WHERE role IN (1,8,9) AND status = 1");
-            if ($reviewers) while ($ru = $reviewers->fetch_assoc()) {
-                $uid = (int)$ru['id'];
-                $conn->query("INSERT INTO notifications (user_id, title, message, icon, color, link) VALUES ($uid, '$title', '$msg', 'ri-error-warning-line', 'warning', 'index.php?page=attendance-requests')");
-            }
-            $att_flash = ['ok', 'Request submitted! It will be reviewed shortly.'];
-        } else {
-            $att_flash = ['err', 'Could not submit your request. Please try again.'];
-        }
-    }
-}
+// Leave, LWOP, and attendance/OT requests are submitted via AJAX (emp-portal-ajax.php:
+// submit_leave_request / submit_attendance_request) so the page never reloads on save.
 
 $my_attendance_requests = [];
 $marq = $conn->prepare("SELECT * FROM attendance_requests WHERE employee_id = ? ORDER BY created_at DESC LIMIT 30");
@@ -114,6 +26,19 @@ $marq->bind_param('i', $emp_id);
 $marq->execute();
 $mar_res = $marq->get_result();
 while ($r = $mar_res->fetch_assoc()) $my_attendance_requests[] = $r;
+$att_req_pending_count = 0;
+foreach ($my_attendance_requests as $ar) if ($ar['status'] == 0) $att_req_pending_count++;
+
+// DTRs awaiting this employee's review (status 3) and not yet signed off.
+$dtr_review_pending_count = 0;
+$drpc = $conn->prepare("SELECT COUNT(DISTINCT DTR.id) AS c
+    FROM DTR_details dd
+    INNER JOIN DTR ON DTR.id = dd.ddtr_id
+    LEFT JOIN dtr_employee_reviews r ON r.ddtr_id = DTR.id AND r.employee_id = ?
+    WHERE dd.employee_id = ? AND DTR.status = 3 AND r.id IS NULL");
+$drpc->bind_param('ii', $emp_id, $emp_id);
+$drpc->execute();
+$dtr_review_pending_count = (int)($drpc->get_result()->fetch_assoc()['c'] ?? 0);
 
 // Blocked (holiday) dates + upcoming calendar events for the portal.
 $blocked_dates = [];
@@ -179,22 +104,33 @@ $s->bind_param('i', $emp_id); $s->execute();
 $emp = $s->get_result()->fetch_assoc();
 
 // ── All payroll items ───────────────────────────────────────────
+// Only payroll batches that are Ready for Review (3) or Locked (2) are visible here —
+// employees shouldn't see draft/unfinished numbers before HR sends them for review.
 $s2 = $conn->prepare("
     SELECT pi.id AS item_id, pi.net, pi.basic_pay, pi.present, pi.per_day,
            pi.allowance_amount, pi.allowance_days, pi.absent, pi.late, pi.ot, pi.ot_rate,
            pi.deduction_amount, pi.other_deduction, pi.tax,
            pi.jei_advances, pi.jcc_advances, pi.sss_fund, pi.under_time,
            pi.legal_holiday, pi.sunday_duty, pi.special_holiday,
-           p.ref_no, p.date_from, p.date_to, p.id AS payroll_id
+           p.ref_no, p.date_from, p.date_to, p.id AS payroll_id, p.status AS payroll_status,
+           r.status AS review_status, r.comment AS review_comment, r.reviewed_at AS review_reviewed_at,
+           r.admin_reply AS review_admin_reply, r.resolved_at AS review_resolved_at
     FROM payroll_items pi
     INNER JOIN payroll p ON pi.payroll_id = p.id
-    WHERE pi.employee_id = ?
+    LEFT JOIN payroll_employee_reviews r ON r.payroll_id = p.id AND r.employee_id = ?
+    WHERE pi.employee_id = ? AND p.status IN (2, 3)
     ORDER BY p.date_from DESC
     LIMIT 24
 ");
-$s2->bind_param('i', $emp_id); $s2->execute();
+$s2->bind_param('ii', $emp_id, $emp_id); $s2->execute();
 $payslips = $s2->get_result()->fetch_all(MYSQLI_ASSOC);
 $latest   = $payslips[0] ?? null;
+
+// Payslips awaiting this employee's review (status 3) and not yet signed off.
+$payroll_review_pending_count = 0;
+foreach ($payslips as $ps) {
+    if ((int)$ps['payroll_status'] === 3 && $ps['review_status'] === null) $payroll_review_pending_count++;
+}
 
 // ── Career summary from all payslips ───────────────────────────
 $total_net = 0; $total_present = 0; $total_ot = 0; $total_absent = 0; $total_late = 0;
@@ -268,7 +204,8 @@ foreach ($payslips as $cp) {
     $sun = $cp['sunday_duty'] * $cp['per_day'];
     $spc = ($cp['per_day']/8*2.4) * $cp['special_holiday'];
     $sub = ($cp['basic_pay'] + $att - $abv) / 2;
-    $grs = $sub + $otv + $lgl + $sun + $spc - $lav - $utv;
+    // Gross mirrors the admin semi-monthly (type 5) formula — no undertime term.
+    $grs = $sub + $otv + $lgl + $sun + $spc - $lav;
     $ded = $cp['deduction_amount'] + $cp['other_deduction'] + $cp['tax']
          + $cp['jei_advances'] + $cp['jcc_advances'] + $cp['sss_fund'];
     $cmp_data[] = [
@@ -287,16 +224,66 @@ foreach ($payslips as $cp) {
     ];
 }
 
-// ── Attendance (DTR_details) ────────────────────────────────────
-$s3 = $conn->prepare("
-    SELECT date_time, work_hours, logs, attendance_type, overtime, notes
-    FROM DTR_details
-    WHERE employee_id = ?
-    ORDER BY date_time DESC
-    LIMIT 60
-");
+// ── Overview pay insights (derived from the visible payslips) ──
+$net_vals  = array_column($payslips, 'net');
+$ps_count  = count($net_vals);
+$avg_net   = $ps_count ? array_sum($net_vals) / $ps_count : 0;
+$best_net  = $ps_count ? max($net_vals) : 0;
+$net_delta = $net_delta_pct = null;              // latest vs the period before it
+if ($ps_count >= 2 && (float)$payslips[1]['net'] != 0) {
+    $net_delta     = $payslips[0]['net'] - $payslips[1]['net'];
+    $net_delta_pct = $net_delta / abs($payslips[1]['net']) * 100;
+}
+$yr_present = 0; $yr_absent = 0;                  // attendance rate for the current year
+foreach ($payslips as $ps) {
+    if (date('Y', strtotime($ps['date_from'])) == $cur_year) {
+        $yr_present += (float)$ps['present'];
+        $yr_absent  += (float)$ps['absent'];
+    }
+}
+$att_rate = ($yr_present + $yr_absent) > 0 ? $yr_present / ($yr_present + $yr_absent) * 100 : null;
+
+// ── Contributions / statutory remittances (YTD + lifetime, from payslips) ──
+// deduction_amount = mandatory contributions, sss_fund = SSS provident fund, tax = withholding.
+$contrib_hist = [];
+$ytd_contrib = $ytd_sssfund = $ytd_tax = 0;
+$life_contrib = $life_sssfund = $life_tax = 0;
+foreach ($payslips as $ps) {
+    $c = (float)$ps['deduction_amount']; $sf = (float)$ps['sss_fund']; $tx = (float)$ps['tax'];
+    $life_contrib += $c; $life_sssfund += $sf; $life_tax += $tx;
+    if (date('Y', strtotime($ps['date_from'])) == $cur_year) {
+        $ytd_contrib += $c; $ytd_sssfund += $sf; $ytd_tax += $tx;
+    }
+    if ($c > 0 || $sf > 0 || $tx > 0) {
+        $contrib_hist[] = [
+            'period'  => date('M d', strtotime($ps['date_from'])).' – '.date('M d, Y', strtotime($ps['date_to'])),
+            'ref'     => $ps['ref_no'],
+            'contrib' => $c, 'sssfund' => $sf, 'tax' => $tx, 'total' => $c + $sf + $tx,
+        ];
+    }
+}
+$ytd_contrib_total  = $ytd_contrib + $ytd_sssfund + $ytd_tax;
+$life_contrib_total = $life_contrib + $life_sssfund + $life_tax;
+
+// ── Attendance (DTR_details) — rows are loaded via the server-side DataTable
+// (attendance-portal-server.php); we only need a total count here for the tab badge.
+$s3 = $conn->prepare("SELECT COUNT(*) AS c FROM DTR_details WHERE employee_id = ?");
 $s3->bind_param('i', $emp_id); $s3->execute();
-$attendance = $s3->get_result()->fetch_all(MYSQLI_ASSOC);
+$attendance_count = (int)($s3->get_result()->fetch_assoc()['c'] ?? 0);
+
+// ── This-month attendance summary (Overview stat strip) ─────────
+$mo_from = date('Y-m-01'); $mo_to = date('Y-m-t');
+$asq = $conn->prepare("
+    SELECT COUNT(DISTINCT DATE(date_time))                    AS days,
+           COALESCE(SUM(work_hours), 0)                        AS hours,
+           COALESCE(SUM(overtime), 0)                          AS ot,
+           COALESCE(SUM(CASE WHEN is_complete = 1 THEN 1 ELSE 0 END), 0) AS complete
+    FROM DTR_details
+    WHERE employee_id = ? AND DATE(date_time) BETWEEN ? AND ?");
+$asq->bind_param('iss', $emp_id, $mo_from, $mo_to);
+$asq->execute();
+$att_summary = $asq->get_result()->fetch_assoc() ?: ['days'=>0,'hours'=>0,'ot'=>0,'complete'=>0];
+$att_avg_hrs = ((float)$att_summary['days'] > 0) ? (float)$att_summary['hours'] / (float)$att_summary['days'] : 0;
 
 // ── Active loans ────────────────────────────────────────────────
 $s4 = $conn->prepare("
@@ -322,13 +309,31 @@ if ($latest) {
     $sun_amt  = $latest['sunday_duty']   * $latest['per_day'];
     $spc_amt  = ($latest['per_day'] / 8 * 2.4) * $latest['special_holiday'];
     $sub_tot  = ($latest['basic_pay'] + $all_tot - $abs_amt) / 2;
-    $gross    = $sub_tot + $ot_amt + $lgl_amt + $sun_amt + $spc_amt - $late_amt - $ut_amt;
+    // Gross mirrors the admin semi-monthly (type 5) formula — no undertime term.
+    $gross    = $sub_tot + $ot_amt + $lgl_amt + $sun_amt + $spc_amt - $late_amt;
     $tot_ded  = $latest['deduction_amount'] + $latest['other_deduction']
               + $latest['tax'] + $latest['jei_advances'] + $latest['jcc_advances'] + $latest['sss_fund'];
 }
 
+// ── Deduction composition of the latest payslip (donut chart) ──
+$ded_breakdown = [];
+if ($latest) {
+    $ded_src = [
+        'Contributions'      => $latest['deduction_amount'],
+        'SSS Provident Fund' => $latest['sss_fund'],
+        'Withholding Tax'    => $latest['tax'],
+        'JEI Advances'       => $latest['jei_advances'],
+        'JCC Advances'       => $latest['jcc_advances'],
+        'Other'              => $latest['other_deduction'],
+    ];
+    foreach ($ded_src as $k => $v) {
+        if ($v > 0) $ded_breakdown[] = ['label' => $k, 'value' => round((float)$v, 2)];
+    }
+}
+
 function n2($v) { return number_format((float)$v, 2); }
 function n0($v) { return number_format((float)$v, 0); }
+function nd($v) { return rtrim(rtrim(number_format((float)$v, 1), '0'), '.'); } // trim trailing .0
 $initials = strtoupper(substr($emp['firstname'],0,1).substr($emp['lastname'],0,1));
 $full_name = strtoupper($emp['lastname'].', '.$emp['firstname']);
 $hr = (int)date('H');
@@ -346,6 +351,8 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <link href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/css/bootstrap-select.min.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+<link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<link href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap.min.css" rel="stylesheet">
 <style>
 *{box-sizing:border-box;}
 body{
@@ -374,8 +381,9 @@ body{
 .ptop-logout{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:background .2s;}
 .ptop-logout:hover{background:rgba(255,255,255,.28);color:#fff;}
 
-/* Layout */
-.portal-wrap{max-width:900px;margin:0 auto;padding:22px 14px 50px;}
+/* Layout — wide on desktop, fluid below */
+.portal-wrap{max-width:1280px;margin:0 auto;padding:22px 18px 50px;}
+@media(min-width:1500px){.portal-wrap{max-width:1400px;}}
 
 /* Employee header card */
 .emp-hdr{background:#fffdf8;border:1px solid #e7e0d0;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 10px 26px -14px rgba(60,50,30,.22);margin-bottom:18px;}
@@ -383,7 +391,52 @@ body{
 .emp-av{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.4);}
 .emp-nm{font-size:17px;font-weight:900;color:#fff;line-height:1.2;}
 .emp-sub{font-size:11px;color:rgba(255,255,255,.78);margin-top:3px;}
-.emp-no-badge{margin-left:auto;background:rgba(0,0,0,.18);color:#fff;border-radius:8px;padding:5px 13px;font-size:11px;font-family:monospace;font-weight:800;white-space:nowrap;}
+.emp-hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
+.emp-no-badge{background:rgba(0,0,0,.18);color:#fff;border-radius:8px;padding:5px 13px;font-size:11px;font-family:monospace;font-weight:800;white-space:nowrap;}
+/* Notification bell */
+.emp-bell{position:relative;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;cursor:pointer;transition:background .15s;}
+.emp-bell:hover{background:rgba(255,255,255,.32);}
+.emp-bell-dot{position:absolute;top:7px;right:8px;width:9px;height:9px;background:#ffcf33;border:2px solid #176358;border-radius:50%;}
+.emp-notif-panel{position:absolute;top:64px;right:14px;width:340px;max-width:calc(100vw - 28px);background:#fff;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.22);z-index:1200;overflow:hidden;display:none;}
+.emp-notif-panel.open{display:block;}
+.emp-notif-head{display:flex;align-items:center;justify-content:space-between;padding:11px 15px;border-bottom:1px solid #eef3f2;font-size:13px;font-weight:800;color:#176358;}
+.emp-notif-allread{background:none;border:0;color:#219688;font-size:11px;font-weight:700;cursor:pointer;}
+.emp-notif-list{max-height:380px;overflow-y:auto;}
+.emp-notif-empty{padding:26px 14px;text-align:center;color:#aaa;font-size:12px;}
+.emp-notif-item{display:flex;gap:10px;padding:11px 15px;border-bottom:1px solid #f4f7f6;cursor:pointer;transition:background .12s;}
+.emp-notif-item:hover{background:#f7fbfa;}
+.emp-notif-item.unread{background:#f0faf8;}
+.emp-notif-ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.emp-notif-primary{background:#e6f0fb;color:#2563eb;} .emp-notif-success{background:#eafaf0;color:#0f9d58;}
+.emp-notif-warning{background:#fff6e0;color:#c98a00;} .emp-notif-danger{background:#fdecea;color:#c62828;} .emp-notif-info{background:#e6f7fb;color:#0891b2;}
+.emp-notif-title{font-size:12.5px;font-weight:800;color:#333;}
+.emp-notif-msg{font-size:11.5px;color:#666;margin-top:1px;line-height:1.35;}
+.emp-notif-time{font-size:10px;color:#aaa;margin-top:3px;}
+/* My DTR tab */
+.mydtr-intro{background:#f0faf8;border:1px solid #cdeeda;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#4a6b5f;line-height:1.5;margin-bottom:14px;}
+.mydtr-empty{padding:34px 14px;text-align:center;color:#aaa;font-size:13px;}
+.mydtr-card{display:flex;justify-content:space-between;gap:14px;background:#fff;border:1px solid #eef3f2;border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.04);}
+.mydtr-period{font-size:14px;font-weight:800;color:#176358;display:flex;align-items:center;gap:6px;}
+.mydtr-site{font-size:12px;color:#666;margin-top:3px;}
+.mydtr-meta{font-size:11px;color:#999;margin-top:4px;}
+.mydtr-card-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;}
+.mydtr-badge{font-size:10px;font-weight:800;padding:3px 10px;border-radius:11px;white-space:nowrap;}
+.mydtr-badge.review{background:#fff6e0;color:#c98a00;} .mydtr-badge.ok{background:#eafaf0;color:#0f9d58;}
+.mydtr-badge.dispute{background:#fdecea;color:#c62828;} .mydtr-badge.done{background:#eef3f2;color:#666;}
+.mydtr-btn{border:0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.mydtr-btn.primary{background:linear-gradient(135deg,#219688,#176358);color:#fff;}
+.mydtr-btn.ghost{background:#f0f5f4;color:#176358;}
+/* Review modal table */
+.drev-tbl-wrap{border:1px solid #eef3f2;border-radius:10px;overflow:hidden;}
+.drev-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.drev-tbl th{background:#f3f8f7;color:#176358;font-weight:800;padding:7px 9px;text-align:left;font-size:11px;}
+.drev-tbl td{padding:6px 9px;border-top:1px solid #f1f5f4;color:#444;}
+.drev-tbl .tc{text-align:center;}
+.drev-tbl tfoot th{background:#e9f5f2;}
+.drow-flag{font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;}
+.drow-flag.ok{background:#eafaf0;color:#0f9d58;} .drow-flag.dis{background:#fdecea;color:#c62828;}
+.drev-prev{font-size:12px;font-weight:700;padding:9px 12px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.drev-prev.ok{background:#eafaf0;color:#0f9d58;} .drev-prev.dis{background:#fdecea;color:#c62828;}
 .emp-stats{display:grid;grid-template-columns:repeat(5,1fr);}
 .est{padding:12px 14px;border-right:1px solid #f0ece0;text-align:center;}
 .est:last-child{border-right:none;}
@@ -397,6 +450,25 @@ body{
 .tab-btn .badge-count{background:rgba(255,255,255,.25);color:#fff;border-radius:10px;padding:0 6px;font-size:10px;font-weight:800;}
 .tab-btn:not(.active) .badge-count{background:#e8f7f5;color:#219688;}
 .tab-panel{display:none;} .tab-panel.active{display:block;}
+.tab-more{display:none;}   /* only surfaces in the mobile bottom nav */
+
+/* More sheet (mobile only) */
+.more-backdrop{display:none;position:fixed;inset:0;background:rgba(20,30,55,.4);z-index:450;}
+.more-backdrop.open{display:block;}
+/* Centered popup card (not a bottom sheet) */
+.more-sheet{position:fixed;left:50%;top:50%;z-index:500;width:calc(100% - 44px);max-width:360px;
+    background:#fff;border-radius:22px;box-shadow:0 24px 60px rgba(20,30,55,.28);
+    padding:20px 18px;transform:translate(-50%,-50%) scale(.92);opacity:0;pointer-events:none;
+    transition:transform .24s cubic-bezier(.4,0,.2,1),opacity .24s;}
+.more-sheet.open{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto;}
+.more-grip{display:none;}
+.more-head{font-size:15px;font-weight:800;color:#33312c;margin-bottom:16px;text-align:center;}
+.more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-content:center;}
+.more-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;background:#f7f8fa;border:1px solid #eef0f2;border-radius:16px;padding:15px 6px;cursor:pointer;}
+.more-item:active{background:#eef0f2;}
+.more-ic{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;}
+.more-lbl{font-size:11px;font-weight:700;color:#33312c;}
+.more-dot{position:absolute;top:9px;right:16px;background:#dc3545;color:#fff;border-radius:9px;min-width:16px;height:16px;padding:0 4px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;}
 
 /* Section title */
 .sec{font-size:11px;font-weight:800;color:#219688;text-transform:uppercase;letter-spacing:.7px;margin:18px 0 10px;display:flex;align-items:center;gap:8px;}
@@ -434,6 +506,39 @@ body{
 .absent-pill{background:#fff0f0;color:#dc3545;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
 .late-pill{background:#fff8e8;color:#fd7e14;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
 
+/* ── Payslips — dedicated mobile card list (shown < 600px, hidden on desktop) ── */
+.ps-mlist{display:none;padding:12px 0 2px;}
+.psm-card{position:relative;background:#fffdf8;border:1px solid #e7e0d0;border-left:3px solid #219688;border-radius:14px;
+    padding:13px 14px 0;margin:0 12px 12px;overflow:hidden;cursor:pointer;
+    box-shadow:0 1px 2px rgba(60,50,30,.05),0 8px 20px -14px rgba(60,50,30,.28);}
+.psm-chk{position:absolute;top:14px;right:12px;width:17px;height:17px;z-index:2;}
+.psm-period{font-size:15px;font-weight:800;color:#176358;line-height:1.2;padding-right:30px;}
+.psm-period small{display:block;font-size:10px;font-weight:600;color:#aaa;margin-top:1px;}
+.psm-ref{font-family:monospace;font-size:11px;font-weight:700;color:#219688;margin:3px 0 2px;}
+.psm-stats{display:flex;gap:2px;border-top:1px solid #f0ece0;margin-top:10px;}
+.psm-stats>div{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 2px;}
+.psm-stats span{font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+.psm-stats b{font-size:13px;font-weight:800;color:#176358;}
+.psm-stats b.mut{color:#ccc;font-weight:600;}
+.psm-stats b.abs{color:#dc3545;} .psm-stats b.lt{color:#fd7e14;} .psm-stats b.ot{color:#fd7e14;}
+.psm-money{display:flex;border-top:1px solid #f0ece0;}
+.psm-money>div{flex:1;display:flex;flex-direction:column;gap:2px;padding:11px 0 12px;}
+.psm-money .lbl{font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+.psm-money .val{font-size:15px;font-weight:800;color:#219688;}
+.psm-money .ded{align-items:flex-end;text-align:right;}
+.psm-money .ded .val{color:#dc3545;}
+.psm-action{border-top:1px solid #f0ece0;padding:11px 0 12px;text-align:center;}
+.psm-action .mydtr-badge{display:inline-block;margin-bottom:8px;}
+.psm-action .mydtr-btn{width:100%;padding:10px;font-size:13px;text-align:center;}
+.psm-net{display:flex;align-items:center;justify-content:space-between;
+    background:linear-gradient(135deg,#219688,#176358);margin:0 -14px;padding:12px 14px;}
+.psm-net span{font-size:10px;font-weight:800;color:rgba(255,255,255,.82);text-transform:uppercase;letter-spacing:.4px;}
+.psm-net b{font-size:19px;font-weight:900;color:#fff;}
+.psm-total{margin:2px 12px 6px;background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:10px 14px;color:#fff;}
+.psm-total .rowt{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;font-weight:700;}
+.psm-total .rowt span{color:rgba(255,255,255,.82);text-transform:uppercase;letter-spacing:.3px;font-size:10px;}
+.psm-total .rowt.net b{font-size:15px;font-weight:900;}
+
 /* Attendance */
 .att-table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px;}
 .att-table thead th{background:#219688;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;border:none;text-align:left;white-space:nowrap;}
@@ -450,10 +555,227 @@ body{
 .hrs-bar{height:5px;border-radius:3px;background:#e0eeec;overflow:hidden;margin-top:4px;}
 .hrs-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#219688,#176358);}
 
+/* Mobile: every data table becomes a stacked list of cards (label : value rows)
+   instead of a horizontally-scrolling table. Cells carry data-label="…" —
+   a data-label="" cell (icons / narrow chips) collapses its label row. */
+@media(max-width:600px){
+    .ps-hist-table, .att-table, .drev-tbl{width:100%;min-width:0;border-collapse:separate;border-spacing:0;}
+    .ps-hist-table thead, .att-table thead, .drev-tbl thead{display:none;}
+    .ps-hist-table tbody, .att-table tbody, .drev-tbl tbody,
+    .ps-hist-table tbody tr, .att-table tbody tr, .drev-tbl tbody tr{display:block;width:100%;}
+    .ps-hist-table tbody tr, .att-table tbody tr, .drev-tbl tbody tr{
+        background:#fffdf8;border:1px solid #e7e0d0;border-left:3px solid #219688;border-radius:14px;
+        margin-bottom:10px;padding:2px 13px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 20px -14px rgba(60,50,30,.28);}
+    .ps-hist-table tbody tr:last-child, .att-table tbody tr:last-child, .drev-tbl tbody tr:last-child{margin-bottom:0;}
+    .ps-hist-table tbody td, .att-table tbody td, .drev-tbl tbody td{
+        display:flex;align-items:center;justify-content:space-between;gap:12px;
+        padding:8px 0;border-top:1px solid #f4f2ea;white-space:normal;text-align:right;width:auto;}
+    .ps-hist-table tbody td:first-child, .att-table tbody td:first-child, .drev-tbl tbody td:first-child{border-top:none;}
+    .ps-hist-table tbody td::before, .att-table tbody td::before, .drev-tbl tbody td::before{
+        content:attr(data-label);font-size:9.5px;font-weight:800;color:#a59f90;
+        text-transform:uppercase;letter-spacing:.4px;text-align:left;flex-shrink:0;}
+    .ps-hist-table tbody td[data-label=""], .att-table tbody td[data-label=""]{justify-content:center;padding:6px 0;}
+    .ps-hist-table tbody td[data-label=""]::before, .att-table tbody td[data-label=""]::before{content:none;}
+    /* Payslip totals footer becomes its own summary card */
+    .ps-hist-table tfoot, .ps-hist-table tfoot tr{display:block;width:100%;}
+    .ps-hist-table tfoot tr{background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:2px 13px;margin-top:2px;}
+    .ps-hist-table tfoot td{display:flex;justify-content:space-between;align-items:center;gap:12px;
+        color:#fff;background:transparent;border-top:1px solid rgba(255,255,255,.18);padding:8px 0;}
+    .ps-hist-table tfoot td:first-child{border-top:none;justify-content:flex-start;font-size:12px;font-weight:800;}
+    .ps-hist-table tfoot td::before{content:attr(data-label);font-size:9.5px;font-weight:800;
+        color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:.4px;}
+    .ps-hist-table tfoot td[data-label=""]{display:none;}
+    /* ── Payslips tab — drop the desktop table entirely; render the
+       dedicated .ps-mlist card list instead (separate mobile markup). ── */
+    #tab-payslips .table-responsive{display:none;}
+    #tab-payslips .ps-mlist{display:block;}
+
+    /* ── Attendance Records (#att-tbl) — enhanced day card (matches payslip cards) ── */
+    #att-tbl tbody tr{display:flex;flex-wrap:wrap;position:relative;overflow:hidden;padding:13px 14px 2px;}
+    #att-tbl tbody td{border-top:none;padding:0;}
+    #att-tbl tbody td::before{content:none;}
+    /* Header: date (bold) + weekday; attendance-type badge floated top-right */
+    #att-tbl tbody td[data-label="Date"]{order:1;flex:0 0 100%;display:block;text-align:left;padding:0 104px 11px 0;}
+    #att-tbl tbody td[data-label="Date"] div:first-child{font-size:15px;font-weight:800;color:#176358;}
+    #att-tbl tbody td[data-label="Date"] div:last-child{font-size:10.5px;color:#a59f90;font-weight:600;margin-top:1px;}
+    #att-tbl tbody td[data-label="Type"]{position:absolute;top:12px;right:12px;display:block;}
+    /* Work Hours + OT Hours — two equal mini-stats with a divider */
+    #att-tbl tbody td[data-label="Work Hours"],
+    #att-tbl tbody td[data-label="OT Hours"]{
+        order:2;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;
+        padding:11px 4px;border-top:1px solid #f0ece0;text-align:center;}
+    #att-tbl tbody td[data-label="OT Hours"]{border-left:1px solid #f4f2ea;}
+    #att-tbl tbody td[data-label="Work Hours"] > div:first-child{font-size:15px;font-weight:800;color:#176358;}
+    #att-tbl tbody td[data-label="OT Hours"] > span{font-size:15px;}
+    #att-tbl tbody td[data-label="Work Hours"]::before,
+    #att-tbl tbody td[data-label="OT Hours"]::before{
+        content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#a59f90;
+        text-transform:uppercase;letter-spacing:.3px;}
+    #att-tbl tbody td[data-label="Work Hours"] > div{width:100%;max-width:110px;}
+    /* Time In / Out — full-width row */
+    #att-tbl tbody td[data-label="Time In / Out"]{
+        order:3;flex:0 0 100%;display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+        padding:11px 0 10px;border-top:1px solid #f0ece0;text-align:left;}
+    #att-tbl tbody td[data-label="Time In / Out"]::before{
+        content:attr(data-label);font-size:9px;font-weight:800;color:#a59f90;
+        text-transform:uppercase;letter-spacing:.3px;}
+    /* Notes — full-width footer row */
+    #att-tbl tbody td[data-label="Notes"]{
+        order:4;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
+        padding:9px 0 12px;border-top:1px dashed #eadfce;text-align:right;}
+    #att-tbl tbody td[data-label="Notes"]::before{
+        content:"Notes";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+    #att-tbl tbody td.dataTables_empty{flex:0 0 100%;display:block;text-align:center;padding:22px 0;color:#aaa;}
+
+    /* ── My Requests (OT / incident) — request card ── */
+    #att-req-list-wrap .att-table tbody tr{display:flex;flex-wrap:wrap;position:relative;padding:12px 13px 6px;}
+    #att-req-list-wrap .att-table tbody td{border-top:none;padding:0;}
+    #att-req-list-wrap .att-table tbody td::before{content:none;}
+    #att-req-list-wrap .att-table tbody td[data-label="Date"]{
+        order:1;flex:0 0 100%;display:block;text-align:left;font-size:14px;color:#176358;padding:0 110px 1px 0;}
+    #att-req-list-wrap .att-table tbody td[data-label="Type"]{position:absolute;top:13px;right:13px;display:block;}
+    #att-req-list-wrap .att-table tbody td[data-label="Filed"]{
+        order:2;flex:0 0 100%;display:block;text-align:left;font-size:10px !important;color:#a59f90;padding:0 0 10px;}
+    #att-req-list-wrap .att-table tbody td[data-label="Filed"]::before{content:"Filed ";font-size:10px;font-weight:700;color:#c5bfb0;}
+    #att-req-list-wrap .att-table tbody td[data-label="Reason"],
+    #att-req-list-wrap .att-table tbody td[data-label="Details"],
+    #att-req-list-wrap .att-table tbody td[data-label="Status"]{
+        order:3;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
+        padding:8px 0;border-top:1px solid #f0ece0;text-align:right;}
+    #att-req-list-wrap .att-table tbody td[data-label="Reason"]::before,
+    #att-req-list-wrap .att-table tbody td[data-label="Details"]::before,
+    #att-req-list-wrap .att-table tbody td[data-label="Status"]::before{
+        content:attr(data-label);font-size:9px;font-weight:800;color:#a59f90;
+        text-transform:uppercase;letter-spacing:.3px;}
+    #att-req-list-wrap .att-table tbody td[data-label="Reviewer Notes"]{
+        order:4;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
+        padding:8px 0;border-top:1px dashed #f0ece0;text-align:right;}
+    #att-req-list-wrap .att-table tbody td[data-label="Reviewer Notes"]::before{
+        content:"Reviewer";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+
+    /* ── My Leave Requests — leave card ── */
+    #leave-list-wrap .ps-hist-table tbody tr{display:flex;flex-wrap:wrap;position:relative;padding:12px 13px 6px;}
+    #leave-list-wrap .ps-hist-table tbody td{border-top:none;padding:0;}
+    #leave-list-wrap .ps-hist-table tbody td::before{content:none;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Type"]{
+        order:1;flex:0 0 100%;display:block;text-align:left;padding:0 0 1px;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Type"] span{font-size:14px;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Date Applied"]{
+        order:2;flex:0 0 100%;display:block;text-align:left;font-size:10px;color:#a59f90;padding:0 0 10px;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Date Applied"]::before{
+        content:"Filed ";font-size:10px;font-weight:700;color:#c5bfb0;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Period"]{
+        order:3;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
+        padding:8px 0;border-top:1px solid #f0ece0;text-align:right;font-size:12px !important;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Period"]::before{
+        content:"Period";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Days"],
+    #leave-list-wrap .ps-hist-table tbody td[data-label="HR"],
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Final"]{
+        order:4;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
+        padding:9px 4px;border-top:1px solid #f0ece0;text-align:center;font-size:14px;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Days"]::before,
+    #leave-list-wrap .ps-hist-table tbody td[data-label="HR"]::before,
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Final"]::before{
+        content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#a59f90;
+        text-transform:uppercase;letter-spacing:.3px;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]{
+        order:5;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
+        padding:9px 0;border-top:1px solid #f0ece0;text-align:right;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]::before{
+        content:"Status";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+
+    /* ── Contributions (.con-tbl) — remittance card ── */
+    .con-tbl{min-width:0;width:100%;border-collapse:separate;border-spacing:0;}
+    .con-tbl thead{display:none;}
+    .con-tbl tbody, .con-tbl tbody tr{display:block;width:100%;}
+    .con-tbl tbody tr{
+        display:flex;flex-wrap:wrap;background:#fffdf8;border:1px solid #e7e0d0;border-left:3px solid #219688;
+        border-radius:14px;margin-bottom:10px;padding:12px 13px 6px;
+        box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 20px -14px rgba(60,50,30,.28);}
+    .con-tbl tbody td{border-top:none;padding:0;}
+    .con-tbl tbody td[data-label="Pay Period"]{flex:0 0 100%;display:block;text-align:left;padding-bottom:10px;}
+    .con-tbl tbody td[data-label="Contributions"],
+    .con-tbl tbody td[data-label="SSS Provident"],
+    .con-tbl tbody td[data-label="Tax"]{
+        flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
+        padding:9px 4px;border-top:1px solid #f0ece0;text-align:center;font-size:12px;}
+    .con-tbl tbody td[data-label="Contributions"]::before,
+    .con-tbl tbody td[data-label="SSS Provident"]::before,
+    .con-tbl tbody td[data-label="Tax"]::before{
+        content:attr(data-label);display:block;font-size:8.5px;font-weight:800;color:#a59f90;
+        text-transform:uppercase;letter-spacing:.2px;}
+    .con-tbl tbody td[data-label="Total"]{
+        flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
+        padding:9px 0;border-top:1px solid #f0ece0;text-align:right;font-size:14px;}
+    .con-tbl tbody td[data-label="Total"]::before{
+        content:"Total";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+    /* Lifetime totals footer becomes its own gradient summary card */
+    .con-tbl tfoot, .con-tbl tfoot tr{display:block;width:100%;}
+    .con-tbl tfoot tr{background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:2px 13px;margin-top:2px;}
+    .con-tbl tfoot td{display:flex;justify-content:space-between;align-items:center;gap:12px;
+        color:#fff !important;background:transparent;border-top:1px solid rgba(255,255,255,.18);padding:8px 0;font-size:12px;}
+    .con-tbl tfoot td:first-child{border-top:none;justify-content:flex-start;font-size:12px;font-weight:800;}
+    .con-tbl tfoot td::before{content:attr(data-label);font-size:9.5px;font-weight:800;
+        color:rgba(255,255,255,.75);text-transform:uppercase;letter-spacing:.4px;}
+    .con-tbl tfoot td:first-child::before{content:none;}
+    /* DTR review modal total row (uses <th> instead of <td>) */
+    .drev-tbl tfoot, .drev-tbl tfoot tr{display:block;width:100%;}
+    .drev-tbl tfoot tr{background:#e9f5f2;border-radius:10px;padding:2px 12px;margin-top:6px;}
+    .drev-tbl tfoot th{display:flex;justify-content:space-between;align-items:center;gap:12px;
+        text-align:left;padding:7px 0;border-top:1px solid #dcece8;color:#176358;}
+    .drev-tbl tfoot th:first-child{border-top:none;justify-content:flex-start;}
+    .drev-tbl tfoot th[data-label]:not([data-label=""])::before{content:attr(data-label);font-size:9.5px;
+        font-weight:800;color:#7fa89f;text-transform:uppercase;letter-spacing:.4px;}
+    .drev-tbl tfoot th[data-label=""]{display:none;}
+
+    /* Review modals: sticky, thumb-friendly action bar on phones */
+    #modal-dtr-review .modal-footer, #modal-payroll-review .modal-footer{
+        position:sticky;bottom:0;box-shadow:0 -4px 14px rgba(0,0,0,.08);z-index:5;}
+    #modal-dtr-review .modal-footer .d-flex, #modal-payroll-review .modal-footer .d-flex{
+        flex-direction:column-reverse;gap:8px;}
+    #modal-dtr-review .modal-footer .btn, #modal-payroll-review .modal-footer .btn{
+        width:100%;padding:13px 14px;font-size:15px;border-radius:12px;}
+
+    /* ── Payslip review breakdown — full mobile relayout (list, not table) ── */
+    /* Attendance strip: 6-col table → labelled list rows (Label ··· value) */
+    #payroll-review-body .prev-stats .drev-tbl tbody tr{
+        border-left:3px solid #219688;padding:4px 14px;}
+    #payroll-review-body .prev-stats .drev-tbl tbody td{
+        justify-content:space-between;text-align:right;font-weight:800;color:#176358;font-size:13px;padding:9px 0;}
+    #payroll-review-body .prev-stats .drev-tbl tbody td::before{
+        content:attr(data-label);font-size:10px;font-weight:800;color:#a59f90;
+        text-transform:uppercase;letter-spacing:.3px;}
+    /* Earnings / Deductions: two columns → stacked full-width sections */
+    #payroll-review-body .ps-body{grid-template-columns:1fr;}
+    #payroll-review-body .ps-col{padding:14px 16px;}
+    #payroll-review-body .ps-col:first-child{
+        border-right:none;border-bottom:1px solid #f0f5f4;}
+    #payroll-review-body .ps-row{padding:7px 0;}
+    #payroll-review-body .ps-lbl{font-size:12.5px;}
+    #payroll-review-body .ps-val{font-size:13px;}
+    /* Net-pay strip keeps its emphasis, a touch more padding for thumbs */
+    #payroll-review-body .ps-net{padding:16px 18px;}
+    #payroll-review-body .ps-net-val{font-size:22px;}
+}
+
+/* DataTables chrome — pared down to fit the paper theme */
+#att-tbl_wrapper .dataTables_processing{background:#fffdf8;color:#219688;font-weight:700;font-size:12px;border:none;box-shadow:none;}
+#att-tbl_wrapper .dataTables_info{font-size:11px;color:#aaa;padding:10px 14px;}
+#att-tbl_wrapper .dataTables_paginate{padding:8px 14px;}
+#att-tbl_wrapper .dataTables_paginate .paginate_button{padding:4px 10px;margin-left:3px;border-radius:7px;font-size:11px;border:1px solid transparent !important;background:transparent !important;color:#888 !important;}
+#att-tbl_wrapper .dataTables_paginate .paginate_button:hover{background:#f0f5f4 !important;color:#176358 !important;border:1px solid transparent !important;}
+#att-tbl_wrapper .dataTables_paginate .paginate_button.current{background:linear-gradient(135deg,#219688,#176358) !important;color:#fff !important;border:none !important;}
+#att-tbl_wrapper .dataTables_paginate .paginate_button.disabled{opacity:.4;}
+#att-tbl thead th{white-space:nowrap;}
+
 /* Date-range picker trigger */
-.att-range-picker{display:flex;align-items:center;gap:6px;min-width:210px;padding:5px 11px;border:1px solid #cfe3e0;border-radius:8px;background:#f8fdfc;font-size:12px;font-weight:600;color:#176358;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+.att-range-picker{display:flex;align-items:center;gap:6px;width:210px;flex-shrink:0;padding:5px 11px;border:1px solid #cfe3e0;border-radius:8px;background:#f8fdfc;font-size:12px;font-weight:600;color:#176358;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
 .att-range-picker:hover{border-color:#219688;}
-.att-range-picker i:first-child{color:#219688;}
+.att-range-picker i:first-child{color:#219688;flex-shrink:0;}
+/* Fixed-width trigger: the label truncates instead of stretching the box */
+.att-range-picker #att-range-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.att-range-picker i:last-child{flex-shrink:0;margin-left:0 !important;}
 /* daterangepicker theme override → brand teal */
 .daterangepicker td.active,.daterangepicker td.active:hover{background-color:#219688 !important;}
 .daterangepicker td.in-range{background-color:#e6f5f3 !important;color:#176358 !important;}
@@ -494,6 +816,47 @@ body{
 .ytd-box.d .ytd-val{color:#dc3545;}
 .ytd-box.c .ytd-val{color:#6f42c1;}
 .ytd-lbl{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;margin-top:5px;}
+/* Subtle hover lift on stat + chart cards (style polish) */
+.ytd-box{transition:transform .16s,box-shadow .16s;}
+.ytd-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.3);}
+
+/* Pay Insights strip (Overview) */
+.ins-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+.ins-box{display:flex;align-items:center;gap:12px;background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);transition:transform .16s,box-shadow .16s;}
+.ins-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.28);}
+.ins-ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:#e8f7f5;color:#219688;}
+.ins-box.up .ins-ic{background:#eafaf0;color:#0f9d58;} .ins-box.down .ins-ic{background:#fdecea;color:#dc3545;}
+.ins-box.gold .ins-ic{background:#fff6e0;color:#c98a00;} .ins-box.purple .ins-ic{background:#f2edfb;color:#6f42c1;}
+.ins-v{font-size:16px;font-weight:900;line-height:1.05;color:#176358;}
+.ins-box.up .ins-v{color:#0f9d58;} .ins-box.down .ins-v{color:#dc3545;}
+.ins-l{font-size:10px;color:#a59f90;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;font-weight:700;}
+.ins-sub{font-size:10px;color:#b7b1a4;margin-top:1px;}
+
+/* Contributions tab */
+.con-hero{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
+.con-box{background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);padding:14px 16px;border-top:3px solid #219688;transition:transform .16s,box-shadow .16s;}
+.con-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.28);}
+.con-box.b2{border-top-color:#4a5bbf;} .con-box.b3{border-top-color:#b26a00;} .con-box.b4{border-top-color:#176358;}
+.con-cap{font-size:10px;color:#a59f90;text-transform:uppercase;letter-spacing:.4px;font-weight:700;display:flex;align-items:center;gap:5px;}
+.con-val{font-size:19px;font-weight:900;line-height:1;color:#176358;margin-top:7px;}
+.con-box.b2 .con-val{color:#4a5bbf;} .con-box.b3 .con-val{color:#b26a00;}
+.con-note{font-size:10px;color:#b7b1a4;margin-top:5px;}
+.con-intro{background:#f0faf8;border:1px solid #cdeeda;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#4a6b5f;line-height:1.5;margin-bottom:14px;}
+.con-tbl{width:100%;min-width:560px;border-collapse:collapse;font-size:12px;}
+.con-tbl thead th{background:#219688;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;text-align:left;border:none;}
+.con-tbl thead th.r{text-align:right;}
+.con-tbl tbody tr{border-bottom:1px solid #f0f5f4;transition:background .14s;}
+.con-tbl tbody tr:hover{background:#f4fbfa;}
+.con-tbl tbody td{padding:9px 12px;vertical-align:middle;}
+.con-tbl tbody td.r{text-align:right;}
+.con-tbl tfoot td{background:#f4fbfa;padding:9px 12px;font-weight:800;color:#219688;border-top:2px solid #ddecea;}
+.con-tbl tfoot td.r{text-align:right;}
+
+/* Card entrance animation on tab reveal (respects reduced-motion) */
+@keyframes portalFadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
+.tab-panel.active>*{animation:portalFadeUp .38s ease;}
+@media(prefers-reduced-motion:reduce){.tab-panel.active>*{animation:none;}}
+@media(max-width:600px){.ins-strip,.con-hero{grid-template-columns:repeat(2,1fr);}}
 
 /* Net-pay trend mini chart */
 .trend-card{background:#fffdf8;border:1px solid #e7e0d0;border-radius:14px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);padding:16px 18px 12px;margin-bottom:14px;}
@@ -507,8 +870,67 @@ body{
 .trend-col:hover .trend-bar{opacity:.82;}
 .trend-lbl{font-size:9px;color:#aaa;text-align:center;line-height:1.2;}
 
+/* Chart layout grids — 1 column on mobile, split on desktop */
+.chart-grid{display:grid;grid-template-columns:1fr;gap:12px;margin-bottom:12px;}
+.chart-grid>.trend-card{margin-bottom:0;height:100%;}
+@media(min-width:992px){
+    .chart-grid.main{grid-template-columns:2fr 1fr;}
+    .chart-grid.trio{grid-template-columns:repeat(3,1fr);}
+    .chart-grid.duo{grid-template-columns:1fr 1fr;}
+}
+
+/* Needs Your Action */
+.needs-action{background:#fff8ee;border:1px solid #f3e0bf;border-left:4px solid #e6a817;border-radius:12px;padding:12px 14px;margin-bottom:16px;box-shadow:0 8px 22px -16px rgba(120,90,20,.35);}
+.na-head{font-size:13px;font-weight:800;color:#b7791f;display:flex;align-items:center;gap:6px;margin-bottom:8px;}
+.na-items{display:flex;flex-direction:column;gap:7px;}
+.na-item{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #f0e6d2;border-radius:10px;padding:9px 11px;cursor:pointer;text-align:left;width:100%;transition:transform .12s,box-shadow .12s;}
+.na-item:hover{transform:translateX(2px);box-shadow:0 6px 16px -10px rgba(120,90,20,.4);}
+.na-ic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.na-ic.pay{background:#eafaf0;color:#0f9d58;} .na-ic.dtr{background:#fff6e0;color:#c98a00;}
+.na-ic.leave{background:#fdecea;color:#c62828;} .na-ic.req{background:#e6f7fb;color:#0891b2;}
+.na-txt{flex:1;font-size:12.5px;color:#444;font-weight:600;} .na-txt b{color:#111;}
+.na-go{color:#c9a24a;font-size:18px;}
+
+/* Quick actions */
+.qa-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
+.qa-btn{display:flex;align-items:center;gap:10px;background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;padding:12px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#176358;text-align:left;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);transition:transform .15s,box-shadow .15s;}
+.qa-btn:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.28);}
+.qa-btn i{width:34px;height:34px;border-radius:9px;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+.qa-badge{margin-left:auto;background:#e6a817;color:#fff;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;}
+
+/* Upcoming events (Overview) */
+.evt-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px dashed #ece4d2;}
+.evt-row:last-child{border-bottom:none;}
+.evt-date{width:44px;flex-shrink:0;text-align:center;background:#f3f8f7;border:1px solid #ddecea;border-radius:9px;padding:4px 0;}
+.evt-date .d{font-size:15px;font-weight:900;color:#176358;line-height:1.1;}
+.evt-date .m{font-size:9px;font-weight:800;color:#219688;text-transform:uppercase;letter-spacing:.5px;}
+.evt-title{font-size:12px;font-weight:700;color:#33312c;line-height:1.3;}
+.evt-note{font-size:10.5px;color:#999;margin-top:1px;}
+.evt-pill{margin-left:auto;flex-shrink:0;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;}
+.evt-pill.hol{background:#fff0f0;color:#c62828;}
+.evt-pill.act{background:#e8f0ff;color:#0d6efd;}
+
+/* Leave credit mini bars (Overview) */
+.lvc-row{padding:7px 0;border-bottom:1px dashed #ece4d2;}
+.lvc-row:last-child{border-bottom:none;}
+.lvc-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
+.lvc-name{font-size:11.5px;font-weight:700;color:#33312c;}
+.lvc-num{font-size:11px;font-weight:800;color:#176358;}
+.lvc-num .dim2{color:#aaa;font-weight:600;}
+.lvc-bar{height:6px;border-radius:3px;background:#e0eeec;overflow:hidden;}
+.lvc-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#219688,#176358);}
+.lvc-row.spent .lvc-fill{background:#dc3545;}
+
+/* Sticky tab strip on desktop so navigation stays reachable on the wide page */
+@media(min-width:601px){
+    .tab-strip{position:sticky;top:62px;z-index:150;}
+}
+
 @media(max-width:600px){
     .ytd-strip{grid-template-columns:repeat(2,1fr);}
+    .qa-strip{grid-template-columns:repeat(2,1fr);}
+    .qa-btn{flex-direction:column;text-align:center;gap:6px;padding:10px 8px;font-size:11px;}
+    .qa-badge{margin-left:0;}
 }
 
 /* Basic info grid */
@@ -522,10 +944,15 @@ body{
 .info-val.mono{font-family:monospace;font-size:12px;}
 .info-val.teal{color:#219688;}
 
-/* Empty state */
-.empty-state{text-align:center;padding:40px 20px;color:#bbb;}
-.empty-state i{font-size:38px;display:block;margin-bottom:10px;}
-.empty-state p{font-size:12px;margin:0;}
+/* Empty state — uniform card across every tab */
+.empty-state{text-align:center;padding:34px 22px;background:#fffdf8;border:1px solid #e7e0d0;border-radius:14px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);}
+.empty-ic{width:52px;height:52px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:23px;margin:0 auto 12px;}
+.empty-state p{font-size:12.5px;color:#8a857a;margin:0;font-weight:600;line-height:1.5;}
+.empty-state p strong{color:#33312c;}
+.empty-state.success .empty-ic{background:#e8f7f5;color:#219688;}
+.empty-state.success p{color:#176358;font-weight:800;}
+.empty-state.warn .empty-ic{background:#fff3cd;color:#c98a00;}
+.empty-state.warn p{color:#8a6d1a;}
 
 /* bootstrap-select — make the dropdown + search box visible on the paper theme */
 .bootstrap-select .dropdown-toggle{background:#fff !important;border:1px solid #cfe3e0 !important;color:#33312c !important;font-size:13px;border-radius:8px;padding:7px 11px;box-shadow:none !important;}
@@ -565,7 +992,7 @@ body{
 .faq-q i{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:15px;transition:transform .2s;}
 .faq-item.open .faq-q i{transform:rotate(45deg);background:#219688;color:#fff;}
 .faq-a{max-height:0;overflow:hidden;transition:max-height .25s ease;}
-.faq-item.open .faq-a{max-height:240px;}
+.faq-item.open .faq-a{max-height:400px;}
 .faq-a p{margin:0;padding:0 16px 14px;font-size:12px;color:#6f6a60;line-height:1.55;}
 .faq-a code{background:#f0ece0;color:#176358;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;}
 /* contact card */
@@ -580,16 +1007,50 @@ body{
 .portal-foot{text-align:center;font-size:11px;color:#a59f90;margin-top:30px;}
 
 @media(max-width:600px){
+    .portal-wrap{padding:14px 10px 40px;}
+    .ptop{padding:0 12px;}
+    .emp-hdr-top{padding:16px 14px;gap:12px;}
+    .emp-av{width:46px;height:46px;font-size:18px;}
+    .emp-nm{font-size:15px;}
+    .emp-no-badge{padding:4px 8px;font-size:10px;}
     .emp-stats{grid-template-columns:repeat(3,1fr);}
     .est:nth-child(n+4){border-top:1px solid #f0ece0;}
     .ps-body{grid-template-columns:1fr;}
     .ps-col:first-child{border-right:none;border-bottom:1px solid #f0f5f4;}
-    /* Mobile tabs: bigger icon on top + tiny label below */
-    .tab-strip{gap:2px;padding:4px;}
-    .tab-btn{flex-direction:column;gap:3px;padding:7px 2px;font-size:9px;position:relative;min-width:0;}
-    .tab-btn i{font-size:19px;line-height:1;display:block;}
-    .tab-btn span.tab-label{display:block;font-size:8.5px;font-weight:700;line-height:1;}
-    .tab-btn .badge-count{position:absolute;top:3px;right:6px;font-size:8px;padding:0 4px;}
+    .ps-net-val{font-size:20px;}
+    .ytd-val{font-size:16px;}
+
+    /* Clean white app-like surface on mobile (drop the warm paper texture) */
+    body{background-color:#f2f4f7;background-image:none;}
+    .portal-wrap{padding:12px 12px 88px;}   /* room for the fixed bottom nav */
+
+    /* ── Mobile bottom navigation bar (app style) ── */
+    .tab-strip{
+        position:fixed;left:0;right:0;bottom:0;top:auto;margin:0;z-index:400;
+        background:#fff;border:none;border-top:1px solid #eef0f2;
+        border-radius:20px 20px 0 0;
+        box-shadow:0 -6px 24px rgba(20,30,55,.08);
+        padding:8px 4px calc(8px + env(safe-area-inset-bottom,0px));
+        gap:2px;flex-wrap:nowrap;overflow:hidden;   /* 5 items fill the bar — no scroll, no right gap */
+    }
+    .tab-btn{
+        flex:1 1 0;min-width:0;width:auto;max-width:none;flex-direction:column;gap:4px;
+        padding:8px 2px;font-size:9px;position:relative;
+        color:#9aa1ac;background:transparent;border-radius:14px;
+    }
+    .tab-btn i{font-size:21px;line-height:1;display:block;transition:transform .18s;}
+    .tab-btn span.tab-label{display:block;font-size:9px;font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+    /* Active item: soft teal tint + brand color icon/label (no heavy filled block) */
+    .tab-btn.active{background:#e8f7f5;color:#176358;box-shadow:none;}
+    .tab-btn.active i{transform:translateY(-1px);}
+    .tab-btn .badge-count{position:absolute;top:4px;right:9px;font-size:8px;padding:0 4px;}
+    /* On the light mobile "active" background, the translucent-white desktop badge is
+       unreadable — force a solid, high-contrast pill instead. */
+    .tab-btn.active .badge-count{background:#219688;color:#fff;}
+    /* Only the 5 primary items live in the bottom nav; the rest go to the More sheet */
+    .tab-strip .tab-secondary{display:none;}
+    .tab-more{display:flex;}
+
     .help-grid{grid-template-columns:1fr;}
     .gloss-t{min-width:115px;}
 }
@@ -622,90 +1083,331 @@ body{
     margin-bottom: 4px;
     display: block;
 }
+
+/* ── Parsley validation — same look as the admin panel ── */
+.parsley-errors-list { margin-top: 4px; padding: 0; list-style: none; }
+.parsley-errors-list li { color: #de4848; font-size: 11px; margin-top: 2px; }
+.parsley-error, select.parsley-error, textarea.parsley-error {
+    background-color: #fbf5f5 !important;
+    border-color: #de4848 !important;
+}
+.parsley-error:focus, select.parsley-error:focus, textarea.parsley-error:focus {
+    border-color: #e1b3b3 !important;
+    box-shadow: 0 0 0 2px rgba(222,72,72,.15) !important;
+}
+
+/* ── Pull-to-refresh (mobile) ── */
+html, body { overscroll-behavior-y: contain; } /* let our own indicator handle the pull, not the browser's native one */
+#ptr-indicator {
+    position: fixed; top: 54px; left: 50%; margin-left: -19px; z-index: 500;
+    width: 38px; height: 38px; border-radius: 50%; background: #fff;
+    box-shadow: 0 2px 10px rgba(0,0,0,.18);
+    display: flex; align-items: center; justify-content: center;
+    color: #219688; font-size: 19px;
+    transform: translateY(-100px);
+    transition: transform .18s ease, color .15s;
+    pointer-events: none;
+}
+#ptr-indicator.ready { color: #176358; }
+#ptr-indicator.spin i { animation: ptrSpin .7s linear infinite; }
+@keyframes ptrSpin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 
 <div class="ptop">
     <div class="ptop-brand">
-        <div class="ptop-logo">JP</div>
-        Jejors Employee Portal
+        <div class="ptop-logo">CP</div>
+        COMC Employee Portal
     </div>
     <a href="?logout=1" class="ptop-logout"><i class="ri-logout-box-line me-1"></i>Logout</a>
 </div>
 
 <div class="portal-wrap">
 
-    <!-- Employee header -->
-    <div class="emp-hdr">
-        <div class="emp-hdr-top">
-            <div class="emp-av"><?= $initials ?></div>
-            <div style="flex:1;min-width:0;">
-                <div style="font-size:10px;color:rgba(255,255,255,.7);font-weight:600;text-transform:uppercase;letter-spacing:.5px;"><?= $greeting ?>, <?= htmlspecialchars(ucfirst(strtolower($emp['firstname']))) ?>! &middot; <?= date('D, M d, Y') ?></div>
-                <div class="emp-nm"><?= htmlspecialchars($full_name) ?></div>
-                <div class="emp-sub"><?= htmlspecialchars($emp['pos_name']) ?> &bull; <?= htmlspecialchars($emp['dept_name']) ?></div>
-            </div>
-            <div class="emp-no-badge"><?= htmlspecialchars($emp['employee_no']) ?></div>
-        </div>
-        <div class="emp-stats">
-            <div class="est">
-                <div class="est-v"><?= count($payslips) ?></div>
-                <div class="est-l">Payrolls</div>
-            </div>
-            <div class="est">
-                <div class="est-v"><?= n0($total_present) ?></div>
-                <div class="est-l">Days Present</div>
-            </div>
-            <div class="est">
-                <div class="est-v" style="color:#dc3545;"><?= n0($total_absent) ?></div>
-                <div class="est-l">Days Absent</div>
-            </div>
-            <div class="est">
-                <div class="est-v" style="color:#fd7e14;"><?= n0($total_ot) ?></div>
-                <div class="est-l">OT Hours</div>
-            </div>
-            <div class="est">
-                <div class="est-v" style="color:#e83e8c;">₱<?= number_format($total_loan_balance, 0) ?></div>
-                <div class="est-l">Loan Balance</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Tabs -->
+    <!-- Tabs. On mobile only the .tab-primary items + a "More" button show in the
+         bottom nav; .tab-secondary items live in the More sheet. Desktop shows all. -->
+    <?php $more_badge = $dtr_review_pending_count + $att_req_pending_count + $payroll_review_pending_count; ?>
     <div class="tab-strip">
-        <button class="tab-btn active" onclick="switchTab('overview',this)">
-            <i class="ri-dashboard-line"></i><span class="tab-label">Overview</span>
+        <button class="tab-btn tab-primary active" onclick="switchTab('overview',this)">
+            <i class="ri-home-5-line"></i><span class="tab-label">Overview</span>
         </button>
-        <button class="tab-btn" onclick="switchTab('payslips',this)">
+        <button class="tab-btn tab-primary" id="tabbtn-payslips" onclick="switchTab('payslips',this)">
             <i class="ri-file-list-3-line"></i><span class="tab-label">Payslips</span>
-            <span class="badge-count"><?= count($payslips) ?></span>
+            <?php if ($payroll_review_pending_count): ?><span class="badge-count" style="background:#e6a817;"><?= $payroll_review_pending_count ?></span>
+            <?php else: ?><span class="badge-count"><?= count($payslips) ?></span><?php endif; ?>
         </button>
-        <button class="tab-btn" onclick="switchTab('attendance',this)">
+        <button class="tab-btn tab-primary" onclick="switchTab('attendance',this)">
             <i class="ri-calendar-check-line"></i><span class="tab-label">Attendance</span>
-            <span class="badge-count"><?= count($attendance) ?></span>
+            <span class="badge-count"><?= $attendance_count ?></span>
         </button>
-        <?php /* Requests tab hidden — managed via admin portal */ ?>
-        <button class="tab-btn" onclick="switchTab('compare',this)">
-            <i class="ri-arrow-left-right-line"></i><span class="tab-label">Compare</span>
-        </button>
-        <button class="tab-btn" onclick="switchTab('loans',this)">
-            <i class="ri-bank-line"></i><span class="tab-label">Loans</span>
-            <?php if (count($loans)): ?><span class="badge-count"><?= count($loans) ?></span><?php endif; ?>
-        </button>
-        <button class="tab-btn" onclick="switchTab('leave',this)">
+        <button class="tab-btn tab-primary" id="tabbtn-leave" onclick="switchTab('leave',this)">
             <i class="ri-calendar-event-line"></i><span class="tab-label">Leave</span>
             <?php if ($leave_pending_count): ?><span class="badge-count"><?= $leave_pending_count ?></span><?php endif; ?>
         </button>
-        <button class="tab-btn" onclick="switchTab('info',this)">
+        <button class="tab-btn tab-secondary" id="tabbtn-mydtr" onclick="switchTab('mydtr',this)">
+            <i class="ri-draft-line"></i><span class="tab-label">My DTR</span>
+            <?php if ($dtr_review_pending_count): ?><span class="badge-count" style="background:#e6a817;"><?= $dtr_review_pending_count ?></span><?php endif; ?>
+        </button>
+        <button class="tab-btn tab-secondary" id="tabbtn-att-requests" onclick="switchTab('att-requests',this)">
+            <i class="ri-timer-flash-line"></i><span class="tab-label">Requests</span>
+            <?php if ($att_req_pending_count): ?><span class="badge-count"><?= $att_req_pending_count ?></span><?php endif; ?>
+        </button>
+        <button class="tab-btn tab-secondary" onclick="switchTab('compare',this)">
+            <i class="ri-arrow-left-right-line"></i><span class="tab-label">Compare</span>
+        </button>
+        <button class="tab-btn tab-secondary" onclick="switchTab('loans',this)">
+            <i class="ri-bank-line"></i><span class="tab-label">Loans</span>
+            <?php if (count($loans)): ?><span class="badge-count"><?= count($loans) ?></span><?php endif; ?>
+        </button>
+        <button class="tab-btn tab-secondary" onclick="switchTab('contrib',this)">
+            <i class="ri-shield-check-line"></i><span class="tab-label">Contributions</span>
+        </button>
+        <button class="tab-btn tab-secondary" onclick="switchTab('info',this)">
             <i class="ri-profile-line"></i><span class="tab-label">My Info</span>
         </button>
-        <button class="tab-btn" onclick="switchTab('help',this)">
+        <button class="tab-btn tab-secondary" onclick="switchTab('help',this)">
             <i class="ri-question-line"></i><span class="tab-label">Help</span>
         </button>
+        <!-- Mobile-only "More" launcher -->
+        <button type="button" class="tab-btn tab-more" id="tabbtn-more" onclick="openMore()">
+            <i class="ri-apps-2-line"></i><span class="tab-label">More</span>
+            <?php if ($more_badge): ?><span class="badge-count" id="more-badge"><?= $more_badge ?></span><?php endif; ?>
+        </button>
+    </div>
+
+    <!-- More sheet (mobile) — houses the secondary sections -->
+    <div class="more-backdrop" id="more-backdrop" onclick="closeMore()"></div>
+    <div class="more-sheet" id="more-sheet" role="dialog" aria-label="More sections">
+        <div class="more-grip"></div>
+        <div class="more-head">More</div>
+        <div class="more-grid">
+            <button type="button" class="more-item" id="moreitem-mydtr" onclick="goMore('mydtr')">
+                <span class="more-ic" style="background:#fff6e0;color:#c98a00;"><i class="ri-draft-line"></i></span>
+                <span class="more-lbl">My DTR</span>
+                <?php if ($dtr_review_pending_count): ?><span class="more-dot"><?= $dtr_review_pending_count ?></span><?php endif; ?>
+            </button>
+            <button type="button" class="more-item" id="moreitem-att-requests" onclick="goMore('att-requests')">
+                <span class="more-ic" style="background:#e6f7fb;color:#0891b2;"><i class="ri-timer-flash-line"></i></span>
+                <span class="more-lbl">Requests</span>
+                <?php if ($att_req_pending_count): ?><span class="more-dot"><?= $att_req_pending_count ?></span><?php endif; ?>
+            </button>
+            <button type="button" class="more-item" onclick="goMore('compare')">
+                <span class="more-ic" style="background:#eef0f8;color:#4a5bbf;"><i class="ri-arrow-left-right-line"></i></span>
+                <span class="more-lbl">Compare</span>
+            </button>
+            <button type="button" class="more-item" onclick="goMore('loans')">
+                <span class="more-ic" style="background:#fdf0f6;color:#e83e8c;"><i class="ri-bank-line"></i></span>
+                <span class="more-lbl">Loans</span>
+                <?php if (count($loans)): ?><span class="more-dot"><?= count($loans) ?></span><?php endif; ?>
+            </button>
+            <button type="button" class="more-item" onclick="goMore('contrib')">
+                <span class="more-ic" style="background:#eef7f5;color:#176358;"><i class="ri-shield-check-line"></i></span>
+                <span class="more-lbl">Contributions</span>
+            </button>
+            <button type="button" class="more-item" onclick="goMore('info')">
+                <span class="more-ic" style="background:#e8f7f5;color:#219688;"><i class="ri-profile-line"></i></span>
+                <span class="more-lbl">My Info</span>
+            </button>
+            <button type="button" class="more-item" onclick="goMore('help')">
+                <span class="more-ic" style="background:#eafaf0;color:#0f9d58;"><i class="ri-question-line"></i></span>
+                <span class="more-lbl">Help</span>
+            </button>
+        </div>
     </div>
 
     <!-- ── Tab: Overview ── -->
     <div class="tab-panel active" id="tab-overview">
+
+        <!-- Needs Your Action -->
+        <?php $needs_total = $payroll_review_pending_count + $dtr_review_pending_count + $leave_pending_count + $att_req_pending_count; ?>
+        <?php if ($needs_total): ?>
+        <div class="needs-action">
+            <div class="na-head"><i class="ri-alarm-warning-line"></i> Needs Your Action</div>
+            <div class="na-items">
+                <?php if ($payroll_review_pending_count): ?>
+                <button type="button" class="na-item" data-na-key="pay" onclick="switchTab('payslips',null)">
+                    <span class="na-ic pay"><i class="ri-file-list-3-line"></i></span>
+                    <span class="na-txt"><b><?= $payroll_review_pending_count ?></b> payslip<?= $payroll_review_pending_count == 1 ? '' : 's' ?> to review</span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
+                <?php if ($dtr_review_pending_count): ?>
+                <button type="button" class="na-item" data-na-key="dtr" onclick="switchTab('mydtr',null)">
+                    <span class="na-ic dtr"><i class="ri-draft-line"></i></span>
+                    <span class="na-txt"><b><?= $dtr_review_pending_count ?></b> DTR<?= $dtr_review_pending_count == 1 ? '' : 's' ?> to review</span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
+                <?php if ($leave_pending_count): ?>
+                <button type="button" class="na-item" data-na-key="leave" onclick="switchTab('leave',null)">
+                    <span class="na-ic leave"><i class="ri-calendar-event-line"></i></span>
+                    <span class="na-txt"><b><?= $leave_pending_count ?></b> leave request<?= $leave_pending_count == 1 ? '' : 's' ?> pending</span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
+                <?php if ($att_req_pending_count): ?>
+                <button type="button" class="na-item" data-na-key="req" onclick="switchTab('att-requests',null)">
+                    <span class="na-ic req"><i class="ri-timer-flash-line"></i></span>
+                    <span class="na-txt"><b><?= $att_req_pending_count ?></b> OT / incident request<?= $att_req_pending_count == 1 ? '' : 's' ?> pending</span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+
+        <!-- Employee header -->
+        <div class="emp-hdr" id="emp-hdr">
+            <div class="emp-hdr-top">
+                <div class="emp-av"><?= $initials ?></div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:10px;color:rgba(255,255,255,.7);font-weight:600;text-transform:uppercase;letter-spacing:.5px;"><?= $greeting ?>, <?= htmlspecialchars(ucfirst(strtolower($emp['firstname']))) ?>! &middot; <?= date('D, M d, Y') ?></div>
+                    <div class="emp-nm"><?= htmlspecialchars($full_name) ?></div>
+                    <div class="emp-sub"><?= htmlspecialchars($emp['pos_name']) ?> &bull; <?= htmlspecialchars($emp['dept_name']) ?></div>
+                </div>
+                <div class="emp-hdr-right">
+                    <div class="emp-bell" id="emp-bell" onclick="toggleEmpBell(event)">
+                        <i class="ri-notification-3-line"></i>
+                        <span class="emp-bell-dot" id="emp-bell-dot" style="display:none;"></span>
+                    </div>
+                    <div class="emp-no-badge"><?= htmlspecialchars($emp['employee_no']) ?></div>
+                </div>
+            </div>
+
+            <!-- Notification dropdown -->
+            <div class="emp-notif-panel" id="emp-notif-panel">
+                <div class="emp-notif-head">
+                    <span><i class="ri-notification-3-line me-1"></i>Notifications</span>
+                    <button type="button" onclick="empMarkAllRead()" class="emp-notif-allread">Mark all read</button>
+                </div>
+                <div class="emp-notif-list" id="emp-notif-list">
+                    <div class="emp-notif-empty">Loading…</div>
+                </div>
+            </div>
+            <div class="emp-stats">
+                <div class="est">
+                    <div class="est-v"><?= count($payslips) ?></div>
+                    <div class="est-l">Payrolls</div>
+                </div>
+                <div class="est">
+                    <div class="est-v"><?= n0($total_present) ?></div>
+                    <div class="est-l">Days Present</div>
+                </div>
+                <div class="est">
+                    <div class="est-v" style="color:#dc3545;"><?= n0($total_absent) ?></div>
+                    <div class="est-l">Days Absent</div>
+                </div>
+                <div class="est">
+                    <div class="est-v" style="color:#fd7e14;"><?= n0($total_ot) ?></div>
+                    <div class="est-l">OT Hours</div>
+                </div>
+                <div class="est">
+                    <div class="est-v" style="color:#e83e8c;">₱<?= number_format($total_loan_balance, 0) ?></div>
+                    <div class="est-l">Loan Balance</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="qa-strip">
+            <button type="button" class="qa-btn" id="qa-payslips" onclick="switchTab('payslips',null)">
+                <i class="ri-file-list-3-line"></i><span>View My<br>Payslips</span>
+                <?php if ($payroll_review_pending_count): ?><span class="qa-badge"><?= $payroll_review_pending_count ?></span><?php endif; ?>
+            </button>
+            <?php if ($portal_leave_eligible): ?>
+            <button type="button" class="qa-btn" onclick="switchTab('leave',null)">
+                <i class="ri-calendar-event-line"></i><span>Request<br>a Leave</span>
+            </button>
+            <?php else: ?>
+            <button type="button" class="qa-btn" onclick="switchTab('attendance',null)">
+                <i class="ri-calendar-check-line"></i><span>My<br>Attendance</span>
+            </button>
+            <?php endif; ?>
+            <button type="button" class="qa-btn" onclick="switchTab('att-requests',null)">
+                <i class="ri-timer-flash-line"></i><span>File OT /<br>Incident</span>
+            </button>
+            <button type="button" class="qa-btn" id="qa-mydtr" onclick="switchTab('mydtr',null)">
+                <i class="ri-draft-line"></i><span>Review<br>My DTR</span>
+                <?php if ($dtr_review_pending_count): ?><span class="qa-badge"><?= $dtr_review_pending_count ?></span><?php endif; ?>
+            </button>
+        </div>
+
+        <!-- My Work Schedule (current + upcoming) -->
+        <?php
+        $sched_cur = null; $sched_upcoming = [];
+        $scq = $conn->query("SELECT ws.description, ws.start_time, ws.end_time, ws.total_hours, ws.is_graveyard, es.effective_from
+            FROM employee_schedules es INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = $emp_id AND es.effective_from <= CURDATE()
+              AND (es.effective_to IS NULL OR es.effective_to >= CURDATE())
+            ORDER BY es.effective_from DESC LIMIT 1");
+        if ($scq) $sched_cur = $scq->fetch_assoc();
+        $suq = $conn->query("SELECT ws.description, ws.start_time, ws.end_time, es.effective_from
+            FROM employee_schedules es INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = $emp_id AND es.effective_from > CURDATE()
+            ORDER BY es.effective_from ASC");
+        if ($suq) while ($u = $suq->fetch_assoc()) $sched_upcoming[] = $u;
+        ?>
+        <div class="sec"><i class="ri-time-line"></i>My Work Schedule</div>
+        <div style="background:#fff;border:1px solid #e6ebe9;border-radius:14px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.04);">
+            <?php if ($sched_cur): ?>
+            <div style="display:flex;align-items:center;gap:12px;">
+                <div style="width:42px;height:42px;border-radius:12px;background:#e6fffb;color:#009688;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="ri-time-line" style="font-size:20px;"></i>
+                </div>
+                <div style="flex:1;min-width:0;">
+                    <div style="font-size:10px;color:#8a9a95;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Current Shift</div>
+                    <div style="font-size:15px;font-weight:700;color:#1b2b27;"><?= htmlspecialchars($sched_cur['description']) ?>
+                        <?php if ($sched_cur['is_graveyard']): ?><span style="font-size:10px;background:#2b2b3a;color:#fff;padding:1px 6px;border-radius:6px;vertical-align:middle;"><i class="ri-moon-line"></i> Night</span><?php endif; ?>
+                    </div>
+                    <div style="font-size:12px;color:#5c6b66;">
+                        <?= date('h:i A', strtotime($sched_cur['start_time'])) ?> – <?= date('h:i A', strtotime($sched_cur['end_time'])) ?>
+                        &nbsp;·&nbsp; <?= rtrim(rtrim($sched_cur['total_hours'], '0'), '.') ?> hrs
+                    </div>
+                </div>
+            </div>
+            <?php else: ?>
+            <div style="font-size:13px;color:#8a9a95;"><i class="ri-information-line me-1"></i>No work schedule assigned yet.</div>
+            <?php endif; ?>
+
+            <?php if (count($sched_upcoming)): ?>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e6ebe9;">
+                <div style="font-size:10px;color:#ad6800;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;"><i class="ri-calendar-schedule-line me-1"></i>Upcoming Changes</div>
+                <?php foreach ($sched_upcoming as $up): ?>
+                <div style="display:flex;align-items:center;gap:10px;padding:6px 0;">
+                    <div style="font-size:11px;font-weight:700;color:#ad6800;background:#fff7e6;border:1px solid #ffe7ba;border-radius:8px;padding:3px 9px;white-space:nowrap;">
+                        <?= date('M j', strtotime($up['effective_from'])) ?>
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;font-weight:600;color:#1b2b27;"><?= htmlspecialchars($up['description']) ?></div>
+                        <div style="font-size:11px;color:#8a9a95;"><?= date('h:i A', strtotime($up['start_time'])) ?> – <?= date('h:i A', strtotime($up['end_time'])) ?> &nbsp;·&nbsp; from <?= date('F j, Y', strtotime($up['effective_from'])) ?></div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- This-month attendance summary -->
+        <div class="sec"><i class="ri-calendar-check-line"></i><?= date('F Y') ?> Attendance</div>
+        <div class="ytd-strip">
+            <div class="ytd-box g">
+                <div class="ytd-val"><?= nd($att_summary['days']) ?></div>
+                <div class="ytd-lbl">Days Present</div>
+            </div>
+            <div class="ytd-box n">
+                <div class="ytd-val"><?= nd(round($att_summary['hours'], 1)) ?></div>
+                <div class="ytd-lbl">Hours Worked</div>
+            </div>
+            <div class="ytd-box c">
+                <div class="ytd-val"><?= nd(round($att_summary['ot'], 1)) ?></div>
+                <div class="ytd-lbl">OT Hours</div>
+            </div>
+            <div class="ytd-box g">
+                <div class="ytd-val"><?= nd(round($att_avg_hrs, 1)) ?></div>
+                <div class="ytd-lbl">Avg Hrs / Day</div>
+            </div>
+        </div>
 
         <!-- Year-to-date summary -->
         <div class="sec"><i class="ri-calendar-2-line"></i><?= $cur_year ?> Year-to-Date</div>
@@ -728,29 +1430,131 @@ body{
             </div>
         </div>
 
-        <!-- Charts -->
-        <?php if (count($chart['labels']) > 1): ?>
-        <div class="sec"><i class="ri-bar-chart-2-line"></i>My Payroll Charts</div>
-        <div class="trend-card">
-            <div class="trend-head">
-                <span class="trend-title"><i class="ri-line-chart-line me-1"></i>Net Pay vs Gross Pay</span>
-                <span style="font-size:10px;color:#aaa;">Last <?= count($chart['labels']) ?> periods</span>
+        <!-- Pay insights -->
+        <?php if ($latest): ?>
+        <div class="sec"><i class="ri-lightbulb-flash-line"></i>Pay Insights</div>
+        <div class="ins-strip">
+            <?php
+            $d_cls = 'gold'; $d_ic = 'ri-subtract-line';
+            $d_val = '₱'.n0($latest['net']); $d_sub = 'your first payslip';
+            if ($net_delta !== null) {
+                if     ($net_delta > 0) { $d_cls = 'up';   $d_ic = 'ri-arrow-up-line'; }
+                elseif ($net_delta < 0) { $d_cls = 'down'; $d_ic = 'ri-arrow-down-line'; }
+                else                    { $d_cls = 'gold'; $d_ic = 'ri-subtract-line'; }
+                $d_val = ($net_delta >= 0 ? '+₱' : '−₱').n0(abs($net_delta));
+                $d_sub = ($net_delta_pct >= 0 ? '+' : '−').number_format(abs($net_delta_pct), 1).'% vs last period';
+            }
+            ?>
+            <div class="ins-box <?= $d_cls ?>">
+                <div class="ins-ic"><i class="<?= $d_ic ?>"></i></div>
+                <div><div class="ins-v"><?= $d_val ?></div><div class="ins-l">Net Change</div><div class="ins-sub"><?= $d_sub ?></div></div>
             </div>
-            <div id="chart-pay"></div>
+            <div class="ins-box">
+                <div class="ins-ic"><i class="ri-scales-3-line"></i></div>
+                <div><div class="ins-v">₱<?= n0($avg_net) ?></div><div class="ins-l">Average Net</div><div class="ins-sub">across <?= $ps_count ?> payslip<?= $ps_count == 1 ? '' : 's' ?></div></div>
+            </div>
+            <div class="ins-box gold">
+                <div class="ins-ic"><i class="ri-trophy-line"></i></div>
+                <div><div class="ins-v">₱<?= n0($best_net) ?></div><div class="ins-l">Highest Net</div><div class="ins-sub">best pay period</div></div>
+            </div>
+            <div class="ins-box purple">
+                <div class="ins-ic"><i class="ri-checkbox-circle-line"></i></div>
+                <div><div class="ins-v"><?= $att_rate !== null ? number_format($att_rate, 0).'%' : '—' ?></div><div class="ins-l">Attendance <?= $cur_year ?></div><div class="ins-sub"><?= $att_rate !== null ? nd($yr_present).'d present · '.nd($yr_absent).'d absent' : 'no records yet' ?></div></div>
+            </div>
         </div>
-        <div class="row g-3" style="margin:0 0 14px;">
-            <div class="col-12 col-md-6" style="padding-left:0;">
-                <div class="trend-card" style="margin-bottom:0;height:100%;">
-                    <div class="trend-head"><span class="trend-title"><i class="ri-alarm-warning-line me-1"></i>Late (mins) &amp; OT (hrs)</span></div>
-                    <div id="chart-lateot"></div>
+        <?php endif; ?>
+
+        <!-- Charts -->
+        <?php $has_trend = count($chart['labels']) > 1; $has_ded_chart = count($ded_breakdown) > 0; ?>
+        <?php if ($has_trend || $has_ded_chart): ?>
+        <div class="sec"><i class="ri-bar-chart-2-line"></i>My Payroll Charts</div>
+        <div class="chart-grid <?= ($has_trend && $has_ded_chart) ? 'main' : '' ?>">
+            <?php if ($has_trend): ?>
+            <div class="trend-card">
+                <div class="trend-head">
+                    <span class="trend-title"><i class="ri-line-chart-line me-1"></i>Net Pay vs Gross Pay</span>
+                    <span style="font-size:10px;color:#aaa;">Last <?= count($chart['labels']) ?> periods</span>
                 </div>
+                <div id="chart-pay"></div>
             </div>
-            <div class="col-12 col-md-6" style="padding-right:0;">
-                <div class="trend-card" style="margin-bottom:0;height:100%;">
-                    <div class="trend-head"><span class="trend-title"><i class="ri-calendar-check-line me-1"></i>Days Present vs Absent</span></div>
-                    <div id="chart-attend"></div>
+            <?php endif; ?>
+            <?php if ($has_ded_chart): ?>
+            <div class="trend-card">
+                <div class="trend-head">
+                    <span class="trend-title"><i class="ri-pie-chart-2-line me-1"></i>Where Deductions Go</span>
+                    <span style="font-size:10px;color:#aaa;">Latest payslip</span>
                 </div>
+                <div id="chart-deduct"></div>
             </div>
+            <?php endif; ?>
+        </div>
+        <?php if ($has_trend): ?>
+        <div class="chart-grid trio" style="margin-bottom:14px;">
+            <div class="trend-card">
+                <div class="trend-head"><span class="trend-title"><i class="ri-alarm-warning-line me-1"></i>Late (minutes)</span></div>
+                <div id="chart-late"></div>
+            </div>
+            <div class="trend-card">
+                <div class="trend-head"><span class="trend-title"><i class="ri-timer-flash-line me-1"></i>Overtime (hours)</span></div>
+                <div id="chart-ot"></div>
+            </div>
+            <div class="trend-card">
+                <div class="trend-head"><span class="trend-title"><i class="ri-calendar-check-line me-1"></i>Days Present vs Absent</span></div>
+                <div id="chart-attend"></div>
+            </div>
+        </div>
+        <?php endif; ?>
+        <?php endif; ?>
+
+        <!-- Upcoming events + leave credits at a glance -->
+        <?php $show_lvc = $portal_leave_eligible && count($leave_balance) > 0; ?>
+        <?php if (count($calendar_events_portal) || $show_lvc): ?>
+        <div class="sec"><i class="ri-compass-3-line"></i>At a Glance</div>
+        <div class="chart-grid <?= (count($calendar_events_portal) && $show_lvc) ? 'duo' : '' ?>" style="margin-bottom:14px;">
+            <?php if (count($calendar_events_portal)): ?>
+            <div class="trend-card">
+                <div class="trend-head">
+                    <span class="trend-title"><i class="ri-calendar-2-line me-1"></i>Upcoming Holidays &amp; Activities</span>
+                    <a href="javascript:void(0)" onclick="switchTab('leave',null)" style="font-size:10px;color:#219688;font-weight:700;text-decoration:none;">See all →</a>
+                </div>
+                <?php foreach (array_slice($calendar_events_portal, 0, 5) as $ev):
+                    $isHol = $ev['type'] == 1; $st = strtotime($ev['start_date']); ?>
+                <div class="evt-row">
+                    <div class="evt-date"><div class="d"><?= date('d', $st) ?></div><div class="m"><?= date('M', $st) ?></div></div>
+                    <div style="min-width:0;">
+                        <div class="evt-title"><?= htmlspecialchars($ev['title']) ?></div>
+                        <?php if ($ev['end_date'] && $ev['end_date'] != $ev['start_date']): ?>
+                        <div class="evt-note">until <?= date('M d, Y', strtotime($ev['end_date'])) ?></div>
+                        <?php elseif ($ev['note']): ?>
+                        <div class="evt-note"><?= htmlspecialchars(mb_strimwidth($ev['note'], 0, 50, '…')) ?></div>
+                        <?php endif; ?>
+                    </div>
+                    <span class="evt-pill <?= $isHol ? 'hol' : 'act' ?>"><?= $isHol ? 'Holiday' : 'Activity' ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+            <?php if ($show_lvc): ?>
+            <div class="trend-card">
+                <div class="trend-head">
+                    <span class="trend-title"><i class="ri-coins-line me-1"></i>My Leave Credits</span>
+                    <a href="javascript:void(0)" onclick="switchTab('leave',null)" style="font-size:10px;color:#219688;font-weight:700;text-decoration:none;">Request →</a>
+                </div>
+                <?php foreach ($leave_balance as $b):
+                    $avail = (float)$b['credits']; $used = (float)$b['used']; $rem = max(0, $avail - $used);
+                    $pct = $avail > 0 ? round($rem / $avail * 100) : 0;
+                    $fmtn = function ($n) { return rtrim(rtrim(number_format($n, 1), '0'), '.'); };
+                ?>
+                <div class="lvc-row <?= $rem <= 0 ? 'spent' : '' ?>">
+                    <div class="lvc-top">
+                        <span class="lvc-name"><?= htmlspecialchars($b['name']) ?></span>
+                        <span class="lvc-num"><?= $fmtn($rem) ?> <span class="dim2">/ <?= $fmtn($avail) ?> days left</span></span>
+                    </div>
+                    <div class="lvc-bar"><div class="lvc-fill" style="width:<?= $pct ?>%;"></div></div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -789,8 +1593,8 @@ body{
                     <?php if ($late_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Late (<?= number_format($latest['late']) ?> min)</span><span class="ps-val ded">−₱<?= n2($late_amt) ?></span></div>
                     <?php endif; ?>
-                    <?php if ($ut_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Undertime (<?= number_format($latest['under_time']) ?> min)</span><span class="ps-val ded">−₱<?= n2($ut_amt) ?></span></div>
+                    <?php if ($latest['under_time'] > 0): ?>
+                    <div class="ps-row"><span class="ps-lbl dim">Undertime (<?= number_format($latest['under_time']) ?> min)</span><span class="ps-val dim">not deducted</span></div>
                     <?php endif; ?>
                     <div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#219688;">Gross Pay</span><span class="ps-val earn" style="font-size:15px;font-weight:900;">₱<?= n2($gross) ?></span></div>
                 </div>
@@ -831,7 +1635,7 @@ body{
             </div>
         </div>
         <?php else: ?>
-        <div class="empty-state"><i class="ri-file-text-line"></i><p>No payslip records yet.</p></div>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-file-text-line"></i></div><p>No payslip records yet.</p></div>
         <?php endif; ?>
     </div>
 
@@ -840,14 +1644,20 @@ body{
         <div class="sec"><i class="ri-file-list-3-line"></i>All Payslips</div>
         <?php if (count($payslips)): ?>
         <div class="paper" style="border-radius:14px;overflow:hidden;">
-            <div style="padding:10px 14px;border-bottom:1px solid #f0f5f4;display:flex;justify-content:space-between;align-items:center;">
+            <div style="padding:10px 14px;border-bottom:1px solid #f0f5f4;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
                 <span style="font-size:12px;color:#888;"><?= count($payslips) ?> payroll period<?= count($payslips)>1?'s':'' ?></span>
-                <input type="text" id="ps-search" class="form-control form-control-sm" placeholder="Search period…" style="max-width:160px;">
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <button type="button" id="ps-print-selected" class="mydtr-btn primary" onclick="printSelectedMyPayslips()" style="display:none;">
+                        <i class="ri-printer-line me-1"></i>Print Selected (<span id="ps-sel-count">0</span>)
+                    </button>
+                    <input type="text" id="ps-search" class="form-control form-control-sm" placeholder="Search period…" style="max-width:160px;">
+                </div>
             </div>
             <div class="table-responsive">
             <table class="ps-hist-table" id="ps-hist">
                 <thead>
                     <tr>
+                        <th style="width:30px;text-align:center;"><input type="checkbox" id="ps-check-all" title="Select all"></th>
                         <th>Pay Period</th>
                         <th>Ref No.</th>
                         <th class="r">Present</th>
@@ -863,6 +1673,8 @@ body{
                 <tbody>
                 <?php
                 $t_net=0; $t_gross=0; $t_ded=0;
+                $payrollReviewJs = [];
+                $psMobile = [];
                 foreach ($payslips as $ps):
                     $pm2    = $ps['per_day'] / 480;
                     $at2    = $ps['allowance_amount'] * $ps['allowance_days'];
@@ -872,63 +1684,184 @@ body{
                     $lgl2   = $ps['legal_holiday'] * $ps['per_day'];
                     $sun2   = $ps['sunday_duty']   * $ps['per_day'];
                     $spc2   = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
+                    $ut2    = $ps['under_time'] * $pm2;   // shown as info only; not part of gross
                     $sub2   = ($ps['basic_pay'] + $at2 - $ab2) / 2;
+                    // Gross mirrors the admin semi-monthly (type 5) formula — no undertime term.
                     $gr2    = $sub2 + $ot2 + $lgl2 + $sun2 + $spc2 - $la2;
                     $ded2   = $ps['deduction_amount'] + $ps['other_deduction'] + $ps['tax'] + $ps['jei_advances'] + $ps['jcc_advances'] + $ps['sss_fund'];
                     $t_net+=$ps['net']; $t_gross+=$gr2; $t_ded+=$ded2;
+                    $psStatus = (int) $ps['payroll_status'];
+                    $psReview = $ps['review_status'] === null ? null : (int) $ps['review_status'];
+                    $payrollReviewJs[(int)$ps['payroll_id']] = [
+                        'period'  => date('M d', strtotime($ps['date_from'])) . ' – ' . date('M d, Y', strtotime($ps['date_to'])),
+                        'ref_no'  => $ps['ref_no'],
+                        'present' => $ps['present'], 'absent' => $ps['absent'], 'late' => $ps['late'], 'ot' => $ps['ot'],
+                        'gross'   => n2($gr2), 'deductions' => n2($ded2), 'net' => n2($ps['net']),
+                        // Full earnings breakdown (mirrors the Latest Payslip card)
+                        'per_day'    => n2($ps['per_day']),
+                        'basic'      => n2($ps['basic_pay']),
+                        'allow_days' => nd($ps['allowance_days']), 'allow_rate' => n2($ps['allowance_amount']), 'allow_amt' => n2($at2),
+                        'absent_amt' => n2($ab2),
+                        'subtotal'   => n2($sub2),
+                        'ot_hrs'     => nd($ps['ot']), 'ot_rate' => n2($ps['ot_rate']), 'ot_amt' => n2($ot2),
+                        'lgl_days'   => nd($ps['legal_holiday']),   'lgl_amt' => n2($lgl2),
+                        'sun_days'   => nd($ps['sunday_duty']),     'sun_amt' => n2($sun2),
+                        'spc_days'   => nd($ps['special_holiday']), 'spc_amt' => n2($spc2),
+                        'late_min'   => number_format($ps['late']), 'late_amt' => n2($la2),
+                        'ut_min'     => number_format($ps['under_time']), 'ut_amt' => n2($ut2),
+                        // Full deductions breakdown
+                        'd_contrib'  => n2($ps['deduction_amount']),
+                        'd_sssfund'  => n2($ps['sss_fund']),
+                        'd_tax'      => n2($ps['tax']),
+                        'd_jei'      => n2($ps['jei_advances']),
+                        'd_jcc'      => n2($ps['jcc_advances']),
+                        'd_other'    => n2($ps['other_deduction']),
+                        'review_status'  => $psReview,
+                        'review_comment' => $ps['review_comment'],
+                        'admin_reply'    => $ps['review_admin_reply'],
+                        'resolved_at'    => $ps['review_resolved_at'],
+                    ];
+                    $psMobile[] = [
+                        'item_id'    => (int)$ps['item_id'],
+                        'payroll_id' => (int)$ps['payroll_id'],
+                        'period'     => date('M d', strtotime($ps['date_from'])) . ' – ' . date('M d, Y', strtotime($ps['date_to'])),
+                        'year'       => date('Y', strtotime($ps['date_from'])),
+                        'ref'        => $ps['ref_no'],
+                        'present'    => $ps['present'], 'absent' => $ps['absent'], 'late' => $ps['late'], 'ot' => $ps['ot'],
+                        'gross'      => n2($gr2), 'ded' => n2($ded2), 'net' => n2($ps['net']),
+                        'status'     => $psStatus, 'review' => $psReview,
+                    ];
                 ?>
-                <tr onclick="window.open('view_payslip.php?id=<?= $ps['item_id'] ?>','_blank','width=900,height=700,scrollbars=yes')" title="Click to view payslip">
-                    <td>
+                <tr data-payroll-id="<?= (int)$ps['payroll_id'] ?>" onclick="openPayslipPreview(<?= (int)$ps['item_id'] ?>)" title="Click to preview payslip">
+                    <td class="ps-chk-td" data-label="" style="text-align:center;" onclick="event.stopPropagation();">
+                        <input type="checkbox" class="ps-sel-check" value="<?= (int)$ps['item_id'] ?>">
+                    </td>
+                    <td data-label="Pay Period">
                         <div style="font-weight:700;font-size:12px;"><?= date('M d', strtotime($ps['date_from'])) ?> – <?= date('M d, Y', strtotime($ps['date_to'])) ?></div>
                         <div style="font-size:10px;color:#aaa;"><?= date('Y', strtotime($ps['date_from'])) ?></div>
                     </td>
-                    <td><span style="font-family:monospace;font-size:11px;font-weight:700;color:#219688;"><?= htmlspecialchars($ps['ref_no']) ?></span></td>
-                    <td class="r"><span class="present-pill"><?= $ps['present'] ?>d</span></td>
-                    <td class="r"><?= $ps['absent'] > 0 ? '<span class="absent-pill">'.$ps['absent'].'d</span>' : '<span style="color:#ccc;">—</span>' ?></td>
-                    <td class="r"><?= $ps['late'] > 0 ? '<span class="late-pill">'.number_format($ps['late']).'m</span>' : '<span style="color:#ccc;">—</span>' ?></td>
-                    <td class="r"><?= $ps['ot'] > 0 ? '<span style="color:#fd7e14;font-weight:700;">'.$ps['ot'].'h</span>' : '<span style="color:#ccc;">—</span>' ?></td>
-                    <td class="r" style="font-weight:700;color:#219688;">₱<?= n2($gr2) ?></td>
-                    <td class="r" style="color:#dc3545;">₱<?= n2($ded2) ?></td>
-                    <td class="r"><span class="net-badge">₱<?= n2($ps['net']) ?></span></td>
-                    <td class="r"><i class="ri-eye-line" style="color:#ccc;font-size:14px;"></i></td>
+                    <td data-label="Ref No."><span style="font-family:monospace;font-size:11px;font-weight:700;color:#219688;"><?= htmlspecialchars($ps['ref_no']) ?></span></td>
+                    <td class="r" data-label="Present"><span class="present-pill"><?= $ps['present'] ?>d</span></td>
+                    <td class="r" data-label="Absent"><?= $ps['absent'] > 0 ? '<span class="absent-pill">'.$ps['absent'].'d</span>' : '<span style="color:#ccc;">—</span>' ?></td>
+                    <td class="r" data-label="Late"><?= $ps['late'] > 0 ? '<span class="late-pill">'.number_format($ps['late']).'m</span>' : '<span style="color:#ccc;">—</span>' ?></td>
+                    <td class="r" data-label="OT"><?= $ps['ot'] > 0 ? '<span style="color:#fd7e14;font-weight:700;">'.$ps['ot'].'h</span>' : '<span style="color:#ccc;">—</span>' ?></td>
+                    <td class="r" data-label="Gross" style="font-weight:700;color:#219688;">₱<?= n2($gr2) ?></td>
+                    <td class="r" data-label="Deductions" style="color:#dc3545;">₱<?= n2($ded2) ?></td>
+                    <td class="r" data-label="Net Pay"><span class="net-badge">₱<?= n2($ps['net']) ?></span></td>
+                    <td class="r" data-label="">
+                        <?php if ($psStatus === 3): ?>
+                            <?php if ($psReview === null): ?>
+                                <div class="d-flex flex-column align-items-end gap-1">
+                                    <span class="mydtr-badge review">Awaiting review</span>
+                                    <button type="button" class="mydtr-btn primary" onclick="event.stopPropagation(); openPayrollReview(<?= (int)$ps['payroll_id'] ?>)">Review</button>
+                                </div>
+                            <?php elseif ($psReview === 1): ?>
+                                <div class="d-flex flex-column align-items-end gap-1">
+                                    <span class="mydtr-badge ok">Confirmed</span>
+                                    <button type="button" class="mydtr-btn ghost" onclick="event.stopPropagation(); openPayrollReview(<?= (int)$ps['payroll_id'] ?>)">Update</button>
+                                </div>
+                            <?php else: ?>
+                                <div class="d-flex flex-column align-items-end gap-1">
+                                    <span class="mydtr-badge dispute">Disputed</span>
+                                    <button type="button" class="mydtr-btn ghost" onclick="event.stopPropagation(); openPayrollReview(<?= (int)$ps['payroll_id'] ?>)">Update</button>
+                                </div>
+                            <?php endif; ?>
+                        <?php else: ?>
+                            <i class="ri-eye-line"></i>
+                        <?php endif; ?>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
                 </tbody>
                 <tfoot>
                     <tr>
-                        <td colspan="6">TOTAL (<?= count($payslips) ?> periods)</td>
-                        <td class="r">₱<?= n2($t_gross) ?></td>
-                        <td class="r" style="color:#dc3545;">₱<?= n2($t_ded) ?></td>
-                        <td class="r" style="color:#219688;font-size:14px;">₱<?= n2($t_net) ?></td>
-                        <td></td>
+                        <td colspan="7">TOTAL (<?= count($payslips) ?> periods)</td>
+                        <td class="r" data-label="Total Gross">₱<?= n2($t_gross) ?></td>
+                        <td class="r" data-label="Total Deductions" style="color:#dc3545;">₱<?= n2($t_ded) ?></td>
+                        <td class="r" data-label="Total Net Pay" style="color:#219688;font-size:14px;">₱<?= n2($t_net) ?></td>
+                        <td data-label=""></td>
                     </tr>
                 </tfoot>
             </table>
             </div>
+
+            <!-- Mobile-only card list (separate markup — no table on phones) -->
+            <div class="ps-mlist">
+                <?php foreach ($psMobile as $m): ?>
+                <div class="psm-card" data-payroll-id="<?= $m['payroll_id'] ?>" onclick="openPayslipPreview(<?= $m['item_id'] ?>)">
+                    <input type="checkbox" class="ps-sel-check psm-chk" value="<?= $m['item_id'] ?>" title="Select" onclick="event.stopPropagation();">
+                    <div class="psm-period"><?= htmlspecialchars($m['period']) ?><small><?= $m['year'] ?></small></div>
+                    <div class="psm-ref"><?= htmlspecialchars($m['ref']) ?></div>
+                    <div class="psm-stats">
+                        <div><span>Present</span><b><?= $m['present'] ?>d</b></div>
+                        <div><span>Absent</span><b class="<?= $m['absent']>0?'abs':'mut' ?>"><?= $m['absent']>0 ? $m['absent'].'d' : '—' ?></b></div>
+                        <div><span>Late</span><b class="<?= $m['late']>0?'lt':'mut' ?>"><?= $m['late']>0 ? number_format($m['late']).'m' : '—' ?></b></div>
+                        <div><span>OT</span><b class="<?= $m['ot']>0?'ot':'mut' ?>"><?= $m['ot']>0 ? $m['ot'].'h' : '—' ?></b></div>
+                    </div>
+                    <div class="psm-money">
+                        <div><span class="lbl">Gross</span><span class="val">₱<?= $m['gross'] ?></span></div>
+                        <div class="ded"><span class="lbl">Deductions</span><span class="val">₱<?= $m['ded'] ?></span></div>
+                    </div>
+                    <?php if ($m['status'] === 3): ?>
+                    <div class="psm-action">
+                        <?php if ($m['review'] === null): ?>
+                            <span class="mydtr-badge review">Awaiting review</span>
+                            <button type="button" class="mydtr-btn primary" onclick="event.stopPropagation(); openPayrollReview(<?= $m['payroll_id'] ?>)">Review</button>
+                        <?php elseif ($m['review'] === 1): ?>
+                            <span class="mydtr-badge ok">Confirmed</span>
+                            <button type="button" class="mydtr-btn ghost" onclick="event.stopPropagation(); openPayrollReview(<?= $m['payroll_id'] ?>)">Update</button>
+                        <?php else: ?>
+                            <span class="mydtr-badge dispute">Disputed</span>
+                            <button type="button" class="mydtr-btn ghost" onclick="event.stopPropagation(); openPayrollReview(<?= $m['payroll_id'] ?>)">Update</button>
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; ?>
+                    <div class="psm-net"><span>Net Pay</span><b>₱<?= $m['net'] ?></b></div>
+                </div>
+                <?php endforeach; ?>
+                <div class="psm-total">
+                    <div class="rowt"><span>Total Gross</span><b>₱<?= n2($t_gross) ?></b></div>
+                    <div class="rowt"><span>Total Deductions</span><b>₱<?= n2($t_ded) ?></b></div>
+                    <div class="rowt net"><span>Total Net (<?= count($payslips) ?> periods)</span><b>₱<?= n2($t_net) ?></b></div>
+                </div>
+            </div>
         </div>
+        <script>var PAYROLL_REVIEW_DATA = <?= json_encode($payrollReviewJs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;</script>
         <?php else: ?>
-        <div class="empty-state"><i class="ri-file-list-3-line"></i><p>No payslip records found.</p></div>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-file-list-3-line"></i></div><p>No payslip records found.</p></div>
         <?php endif; ?>
+    </div>
+
+    <!-- ── Tab: My DTR (review & sign-off) ── -->
+    <div class="tab-panel" id="tab-mydtr">
+        <div class="sec"><i class="ri-file-list-3-line"></i>My DTR — Review &amp; Confirm</div>
+        <div class="mydtr-intro">
+            When your timekeeper marks a DTR <b>Ready for Review</b>, it appears here. Please check your attendance
+            for the period and <b>Confirm</b> if everything is correct, or <b>Dispute</b> with a note if something looks wrong.
+            Your response is sent to HR before payroll is processed.
+        </div>
+        <div id="mydtr-list">
+            <div class="mydtr-empty"><i class="ri-loader-4-line"></i> Loading…</div>
+        </div>
     </div>
 
     <!-- ── Tab: Attendance ── -->
     <div class="tab-panel" id="tab-attendance">
         <div class="sec"><i class="ri-calendar-check-line"></i>Attendance Records</div>
-        <?php if (count($attendance)): ?>
         <div class="paper" style="border-radius:14px;overflow:hidden;">
             <div style="padding:10px 14px;border-bottom:1px solid #f0f5f4;display:flex;justify-content:space-between;align-items:center;">
-                <span style="font-size:12px;color:#888;"><span id="att-count"><?= count($attendance) ?></span> records</span>
+                <span style="font-size:12px;color:#888;"><span id="att-count">0</span> records</span>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <div id="att-range" class="att-range-picker">
                         <i class="ri-calendar-2-line"></i>
-                        <span id="att-range-label">All dates</span>
+                        <span id="att-range-label">Today</span>
                         <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
                     </div>
-                    <button onclick="clearAttFilter()" class="btn btn-sm" style="background:#f0f5f4;color:#888;padding:5px 10px;font-size:11px;border:none;border-radius:7px;">Clear</button>
+                    <button onclick="clearAttFilter()" class="btn btn-sm" style="background:#f0f5f4;color:#888;padding:5px 10px;font-size:11px;border:none;border-radius:7px;">Today</button>
                 </div>
             </div>
             <div class="table-responsive">
-            <table class="att-table" id="att-tbl">
+            <table class="att-table" id="att-tbl" style="width:100%;">
                 <thead>
                     <tr>
                         <th>Date</th>
@@ -939,162 +1872,25 @@ body{
                         <th>Notes</th>
                     </tr>
                 </thead>
-                <tbody>
-                <?php foreach ($attendance as $att):
-                    $dt       = $att['date_time'];
-                    $wh       = (float)$att['work_hours'];
-                    $ot_h     = (float)$att['overtime'];
-                    $atype    = strtoupper(substr($att['attendance_type'] ?? 'P', 0, 1));
-                    $atype_lbl= $att['attendance_type'] ?? 'Present';
-                    $pct_wh   = min(100, ($wh / 8) * 100);
-                    $att_cls  = in_array($atype,['P','A','H','S','O']) ? 'att-'.$atype : 'att-P';
-
-                    // Parse logs the same way dtr-details.php does: array of {dateTime, type} objects
-                    $logs_obj = $att['logs'] ? json_decode($att['logs']) : [];
-                    if (!is_array($logs_obj)) $logs_obj = [];
-                    $timeIn  = '';
-                    $timeOut = '';
-                    if (!empty($logs_obj)) {
-                        $timeIn  = date('g:i A', strtotime($logs_obj[0]->dateTime ?? ''));
-                        $timeOut = count($logs_obj) > 1 ? date('g:i A', strtotime(end($logs_obj)->dateTime ?? '')) : '';
-                    }
-                    // Build popover HTML for all log entries
-                    $popLines = '';
-                    foreach ($logs_obj as $li => $lg) {
-                        $isBio  = isset($lg->type) && $lg->type === 'bio';
-                        $chip   = $isBio ? 'bio' : 'manual';
-                        $icon   = $isBio ? 'ri-fingerprint-line' : 'ri-edit-line';
-                        $lbl    = ($li === 0) ? 'IN' : (($li === count($logs_obj)-1) ? 'OUT' : '#'.($li+1));
-                        $ltime  = date('g:i A', strtotime($lg->dateTime ?? ''));
-                        $popLines .= '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">'
-                            .'<span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">'.$lbl.'</span>'
-                            .'<span class="dtr-log-chip '.$chip.'"><i class="'.$icon.'"></i> '.$ltime.'</span>'
-                            .'</div>';
-                    }
-                    if (!$popLines) $popLines = '<span style="color:#aaa;font-size:11px;">No logs</span>';
-                    $popContent = htmlspecialchars('<div style="min-width:150px;">'.$popLines.'</div>');
-                    $totalLogs  = count($logs_obj);
-                ?>
-                <tr data-date="<?= date('Y-m-d', strtotime($dt)) ?>">
-                    <td>
-                        <div style="font-weight:700;"><?= date('M d, Y', strtotime($dt)) ?></div>
-                        <div style="font-size:10px;color:#aaa;"><?= date('l', strtotime($dt)) ?></div>
-                    </td>
-                    <td><span class="att-type <?= $att_cls ?>"><?= htmlspecialchars($atype_lbl) ?></span></td>
-                    <td>
-                        <div style="font-weight:700;"><?= $wh > 0 ? $wh.'h' : '—' ?></div>
-                        <?php if ($wh > 0): ?>
-                        <div class="hrs-bar"><div class="hrs-fill" style="width:<?= $pct_wh ?>%;"></div></div>
-                        <?php endif; ?>
-                    </td>
-                    <td><?= $ot_h > 0 ? '<span style="color:#fd7e14;font-weight:700;">'.$ot_h.'h</span>' : '<span style="color:#ccc;">—</span>' ?></td>
-                    <td>
-                        <?php if ($totalLogs > 0): ?>
-                        <div class="time-io">
-                            <span class="dtr-time-chip in"><?= $timeIn ?: '—' ?></span>
-                            <?php if ($timeOut): ?>
-                            <span style="color:#ccc;font-size:10px;">→</span>
-                            <span class="dtr-time-chip out"><?= $timeOut ?></span>
-                            <?php else: ?>
-                            <span class="dtr-time-chip na">No Out</span>
-                            <?php endif; ?>
-                        </div>
-                        <span class="dtr-logs-pill mt-1"
-                            data-bs-toggle="popover"
-                            data-bs-trigger="click"
-                            data-bs-placement="left"
-                            data-bs-html="true"
-                            data-bs-content="<?= $popContent ?>"
-                            title="All Logs">
-                            <span class="dtr-logs-count"><i class="ri-list-check"></i> <?= $totalLogs ?> log<?= $totalLogs>1?'s':'' ?> — view details</span>
-                        </span>
-                        <?php else: ?>
-                        <span class="dtr-time-chip na">No logs</span>
-                        <?php endif; ?>
-                    </td>
-                    <td style="font-size:11px;color:#888;"><?= htmlspecialchars($att['notes'] ?? '—') ?></td>
-                </tr>
-                <?php endforeach; ?>
-                </tbody>
+                <tbody></tbody>
             </table>
             </div>
         </div>
-        <?php else: ?>
-        <div class="empty-state"><i class="ri-calendar-line"></i><p>No attendance records found.</p></div>
-        <?php endif; ?>
     </div>
 
     <!-- ── Tab: Attendance Requests ── -->
     <div class="tab-panel" id="tab-att-requests">
-        <?php if ($att_flash): ?>
-        <div style="border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;
-            <?= $att_flash[0]==='ok' ? 'background:#e8f7f5;color:#176358;border:1px solid #aad5d0;' : 'background:#fff0f0;color:#c62828;border:1px solid #f5b5b5;' ?>">
-            <i class="<?= $att_flash[0]==='ok' ? 'ri-checkbox-circle-line' : 'ri-error-warning-line' ?>" style="font-size:18px;"></i>
-            <?= htmlspecialchars($att_flash[1]) ?>
-        </div>
-        <?php endif; ?>
-
-        <!-- File Request Form -->
-        <div class="sec"><i class="ri-add-circle-line"></i>File a Request</div>
-        <div class="paper" style="border-radius:14px;padding:18px;margin-bottom:18px;">
-            <form method="post" action="employee-portal.php" id="att-request-form">
-                <input type="hidden" name="action" value="request_attendance">
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Request Type <span style="color:red;">*</span></label>
-                        <select name="request_type" class="form-control" id="att-req-type" onchange="toggleAttFields(this.value)" required>
-                            <option value="">— Select type —</option>
-                            <option value="incident">Incident Report (missed/wrong scan)</option>
-                            <option value="overtime">Overtime Authorization Request</option>
-                        </select>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Date <span style="color:red;">*</span></label>
-                        <input type="date" name="request_date" class="form-control" max="<?= date('Y-m-d') ?>" required>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red;">*</span></label>
-                        <select name="reason" class="form-control" required>
-                            <option value="">— Select reason —</option>
-                            <option value="forgot_scan">Forgot to Scan</option>
-                            <option value="device_error">Device / Scanner Error</option>
-                            <option value="system_down">System Down</option>
-                            <option value="overtime">Overtime Authorization</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </div>
-
-                    <!-- Incident fields -->
-                    <div class="col-6 att-incident-field" style="display:none;">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time In <span style="color:red;">*</span></label>
-                        <input type="time" name="claimed_time_in" class="form-control">
-                    </div>
-                    <div class="col-6 att-incident-field" style="display:none;">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time Out <span style="color:red;">*</span></label>
-                        <input type="time" name="claimed_time_out" class="form-control">
-                    </div>
-
-                    <!-- OT fields -->
-                    <div class="col-12 col-md-6 att-ot-field" style="display:none;">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
-                        <input type="number" name="ot_hours_requested" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5">
-                    </div>
-
-                    <div class="col-12">
-                        <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Notes / Explanation</label>
-                        <textarea name="notes" class="form-control" rows="2" placeholder="Describe what happened…"></textarea>
-                    </div>
-                    <div class="col-12 text-end">
-                        <button type="submit" class="btn" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;padding:8px 22px;border-radius:8px;">
-                            <i class="ri-send-plane-line me-1"></i>Submit Request
-                        </button>
-                    </div>
-                </div>
-            </form>
+        <!-- Request a Request Button -->
+        <div class="d-flex gap-2 mb-3">
+            <button type="button" onclick="openAttRequestModal()"
+                style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                <i class="ri-add-circle-line me-1"></i>File a Request
+            </button>
         </div>
 
         <!-- My Request History -->
         <div class="sec"><i class="ri-history-line"></i>My Requests</div>
+        <div id="att-req-list-wrap">
         <?php if (count($my_attendance_requests)): ?>
         <div class="paper" style="border-radius:14px;overflow:hidden;">
             <div class="table-responsive">
@@ -1118,17 +1914,17 @@ body{
                     [$slabel,$scolor] = $statusMap[$ar['status']] ?? ['Unknown','#aaa'];
                 ?>
                 <tr>
-                    <td style="font-size:11px;"><?= date('M d, Y', strtotime($ar['created_at'])) ?></td>
-                    <td>
+                    <td data-label="Filed" style="font-size:11px;"><?= date('M d, Y', strtotime($ar['created_at'])) ?></td>
+                    <td data-label="Type">
                         <?php if ($ar['request_type']==='incident'): ?>
                             <span style="background:#fff3cd;color:#856404;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-error-warning-line me-1"></i>Incident</span>
                         <?php else: ?>
                             <span style="background:#cff4fc;color:#055160;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-timer-flash-line me-1"></i>OT Request</span>
                         <?php endif; ?>
                     </td>
-                    <td style="font-weight:700;"><?= date('M d, Y', strtotime($ar['request_date'])) ?></td>
-                    <td style="font-size:11px;"><?= htmlspecialchars($reasonLabels[$ar['reason']] ?? $ar['reason']) ?></td>
-                    <td style="font-size:11px;">
+                    <td data-label="Date" style="font-weight:700;"><?= date('M d, Y', strtotime($ar['request_date'])) ?></td>
+                    <td data-label="Reason" style="font-size:11px;"><?= htmlspecialchars($reasonLabels[$ar['reason']] ?? $ar['reason']) ?></td>
+                    <td data-label="Details" style="font-size:11px;">
                         <?php if ($ar['claimed_time_in']): ?>
                             <?= date('h:i A', strtotime($ar['claimed_time_in'])) ?> – <?= date('h:i A', strtotime($ar['claimed_time_out'])) ?>
                         <?php elseif ($ar['ot_hours_requested']): ?>
@@ -1136,10 +1932,10 @@ body{
                         <?php endif; ?>
                         <?php if ($ar['notes']): ?><div style="color:#aaa;font-size:10px;"><?= htmlspecialchars(mb_strimwidth($ar['notes'],0,40,'…')) ?></div><?php endif; ?>
                     </td>
-                    <td class="text-center">
+                    <td class="text-center" data-label="Status">
                         <span style="background:<?= $scolor ?>;color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;"><?= $slabel ?></span>
                     </td>
-                    <td style="font-size:11px;color:#888;"><?= htmlspecialchars($ar['reviewer_remarks'] ?? '—') ?></td>
+                    <td data-label="Reviewer Notes" style="font-size:11px;color:#888;"><?= htmlspecialchars($ar['reviewer_remarks'] ?? '—') ?></td>
                 </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -1147,8 +1943,9 @@ body{
             </div>
         </div>
         <?php else: ?>
-        <div class="empty-state"><i class="ri-file-list-3-line"></i><p>No requests filed yet.</p></div>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-file-list-3-line"></i></div><p>No requests filed yet.</p></div>
         <?php endif; ?>
+        </div>
     </div>
 
     <!-- ── Tab: Compare ── -->
@@ -1172,7 +1969,7 @@ body{
         </div>
         <div id="cmp-result"></div>
         <?php else: ?>
-        <div class="empty-state"><i class="ri-arrow-left-right-line"></i><p>You need at least two payslips to compare.</p></div>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-arrow-left-right-line"></i></div><p>You need at least two payslips to compare.</p></div>
         <?php endif; ?>
     </div>
 
@@ -1212,20 +2009,85 @@ body{
             <span style="color:#fff;font-size:20px;font-weight:900;">₱<?= n2($total_loan_balance) ?></span>
         </div>
         <?php else: ?>
-        <div class="empty-state"><i class="ri-check-double-line" style="color:#219688;"></i><p style="color:#219688;font-weight:700;">No active loans. You're debt-free!</p></div>
+        <div class="empty-state success"><div class="empty-ic"><i class="ri-check-double-line"></i></div><p>No active loans. You're debt-free!</p></div>
+        <?php endif; ?>
+    </div>
+
+    <!-- ── Tab: Contributions ── -->
+    <div class="tab-panel" id="tab-contrib">
+        <div class="sec"><i class="ri-shield-check-line"></i>Contributions &amp; Withholding</div>
+        <?php if (count($contrib_hist)): ?>
+        <div class="con-intro"><i class="ri-information-line me-1"></i>Statutory contributions and taxes deducted and remitted on your behalf. Keep these figures for your own records &mdash; the totals below cover <?= $cur_year ?> so far.</div>
+        <div class="con-hero">
+            <div class="con-box">
+                <div class="con-cap"><i class="ri-hand-coin-line"></i>Contributions</div>
+                <div class="con-val">₱<?= n0($ytd_contrib) ?></div>
+                <div class="con-note"><?= $cur_year ?> · SSS / PhilHealth / Pag-IBIG</div>
+            </div>
+            <div class="con-box b2">
+                <div class="con-cap"><i class="ri-safe-2-line"></i>SSS Provident</div>
+                <div class="con-val">₱<?= n0($ytd_sssfund) ?></div>
+                <div class="con-note"><?= $cur_year ?> · provident fund</div>
+            </div>
+            <div class="con-box b3">
+                <div class="con-cap"><i class="ri-government-line"></i>Withholding Tax</div>
+                <div class="con-val">₱<?= n0($ytd_tax) ?></div>
+                <div class="con-note"><?= $cur_year ?> · income tax</div>
+            </div>
+            <div class="con-box b4">
+                <div class="con-cap"><i class="ri-stack-line"></i><?= $cur_year ?> Total</div>
+                <div class="con-val">₱<?= n0($ytd_contrib_total) ?></div>
+                <div class="con-note">all remittances this year</div>
+            </div>
+        </div>
+
+        <div class="sec"><i class="ri-history-line"></i>Remittance History</div>
+        <div style="background:#fffdf8;border:1px solid #e7e0d0;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);">
+            <div style="overflow-x:auto;">
+                <table class="con-tbl">
+                    <thead>
+                        <tr>
+                            <th>Pay Period</th>
+                            <th class="r">Contributions</th>
+                            <th class="r">SSS Provident</th>
+                            <th class="r">Tax</th>
+                            <th class="r">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($contrib_hist as $ch): ?>
+                        <tr>
+                            <td data-label="Pay Period">
+                                <div style="font-weight:700;color:#176358;"><?= htmlspecialchars($ch['period']) ?></div>
+                                <div style="font-size:10px;color:#aaa;font-family:monospace;"><?= htmlspecialchars($ch['ref']) ?></div>
+                            </td>
+                            <td class="r" data-label="Contributions"><?= $ch['contrib'] > 0 ? '₱'.n2($ch['contrib']) : '<span class="dim">—</span>' ?></td>
+                            <td class="r" data-label="SSS Provident"><?= $ch['sssfund'] > 0 ? '₱'.n2($ch['sssfund']) : '<span class="dim">—</span>' ?></td>
+                            <td class="r" data-label="Tax"><?= $ch['tax'] > 0 ? '₱'.n2($ch['tax']) : '<span class="dim">—</span>' ?></td>
+                            <td class="r" data-label="Total" style="font-weight:800;color:#176358;">₱<?= n2($ch['total']) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <td data-label="">Lifetime total (<?= count($contrib_hist) ?> period<?= count($contrib_hist) == 1 ? '' : 's' ?>)</td>
+                            <td class="r" data-label="Contributions">₱<?= n2($life_contrib) ?></td>
+                            <td class="r" data-label="SSS Provident">₱<?= n2($life_sssfund) ?></td>
+                            <td class="r" data-label="Tax">₱<?= n2($life_tax) ?></td>
+                            <td class="r" data-label="Total">₱<?= n2($life_contrib_total) ?></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+        <div style="font-size:11px;color:#a59f90;margin-top:10px;line-height:1.5;"><i class="ri-error-warning-line me-1"></i>These figures come from your reviewed and locked payslips. For official contribution records, please coordinate with HR.</div>
+        <?php else: ?>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-shield-check-line"></i></div><p>No contributions recorded yet.<br>They'll appear here once your payslips are released.</p></div>
         <?php endif; ?>
     </div>
 
     <!-- ── Tab: Leave ── -->
     <div class="tab-panel" id="tab-leave">
-
-        <?php if ($leave_flash): ?>
-        <div style="border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;font-weight:700;display:flex;align-items:center;gap:8px;
-            <?= $leave_flash[0] === 'ok' ? 'background:#e8f7f5;color:#176358;border:1px solid #aad5d0;' : 'background:#fff0f0;color:#c62828;border:1px solid #f5b5b5;' ?>">
-            <i class="<?= $leave_flash[0] === 'ok' ? 'ri-checkbox-circle-line' : 'ri-error-warning-line' ?>" style="font-size:18px;"></i>
-            <?= htmlspecialchars($leave_flash[1]) ?>
-        </div>
-        <?php endif; ?>
 
         <?php if (!$portal_leave_eligible): ?>
         <div style="border-radius:12px;padding:14px 16px;margin-bottom:16px;background:#fff8e8;color:#8a6d1a;border:1px solid #f0d98a;font-size:12.5px;display:flex;align-items:center;gap:10px;">
@@ -1247,9 +2109,9 @@ body{
                     $range = date('M d, Y', strtotime($ev['start_date'])) . ($ev['end_date'] && $ev['end_date'] != $ev['start_date'] ? ' – ' . date('M d, Y', strtotime($ev['end_date'])) : '');
                 ?>
                 <tr>
-                    <td style="white-space:nowrap;"><span style="border-left:4px solid <?= htmlspecialchars($ev['color']) ?>;padding-left:8px;"><?= $range ?></span></td>
-                    <td><b><?= $isHol ? '🛑' : '📌' ?> <?= htmlspecialchars($ev['title']) ?></b><?php if ($ev['note']): ?><div style="font-size:11px;color:#999;"><?= htmlspecialchars($ev['note']) ?></div><?php endif; ?></td>
-                    <td><?php if ($isHol): ?><span style="background:#fff0f0;color:#c62828;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Holiday</span><?php else: ?><span style="background:#e8f0ff;color:#0d6efd;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Activity</span><?php endif; ?></td>
+                    <td data-label="Date" style="white-space:nowrap;"><span style="border-left:4px solid <?= htmlspecialchars($ev['color']) ?>;padding-left:8px;"><?= $range ?></span></td>
+                    <td data-label="Event"><b><?= $isHol ? '🛑' : '📌' ?> <?= htmlspecialchars($ev['title']) ?></b><?php if ($ev['note']): ?><div style="font-size:11px;color:#999;"><?= htmlspecialchars($ev['note']) ?></div><?php endif; ?></td>
+                    <td data-label="Type"><?php if ($isHol): ?><span style="background:#fff0f0;color:#c62828;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Holiday</span><?php else: ?><span style="background:#e8f0ff;color:#0d6efd;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Activity</span><?php endif; ?></td>
                 </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -1257,7 +2119,7 @@ body{
             </div>
         </div>
         <?php else: ?>
-        <div class="empty-state" style="padding:20px;"><i class="ri-calendar-2-line"></i><p>No upcoming holidays or activities.</p></div>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-calendar-2-line"></i></div><p>No upcoming holidays or activities.</p></div>
         <?php endif; ?>
 
         <?php if ($portal_leave_eligible): ?>
@@ -1277,7 +2139,7 @@ body{
             <?php endforeach; ?>
         </div>
         <?php else: ?>
-        <div class="empty-state" style="padding:20px;"><i class="ri-coins-line"></i><p>No leave types configured yet.</p></div>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-coins-line"></i></div><p>No leave types configured yet.</p></div>
         <?php endif; ?>
 
         <!-- Request Leave Button -->
@@ -1306,6 +2168,7 @@ body{
 
         <!-- My leave history -->
         <div class="sec"><i class="ri-history-line"></i>My Leave Requests</div>
+        <div id="leave-list-wrap">
         <?php if (count($my_leaves)): ?>
         <div class="paper" style="border-radius:14px;overflow:hidden;">
             <div class="table-responsive">
@@ -1334,13 +2197,13 @@ body{
                     $rej = $ml['admin_remarks'] ?: $ml['hr_remarks'];
                 ?>
                 <tr>
-                    <td><?= date('M d, Y', strtotime($ml['date_applied'])) ?></td>
-                    <td><span style="font-weight:700;color:#176358;"><?= htmlspecialchars($ml['leave_type_name']) ?></span></td>
-                    <td style="font-size:11px;"><?= date('M d', strtotime($ml['date_from'])) ?> – <?= date('M d, Y', strtotime($ml['date_to'])) ?></td>
-                    <td class="r"><b><?= rtrim(rtrim(number_format($ml['duration'], 1), '0'), '.') ?></b></td>
-                    <td><?= $stageChip($ml['hr_status']) ?></td>
-                    <td><?= $stageChip($ml['admin_status']) ?></td>
-                    <td>
+                    <td data-label="Date Applied"><?= date('M d, Y', strtotime($ml['date_applied'])) ?></td>
+                    <td data-label="Type"><span style="font-weight:700;color:#176358;"><?= htmlspecialchars($ml['leave_type_name']) ?></span></td>
+                    <td data-label="Period" style="font-size:11px;"><?= date('M d', strtotime($ml['date_from'])) ?> – <?= date('M d, Y', strtotime($ml['date_to'])) ?></td>
+                    <td class="r" data-label="Days"><b><?= rtrim(rtrim(number_format($ml['duration'], 1), '0'), '.') ?></b></td>
+                    <td data-label="HR"><?= $stageChip($ml['hr_status']) ?></td>
+                    <td data-label="Final"><?= $stageChip($ml['admin_status']) ?></td>
+                    <td data-label="Status">
                         <span style="background:<?= $sbg ?>;color:<?= $scol ?>;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;"><?= $slabel ?></span>
                         <?php if ($ml['status'] == 2 && $rej): ?>
                             <div style="font-size:10px;color:#dc3545;margin-top:2px;" title="<?= htmlspecialchars($rej) ?>"><i class="ri-information-line"></i> <?= htmlspecialchars(mb_strimwidth($rej, 0, 30, '…')) ?></div>
@@ -1353,8 +2216,9 @@ body{
             </div>
         </div>
         <?php else: ?>
-        <div class="empty-state"><i class="ri-calendar-event-line"></i><p>You haven't filed any leave requests yet.</p></div>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-calendar-event-line"></i></div><p>You haven't filed any leave requests yet.</p></div>
         <?php endif; ?>
+        </div>
     </div>
 
     <!-- ── Tab: My Info ── -->
@@ -1575,30 +2439,258 @@ body{
         </div>
     </div>
 
-    <div class="portal-foot">JEJORS CONSTRUCTION CORPORATION &bull; Employee Self-Service Portal<br>For concerns contact your HR / Payroll department.</div>
+    <div class="portal-foot">COMC &bull; Employee Self-Service Portal<br>For concerns contact your HR / Payroll department.</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/parsley.js/2.9.2/parsley.min.js"></script>
 <script src="assets/libs/moment/min/moment.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
 <script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/js/bootstrap-select.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.2.9/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.2.9/js/responsive.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script>
 function toggleAttFields(type) {
-    document.querySelectorAll('.att-incident-field').forEach(function(el){ el.style.display = type === 'incident' ? '' : 'none'; });
-    document.querySelectorAll('.att-ot-field').forEach(function(el){ el.style.display = type === 'overtime' ? '' : 'none'; });
+    document.querySelectorAll('.att-incident-field').forEach(function(el){
+        el.style.display = type === 'incident' ? '' : 'none';
+        var input = el.querySelector('.form-control');
+        if (input) { if (type === 'incident') input.setAttribute('required', 'required'); else input.removeAttribute('required'); }
+    });
+    document.querySelectorAll('.att-ot-field').forEach(function(el){
+        el.style.display = type === 'overtime' ? '' : 'none';
+        var input = el.querySelector('.form-control');
+        if (input) { if (type === 'overtime') input.setAttribute('required', 'required'); else input.removeAttribute('required'); }
+    });
+    var form = document.getElementById('att-request-form');
+    if (form && window.jQuery && jQuery(form).parsley) { jQuery(form).parsley().reset(); }
+}
+
+// FAQ accordion — expand the clicked question, collapse the others in its group.
+function toggleFaq(btn) {
+    var item = btn.closest('.faq-item');
+    if (!item) return;
+    var willOpen = !item.classList.contains('open');
+    var group = item.closest('.faq');
+    if (group) group.querySelectorAll('.faq-item.open').forEach(function (el) {
+        if (el !== item) el.classList.remove('open');
+    });
+    item.classList.toggle('open', willOpen);
 }
 
 function switchTab(id, btn) {
     document.querySelectorAll('.tab-panel').forEach(function(p){ p.classList.remove('active'); });
     document.querySelectorAll('.tab-btn').forEach(function(b){ b.classList.remove('active'); });
     document.getElementById('tab-'+id).classList.add('active');
-    if (btn) btn.classList.add('active');
+    var activeBtn = btn;
+    if (activeBtn) activeBtn.classList.add('active');
     else {
-        var b = document.querySelector('.tab-btn[onclick*="\'' + id + '\'"]');
-        if (b) b.classList.add('active');
+        activeBtn = document.querySelector('.tab-btn[onclick*="\'' + id + '\'"]');
+        if (activeBtn) activeBtn.classList.add('active');
     }
+    // On mobile the secondary tabs live behind "More" — keep the More item lit
+    // (and use it as the scroll target) whenever a secondary section is active.
+    var scrollTarget = activeBtn;
+    if (activeBtn && activeBtn.classList.contains('tab-secondary')) {
+        var moreBtn = document.querySelector('.tab-more');
+        if (moreBtn) { moreBtn.classList.add('active'); scrollTarget = moreBtn; }
+    }
+    // Only recentre when the strip actually scrolls horizontally (avoids page jumps
+    // now that the mobile bottom bar fits all items without scrolling).
+    var strip = document.querySelector('.tab-strip');
+    if (scrollTarget && strip && strip.scrollWidth > strip.clientWidth + 1) {
+        scrollTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+    // DataTables mis-measures column widths while its container is display:none —
+    // fix it up once the Attendance tab actually becomes visible.
+    if (id === 'attendance' && window.attTable) {
+        window.attTable.columns.adjust();
+    }
+}
+
+// ── More sheet (mobile) ──────────────────────────────────────────────────────
+function openMore() {
+    document.getElementById('more-backdrop').classList.add('open');
+    document.getElementById('more-sheet').classList.add('open');
+    document.body.style.overflow = 'hidden';
+}
+function closeMore() {
+    document.getElementById('more-backdrop').classList.remove('open');
+    document.getElementById('more-sheet').classList.remove('open');
+    document.body.style.overflow = '';
+}
+function goMore(id) {
+    closeMore();
+    switchTab(id, null);
+    window.scrollTo(0, 0);
+}
+
+// ── Live badge / "Needs Your Action" sync ────────────────────────────────────
+// Keeps every pending-count indicator in sync after an AJAX submit, so nothing
+// on the page ever needs a full reload to reflect a save.
+var PENDING = {
+    dtr:     <?= (int) $dtr_review_pending_count ?>,
+    att:     <?= (int) $att_req_pending_count ?>,
+    payroll: <?= (int) $payroll_review_pending_count ?>,
+    leave:   <?= (int) $leave_pending_count ?>
+};
+var PAYSLIPS_TOTAL = <?= (int) count($payslips) ?>;
+var NA_OPTS = {
+    pay:   { icon:'ri-file-list-3-line',    icClass:'pay',   tabId:'payslips',     singular:'payslip to review',              plural:'payslips to review' },
+    dtr:   { icon:'ri-draft-line',          icClass:'dtr',   tabId:'mydtr',        singular:'DTR to review',                  plural:'DTRs to review' },
+    leave: { icon:'ri-calendar-event-line', icClass:'leave', tabId:'leave',        singular:'leave request pending',          plural:'leave requests pending' },
+    req:   { icon:'ri-timer-flash-line',    icClass:'req',   tabId:'att-requests', singular:'OT / incident request pending',  plural:'OT / incident requests pending' }
+};
+
+function setBadge(id, count, color) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var badge = el.querySelector('.badge-count');
+    if (count > 0) {
+        if (!badge) { badge = document.createElement('span'); badge.className = 'badge-count'; el.appendChild(badge); }
+        badge.style.background = color || '';
+        badge.textContent = count;
+    } else if (badge) badge.remove();
+}
+function setDot(id, count) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var dot = el.querySelector('.more-dot');
+    if (count > 0) {
+        if (!dot) { dot = document.createElement('span'); dot.className = 'more-dot'; el.appendChild(dot); }
+        dot.textContent = count;
+    } else if (dot) dot.remove();
+}
+function setQaBadge(id, count) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    var badge = el.querySelector('.qa-badge');
+    if (count > 0) {
+        if (!badge) { badge = document.createElement('span'); badge.className = 'qa-badge'; el.appendChild(badge); }
+        badge.textContent = count;
+    } else if (badge) badge.remove();
+}
+function setNeedsAction(key, count) {
+    var opts = NA_OPTS[key];
+    var wrap = document.querySelector('.needs-action');
+    if (!wrap && count > 0) {
+        wrap = document.createElement('div');
+        wrap.className = 'needs-action';
+        wrap.innerHTML = '<div class="na-head"><i class="ri-alarm-warning-line"></i> Needs Your Action</div><div class="na-items"></div>';
+        var hdr = document.getElementById('emp-hdr');
+        hdr.parentNode.insertBefore(wrap, hdr);
+    }
+    if (!wrap) return;
+    var items = wrap.querySelector('.na-items');
+    var item = items.querySelector('[data-na-key="' + key + '"]');
+    if (count <= 0) {
+        if (item) item.remove();
+        if (!items.children.length) wrap.remove();
+        return;
+    }
+    if (!item) {
+        item = document.createElement('button');
+        item.type = 'button'; item.className = 'na-item'; item.dataset.naKey = key;
+        item.onclick = function () { switchTab(opts.tabId, null); };
+        items.appendChild(item);
+    }
+    item.innerHTML = '<span class="na-ic ' + opts.icClass + '"><i class="' + opts.icon + '"></i></span>'
+        + '<span class="na-txt"><b>' + count + '</b> ' + (count === 1 ? opts.singular : opts.plural) + '</span>'
+        + '<i class="ri-arrow-right-s-line na-go"></i>';
+}
+function refreshMoreBadge() { setBadge('tabbtn-more', PENDING.dtr + PENDING.att + PENDING.payroll); }
+function refreshPayslipsBadge() {
+    var el = document.getElementById('tabbtn-payslips');
+    if (!el) return;
+    var badge = el.querySelector('.badge-count');
+    if (!badge) { badge = document.createElement('span'); badge.className = 'badge-count'; el.appendChild(badge); }
+    if (PENDING.payroll > 0) { badge.style.background = '#e6a817'; badge.textContent = PENDING.payroll; }
+    else { badge.style.background = ''; badge.textContent = PAYSLIPS_TOTAL; }
+}
+function updatePayslipRow(payrollId, decision) {
+    var badgeCls = decision === 1 ? 'ok' : 'dispute';
+    var badgeLbl = decision === 1 ? 'Confirmed' : 'Disputed';
+    // Desktop table row
+    var tr = document.querySelector('#ps-hist tbody tr[data-payroll-id="' + payrollId + '"]');
+    if (tr) {
+        var td = tr.querySelector('td:last-child');
+        if (td) td.innerHTML = '<div class="d-flex flex-column align-items-end gap-1">'
+            + '<span class="mydtr-badge ' + badgeCls + '">' + badgeLbl + '</span>'
+            + '<button type="button" class="mydtr-btn ghost" onclick="event.stopPropagation(); openPayrollReview(' + payrollId + ')">Update</button>'
+            + '</div>';
+    }
+    // Mobile card
+    var card = document.querySelector('.ps-mlist .psm-card[data-payroll-id="' + payrollId + '"] .psm-action');
+    if (card) card.innerHTML = '<span class="mydtr-badge ' + badgeCls + '">' + badgeLbl + '</span>'
+        + '<button type="button" class="mydtr-btn ghost" onclick="event.stopPropagation(); openPayrollReview(' + payrollId + ')">Update</button>';
+}
+
+// ── In-place row builders for freshly-submitted Leave / Attendance requests ──
+var REASON_LABELS = { forgot_scan:'Forgot to Scan', device_error:'Device Error', system_down:'System Down', overtime:'Overtime', other:'Other' };
+function fmtMDY(s) { var d = new Date((s || '').replace(' ', 'T')); if (isNaN(d)) return s || ''; return d.toLocaleDateString('en-US', { month:'short', day:'2-digit', year:'numeric' }); }
+function fmtMD(s)  { var d = new Date((s || '').replace(' ', 'T')); if (isNaN(d)) return s || ''; return d.toLocaleDateString('en-US', { month:'short', day:'2-digit' }); }
+function fmtTimeHM(t) {
+    var parts = (t || '').split(':'); if (parts.length < 2) return t || '';
+    var h = parseInt(parts[0], 10), m = parts[1];
+    var ap = h >= 12 ? 'PM' : 'AM', h12 = h % 12; if (h12 === 0) h12 = 12;
+    return h12 + ':' + m + ' ' + ap;
+}
+function trimNum(n) { n = Number(n); return (Math.round(n * 10) / 10).toString().replace(/\.0$/, ''); }
+
+function prependAttRequestRow(req) {
+    var wrap = document.getElementById('att-req-list-wrap');
+    if (!wrap) return;
+    var tbody = wrap.querySelector('table.att-table tbody');
+    if (!tbody) {
+        wrap.innerHTML = '<div class="paper" style="border-radius:14px;overflow:hidden;"><div class="table-responsive">'
+            + '<table class="att-table"><thead><tr><th>Filed</th><th>Type</th><th>Date</th><th>Reason</th><th>Details</th>'
+            + '<th class="text-center">Status</th><th>Reviewer Notes</th></tr></thead><tbody></tbody></table></div></div>';
+        tbody = wrap.querySelector('tbody');
+    }
+    var typeHtml = req.request_type === 'incident'
+        ? '<span style="background:#fff3cd;color:#856404;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-error-warning-line me-1"></i>Incident</span>'
+        : '<span style="background:#cff4fc;color:#055160;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-timer-flash-line me-1"></i>OT Request</span>';
+    var detailsHtml = '';
+    if (req.claimed_time_in) detailsHtml = fmtTimeHM(req.claimed_time_in) + ' – ' + fmtTimeHM(req.claimed_time_out);
+    else if (req.ot_hours_requested) detailsHtml = req.ot_hours_requested + ' hrs OT';
+    if (req.notes) detailsHtml += '<div style="color:#aaa;font-size:10px;">' + escapeHtml(req.notes.length > 40 ? req.notes.slice(0, 40) + '…' : req.notes) + '</div>';
+    var row = '<tr>'
+        + '<td data-label="Filed" style="font-size:11px;">' + fmtMDY(req.created_at) + '</td>'
+        + '<td data-label="Type">' + typeHtml + '</td>'
+        + '<td data-label="Date" style="font-weight:700;">' + fmtMDY(req.request_date) + '</td>'
+        + '<td data-label="Reason" style="font-size:11px;">' + escapeHtml(REASON_LABELS[req.reason] || req.reason) + '</td>'
+        + '<td data-label="Details" style="font-size:11px;">' + detailsHtml + '</td>'
+        + '<td class="text-center" data-label="Status"><span style="background:#e6a817;color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;">Pending</span></td>'
+        + '<td data-label="Reviewer Notes" style="font-size:11px;color:#888;">—</td>'
+        + '</tr>';
+    tbody.insertAdjacentHTML('afterbegin', row);
+}
+
+function prependLeaveRow(req) {
+    var wrap = document.getElementById('leave-list-wrap');
+    if (!wrap) return;
+    var tbody = wrap.querySelector('table.ps-hist-table tbody');
+    if (!tbody) {
+        wrap.innerHTML = '<div class="paper" style="border-radius:14px;overflow:hidden;"><div class="table-responsive">'
+            + '<table class="ps-hist-table"><thead><tr><th>Date Applied</th><th>Type</th><th>Period</th>'
+            + '<th class="r">Days</th><th>HR</th><th>Final</th><th>Status</th></tr></thead><tbody></tbody></table></div></div>';
+        tbody = wrap.querySelector('tbody');
+    }
+    var pendingChip = '<span style="color:#fd7e14;" title="Pending"><i class="ri-time-fill"></i></span>';
+    var row = '<tr>'
+        + '<td data-label="Date Applied">' + fmtMDY(req.date_applied) + '</td>'
+        + '<td data-label="Type"><span style="font-weight:700;color:#176358;">' + escapeHtml(req.leave_type_name) + '</span></td>'
+        + '<td data-label="Period" style="font-size:11px;">' + fmtMD(req.date_from) + ' – ' + fmtMDY(req.date_to) + '</td>'
+        + '<td class="r" data-label="Days"><b>' + trimNum(req.duration) + '</b></td>'
+        + '<td data-label="HR">' + pendingChip + '</td>'
+        + '<td data-label="Final">' + pendingChip + '</td>'
+        + '<td data-label="Status"><span style="background:#fff8e8;color:#fd7e14;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;">Pending</span></td>'
+        + '</tr>';
+    tbody.insertAdjacentHTML('afterbegin', row);
 }
 
 // ── Leave modals ─────────────────────────────────────────────────────────────
@@ -1618,6 +2710,11 @@ function openLwopModal() {
     document.getElementById('modal-lwop-request').addEventListener('shown.bs.modal', function () {
         initLwopPicker();
     }, { once: true });
+}
+
+function openAttRequestModal() {
+    var m = new bootstrap.Modal(document.getElementById('modal-att-request'));
+    m.show();
 }
 
 var _lvPicker = null;
@@ -1677,70 +2774,545 @@ function initLwopPicker() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', function () {
-    var lf = document.getElementById('leave-request-form');
-    if (lf) lf.addEventListener('submit', function (e) {
-        if (!document.getElementById('lv-dates-hidden').value) {
-            e.preventDefault(); alert('Please select at least one leave day.');
+// Leave/LWOP "at least one day" validation is handled by Parsley via the
+// required, readonly #lv-dates / #lwop-dates inputs that flatpickr populates.
+
+// ── AJAX submit: Leave / LWOP / Attendance requests (no page reload) ─────────
+function ajaxSubmitForm(form, action, onSuccess) {
+    var fd = new FormData(form);
+    var params = new URLSearchParams();
+    fd.forEach(function (v, k) { params.append(k, v); });
+    fetch('emp-portal-ajax.php?action=' + action, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        if (res.result) {
+            Swal.fire({ icon: 'success', title: 'Done', text: res.message, timer: 2500, showConfirmButton: false });
+            onSuccess(res);
+        } else {
+            Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Something went wrong.' });
         }
+    }).catch(function () {
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
     });
-    var lwf = document.getElementById('lwop-request-form');
-    if (lwf) lwf.addEventListener('submit', function (e) {
-        if (!document.getElementById('lwop-dates-hidden').value) {
-            e.preventDefault(); alert('Please select at least one LWOP day.');
+}
+// Parsley's documented AJAX hook: form:submit only fires once validation passes,
+// and returning false stops it from letting the native (page-reloading) submit continue.
+// NOTE: the request modals are rendered *after* this <script> block, so the form
+// won't exist yet if wireAjaxForm runs at parse time — defer to DOMContentLoaded so
+// getElementById actually finds it (otherwise the form falls back to a native submit
+// that reloads the page and never saves).
+function wireAjaxForm(formId, action, onSuccess) {
+    var bind = function () {
+        var form = document.getElementById(formId);
+        if (!form) return;
+        if (window.jQuery && jQuery.fn.parsley) {
+            jQuery(form).parsley().on('form:submit', function () {
+                ajaxSubmitForm(form, action, onSuccess);
+                return false;
+            });
+        } else {
+            form.addEventListener('submit', function (e) { e.preventDefault(); ajaxSubmitForm(form, action, onSuccess); });
         }
-    });
+    };
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', bind);
+    } else {
+        bind();
+    }
+}
+
+wireAjaxForm('leave-request-form', 'submit_leave_request', function (res) {
+    bootstrap.Modal.getInstance(document.getElementById('modal-leave-request')).hide();
+    var form = document.getElementById('leave-request-form');
+    form.reset();
+    if (window.jQuery && jQuery.fn.parsley) jQuery(form).parsley().reset();
+    if (_lvPicker) { _lvPicker.destroy(); _lvPicker = null; }
+    document.getElementById('lv-dur').style.display = 'none';
+    prependLeaveRow(res.request);
+    PENDING.leave = res.leave_pending_count;
+    setBadge('tabbtn-leave', PENDING.leave);
+    setNeedsAction('leave', PENDING.leave);
 });
 
-<?php if ($leave_flash || $att_flash || (isset($_GET['tab']) && $_GET['tab'] === 'leave')): ?>
-document.addEventListener('DOMContentLoaded', function () { switchTab('leave', null); window.scrollTo(0, 0); });
+wireAjaxForm('lwop-request-form', 'submit_leave_request', function (res) {
+    bootstrap.Modal.getInstance(document.getElementById('modal-lwop-request')).hide();
+    var form = document.getElementById('lwop-request-form');
+    form.reset();
+    if (window.jQuery && jQuery.fn.parsley) jQuery(form).parsley().reset();
+    document.getElementById('lwop-dates-hidden').value = '';
+    prependLeaveRow(res.request);
+    PENDING.leave = res.leave_pending_count;
+    setBadge('tabbtn-leave', PENDING.leave);
+    setNeedsAction('leave', PENDING.leave);
+});
+
+wireAjaxForm('att-request-form', 'submit_attendance_request', function (res) {
+    bootstrap.Modal.getInstance(document.getElementById('modal-att-request')).hide();
+    document.getElementById('att-request-form').reset();
+    document.getElementById('att-req-date').value = '';
+    document.getElementById('att-req-date-hidden').value = '';
+    toggleAttFields('');
+    prependAttRequestRow(res.request);
+    PENDING.att = res.att_req_pending_count;
+    setBadge('tabbtn-att-requests', PENDING.att);
+    setDot('moreitem-att-requests', PENDING.att);
+    setNeedsAction('req', PENDING.att);
+    refreshMoreBadge();
+});
+
+<?php
+// Deep-link support for staff notification links (employee-portal.php?tab=mydtr etc).
+// Whitelisted so a stray query value can never be interpolated unsafely into the script.
+$valid_portal_tabs = ['overview','payslips','attendance','leave','mydtr','att-requests','compare','loans','contrib','info','help'];
+$req_tab = $_GET['tab'] ?? null;
+if ($req_tab !== null && in_array($req_tab, $valid_portal_tabs, true)):
+?>
+document.addEventListener('DOMContentLoaded', function () { switchTab('<?= $req_tab ?>', null); window.scrollTo(0, 0); });
 <?php endif; ?>
 
+// ── Notification bell ────────────────────────────────────────────────────────
+function empRenderNotif(data) {
+    var dot  = document.getElementById('emp-bell-dot');
+    var list = document.getElementById('emp-notif-list');
+    if (dot) dot.style.display = (data.unread > 0) ? 'block' : 'none';
+    if (!list) return;
+    if (!data.items || !data.items.length) {
+        list.innerHTML = '<div class="emp-notif-empty">No notifications yet.</div>';
+        return;
+    }
+    list.innerHTML = data.items.map(function (n) {
+        var unread = (parseInt(n.is_read, 10) === 0);
+        return '<div class="emp-notif-item' + (unread ? ' unread' : '') + '" data-id="' + n.id + '" data-link="' + (n.link || '') + '">'
+            + '<span class="emp-notif-ic emp-notif-' + (n.color || 'primary') + '"><i class="' + (n.icon || 'ri-notification-3-line') + '"></i></span>'
+            + '<div class="emp-notif-txt"><div class="emp-notif-title">' + escapeHtml(n.title) + '</div>'
+            + '<div class="emp-notif-msg">' + escapeHtml(n.message || '') + '</div>'
+            + '<div class="emp-notif-time">' + timeAgo(n.created_at) + '</div></div></div>';
+    }).join('');
+}
+function escapeHtml(s) { return (s || '').replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function timeAgo(ts) {
+    if (!ts) return '';
+    var d = new Date(ts.replace(' ', 'T')), diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return d.toLocaleDateString();
+}
+function empLoadNotif() {
+    fetch('emp-portal-ajax.php?action=emp_notifications', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); }).then(empRenderNotif).catch(function(){});
+}
+function toggleEmpBell(e) {
+    if (e) e.stopPropagation();
+    var p = document.getElementById('emp-notif-panel');
+    p.classList.toggle('open');
+    if (p.classList.contains('open')) empLoadNotif();
+}
+function empMarkAllRead() {
+    fetch('emp-portal-ajax.php?action=emp_mark_all_read', { method: 'POST', credentials: 'same-origin' })
+        .then(function () { empLoadNotif(); });
+}
+document.addEventListener('click', function (e) {
+    var panel = document.getElementById('emp-notif-panel');
+    var bell  = document.getElementById('emp-bell');
+    if (panel && panel.classList.contains('open') && !panel.contains(e.target) && !bell.contains(e.target)) {
+        panel.classList.remove('open');
+    }
+    var item = e.target.closest('.emp-notif-item');
+    if (item) {
+        var id = item.dataset.id, link = item.dataset.link;
+        fetch('emp-portal-ajax.php?action=emp_mark_read', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'id=' + encodeURIComponent(id)
+        }).then(function () {
+            if (link && link.indexOf('tab=mydtr') !== -1) { switchTab('mydtr', null); loadMyDtr(); document.getElementById('emp-notif-panel').classList.remove('open'); }
+            else if (link) { window.location.href = link; }
+            else { empLoadNotif(); }
+        });
+    }
+});
+document.addEventListener('DOMContentLoaded', function () { empLoadNotif(); setInterval(empLoadNotif, 60000); });
+
+// ── My DTR review ────────────────────────────────────────────────────────────
+var _dtrReviewId = null;
+function loadMyDtr() {
+    var box = document.getElementById('mydtr-list');
+    fetch('emp-portal-ajax.php?action=my_dtr_list', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+            if (!res.result || !res.rows.length) {
+                box.innerHTML = '<div class="mydtr-empty"><i class="ri-inbox-line"></i> No DTRs to review right now.</div>';
+                return;
+            }
+            box.innerHTML = res.rows.map(function (d) {
+                var period = fmtPeriod(d.date_from, d.date_to);
+                var isReview = parseInt(d.status, 10) === 3;
+                var rv = d.review_status === null ? null : parseInt(d.review_status, 10);
+                var badge, action;
+                if (isReview && rv === null) {
+                    badge = '<span class="mydtr-badge review">Awaiting your review</span>';
+                    action = '<button class="mydtr-btn primary" onclick="openDtrReview(' + d.id + ')"><i class="ri-eye-line me-1"></i>Review &amp; Confirm</button>';
+                } else if (rv === 1) {
+                    badge = '<span class="mydtr-badge ok">You confirmed</span>';
+                    action = '<button class="mydtr-btn ghost" onclick="openDtrReview(' + d.id + ')">View</button>';
+                } else if (rv === 2) {
+                    badge = '<span class="mydtr-badge dispute">You disputed</span>';
+                    action = '<button class="mydtr-btn ghost" onclick="openDtrReview(' + d.id + ')">View</button>';
+                } else {
+                    badge = '<span class="mydtr-badge done">Approved</span>';
+                    action = '<button class="mydtr-btn ghost" onclick="openDtrReview(' + d.id + ')">View</button>';
+                }
+                return '<div class="mydtr-card">'
+                    + '<div class="mydtr-card-main">'
+                    + '<div class="mydtr-period"><i class="ri-calendar-2-line"></i> ' + period + '</div>'
+                    + '<div class="mydtr-site">' + escapeHtml((d.site_code ? d.site_code + ' — ' : '') + (d.site_name || '')) + '</div>'
+                    + '<div class="mydtr-meta">' + (d.day_count || 0) + ' day(s) · ' + (Number(d.total_hours || 0).toFixed(2)) + ' hrs · OT ' + (Number(d.total_ot || 0).toFixed(2)) + '</div>'
+                    + '</div>'
+                    + '<div class="mydtr-card-side">' + badge + action + '</div>'
+                    + '</div>';
+            }).join('');
+        });
+}
+function fmtPeriod(f, t) {
+    var o = { month: 'short', day: 'numeric' };
+    var df = new Date((f || '').replace(' ', 'T')), dt = new Date((t || '').replace(' ', 'T'));
+    if (isNaN(df) || isNaN(dt)) return (f || '') + ' – ' + (t || '');
+    return df.toLocaleDateString('en-US', o) + ' – ' + dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+function openDtrReview(id) {
+    _dtrReviewId = id;
+    var m = new bootstrap.Modal(document.getElementById('modal-dtr-review'));
+    m.show();
+    document.getElementById('dtr-review-body').innerHTML = '<div class="mydtr-empty"><i class="ri-loader-4-line"></i> Loading…</div>';
+    document.getElementById('dtr-review-comment').value = '';
+    document.getElementById('dtr-review-sub').textContent = '';
+    fetch('emp-portal-ajax.php?action=my_dtr_details', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'ddtr_id=' + encodeURIComponent(id)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        if (!res.result) { document.getElementById('dtr-review-body').innerHTML = '<div class="mydtr-empty">' + escapeHtml(res.message || 'Error') + '</div>'; return; }
+        renderDtrReview(res);
+    });
+}
+function renderDtrReview(res) {
+    document.getElementById('dtr-review-sub').textContent = res.dtr.period + '  ·  ' + res.dtr.site;
+    var totH = 0, totOT = 0;
+    var rows = res.days.map(function (d) {
+        totH += d.work_hours; totOT += d.overtime;
+        var io = (d.time_in || '—') + ' → ' + (d.time_out || '—');
+        var flag = d.status === 2 ? '<span class="drow-flag dis">disapproved</span>' : (d.status === 1 ? '<span class="drow-flag ok">approved</span>' : '');
+        return '<tr><td data-label="Date">' + d.date + '</td><td data-label="Time In/Out">' + io + '</td><td class="tc" data-label="Hrs">' + d.work_hours.toFixed(2) + '</td>'
+            + '<td class="tc" data-label="OT">' + d.overtime.toFixed(2) + '</td><td class="tc" data-label="Late">' + d.late.toFixed(0) + '</td><td data-label="Status">' + (flag || '—') + '</td></tr>';
+    }).join('');
+    var reviewedNote = '';
+    if (res.review) {
+        var s = parseInt(res.review.status, 10);
+        reviewedNote = '<div class="drev-prev ' + (s === 1 ? 'ok' : 'dis') + '">'
+            + '<i class="' + (s === 1 ? 'ri-checkbox-circle-line' : 'ri-error-warning-line') + '"></i> You already '
+            + (s === 1 ? 'confirmed' : 'disputed') + ' this DTR' + (res.review.comment ? ': “' + escapeHtml(res.review.comment) + '”' : '') + '. You may resubmit to update it.</div>';
+        if (res.review.resolved_at && res.review.admin_reply) {
+            reviewedNote += '<div class="drev-prev ok"><i class="ri-chat-check-line"></i> HR replied to your dispute: “' + escapeHtml(res.review.admin_reply) + '”</div>';
+        }
+    }
+    document.getElementById('dtr-review-body').innerHTML =
+        reviewedNote +
+        '<div class="drev-tbl-wrap"><table class="drev-tbl"><thead><tr><th>Date</th><th>Time In/Out</th><th class="tc">Hrs</th><th class="tc">OT</th><th class="tc">Late</th><th>Status</th></tr></thead>'
+        + '<tbody>' + rows + '</tbody>'
+        + '<tfoot><tr><th colspan="2">Total</th><th class="tc" data-label="Total Hrs">' + totH.toFixed(2) + '</th><th class="tc" data-label="Total OT">' + totOT.toFixed(2) + '</th><th colspan="2" data-label=""></th></tr></tfoot></table></div>';
+
+    // read-only view once approved (status 2) — hide the action footer
+    var footer = document.getElementById('dtr-review-footer');
+    footer.style.display = (res.dtr.status === 3) ? 'flex' : 'none';
+}
+function submitDtrReview(decision) {
+    var comment = document.getElementById('dtr-review-comment').value.trim();
+    if (decision === 2 && !comment) {
+        Swal.fire({ icon: 'warning', title: 'Add a note', text: 'Please describe what looks wrong before disputing.' });
+        return;
+    }
+    Swal.fire({
+        title: decision === 1 ? 'Confirm your DTR?' : 'Submit dispute?',
+        text: decision === 1 ? 'This tells HR your attendance is correct.' : 'HR will be notified to review your concern.',
+        icon: 'question', showCancelButton: true,
+        confirmButtonColor: decision === 1 ? '#219688' : '#c62828',
+        confirmButtonText: decision === 1 ? 'Yes, confirm' : 'Yes, dispute',
+    }).then(function (r) {
+        if (!r.isConfirmed) return;
+        fetch('emp-portal-ajax.php?action=submit_dtr_review', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'ddtr_id=' + encodeURIComponent(_dtrReviewId) + '&decision=' + decision + '&comment=' + encodeURIComponent(comment)
+        }).then(function (res) { return res.json(); }).then(function (res) {
+            if (res.result) {
+                bootstrap.Modal.getInstance(document.getElementById('modal-dtr-review')).hide();
+                Swal.fire({ icon: 'success', title: 'Done', text: res.message, timer: 2200, showConfirmButton: false });
+                loadMyDtr();
+                empLoadNotif();
+                if (typeof res.dtr_review_pending_count !== 'undefined') {
+                    PENDING.dtr = res.dtr_review_pending_count;
+                    setBadge('tabbtn-mydtr', PENDING.dtr, '#e6a817');
+                    setDot('moreitem-mydtr', PENDING.dtr);
+                    setQaBadge('qa-mydtr', PENDING.dtr);
+                    setNeedsAction('dtr', PENDING.dtr);
+                    refreshMoreBadge();
+                }
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Failed' });
+            }
+        });
+    });
+}
+document.addEventListener('DOMContentLoaded', loadMyDtr);
+
+// ── Payslip review / sign-off ───────────────────────────────────────────────
+var _payrollReviewId = null;
+function openPayrollReview(payrollId) {
+    var d = (typeof PAYROLL_REVIEW_DATA !== 'undefined') ? PAYROLL_REVIEW_DATA[payrollId] : null;
+    if (!d) return;
+    _payrollReviewId = payrollId;
+    document.getElementById('payroll-review-sub').textContent = d.period + '  ·  Ref# ' + d.ref_no;
+    document.getElementById('payroll-review-comment').value = '';
+
+    var reviewedNote = '';
+    if (d.review_status !== null) {
+        var s = parseInt(d.review_status, 10);
+        reviewedNote = '<div class="drev-prev ' + (s === 1 ? 'ok' : 'dis') + '">'
+            + '<i class="' + (s === 1 ? 'ri-checkbox-circle-line' : 'ri-error-warning-line') + '"></i> You already '
+            + (s === 1 ? 'confirmed' : 'disputed') + ' this payslip' + (d.review_comment ? ': “' + escapeHtml(d.review_comment) + '”' : '') + '. You may resubmit to update it.</div>';
+    }
+    if (d.resolved_at && d.admin_reply) {
+        reviewedNote += '<div class="drev-prev ok"><i class="ri-chat-check-line"></i> HR replied to your dispute: “' + escapeHtml(d.admin_reply) + '”</div>';
+    }
+    document.getElementById('payroll-review-body').innerHTML = reviewedNote + buildPayrollReviewBreakdown(d);
+
+    var m = new bootstrap.Modal(document.getElementById('modal-payroll-review'));
+    m.show();
+}
+
+// Full itemised payslip breakdown for the review modal — mirrors the
+// "Latest Payslip" card so employees can verify every earning & deduction
+// (OT, holidays, contributions, tax, advances, etc.) before confirming.
+function buildPayrollReviewBreakdown(d) {
+    var pos = function (v) { return parseFloat(String(v).replace(/,/g, '')) > 0; };
+    var eRow = function (lbl, amt, neg) {
+        return '<div class="ps-row"><span class="ps-lbl">' + lbl + '</span>'
+            + '<span class="ps-val ' + (neg ? 'ded' : 'earn') + '">' + (neg ? '−₱' : '₱') + amt + '</span></div>';
+    };
+
+    // ── Attendance stats strip ──
+    var stats = '<div class="drev-tbl-wrap prev-stats" style="margin-bottom:12px;"><table class="drev-tbl"><thead><tr>'
+        + '<th>Present</th><th>Absent</th><th>Late</th><th>Undertime</th><th>OT</th><th>Daily Rate</th>'
+        + '</tr></thead><tbody><tr>'
+        + '<td class="tc" data-label="Present">' + d.present + 'd</td>'
+        + '<td class="tc" data-label="Absent">' + d.absent + 'd</td>'
+        + '<td class="tc" data-label="Late">' + d.late_min + 'm</td>'
+        + '<td class="tc" data-label="Undertime">' + d.ut_min + 'm</td>'
+        + '<td class="tc" data-label="OT">' + d.ot_hrs + 'h</td>'
+        + '<td class="tc" data-label="Daily Rate">₱' + d.per_day + '</td>'
+        + '</tr></tbody></table></div>';
+
+    // ── Earnings column ──
+    var earn = '<div class="ps-col-title earn">Earnings</div>'
+        + eRow('Basic Pay', d.basic)
+        + (pos(d.allow_amt) ? eRow('Allowance (' + d.allow_days + 'd × ₱' + d.allow_rate + ')', d.allow_amt) : '')
+        + (pos(d.absent_amt) ? eRow('Absent', d.absent_amt, true) : '')
+        + '<div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span>'
+        + '<span class="ps-val earn" style="font-weight:800;">₱' + d.subtotal + '</span></div>'
+        + (pos(d.ot_amt) ? eRow('Overtime (' + d.ot_hrs + ' hrs × ₱' + d.ot_rate + ')', d.ot_amt) : '')
+        + (pos(d.lgl_amt) ? eRow('Legal Holiday (' + d.lgl_days + ')', d.lgl_amt) : '')
+        + (pos(d.sun_amt) ? eRow('Sunday Duty (' + d.sun_days + ')', d.sun_amt) : '')
+        + (pos(d.spc_amt) ? eRow('Special Holiday (' + d.spc_days + ')', d.spc_amt) : '')
+        + (pos(d.late_amt) ? eRow('Late (' + d.late_min + ' min)', d.late_amt, true) : '')
+        + '<div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#219688;">Gross Pay</span>'
+        + '<span class="ps-val earn" style="font-size:15px;font-weight:900;">₱' + d.gross + '</span></div>';
+
+    // ── Deductions column ──
+    var dedItems = ''
+        + (pos(d.d_contrib) ? eRow('Contributions', d.d_contrib, false).replace('earn', 'ded') : '')
+        + (pos(d.d_sssfund) ? eRow('SSS Provident Fund', d.d_sssfund, false).replace('earn', 'ded') : '')
+        + (pos(d.d_tax) ? eRow('Withholding Tax', d.d_tax, false).replace('earn', 'ded') : '')
+        + (pos(d.d_jei) ? eRow('JEI Advances', d.d_jei, false).replace('earn', 'ded') : '')
+        + (pos(d.d_jcc) ? eRow('JCC Advances', d.d_jcc, false).replace('earn', 'ded') : '')
+        + (pos(d.d_other) ? eRow('Other Deductions', d.d_other, false).replace('earn', 'ded') : '');
+    if (!dedItems) dedItems = '<div class="ps-row"><span class="ps-lbl dim">No deductions</span></div>';
+    var ded = '<div class="ps-col-title ded">Deductions</div>' + dedItems
+        + '<div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#dc3545;">Total Deductions</span>'
+        + '<span class="ps-val ded" style="font-size:15px;font-weight:900;">₱' + d.deductions + '</span></div>';
+
+    // ── Assemble ──
+    return stats
+        + '<div class="ps-card" style="margin-bottom:0;">'
+        + '<div class="ps-body">'
+        + '<div class="ps-col">' + earn + '</div>'
+        + '<div class="ps-col">' + ded + '</div>'
+        + '</div>'
+        + '<div class="ps-net"><div><div class="ps-net-lbl">Net Pay</div>'
+        + '<div class="ps-net-period">' + escapeHtml(d.period) + '</div></div>'
+        + '<div class="ps-net-val">₱' + d.net + '</div></div>'
+        + '</div>';
+}
+function submitPayrollReview(decision) {
+    var comment = document.getElementById('payroll-review-comment').value.trim();
+    if (decision === 2 && !comment) {
+        Swal.fire({ icon: 'warning', title: 'Add a note', text: 'Please describe what looks wrong before disputing.' });
+        return;
+    }
+    Swal.fire({
+        title: decision === 1 ? 'Confirm your payslip?' : 'Submit dispute?',
+        text: decision === 1 ? 'This tells HR your payslip is correct.' : 'HR will be notified to review your concern.',
+        icon: 'question', showCancelButton: true,
+        confirmButtonColor: decision === 1 ? '#107c41' : '#c62828',
+        confirmButtonText: decision === 1 ? 'Yes, confirm' : 'Yes, dispute',
+    }).then(function (r) {
+        if (!r.isConfirmed) return;
+        fetch('emp-portal-ajax.php?action=submit_payroll_review', {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: 'payroll_id=' + encodeURIComponent(_payrollReviewId) + '&decision=' + decision + '&comment=' + encodeURIComponent(comment)
+        }).then(function (res) { return res.json(); }).then(function (res) {
+            if (res.result) {
+                bootstrap.Modal.getInstance(document.getElementById('modal-payroll-review')).hide();
+                Swal.fire({ icon: 'success', title: 'Done', text: res.message, timer: 2200, showConfirmButton: false });
+                if (PAYROLL_REVIEW_DATA[_payrollReviewId]) {
+                    PAYROLL_REVIEW_DATA[_payrollReviewId].review_status = decision;
+                    PAYROLL_REVIEW_DATA[_payrollReviewId].review_comment = comment;
+                }
+                updatePayslipRow(_payrollReviewId, decision);
+                if (typeof res.payroll_review_pending_count !== 'undefined') {
+                    PENDING.payroll = res.payroll_review_pending_count;
+                    refreshPayslipsBadge();
+                    setQaBadge('qa-payslips', PENDING.payroll);
+                    setNeedsAction('pay', PENDING.payroll);
+                    refreshMoreBadge();
+                }
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Failed' });
+            }
+        });
+    });
+}
+
+// ── Payslip multi-select + bulk print ───────────────────────────────────────
+function refreshPsSelection() {
+    var n = document.querySelectorAll('.ps-sel-check:checked').length;
+    var cnt = document.getElementById('ps-sel-count');
+    var btn = document.getElementById('ps-print-selected');
+    if (cnt) cnt.textContent = n;
+    if (btn) btn.style.display = n > 0 ? '' : 'none';
+}
+document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'ps-check-all') {
+        // only toggle rows currently visible (respects the period search filter)
+        document.querySelectorAll('#ps-hist tbody tr').forEach(function (tr) {
+            if (tr.style.display === 'none') return;
+            var c = tr.querySelector('.ps-sel-check');
+            if (c) c.checked = e.target.checked;
+        });
+        refreshPsSelection();
+    } else if (e.target && e.target.classList.contains('ps-sel-check')) {
+        refreshPsSelection();
+    }
+});
+function printSelectedMyPayslips() {
+    var ids = Array.prototype.map.call(document.querySelectorAll('.ps-sel-check:checked'), function (c) { return c.value; });
+    if (!ids.length) return;
+    window.open('print-my-payslips.php?ids=' + ids.join(','), '_blank', 'width=960,height=760,scrollbars=yes');
+}
+
+// ── Payslip preview: show the payslip inside a modal (via iframe) first,
+// then let the employee print it from the modal — no auto-print pop-up. ──
+function openPayslipPreview(itemId) {
+    var frame = document.getElementById('payslip-preview-frame');
+    if (!frame) return;
+    frame.src = 'view_payslip.php?id=' + encodeURIComponent(itemId) + '&preview=1';
+    new bootstrap.Modal(document.getElementById('modal-payslip-preview')).show();
+}
+function printPayslipPreview() {
+    var frame = document.getElementById('payslip-preview-frame');
+    if (frame && frame.contentWindow) {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+    }
+}
+
 // ── Payroll charts (ApexCharts) ──────────────────────────────
-var CHART = <?= json_encode($chart) ?>;
-var CMP   = <?= json_encode($cmp_data) ?>;
+var CHART  = <?= json_encode($chart) ?>;
+var CMP    = <?= json_encode($cmp_data) ?>;
+var DED    = <?= json_encode($ded_breakdown) ?>;
+var TOTDED = <?= json_encode(round($tot_ded, 2)) ?>;
 function peso(v){ return '₱'+Number(v||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 
 document.addEventListener('DOMContentLoaded', function () {
-    if (typeof ApexCharts === 'undefined' || !CHART.labels || CHART.labels.length < 2) return;
+    initCompare();
+    if (typeof ApexCharts === 'undefined') return;
     var base = { chart:{ fontFamily:'Segoe UI,Arial,sans-serif', toolbar:{show:false}, parentHeightOffset:0 },
-                 grid:{ borderColor:'#eee', strokeDashArray:4 },
+                 grid:{ borderColor:'#f0ece0', strokeDashArray:0 },
                  xaxis:{ categories:CHART.labels, labels:{ style:{ fontSize:'10px', colors:'#999' } } },
                  dataLabels:{ enabled:false }, legend:{ fontSize:'11px', markers:{ width:9, height:9 } } };
 
-    // Net vs Gross — area
-    new ApexCharts(document.querySelector('#chart-pay'), Object.assign({}, base, {
-        chart: Object.assign({ type:'area', height:230 }, base.chart),
-        colors:['#219688','#b9c4d6'],
-        stroke:{ curve:'smooth', width:[3,2] },
-        fill:{ type:'gradient', gradient:{ opacityFrom:0.4, opacityTo:0.05 } },
-        series:[ { name:'Net Pay', data:CHART.net }, { name:'Gross Pay', data:CHART.gross } ],
-        yaxis:{ labels:{ formatter:function(v){ return '₱'+Math.round(v/1000)+'k'; }, style:{ fontSize:'10px', colors:'#999' } } },
-        tooltip:{ y:{ formatter:peso } }
-    })).render();
+    if (CHART.labels && CHART.labels.length > 1) {
+        // Net vs Gross — area, two series
+        new ApexCharts(document.querySelector('#chart-pay'), Object.assign({}, base, {
+            chart: Object.assign({ type:'area', height:240 }, base.chart),
+            colors:['#219688','#4a5bbf'],
+            stroke:{ curve:'smooth', width:[3,2] },
+            fill:{ type:'gradient', gradient:{ opacityFrom:0.35, opacityTo:0.04 } },
+            series:[ { name:'Net Pay', data:CHART.net }, { name:'Gross Pay', data:CHART.gross } ],
+            yaxis:{ labels:{ formatter:function(v){ return '₱'+Math.round(v/1000)+'k'; }, style:{ fontSize:'10px', colors:'#999' } } },
+            tooltip:{ y:{ formatter:peso } }
+        })).render();
 
-    // Late (mins) column + OT (hrs) line — dual axis
-    new ApexCharts(document.querySelector('#chart-lateot'), Object.assign({}, base, {
-        chart: Object.assign({ type:'line', height:210 }, base.chart),
-        colors:['#dc3545','#fd7e14'],
-        stroke:{ width:[0,3], curve:'smooth' },
-        plotOptions:{ bar:{ columnWidth:'45%', borderRadius:3 } },
-        series:[ { name:'Late (min)', type:'column', data:CHART.late }, { name:'OT (hrs)', type:'line', data:CHART.ot } ],
-        yaxis:[ { labels:{ style:{ fontSize:'10px', colors:'#999' } } },
-                { opposite:true, labels:{ style:{ fontSize:'10px', colors:'#999' } } } ]
-    })).render();
+        // Late minutes — its own axis (was a misleading dual-axis chart)
+        new ApexCharts(document.querySelector('#chart-late'), Object.assign({}, base, {
+            chart: Object.assign({ type:'bar', height:200 }, base.chart),
+            colors:['#b26a00'],
+            plotOptions:{ bar:{ columnWidth:'45%', borderRadius:3 } },
+            series:[ { name:'Late (min)', data:CHART.late } ],
+            yaxis:{ labels:{ style:{ fontSize:'10px', colors:'#999' } } },
+            legend:{ show:false }
+        })).render();
 
-    // Present vs Absent — grouped column
-    new ApexCharts(document.querySelector('#chart-attend'), Object.assign({}, base, {
-        chart: Object.assign({ type:'bar', height:210 }, base.chart),
-        colors:['#219688','#dc3545'],
-        plotOptions:{ bar:{ columnWidth:'55%', borderRadius:3 } },
-        series:[ { name:'Present', data:CHART.present }, { name:'Absent', data:CHART.absent } ],
-        yaxis:{ labels:{ style:{ fontSize:'10px', colors:'#999' } } }
-    })).render();
+        // Overtime hours — its own axis
+        new ApexCharts(document.querySelector('#chart-ot'), Object.assign({}, base, {
+            chart: Object.assign({ type:'bar', height:200 }, base.chart),
+            colors:['#4a5bbf'],
+            plotOptions:{ bar:{ columnWidth:'45%', borderRadius:3 } },
+            series:[ { name:'OT (hrs)', data:CHART.ot } ],
+            yaxis:{ labels:{ style:{ fontSize:'10px', colors:'#999' } } },
+            legend:{ show:false }
+        })).render();
 
-    // ── Comparison tab ──
-    initCompare();
+        // Present vs Absent — grouped column
+        new ApexCharts(document.querySelector('#chart-attend'), Object.assign({}, base, {
+            chart: Object.assign({ type:'bar', height:200 }, base.chart),
+            colors:['#219688','#dc3545'],
+            plotOptions:{ bar:{ columnWidth:'55%', borderRadius:3 } },
+            series:[ { name:'Present', data:CHART.present }, { name:'Absent', data:CHART.absent } ],
+            yaxis:{ labels:{ style:{ fontSize:'10px', colors:'#999' } } }
+        })).render();
+    }
+
+    // Deduction composition — donut (values also listed in the payslip card below)
+    if (DED.length && document.querySelector('#chart-deduct')) {
+        new ApexCharts(document.querySelector('#chart-deduct'), {
+            chart:{ type:'donut', height:262, fontFamily:'Segoe UI,Arial,sans-serif' },
+            colors:['#219688','#4a5bbf','#b26a00','#c9366f','#5e35b1','#7a7f2a'],
+            series: DED.map(function(d){ return d.value; }),
+            labels: DED.map(function(d){ return d.label; }),
+            stroke:{ width:2, colors:['#fffdf8'] },
+            dataLabels:{ enabled:false },
+            legend:{ position:'bottom', fontSize:'11px', markers:{ width:9, height:9 } },
+            plotOptions:{ pie:{ donut:{ size:'70%', labels:{ show:true,
+                value:{ fontSize:'14px', fontWeight:800, color:'#33312c', formatter:function(v){ return peso(v); } },
+                total:{ show:true, label:'Total', fontSize:'10px', color:'#999', formatter:function(){ return peso(TOTDED); } }
+            } } } },
+            tooltip:{ y:{ formatter:peso } }
+        }).render();
+    }
 });
 
 function initCompare(){
@@ -1766,7 +3338,7 @@ function initCompare(){
     function render(){
         if(selA.value!==''&&selA.value===selB.value){
             document.getElementById('cmp-result').innerHTML=
-                '<div class="empty-state"><i class="ri-error-warning-line" style="color:#e8920a;"></i><p>Please select two <strong>different</strong> payroll periods to compare.</p></div>';
+                '<div class="empty-state warn"><div class="empty-ic"><i class="ri-error-warning-line"></i></div><p>Please select two <strong>different</strong> payroll periods to compare.</p></div>';
             return;
         }
         var a=CMP[selA.value], b=CMP[selB.value];
@@ -1810,41 +3382,90 @@ function initCompare(){
 }
 document.getElementById('ps-search') && document.getElementById('ps-search').addEventListener('input', function(){
     var q=this.value.toLowerCase();
-    document.querySelectorAll('#ps-hist tbody tr').forEach(function(tr){
-        tr.style.display=tr.textContent.toLowerCase().includes(q)?'':'none';
+    document.querySelectorAll('#ps-hist tbody tr, .ps-mlist .psm-card').forEach(function(el){
+        el.style.display=el.textContent.toLowerCase().includes(q)?'':'none';
     });
 });
 
-// ── Attendance date-range filter (daterangepicker) ──
-var attFrom = null, attTo = null;   // 'YYYY-MM-DD' strings, or null = no bound
-function filterAtt() {
-    var rows = document.querySelectorAll('#att-tbl tbody tr');
-    var visible = 0;
-    rows.forEach(function(tr) {
-        var d = tr.getAttribute('data-date');
-        var show = (!attFrom || d >= attFrom) && (!attTo || d <= attTo);
-        tr.style.display = show ? '' : 'none';
-        if (show) visible++;
+// ── Attendance Records — server-side DataTable, defaults to today ──
+var attToday = moment().format('YYYY-MM-DD');
+var attFrom  = attToday, attTo = attToday;
+
+// (Re)binds Bootstrap popovers on the log-detail pills DataTables just drew.
+function initAttPopovers() {
+    document.querySelectorAll('#att-tbl [data-bs-toggle="popover"]').forEach(function (el) {
+        var existing = bootstrap.Popover.getInstance(el);
+        if (existing) existing.dispose();
+        new bootstrap.Popover(el, { sanitize: false });
+        el.addEventListener('shown.bs.popover', function () {
+            document.querySelectorAll('#att-tbl [data-bs-toggle="popover"]').forEach(function (other) {
+                if (other !== el) bootstrap.Popover.getInstance(other) && bootstrap.Popover.getInstance(other).hide();
+            });
+        });
     });
-    var c = document.getElementById('att-count');
-    if (c) c.textContent = visible;
 }
-function clearAttFilter() {
-    attFrom = attTo = null;
-    var lbl = document.getElementById('att-range-label');
-    if (lbl) lbl.textContent = 'All dates';
-    filterAtt();
-}
+// Click outside closes any open popover
+document.addEventListener('click', function (e) {
+    if (!e.target.closest('[data-bs-toggle="popover"]') && !e.target.closest('.popover')) {
+        document.querySelectorAll('#att-tbl [data-bs-toggle="popover"]').forEach(function (el) {
+            var inst = bootstrap.Popover.getInstance(el);
+            if (inst) inst.hide();
+        });
+    }
+});
 
 jQuery(function ($) {
+    window.attTable = $('#att-tbl').DataTable({
+        processing: true,
+        serverSide: true,
+        searching: false,
+        lengthChange: false,
+        pageLength: 15,
+        order: [[0, 'desc']],
+        ajax: {
+            url: 'attendance-portal-server.php',
+            type: 'POST',
+            data: function (d) {
+                d.from = attFrom;
+                d.to   = attTo;
+            },
+        },
+        columns: [
+            { data: 'date' },
+            { data: 'type' },
+            { data: 'work_hours' },
+            { data: 'ot_hours' },
+            { data: 'time_io', orderable: false },
+            { data: 'notes' },
+        ],
+        // Mobile card view reads each cell's label from data-label — mirror the header row.
+        createdRow: function (row) {
+            var labels = ['Date', 'Type', 'Work Hours', 'OT Hours', 'Time In / Out', 'Notes'];
+            row.querySelectorAll('td').forEach(function (td, i) { td.setAttribute('data-label', labels[i] || ''); });
+        },
+        language: {
+            emptyTable: 'No attendance records found for this range.',
+            processing: 'Loading…',
+        },
+        drawCallback: function (settings) {
+            var json = settings.json;
+            var c = document.getElementById('att-count');
+            if (c && json) c.textContent = json.recordsFiltered;
+            initAttPopovers();
+        },
+    });
+
     var $picker = $('#att-range');
     if (!$picker.length) return;
     $picker.daterangepicker({
         autoUpdateInput: false,
         opens: 'left',
         showDropdowns: true,
+        startDate: moment(),
+        endDate: moment(),
         locale: { format: 'MMM D, YYYY', cancelLabel: 'Clear', applyLabel: 'Apply' },
         ranges: {
+            'Today':        [moment(), moment()],
             'Last 7 Days':  [moment().subtract(6, 'days'), moment()],
             'Last 30 Days': [moment().subtract(29, 'days'), moment()],
             'This Month':   [moment().startOf('month'), moment().endOf('month')],
@@ -1854,41 +3475,131 @@ jQuery(function ($) {
     $picker.on('apply.daterangepicker', function (ev, picker) {
         attFrom = picker.startDate.format('YYYY-MM-DD');
         attTo   = picker.endDate.format('YYYY-MM-DD');
-        $('#att-range-label').text(picker.startDate.format('MMM D, YYYY') + ' – ' + picker.endDate.format('MMM D, YYYY'));
-        filterAtt();
+        var lbl = (attFrom === attToday && attTo === attToday)
+            ? 'Today'
+            : picker.startDate.format('MMM D, YYYY') + ' – ' + picker.endDate.format('MMM D, YYYY');
+        $('#att-range-label').text(lbl);
+        window.attTable.ajax.reload();
     });
     $picker.on('cancel.daterangepicker', function () {
         clearAttFilter();
     });
 });
 
-// ── Time-log popovers (Bootstrap) ──
-document.addEventListener('DOMContentLoaded', function () {
-    document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
-        new bootstrap.Popover(el, { sanitize: false });
-        el.addEventListener('shown.bs.popover', function () {
-            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (other) {
-                if (other !== el) bootstrap.Popover.getInstance(other) && bootstrap.Popover.getInstance(other).hide();
-            });
-        });
+// ── "File a Request" date field — single-date bootstrap-daterangepicker ───────
+// Mirrors the themed picker used for the attendance filter. The readonly text
+// input shows a friendly date; the hidden #att-req-date-hidden carries the
+// Y-m-d value the backend (submit_attendance_request) expects.
+$(function () {
+    var $rd = $('#att-req-date');
+    if (!$rd.length) return;
+    $rd.daterangepicker({
+        singleDatePicker: true,
+        autoUpdateInput: false,
+        showDropdowns: true,
+        maxDate: moment(),
+        locale: { format: 'MMM D, YYYY', cancelLabel: 'Clear' }
     });
-    // Click outside closes any open popover
-    document.addEventListener('click', function (e) {
-        if (!e.target.closest('[data-bs-toggle="popover"]') && !e.target.closest('.popover')) {
-            document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
-                var inst = bootstrap.Popover.getInstance(el);
-                if (inst) inst.hide();
-            });
-        }
+    $rd.on('apply.daterangepicker', function (ev, picker) {
+        $rd.val(picker.startDate.format('MMM D, YYYY'));
+        $('#att-req-date-hidden').val(picker.startDate.format('YYYY-MM-DD'));
+        if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().validate();
+    });
+    $rd.on('cancel.daterangepicker', function () {
+        $rd.val('');
+        $('#att-req-date-hidden').val('');
     });
 });
+
+function clearAttFilter() {
+    attFrom = attTo = attToday;
+    var lbl = document.getElementById('att-range-label');
+    if (lbl) lbl.textContent = 'Today';
+    if (window.attTable) window.attTable.ajax.reload();
+}
 </script>
+
+<!-- Modal: DTR Review / Sign-off -->
+<div class="modal fade" id="modal-dtr-review" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" style="border-radius:16px;overflow:hidden;">
+            <div class="modal-header" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;border:0;">
+                <div>
+                    <h5 class="modal-title mb-0"><i class="ri-file-list-3-line me-1"></i>Review My DTR</h5>
+                    <div id="dtr-review-sub" style="font-size:12px;opacity:.85;"></div>
+                </div>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="dtr-review-body" style="background:#f7fbfa;">
+                <div class="mydtr-empty"><i class="ri-loader-4-line"></i> Loading…</div>
+            </div>
+            <div class="modal-footer" id="dtr-review-footer" style="background:#fff;flex-direction:column;align-items:stretch;gap:8px;">
+                <textarea id="dtr-review-comment" class="form-control" rows="2"
+                    placeholder="Add a comment (required if disputing)…" style="font-size:13px;border-radius:10px;"></textarea>
+                <div class="d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn" style="background:#fdecea;color:#c62828;font-weight:700;border-radius:10px;"
+                        onclick="submitDtrReview(2)"><i class="ri-error-warning-line me-1"></i>Dispute</button>
+                    <button type="button" class="btn" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border-radius:10px;"
+                        onclick="submitDtrReview(1)"><i class="ri-checkbox-circle-line me-1"></i>Confirm — Looks Correct</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Payslip Review / Sign-off -->
+<div class="modal fade" id="modal-payroll-review" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" style="border-radius:16px;overflow:hidden;">
+            <div class="modal-header" style="background:#fff;color:#176358;border-bottom:1px solid #eef3f2;">
+                <div>
+                    <h5 class="modal-title mb-0" style="color:#176358;"><i class="ri-file-list-3-line me-1" style="color:#219688;"></i>Review My Payslip</h5>
+                    <div id="payroll-review-sub" style="font-size:12px;color:#8a9a95;"></div>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="payroll-review-body" style="background:#f7fbfa;">
+                <div class="mydtr-empty"><i class="ri-loader-4-line"></i> Loading…</div>
+            </div>
+            <div class="modal-footer" id="payroll-review-footer" style="background:#fff;flex-direction:column;align-items:stretch;gap:8px;">
+                <textarea id="payroll-review-comment" class="form-control" rows="2"
+                    placeholder="Add a comment (required if disputing)…" style="font-size:13px;border-radius:10px;"></textarea>
+                <div class="d-flex gap-2 justify-content-end">
+                    <button type="button" class="btn" style="background:#fdecea;color:#c62828;font-weight:700;border-radius:10px;"
+                        onclick="submitPayrollReview(2)"><i class="ri-error-warning-line me-1"></i>Dispute</button>
+                    <button type="button" class="btn" style="background:linear-gradient(135deg,#107c41,#0e6b37);color:#fff;font-weight:700;border-radius:10px;"
+                        onclick="submitPayrollReview(1)"><i class="ri-checkbox-circle-line me-1"></i>Confirm — Looks Correct</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Payslip Preview (view before printing) -->
+<div class="modal fade" id="modal-payslip-preview" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content" style="border-radius:16px;overflow:hidden;">
+            <div class="modal-header" style="background:#fff;color:#176358;border-bottom:1px solid #eef3f2;">
+                <h5 class="modal-title mb-0" style="color:#176358;"><i class="ri-file-text-line me-1" style="color:#219688;"></i>Payslip Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="background:#e8e8e8;padding:0;">
+                <iframe id="payslip-preview-frame" title="Payslip preview" style="width:100%;height:70vh;border:0;display:block;background:#e8e8e8;"></iframe>
+            </div>
+            <div class="modal-footer" style="background:#fff;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;" onclick="printPayslipPreview()">
+                    <i class="ri-printer-line me-1"></i>Print
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Modal: Request a Leave -->
 <div class="modal fade" id="modal-leave-request" tabindex="-1">
     <div class="modal-dialog modal-lg">
-        <form method="post" action="employee-portal.php" id="leave-request-form">
-            <input type="hidden" name="action" value="request_leave">
+        <form id="leave-request-form" data-parsley-validate novalidate>
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" style="color:#176358;font-weight:700;">
@@ -1900,7 +3611,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="row g-3">
                         <div class="col-12 col-md-6">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Type of Leave <span style="color:red">*</span></label>
-                            <select name="leave_type_id" class="form-control" required>
+                            <select name="leave_type_id" class="form-control" data-parsley-required-message="Please select a leave type." required>
                                 <option value="">Select leave type…</option>
                                 <?php foreach ($leave_types_list as $t): ?>
                                     <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
@@ -1928,7 +3639,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                         <div class="col-12 col-md-6">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
-                            <input type="text" id="lv-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
+                            <input type="text" id="lv-dates" class="form-control" placeholder="Pick one or more days…" readonly
+                                data-parsley-required-message="Please select at least one leave day." required>
                             <input type="hidden" name="dates" id="lv-dates-hidden">
                             <div style="font-size:10.5px;color:#999;margin-top:3px;" id="lv-date-hint">
                                 <i class="ri-information-line"></i> Holidays are disabled. <span id="lv-half-hint"></span>
@@ -1939,7 +3651,8 @@ document.addEventListener('DOMContentLoaded', function () {
                         </div>
                         <div class="col-12">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason / Purpose <span style="color:red">*</span></label>
-                            <textarea name="reason" class="form-control" rows="3" placeholder="State the reason for your leave" required></textarea>
+                            <textarea name="reason" class="form-control" rows="3" placeholder="State the reason for your leave"
+                                data-parsley-required-message="Please state your reason for leave." required></textarea>
                         </div>
                     </div>
                 </div>
@@ -1958,8 +3671,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <?php if (!empty($lwop_types_list)): ?>
 <div class="modal fade" id="modal-lwop-request" tabindex="-1">
     <div class="modal-dialog">
-        <form method="post" action="employee-portal.php" id="lwop-request-form">
-            <input type="hidden" name="action" value="request_leave">
+        <form id="lwop-request-form" data-parsley-validate novalidate>
             <?php foreach ($lwop_types_list as $lt): ?>
             <input type="hidden" name="leave_type_id" value="<?= $lt['id'] ?>">
             <?php endforeach; ?>
@@ -1977,12 +3689,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     <div class="row g-3">
                         <div class="col-12">
                             <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
-                            <input type="text" id="lwop-dates" class="form-control" placeholder="Pick one or more days…" readonly required>
+                            <input type="text" id="lwop-dates" class="form-control" placeholder="Pick one or more days…" readonly
+                                data-parsley-required-message="Please select at least one LWOP day." required>
                             <input type="hidden" name="dates" id="lwop-dates-hidden">
                         </div>
                         <div class="col-12">
                             <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red">*</span></label>
-                            <textarea name="reason" class="form-control" rows="2" placeholder="State the reason for LWOP" required></textarea>
+                            <textarea name="reason" class="form-control" rows="2" placeholder="State the reason for LWOP"
+                                data-parsley-required-message="Please state your reason for LWOP." required></textarea>
                         </div>
                     </div>
                 </div>
@@ -1998,5 +3712,131 @@ document.addEventListener('DOMContentLoaded', function () {
 </div>
 <?php endif; ?>
 
+<!-- Modal: Attendance Request -->
+<div class="modal fade" id="modal-att-request" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form id="att-request-form" data-parsley-validate novalidate>
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                        <i class="ri-timer-flash-line me-2"></i>File a Request
+                    </h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12 col-md-6">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Request Type <span style="color:red;">*</span></label>
+                            <select name="request_type" class="form-control" id="att-req-type" onchange="toggleAttFields(this.value)"
+                                data-parsley-required-message="Please select a request type." required>
+                                <option value="">— Select type —</option>
+                                <option value="incident">Incident Report (missed/wrong scan)</option>
+                                <option value="overtime">Overtime Authorization Request</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Date <span style="color:red;">*</span></label>
+                            <input type="text" id="att-req-date" class="form-control" placeholder="Select a date…" readonly
+                                data-parsley-required-message="Please select a date." required>
+                            <input type="hidden" name="request_date" id="att-req-date-hidden">
+                        </div>
+                        <div class="col-12 col-md-6">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red;">*</span></label>
+                            <select name="reason" class="form-control" data-parsley-required-message="Please select a reason." required>
+                                <option value="">— Select reason —</option>
+                                <option value="forgot_scan">Forgot to Scan</option>
+                                <option value="device_error">Device / Scanner Error</option>
+                                <option value="system_down">System Down</option>
+                                <option value="overtime">Overtime Authorization</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+
+                        <!-- Incident fields -->
+                        <div class="col-6 att-incident-field" style="display:none;">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time In <span style="color:red;">*</span></label>
+                            <input type="time" name="claimed_time_in" class="form-control" data-parsley-required-message="Please enter your claimed time in.">
+                        </div>
+                        <div class="col-6 att-incident-field" style="display:none;">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time Out <span style="color:red;">*</span></label>
+                            <input type="time" name="claimed_time_out" class="form-control" data-parsley-required-message="Please enter your claimed time out.">
+                        </div>
+
+                        <!-- OT fields -->
+                        <div class="col-12 col-md-6 att-ot-field" style="display:none;">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
+                            <input type="number" name="ot_hours_requested" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5"
+                                data-parsley-type="number" data-parsley-required-message="Please enter the OT hours requested.">
+                        </div>
+
+                        <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Notes / Explanation</label>
+                            <textarea name="notes" class="form-control" rows="2" placeholder="Describe what happened…"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
+                        <i class="ri-send-plane-line me-1"></i>Submit Request
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+// ── Pull-to-refresh (mobile, every tab) ──────────────────────────────────────
+// Reloads the page and lands back on the same tab via the existing ?tab= deep-link
+// mechanism (see the whitelisted $valid_portal_tabs handler near the top of this file).
+(function () {
+    if (!('ontouchstart' in window)) return; // touch devices only
+    var THRESHOLD = 70, MAX_PULL = 110;
+    var startY = null, pulling = false, refreshing = false;
+
+    var indicator = document.createElement('div');
+    indicator.id = 'ptr-indicator';
+    indicator.innerHTML = '<i class="ri-refresh-line"></i>';
+    document.body.appendChild(indicator);
+
+    function blocked(target) {
+        return !!(target.closest && (target.closest('.more-sheet.open') || target.closest('.modal.show') || target.closest('.emp-notif-panel.open')));
+    }
+
+    document.addEventListener('touchstart', function (e) {
+        if (refreshing || window.scrollY > 0 || blocked(e.target)) { startY = null; pulling = false; return; }
+        startY = e.touches[0].clientY;
+        pulling = true;
+    }, { passive: true });
+
+    document.addEventListener('touchmove', function (e) {
+        if (!pulling || startY === null || refreshing) return;
+        var dy = e.touches[0].clientY - startY;
+        if (dy <= 0 || window.scrollY > 0) { indicator.style.transform = 'translateY(-100px)'; indicator.classList.remove('ready'); return; }
+        var pull = Math.min(dy * 0.5, MAX_PULL);
+        indicator.style.transform = 'translateY(' + (pull - 100) + 'px)';
+        indicator.classList.toggle('ready', pull >= THRESHOLD);
+    }, { passive: true });
+
+    document.addEventListener('touchend', function () {
+        if (!pulling) return;
+        pulling = false;
+        var pulled = indicator.classList.contains('ready');
+        if (pulled) {
+            refreshing = true;
+            indicator.classList.add('spin');
+            indicator.style.transform = 'translateY(16px)';
+            var activePanel = document.querySelector('.tab-panel.active');
+            var tabId = activePanel ? activePanel.id.replace(/^tab-/, '') : 'overview';
+            setTimeout(function () { location.href = 'employee-portal.php?tab=' + encodeURIComponent(tabId); }, 2000);
+        } else {
+            indicator.style.transform = 'translateY(-100px)';
+            indicator.classList.remove('ready');
+        }
+        startY = null;
+    });
+})();
+</script>
 </body>
 </html>

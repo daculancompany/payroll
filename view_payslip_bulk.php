@@ -218,8 +218,8 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
 <div class="ps-hdr">
     <div class="ps-hdr-logo-cell"><img src="assets/images/logo.jpeg" alt="Logo"></div>
     <div class="ps-hdr-text-cell">
-        <div class="ps-hdr-company">JEJORS CONSTRUCTION CORPORATION</div>
-        <div class="ps-hdr-addr">Tiu Sons, Building Barangay 33, Guillermo Cogon, Cagayan de Oro City</div>
+        <div class="ps-hdr-company">COMC</div>
+        <div class="ps-hdr-addr">Tiano Brothers Street, Nacalaban Street, Cagayan De Oro City, 9000 Misamis Oriental</div>
     </div>
     <div class="ps-hdr-badge-cell"><div class="ps-hdr-badge">PAYSLIP</div></div>
 </div>
@@ -333,7 +333,7 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
 
 <!-- FOOTER -->
 <table class="ps-foot" cellspacing="0" cellpadding="0"><tr>
-    <td>JEJORS CONSTRUCTION CORPORATION — Confidential Payroll Document</td>
+    <td>COMC — Confidential Payroll Document</td>
     <td>Generated: <?= date('M d, Y g:i A') ?></td>
 </tr></table>
 

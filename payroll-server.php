@@ -13,9 +13,11 @@ $orderColumnIndex = $_POST['order'][0]['column'];
 $orderDirection = $_POST['order'][0]['dir'];
 $p2 = $_POST['p2'];
 
-// Define column mappings (Period sorts by the actual start date, not the label)
-$columns = ["ref_no", "employer_name", "date_from", "category", "type", "status"];
-$orderColumn = isset($columns[$orderColumnIndex]) ? $columns[$orderColumnIndex] : "date_from";
+// Define column mappings (Period sorts by the actual start date, not the label).
+// Index 0 is the bulk-select checkbox column (not sortable).
+$columns = ["select", "ref_no", "employer_name", "date_from", "status"];
+$orderColumn = (isset($columns[$orderColumnIndex]) && $columns[$orderColumnIndex] !== "select")
+    ? $columns[$orderColumnIndex] : "date_from";
 $orderDirection = strtoupper($orderDirection) === 'ASC' ? 'ASC' : 'DESC';
 
 // Query to count total records
@@ -46,16 +48,13 @@ $result = $conn->query($query);
 $data = array();
 while ($row = $result->fetch_assoc()) {
     $data[] = array(
+        "select" => ($row['status'] == 1)
+            ? '<input type="checkbox" class="pay-bulk-check" value="' . (int)$row['id'] . '">'
+            : '',
         "ref_no" => '<span class="payroll-ref">' . htmlspecialchars($row['ref_no']) . '</span>',
         "employer_name" => '<span class="payroll-employer">' . htmlspecialchars($row['employer_name']) . '</span>',
         "period" => '<span class="payroll-period"><i class="ri-calendar-2-line me-1 text-muted"></i>'
                   . date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M d, Y", strtotime($row['date_to'])) . '</span>',
-        "category" => ($row['category'] == 0)
-            ? '<span class="badge bg-info-subtle text-info border border-info-subtle"><i class="ri-map-pin-2-line me-1"></i>Sites</span>'
-            : '<span class="badge bg-purple-subtle text-purple border" style="background:#f3e5f5;color:#6a1b9a;border-color:#ce93d8!important;"><i class="ri-global-line me-1"></i>' . htmlspecialchars($row['cluster']) . '</span>',
-        "type" => ($row['type'] == 5)
-            ? '<span class="badge bg-dark type-badge"><i class="ri-calendar-check-line me-1"></i>Monthly</span>'
-            : '<span class="badge bg-secondary type-badge"><i class="ri-calendar-2-line me-1"></i>Week ' . $row['type'] . '</span>',
         "status" => getStatusBadge($row['status']),
         "action" => getActionButtons($row)
     );
@@ -69,6 +68,8 @@ function getStatusBadge($status)
             return '<span class="badge rounded-pill bg-primary"><i class="ri-file-add-line me-1"></i>New</span>';
         case 1:
             return '<span class="badge rounded-pill bg-success"><i class="ri-check-circle-line me-1"></i>Calculated</span>';
+        case 3:
+            return '<span class="badge rounded-pill bg-warning text-dark"><i class="ri-eye-line me-1"></i>Ready for Review</span>';
         case 2:
             return '<span class="badge rounded-pill bg-danger"><i class="ri-lock-fill me-1"></i>Locked</span>';
         default:

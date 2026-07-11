@@ -9,8 +9,10 @@ if ($bdq) while ($b = $bdq->fetch_assoc()) {
 
 // Current user's role drives which approval actions are available.
 $my_role = (int) ($_SESSION['login_role'] ?? 0);
-$can_hr    = in_array($my_role, [1, 9], true);   // HR or Admin
-$can_admin = in_array($my_role, [1, 8], true);   // Admin or Department Head
+// Admin (role 1) is VIEW-ONLY for leaves — HR approves the HR stage, the
+// Department Head gives final approval. Admin can see everything but not act.
+$can_hr    = in_array($my_role, [9], true);   // HR only
+$can_admin = in_array($my_role, [8], true);   // Department Head only
 
 // Summary counts for the cards
 $counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];

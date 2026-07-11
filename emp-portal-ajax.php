@@ -1,0 +1,398 @@
+<?php
+// ── Employee self-service portal AJAX ──────────────────────────────────────
+// Strictly scoped to the logged-in employee (id from session, never client input).
+// Handles the portal notification bell and the DTR employee-review sign-off.
+session_start();
+header('Content-Type: application/json');
+
+if (empty($_SESSION['emp_is_login'])) {
+    http_response_code(403);
+    echo json_encode(['result' => false, 'message' => 'Not authenticated']);
+    exit;
+}
+
+include 'db_connect.php';
+
+$emp_id = (int) $_SESSION['emp_id'];
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
+
+// Insert a staff (users) notification — mirrors Action::notify().
+function notify_user($conn, $user_id, $title, $message, $icon, $color, $link)
+{
+    $user_id = (int) $user_id;
+    if ($user_id <= 0) return;
+    $stmt = $conn->prepare("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES (?, 'user', ?, ?, ?, ?, ?)");
+    $stmt->bind_param('isssss', $user_id, $title, $message, $icon, $color, $link);
+    $stmt->execute();
+}
+
+switch ($action) {
+
+    // ── Notification bell ──
+    case 'emp_notifications': {
+        $items = [];
+        $st = $conn->prepare("SELECT * FROM notifications WHERE user_id = ? AND recipient_type = 'employee' ORDER BY created_at DESC LIMIT 30");
+        $st->bind_param('i', $emp_id);
+        $st->execute();
+        $res = $st->get_result();
+        while ($r = $res->fetch_assoc()) $items[] = $r;
+
+        $unread = (int) ($conn->query("SELECT COUNT(*) AS c FROM notifications WHERE user_id = $emp_id AND recipient_type = 'employee' AND is_read = 0")->fetch_assoc()['c'] ?? 0);
+        echo json_encode(['result' => true, 'items' => $items, 'unread' => $unread]);
+        break;
+    }
+
+    case 'emp_mark_read': {
+        $id = (int) ($_POST['id'] ?? 0);
+        $st = $conn->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE id = ? AND user_id = ? AND recipient_type = 'employee'");
+        $st->bind_param('ii', $id, $emp_id);
+        $st->execute();
+        echo json_encode(['result' => true]);
+        break;
+    }
+
+    case 'emp_mark_all_read': {
+        $conn->query("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE user_id = $emp_id AND recipient_type = 'employee' AND is_read = 0");
+        echo json_encode(['result' => true]);
+        break;
+    }
+
+    // ── DTR review: list this employee's DTR batches that are ready / done ──
+    case 'my_dtr_list': {
+        // Batches the employee has records in, that are in review (3) or approved (2).
+        $rows = [];
+        $sql = "SELECT DTR.id, DTR.date_from, DTR.date_to, DTR.status,
+                    sites.site_code, sites.site_name,
+                    r.status AS review_status, r.comment AS review_comment, r.reviewed_at,
+                    COUNT(dd.id) AS day_count,
+                    SUM(dd.work_hours) AS total_hours, SUM(dd.overtime) AS total_ot
+                FROM DTR_details dd
+                INNER JOIN DTR ON DTR.id = dd.ddtr_id
+                LEFT JOIN sites ON sites.id = DTR.site_id
+                LEFT JOIN dtr_employee_reviews r ON r.ddtr_id = DTR.id AND r.employee_id = ?
+                WHERE dd.employee_id = ? AND DTR.status IN (2, 3)
+                GROUP BY DTR.id
+                ORDER BY (DTR.status = 3) DESC, DTR.id DESC
+                LIMIT 60";
+        $st = $conn->prepare($sql);
+        $st->bind_param('ii', $emp_id, $emp_id);
+        $st->execute();
+        $res = $st->get_result();
+        while ($r = $res->fetch_assoc()) $rows[] = $r;
+        echo json_encode(['result' => true, 'rows' => $rows]);
+        break;
+    }
+
+    // ── DTR review: the employee's own day rows for one batch ──
+    case 'my_dtr_details': {
+        $ddtr_id = (int) ($_POST['ddtr_id'] ?? 0);
+        if (!$ddtr_id) { echo json_encode(['result' => false, 'message' => 'Invalid DTR']); break; }
+
+        // Confirm the employee actually belongs to this batch.
+        $own = $conn->query("SELECT COUNT(*) AS c FROM DTR_details WHERE ddtr_id = $ddtr_id AND employee_id = $emp_id")->fetch_assoc();
+        if (!$own || (int)$own['c'] === 0) { echo json_encode(['result' => false, 'message' => 'Not authorized for this DTR']); break; }
+
+        $dtr = $conn->query("SELECT DTR.*, sites.site_code, sites.site_name FROM DTR LEFT JOIN sites ON sites.id = DTR.site_id WHERE DTR.id = $ddtr_id")->fetch_assoc();
+
+        $days = [];
+        $st = $conn->prepare("SELECT date_time, work_hours, overtime, undertime, late, logs, attendance_type, status
+                              FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
+        $st->bind_param('ii', $ddtr_id, $emp_id);
+        $st->execute();
+        $res = $st->get_result();
+        while ($d = $res->fetch_assoc()) {
+            $logs = json_decode($d['logs'], true) ?: [];
+            $tIn = $tOut = '';
+            if (!empty($logs)) {
+                $tIn  = date('g:i A', strtotime($logs[0]['dateTime']));
+                $tOut = count($logs) > 1 ? date('g:i A', strtotime(end($logs)['dateTime'])) : '';
+            }
+            $days[] = [
+                'date'       => date('D, M j, Y', strtotime($d['date_time'])),
+                'time_in'    => $tIn,
+                'time_out'   => $tOut,
+                'work_hours' => (float) $d['work_hours'],
+                'overtime'   => (float) $d['overtime'],
+                'late'       => (float) $d['late'],
+                'type'       => $d['attendance_type'],
+                'status'     => (int) $d['status'],
+            ];
+        }
+
+        $review = $conn->query("SELECT status, comment, reviewed_at, admin_reply, resolved_at FROM dtr_employee_reviews WHERE ddtr_id = $ddtr_id AND employee_id = $emp_id")->fetch_assoc();
+
+        echo json_encode([
+            'result' => true,
+            'dtr' => [
+                'id' => (int) $dtr['id'],
+                'period' => date('M j', strtotime($dtr['date_from'])) . ' – ' . date('M j, Y', strtotime($dtr['date_to'])),
+                'site' => trim(($dtr['site_code'] ? $dtr['site_code'] . ' — ' : '') . $dtr['site_name']),
+                'status' => (int) $dtr['status'],
+            ],
+            'days' => $days,
+            'review' => $review ?: null,
+        ]);
+        break;
+    }
+
+    // ── DTR review: employee submits confirm / dispute ──
+    case 'submit_dtr_review': {
+        $ddtr_id  = (int) ($_POST['ddtr_id'] ?? 0);
+        $decision = (int) ($_POST['decision'] ?? 0); // 1 = confirm, 2 = dispute
+        $comment  = trim($_POST['comment'] ?? '');
+
+        if (!$ddtr_id || !in_array($decision, [1, 2], true)) {
+            echo json_encode(['result' => false, 'message' => 'Invalid submission']); break;
+        }
+        if ($decision === 2 && $comment === '') {
+            echo json_encode(['result' => false, 'message' => 'Please describe the issue when disputing.']); break;
+        }
+
+        $dtr = $conn->query("SELECT DTR.*, sites.site_code FROM DTR LEFT JOIN sites ON sites.id = DTR.site_id WHERE DTR.id = $ddtr_id")->fetch_assoc();
+        if (!$dtr) { echo json_encode(['result' => false, 'message' => 'DTR not found']); break; }
+        if ((int)$dtr['status'] !== 3) {
+            echo json_encode(['result' => false, 'message' => 'This DTR is no longer open for review.']); break;
+        }
+
+        $own = $conn->query("SELECT COUNT(*) AS c FROM DTR_details WHERE ddtr_id = $ddtr_id AND employee_id = $emp_id")->fetch_assoc();
+        if (!$own || (int)$own['c'] === 0) { echo json_encode(['result' => false, 'message' => 'Not authorized for this DTR']); break; }
+
+        // Upsert the employee's sign-off.
+        $st = $conn->prepare("INSERT INTO dtr_employee_reviews (ddtr_id, employee_id, status, comment)
+                              VALUES (?, ?, ?, ?)
+                              ON DUPLICATE KEY UPDATE status = VALUES(status), comment = VALUES(comment), reviewed_at = CURRENT_TIMESTAMP");
+        $st->bind_param('iiis', $ddtr_id, $emp_id, $decision, $comment);
+        if (!$st->execute()) { echo json_encode(['result' => false, 'message' => $st->error]); break; }
+
+        // Notify the relevant staff (uploader + Admin / Dept Head / HR).
+        $emp = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
+        $ename  = $emp['n'] ?? 'An employee';
+        $period = date('M j', strtotime($dtr['date_from'])) . ' – ' . date('M j, Y', strtotime($dtr['date_to']));
+        $verb   = $decision === 1 ? 'confirmed' : 'disputed';
+        $icon   = $decision === 1 ? 'ri-checkbox-circle-line' : 'ri-error-warning-line';
+        $color  = $decision === 1 ? 'success' : 'danger';
+        $link   = 'index.php?page=dtr-details&id=' . base64_encode($ddtr_id) . '&timekeeper_name=' . base64_encode('') . '&device_id=' . base64_encode($dtr['device_id']) . '&site_id=' . base64_encode($dtr['site_id']) . '&status=' . base64_encode($dtr['status']);
+        $msg = "$ename $verb their DTR for $period." . ($comment !== '' ? " Note: $comment" : '');
+
+        $recipients = [];
+        if (!empty($dtr['uploaded_by'])) $recipients[] = (int) $dtr['uploaded_by'];
+        $staff = $conn->query("SELECT id FROM users WHERE role IN (1, 8, 9) AND status = 1");
+        if ($staff) while ($u = $staff->fetch_assoc()) $recipients[] = (int) $u['id'];
+        foreach (array_unique($recipients) as $uid) {
+            notify_user($conn, $uid, "DTR $verb by employee", $msg, $icon, $color, $link);
+        }
+
+        $dtr_review_pending_count = (int) ($conn->query("SELECT COUNT(DISTINCT DTR.id) AS c
+            FROM DTR_details dd
+            INNER JOIN DTR ON DTR.id = dd.ddtr_id
+            LEFT JOIN dtr_employee_reviews r ON r.ddtr_id = DTR.id AND r.employee_id = $emp_id
+            WHERE dd.employee_id = $emp_id AND DTR.status = 3 AND r.id IS NULL")->fetch_assoc()['c'] ?? 0);
+
+        echo json_encode([
+            'result' => true,
+            'message' => $decision === 1 ? 'Thanks! Your DTR is confirmed.' : 'Your dispute has been sent for review.',
+            'dtr_review_pending_count' => $dtr_review_pending_count,
+        ]);
+        break;
+    }
+
+    // ── Payslip review: employee submits confirm / dispute ──
+    case 'submit_payroll_review': {
+        $payroll_id = (int) ($_POST['payroll_id'] ?? 0);
+        $decision   = (int) ($_POST['decision'] ?? 0); // 1 = confirm, 2 = dispute
+        $comment    = trim($_POST['comment'] ?? '');
+
+        if (!$payroll_id || !in_array($decision, [1, 2], true)) {
+            echo json_encode(['result' => false, 'message' => 'Invalid submission']); break;
+        }
+        if ($decision === 2 && $comment === '') {
+            echo json_encode(['result' => false, 'message' => 'Please describe the issue when disputing.']); break;
+        }
+
+        $payroll = $conn->query("SELECT * FROM payroll WHERE id = $payroll_id")->fetch_assoc();
+        if (!$payroll) { echo json_encode(['result' => false, 'message' => 'Payroll not found']); break; }
+        if ((int)$payroll['status'] !== 3) {
+            echo json_encode(['result' => false, 'message' => 'This payroll is no longer open for review.']); break;
+        }
+
+        $own = $conn->query("SELECT COUNT(*) AS c FROM payroll_items WHERE payroll_id = $payroll_id AND employee_id = $emp_id")->fetch_assoc();
+        if (!$own || (int)$own['c'] === 0) { echo json_encode(['result' => false, 'message' => 'Not authorized for this payroll']); break; }
+
+        // Upsert the employee's sign-off.
+        $st = $conn->prepare("INSERT INTO payroll_employee_reviews (payroll_id, employee_id, status, comment)
+                              VALUES (?, ?, ?, ?)
+                              ON DUPLICATE KEY UPDATE status = VALUES(status), comment = VALUES(comment), reviewed_at = CURRENT_TIMESTAMP");
+        $st->bind_param('iiis', $payroll_id, $emp_id, $decision, $comment);
+        if (!$st->execute()) { echo json_encode(['result' => false, 'message' => $st->error]); break; }
+
+        // Notify staff (Admin / Dept Head / HR).
+        $emp = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
+        $ename  = $emp['n'] ?? 'An employee';
+        $period = date('M j', strtotime($payroll['date_from'])) . ' – ' . date('M j, Y', strtotime($payroll['date_to']));
+        $verb   = $decision === 1 ? 'confirmed' : 'disputed';
+        $icon   = $decision === 1 ? 'ri-checkbox-circle-line' : 'ri-error-warning-line';
+        $color  = $decision === 1 ? 'success' : 'danger';
+        $link   = 'index.php?page=payroll_calculations&id=' . $payroll_id;
+        $msg = "$ename $verb their payslip for $period." . ($comment !== '' ? " Note: $comment" : '');
+
+        $staff = $conn->query("SELECT id FROM users WHERE role IN (1, 8, 9) AND status = 1");
+        if ($staff) while ($u = $staff->fetch_assoc()) {
+            notify_user($conn, (int) $u['id'], "Payslip $verb by employee", $msg, $icon, $color, $link);
+        }
+
+        $payroll_review_pending_count = (int) ($conn->query("SELECT COUNT(*) AS c
+            FROM payroll_items pi
+            INNER JOIN payroll p ON pi.payroll_id = p.id
+            LEFT JOIN payroll_employee_reviews r ON r.payroll_id = p.id AND r.employee_id = $emp_id
+            WHERE pi.employee_id = $emp_id AND p.status = 3 AND r.id IS NULL")->fetch_assoc()['c'] ?? 0);
+
+        echo json_encode([
+            'result' => true,
+            'message' => $decision === 1 ? 'Thanks! Your payslip is confirmed.' : 'Your dispute has been sent for review.',
+            'payroll_review_pending_count' => $payroll_review_pending_count,
+        ]);
+        break;
+    }
+
+    // ── Leave / LWOP request: employee files a new leave request ──
+    case 'submit_leave_request': {
+        $lt_id      = (int) ($_POST['leave_type_id'] ?? 0);
+        $lreason    = trim($_POST['reason'] ?? '');
+        $is_half    = intval($_POST['is_half_day'] ?? 0);
+        $half_per   = in_array($_POST['half_period'] ?? '', ['AM', 'PM'], true) ? $_POST['half_period'] : null;
+        $dates_raw  = trim($_POST['dates'] ?? '');
+
+        $lt_check = $lt_id > 0 ? $conn->query("SELECT is_paid FROM leave_types WHERE id = $lt_id LIMIT 1")->fetch_assoc() : null;
+        $is_lwop_req = $lt_check && $lt_check['is_paid'] == 0;
+
+        $elig = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = $emp_id")->fetch_assoc();
+        $eligible = $elig && in_array($elig['c'], LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
+
+        if (!$eligible && !$is_lwop_req) {
+            echo json_encode(['result' => false, 'message' => 'Only Regular and Executive employees are entitled to leave.']);
+            break;
+        }
+
+        $days = array_filter(array_map('trim', explode(',', $dates_raw)));
+        if ($lt_id <= 0 || empty($days) || $lreason === '') {
+            echo json_encode(['result' => false, 'message' => 'Please complete all fields and select at least one date.']);
+            break;
+        }
+
+        sort($days);
+        $d_from = $days[0];
+        $d_to   = end($days);
+        $dur    = $is_half ? count($days) * 0.5 : (float) count($days);
+        $today  = date('Y-m-d');
+        $dates_json = json_encode($days);
+
+        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, is_half_day, half_period, dates, reason, status) VALUES (?,?,?,?,?,?,?,?,?,?,0)");
+        $ins->bind_param('iisssdisss', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $is_half, $half_per, $dates_json, $lreason);
+        if (!$ins->execute()) {
+            echo json_encode(['result' => false, 'message' => 'Could not submit your request. Please try again.']);
+            break;
+        }
+        $new_id = $ins->insert_id;
+
+        $tname_q = $conn->query("SELECT name FROM leave_types WHERE id = $lt_id");
+        $tname   = ($tname_q && $tr = $tname_q->fetch_assoc()) ? $tr['name'] : 'leave';
+        $erow    = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
+        $ename   = $erow['n'] ?? 'Employee';
+        $durLabel = $is_half ? ($dur . ' day — ' . $half_per . ' half') : $dur . ' day/s';
+        $msg   = $conn->real_escape_string("$ename requested $tname ($durLabel) via portal. Needs HR review.");
+        $title = $conn->real_escape_string('New leave request');
+        // Notify the same reviewer roles as attendance requests: Admin (1),
+        // Admin Dept Head (8) and HR Head (9) — not HR alone, so it shows in
+        // the admin notification bell too.
+        $hrs = $conn->query("SELECT id FROM users WHERE role IN (1,8,9) AND status = 1");
+        if ($hrs) while ($hu = $hrs->fetch_assoc()) {
+            $uid = (int) $hu['id'];
+            $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES ($uid,'user','$title','$msg','ri-calendar-event-line','warning','index.php?page=leaves')");
+        }
+
+        $leave_pending_count = (int) ($conn->query("SELECT COUNT(*) AS c FROM leave_requests WHERE employee_id = $emp_id AND status = 0")->fetch_assoc()['c'] ?? 0);
+
+        echo json_encode([
+            'result'  => true,
+            'message' => 'Leave request submitted! HR will review it shortly.',
+            'leave_pending_count' => $leave_pending_count,
+            'request' => [
+                'id' => (int) $new_id,
+                'leave_type_name' => $tname,
+                'date_applied' => $today,
+                'date_from' => $d_from,
+                'date_to' => $d_to,
+                'duration' => $dur,
+                'status' => 0, 'hr_status' => 0, 'admin_status' => 0,
+            ],
+        ]);
+        break;
+    }
+
+    // ── Attendance / OT request: employee files an incident or OT request ──
+    case 'submit_attendance_request': {
+        $req_type  = trim($_POST['request_type'] ?? '');
+        $req_date  = trim($_POST['request_date'] ?? '');
+        $reason    = trim($_POST['reason'] ?? '');
+        $time_in   = trim($_POST['claimed_time_in'] ?? '') ?: null;
+        $time_out  = trim($_POST['claimed_time_out'] ?? '') ?: null;
+        $ot_hours  = trim($_POST['ot_hours_requested'] ?? '') !== '' ? (float) $_POST['ot_hours_requested'] : null;
+        $att_notes = trim($_POST['notes'] ?? '');
+
+        if (!in_array($req_type, ['incident', 'overtime'], true) || !$req_date || !$reason) {
+            echo json_encode(['result' => false, 'message' => 'Please complete all required fields.']);
+            break;
+        }
+        if ($req_type === 'incident' && (!$time_in || !$time_out)) {
+            echo json_encode(['result' => false, 'message' => 'Please provide your claimed time in and time out.']);
+            break;
+        }
+        if ($req_type === 'overtime' && !$ot_hours) {
+            echo json_encode(['result' => false, 'message' => 'Please provide the number of OT hours requested.']);
+            break;
+        }
+
+        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes) VALUES (?,?,?,?,?,?,?,?)");
+        $ins->bind_param('isssssds', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $att_notes);
+        if (!$ins->execute()) {
+            echo json_encode(['result' => false, 'message' => 'Could not submit your request. Please try again.']);
+            break;
+        }
+        $new_id = $ins->insert_id;
+
+        $erow  = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
+        $ename = $erow['n'] ?? 'Employee';
+        $label = $req_type === 'incident' ? 'attendance incident report' : 'overtime request';
+        $msg   = $conn->real_escape_string("$ename filed a $label for " . date('M d, Y', strtotime($req_date)) . '.');
+        $title = $conn->real_escape_string('New ' . $label);
+        $reviewers = $conn->query("SELECT id FROM users WHERE role IN (1,8,9) AND status = 1");
+        if ($reviewers) while ($ru = $reviewers->fetch_assoc()) {
+            $uid = (int) $ru['id'];
+            $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES ($uid, 'user', '$title', '$msg', 'ri-error-warning-line', 'warning', 'index.php?page=attendance-requests')");
+        }
+
+        $att_req_pending_count = (int) ($conn->query("SELECT COUNT(*) AS c FROM attendance_requests WHERE employee_id = $emp_id AND status = 0")->fetch_assoc()['c'] ?? 0);
+
+        echo json_encode([
+            'result'  => true,
+            'message' => 'Request submitted! It will be reviewed shortly.',
+            'att_req_pending_count' => $att_req_pending_count,
+            'request' => [
+                'id' => (int) $new_id,
+                'request_type' => $req_type,
+                'request_date' => $req_date,
+                'reason' => $reason,
+                'claimed_time_in' => $time_in,
+                'claimed_time_out' => $time_out,
+                'ot_hours_requested' => $ot_hours,
+                'notes' => $att_notes,
+                'created_at' => date('Y-m-d H:i:s'),
+                'status' => 0,
+            ],
+        ]);
+        break;
+    }
+
+    default:
+        echo json_encode(['result' => false, 'message' => 'Unknown action']);
+}

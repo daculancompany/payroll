@@ -37,6 +37,79 @@ $site_ids = isset($site_ids) ? $site_ids : [];
 $commaSeparatedSites = implode(',', $site_ids);
 $status = $payroll['status'];
 
+// ── Employee review progress (whole-batch sign-off, mirrors DTR) ──
+$payrollReviewTotalEmp = (int) ($conn->query("SELECT COUNT(DISTINCT employee_id) AS c FROM payroll_items WHERE payroll_id = $id")->fetch_assoc()['c'] ?? 0);
+$payrollReviewRows = [];
+$payrollReviewConfirmed = $payrollReviewDisputed = 0;
+$prvq = $conn->query("SELECT r.id, r.employee_id, r.status, r.comment, r.reviewed_at,
+        r.resolved_at, r.admin_reply,
+        CONCAT(e.lastname, ', ', e.firstname) AS name
+    FROM payroll_employee_reviews r
+    INNER JOIN employee e ON e.id = r.employee_id
+    WHERE r.payroll_id = " . (int)$id . "
+    ORDER BY r.status ASC, r.reviewed_at DESC");
+if ($prvq) while ($prv = $prvq->fetch_assoc()) {
+    $payrollReviewRows[$prv['employee_id']] = $prv;
+    if ((int)$prv['status'] === 1) $payrollReviewConfirmed++;
+    elseif ((int)$prv['status'] === 2) $payrollReviewDisputed++;
+}
+$payrollReviewPending = max(0, $payrollReviewTotalEmp - $payrollReviewConfirmed - $payrollReviewDisputed);
+
+// Approved DTR_details entries behind each employee's "No. of Days" figure,
+// grouped by employee + site so the view popover mirrors calculate_payroll()'s source data.
+$dtrLogsByEmpSite = [];
+if ($commaSeparatedSites !== '') {
+    $df_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_from'])));
+    $dt_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_to'])));
+    $dtr_logs_q = $conn->query("SELECT DTR_details.employee_id, DTR_details.date_time, DTR_details.work_hours,
+            DTR_details.overtime, DTR_details.undertime, DTR_details.late, DTR_details.logs, DTR.site_id
+        FROM DTR_details
+        INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
+        WHERE DATE(DTR_details.date_time) BETWEEN '$df_esc' AND '$dt_esc'
+        AND DTR.status = 2 AND DTR_details.status = 1
+        AND DTR.site_id IN ($commaSeparatedSites)
+        ORDER BY DTR_details.date_time ASC");
+    while ($dlr = $dtr_logs_q->fetch_assoc()) {
+        $dtrLogsByEmpSite[$dlr['employee_id']][$dlr['site_id']][] = $dlr;
+    }
+}
+
+// Renders the attendance-logs view-popover body: every approved day, with every punch
+// shown as an IN/OUT chip (bio vs manual), matching dtr-details.php's log-chip style.
+function dtr_days_popover_content($days) {
+    if (empty($days)) return '<span style="color:#aaa;font-size:11px;">No approved attendance found</span>';
+    $html = '<div style="max-height:260px;overflow-y:auto;min-width:230px;">';
+    foreach ($days as $d) {
+        $logs = json_decode($d['logs'], true) ?: [];
+        $html .= '<div style="padding:5px 0;border-bottom:1px solid #eee;">';
+        $html .= '<div style="font-size:11px;font-weight:700;color:#323130;margin-bottom:3px;">'
+               . date('M j, Y (D)', strtotime($d['date_time']))
+               . '<span style="float:right;color:#107c41;font-weight:600;">' . number_format((float)$d['work_hours'], 2) . ' hrs</span>'
+               . '</div>';
+        if (!empty($logs)) {
+            $count = count($logs);
+            foreach ($logs as $li => $log) {
+                $isBio = ($log['type'] ?? '') === 'bio';
+                $label = $li === 0 ? 'IN' : ($li === $count - 1 ? 'OUT' : '#' . ($li + 1));
+                $chipStyle = $isBio
+                    ? 'background:#e6f5f3;color:#219688;border:1px solid #aad5d0;'
+                    : 'background:#fff8e1;color:#c98a00;border:1px solid #ffe082;';
+                $icon = $isBio ? 'ri-fingerprint-line' : 'ri-edit-line';
+                $html .= '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">'
+                       . '<span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">' . $label . '</span>'
+                       . '<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 5px;border-radius:2px;font-size:10px;font-weight:600;' . $chipStyle . '">'
+                       . '<i class="' . $icon . '"></i>' . date('g:i A', strtotime($log['dateTime'])) . '</span>'
+                       . '</div>';
+            }
+        } else {
+            $html .= '<span style="color:#aaa;font-size:10px;">No logs</span>';
+        }
+        $html .= '</div>';
+    }
+    $html .= '</div>';
+    return $html;
+}
+
 $i = 0;
 $query = $conn->query("SELECT  a.*, f.site_code,f.site_name,f.site_address, e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay, d.name as department, p.name as position
 FROM payroll_items a 
@@ -75,30 +148,36 @@ $payroll_type = $payroll['type'];
    Payroll Details — Excel-style enhancements
    ════════════════════════════════════════════ */
 
-/* ── Employee name cell (avatar + name + ID) ── */
-.emp-cell { display: flex; align-items: flex-start; gap: 9px; }
+/* ── Employee name cell (avatar + name + ID + status) — soft Excel look ── */
+.emp-cell { display: flex; align-items: center; gap: 10px; padding: 1px 0; }
 .emp-avatar {
-    width: 34px; height: 34px; flex-shrink: 0; border-radius: 50%;
-    background: linear-gradient(135deg, #107c41, #0b5e31); color: #fff;
+    width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px;
+    background: #d9eedd; color: #0b5e31; border: 1px solid #c0e0c8;
     display: flex; align-items: center; justify-content: center;
     font-size: 12px; font-weight: 800; letter-spacing: .5px; text-decoration: none;
-    box-shadow: 0 1px 4px rgba(16,124,65,.3); transition: transform .15s, box-shadow .15s;
+    transition: background .15s, border-color .15s, transform .15s;
 }
-.emp-avatar:hover { transform: scale(1.06); box-shadow: 0 2px 8px rgba(16,124,65,.45); color: #fff; }
-.emp-cell-info { min-width: 0; }
-.emp-name-link { display: inline-flex; align-items: center; gap: 4px; color: #107c41; text-decoration: none; border-bottom: 1px dotted #8fc7a6; transition: color .15s, border-color .15s; }
-.emp-name-link:hover { color: #0b5e31; border-bottom-color: #107c41; }
+.emp-avatar:hover { background: #c6e4cd; border-color: #8fc7a6; color: #0b5e31; transform: translateY(-1px); }
+.emp-cell-info { min-width: 0; display: flex; flex-direction: column; gap: 3px; line-height: 1.2; }
+.emp-name-link { display: inline-flex; align-items: center; gap: 5px; color: #1f2937; font-size: 12.5px; text-decoration: none; transition: color .15s; }
+.emp-name-link:hover { color: #107c41; }
 .emp-name-link b { font-weight: 700; }
-.emp-name-link i { font-size: 13px; color: #8fc7a6; }
-.emp-no { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-family: 'Segoe UI', monospace; color: #6b7280; margin-top: 2px; font-weight: 600; }
-.emp-no i { font-size: 12px; color: #107c41; }
+.emp-name-link i { display: none; }   /* the avatar already signals "person" */
+.emp-meta-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.emp-no {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-family: ui-monospace, 'Segoe UI', monospace; font-weight: 700;
+    color: #5b6470; background: #f2f4f6; border: 1px solid #e5e8ec;
+    border-radius: 5px; padding: 1px 7px; white-space: nowrap;
+}
+.emp-no i { font-size: 11px; color: #9aa3ae; }
 
 /* ── Summary strip ── */
 .pay-stats-strip {
     display: flex; gap: 10px; flex-wrap: wrap;
     margin-bottom: 10px; padding: 10px 14px;
     background: #fff; border: 1px solid #e1dfdd;
-    border-radius: 6px; border-left: 4px solid #219688;
+    border-radius: 6px; border-left: 4px solid #107c41;
     box-shadow: 0 1px 4px rgba(0,0,0,.05);
 }
 .pay-stat {
@@ -124,97 +203,115 @@ $payroll_type = $payroll['type'];
 
 /* ── Excel table overrides ── */
 /* keep border-collapse:separate — sticky columns require it */
+/* Look: light pastel header bands + dark colored text + thin gray gridlines,
+   like an Excel sheet — not saturated banner fills. */
 
-/* Header row 1: section banners */
+/* Header row 1: section banners (pastel tint per group) */
 #table-1 thead tr:first-child th {
-    background: #1a6b5f !important;
-    color: #fff !important;
+    background: #d7ece9 !important;           /* mint — general/attendance group */
+    color: #116257 !important;
     font-size: 10px !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     text-transform: uppercase !important;
     letter-spacing: .4px !important;
-    border: 1px solid #145049 !important;
-    padding: 6px 8px !important;
+    border: 1px solid #c2ddd8 !important;
+    padding: 7px 8px !important;
 }
-#table-1 thead tr:first-child th.info-header    { background: #2563eb !important; border-color: #1d4ed8 !important; }
-#table-1 thead tr:first-child th.success-header { background: #16a34a !important; border-color: #15803d !important; }
-#table-1 thead tr:first-child th.danger-header  { background: #dc2626 !important; border-color: #b91c1c !important; }
+#table-1 thead tr:first-child th.info-header    { background: #dde9f8 !important; color: #1e50a0 !important; border-color: #c5d8f0 !important; }
+#table-1 thead tr:first-child th.success-header { background: #d9eedd !important; color: #107c41 !important; border-color: #c0e0c8 !important; }
+#table-1 thead tr:first-child th.danger-header  { background: #fbe3e6 !important; color: #b02a37 !important; border-color: #f3cdd2 !important; }
 
-/* Header row 2: column labels */
+/* Header row 2: column labels (lighter tint of the same family) */
 #table-1 thead tr:nth-child(2) th {
-    background: #219688 !important;
-    color: #fff !important;
+    background: #ebf5f3 !important;
+    color: #116257 !important;
     font-size: 10px !important;
-    font-weight: 600 !important;
-    border: 1px solid #176358 !important;
+    font-weight: 700 !important;
+    border: 1px solid #d5e6e2 !important;
     white-space: nowrap !important;
     padding: 5px 8px !important;
 }
-#table-1 thead tr:nth-child(2) th.info-header    { background: #3b82f6 !important; border-color: #2563eb !important; }
-#table-1 thead tr:nth-child(2) th.success-header { background: #22c55e !important; border-color: #16a34a !important; }
-#table-1 thead tr:nth-child(2) th.danger-header  { background: #ef4444 !important; border-color: #dc2626 !important; }
+#table-1 thead tr:nth-child(2) th.info-header    { background: #eef4fc !important; color: #1e50a0 !important; border-color: #d8e5f5 !important; }
+#table-1 thead tr:nth-child(2) th.success-header { background: #ebf7ee !important; color: #107c41 !important; border-color: #d3ead9 !important; }
+#table-1 thead tr:nth-child(2) th.danger-header  { background: #fdf0f1 !important; color: #b02a37 !important; border-color: #f6dade !important; }
 
-/* Body rows */
+/* Body rows — white sheet, thin Excel gridlines, whisper striping */
 #table-1 tbody tr td {
     font-size: 11px !important;
-    border: 1px solid #e2e8f0 !important;
+    border: 1px solid #e4e7e5 !important;
     padding: 4px 8px !important;
     vertical-align: middle !important;
 }
-#table-1 tbody tr:nth-child(even) td { background: #f0faf9 !important; }
+#table-1 tbody tr:nth-child(even) td { background: #fafcfa !important; }
 #table-1 tbody tr:nth-child(odd) td  { background: #ffffff !important; }
-#table-1 tbody tr:hover td { background: #d4f3ee !important; }
+#table-1 tbody tr:hover td { background: #eaf6ef !important; }
 
-/* Frozen cols (checkbox + No.) */
+/* Frozen cols (checkbox + No.) — light gray-green like Excel's row headers */
 #table-1 tbody td:nth-child(1),
 #table-1 tbody td:nth-child(2) {
-    background: #e6f5f3 !important;
-    border-right: 1px solid #c8e6e2 !important;
+    background: #f1f6f2 !important;
+    border-right: 1px solid #dbe6dd !important;
     font-weight: 600 !important;
+    color: #444 !important;
 }
 #table-1 tbody tr:hover td:nth-child(1),
-#table-1 tbody tr:hover td:nth-child(2) { background: #b2e4de !important; }
+#table-1 tbody tr:hover td:nth-child(2) { background: #ddeee3 !important; }
 /* drop the col-2 edge shadow — the Name column now closes the frozen group */
 #table-1 tbody td:nth-child(2),
-#table-1 tfoot th:nth-child(2),
 #table-1 thead tr:first-child th:nth-child(2) { box-shadow: none !important; }
 
 /* ── Frozen Name column (col 3) — left offset set by JS ── */
 #table-1 tbody td:nth-child(3),
-#table-1 tfoot th:nth-child(3),
 #table-1 thead tr:first-child th:nth-child(3) {
     position: sticky !important;
     z-index: 12;
-    border-right: 2px solid #219688 !important;
-    box-shadow: 3px 0 6px -3px rgba(0,0,0,.22);
+    border-right: 2px solid #b8d8c2 !important;
+    box-shadow: 3px 0 6px -3px rgba(0,0,0,.08);
     transform: translateZ(0);
     text-align: left !important;
 }
-#table-1 tbody td:nth-child(3) { background: #eef6ea !important; }
-#table-1 tfoot th:nth-child(3) { background: #1a6b5f !important; }
+#table-1 tbody td:nth-child(3) { background: #f5faf6 !important; }
 #table-1 thead tr:first-child th:nth-child(3) { z-index: 14 !important; }
-#table-1 tbody tr:nth-child(even) td:nth-child(3) { background: #e7f3ec !important; }
-#table-1 tbody tr:hover td:nth-child(3) { background: #d4f3ee !important; }
+#table-1 tbody tr:nth-child(even) td:nth-child(3) { background: #eff6f0 !important; }
+#table-1 tbody tr:hover td:nth-child(3) { background: #eaf6ef !important; }
 
-/* Tfoot totals row */
+/* Tfoot totals row — Excel-green band, dark green bold figures */
 #table-1 tfoot tr th {
-    background: #1a6b5f !important;
-    color: #fff !important;
+    background: #d9eedd !important;
+    color: #0b5e31 !important;
     font-size: 11px !important;
-    font-weight: 700 !important;
-    border: 1px solid #145049 !important;
+    font-weight: 800 !important;
+    border: 1px solid #c0e0c8 !important;
+    border-top: 2px solid #b8d8c2 !important;
     padding: 6px 8px !important;
     position: sticky; bottom: 0; z-index: 10;
 }
 
-/* Net pay column — highlight */
-td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font-weight: 800 !important; border-left: 2px solid #2563eb !important; }
-#table-1 tbody tr:hover td.net-content { background: #bfdbfe !important; }
+/* Merged TOTAL label — spans the checkbox + No. + Name frozen columns
+   (colspan="3" on the tfoot row; nth-child no longer applies to it, so it
+   gets its own class-based sticky rule instead). */
+#table-1 tfoot th.tfoot-total-cell {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 12 !important;
+    border-right: 2px solid #b8d8c2 !important;
+    box-shadow: 3px 0 6px -3px rgba(0,0,0,.08);
+    text-align: center !important;
+    font-size: 12px !important;
+    letter-spacing: .5px;
+}
+
+/* Net pay column — tinted like the screenshot's highlighted score column */
+td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font-weight: 800 !important; border-left: 2px solid #9dbdea !important; }
+#table-1 tbody tr:hover td.net-content { background: #dce9f9 !important; }
 
 /* Absent/late badge chips */
-.pay-badge { display:inline-block; font-size:9px; font-weight:700; border-radius:3px; padding:1px 5px; margin-left:4px; vertical-align:middle; }
-.pay-badge.absent { background:#fff3cd; color:#856404; border:1px solid #ffe69c; }
-.pay-badge.late   { background:#fce8e6; color:#c62828; border:1px solid #f5c6cb; }
+.pay-badge { display:inline-flex; align-items:center; gap:3px; font-size:9px; font-weight:700; border-radius:8px; padding:1px 7px; vertical-align:middle; white-space:nowrap; line-height:1.5; }
+.pay-badge::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.65; }
+.pay-badge.absent { background:#fdf3d7; color:#8a6d1a; border:1px solid #f0e2b0; }
+.pay-badge.late   { background:#fdf0f1; color:#b02a37; border:1px solid #f6dade; }
+.pay-badge.clear  { background:#ebf7ee; color:#107c41; border:1px solid #d3ead9; }
+.pay-badge.clear::before { content:'\2713'; width:auto; height:auto; border-radius:0; background:none; opacity:1; font-size:8px; font-weight:900; }
 
 /* Input cells */
 #table-1 .input-group { margin-bottom:0 !important; }
@@ -222,7 +319,34 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
 
 /* Payslip checkbox column */
 .ps-chk-cell { width:32px; text-align:center !important; padding:4px 6px !important; }
-.ps-chk { width:15px; height:15px; cursor:pointer; accent-color:#219688; }
+.ps-chk { width:15px; height:15px; cursor:pointer; accent-color:#107c41; }
+
+/* Actions column — view attendance logs popover trigger (paired with .xl-btn) */
+.dtr-view-days { margin-left:4px; }
+
+/* Employee review progress panel (mirrors DTR's, recolored to this page's Excel-green theme) */
+.pr-review-panel { border:1px solid #cdeacb; background:#f4faf5; border-radius:10px; padding:10px 14px; margin-bottom:10px; }
+.prp-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.prp-title { font-size:13px; font-weight:700; color:#0e6b37; display:flex; align-items:center; gap:6px; }
+.prp-counts { display:flex; gap:6px; flex-wrap:wrap; }
+.prp-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; }
+.prp-chip.appr { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
+.prp-chip.disp { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+.prp-chip.pend { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
+.prp-disputes { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+.prp-dispute-item { display:flex; gap:8px; align-items:flex-start; background:#fff5f5; border:1px solid #f3d3d3; border-radius:8px; padding:7px 10px; }
+.prp-dispute-item > i { color:#c62828; font-size:15px; margin-top:1px; }
+.prp-emp { font-size:12px; font-weight:700; color:#333; }
+.prp-when { font-size:10px; color:#999; font-weight:400; margin-left:6px; }
+.prp-comment { font-size:12px; color:#555; margin-top:1px; }
+.prp-confirmed-names { margin-top:8px; font-size:11px; color:#4a6b4a; }
+.prp-confirmed-lbl { font-weight:700; color:#107c41; margin-right:4px; }
+.prp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
+.prp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
+.prp-act-btn.export { background:#eef7f0; color:#107c41; border-color:#cfe9d6; }
+.prp-act-btn.resolve { margin-top:5px; background:#e9f7ef; color:#107c41; border-color:#b7e4c7; }
+.prp-act-btn:hover { filter:brightness(0.97); }
+.prp-resolved { margin-top:5px; font-size:11.5px; color:#107c41; font-weight:600; background:#f0faf3; border:1px solid #cdeeda; border-radius:6px; padding:4px 8px; }
 </style>
 <div class="main-content">
     <div class="page-content">
@@ -237,6 +361,8 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                     <h4 class="mb-0 fw-bold">Payroll Details</h4>
                                     <?php if ($status == 2): ?>
                                         <span class="payroll-status-badge bg-danger text-white"><i class="ri-lock-fill me-1"></i>Locked</span>
+                                    <?php elseif ($status == 3): ?>
+                                        <span class="payroll-status-badge bg-primary text-white"><i class="ri-user-received-2-line me-1"></i>Ready for Review</span>
                                     <?php else: ?>
                                         <span class="payroll-status-badge bg-success text-white"><i class="ri-lock-unlock-line me-1"></i>Open</span>
                                     <?php endif; ?>
@@ -283,6 +409,10 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                             <button id="btn-print-payslips" title="Check rows to select employees, then click to print their payslips" onclick="printSelectedPayslips()" class="xl-btn">
                                 <i class="ri-file-text-line"></i> Payslips <span id="ps-count" style="background:#c8e6e2;color:#176358;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:2px;font-weight:700;">0</span>
                             </button>
+                            <?php if ($status == 1) { ?>
+                                <div class="xl-ribbon-sep"></div>
+                                <button data-toggle="tooltip" title="Send employees their payslip for review before locking" onclick="sendPayrollForReview(<?= $id ?>)" class="xl-btn xl-btn-save"><i class="ri-user-received-2-line"></i> Send for Review</button>
+                            <?php } ?>
                             <?php if ($status !== 2) { ?>
                                 <div class="xl-ribbon-sep"></div>
                                 <button data-toggle="tooltip" title="Lock Payroll" onclick="lockPayroll(<?= $id ?>)" class="xl-btn xl-btn-danger"><i class="ri-lock-line"></i> Lock</button>
@@ -342,6 +472,65 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                 </div>
                             </div>
                         </div>
+
+                        <?php if (in_array((int)$status, [2, 3], true)): ?>
+                        <!-- ── Employee Review Progress ── -->
+                        <div class="pr-review-panel">
+                            <div class="prp-head">
+                                <span class="prp-title"><i class="ri-user-received-2-line"></i> Employee Review
+                                    <?php if ((int)$status === 3): ?>
+                                        <span class="badge bg-info text-dark ms-1">In progress</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-success ms-1">Locked</span>
+                                    <?php endif; ?>
+                                </span>
+                                <div class="prp-counts">
+                                    <span class="prp-chip appr"><i class="ri-checkbox-circle-line"></i> <?= $payrollReviewConfirmed ?> Confirmed</span>
+                                    <span class="prp-chip disp"><i class="ri-error-warning-line"></i> <?= $payrollReviewDisputed ?> Disputed</span>
+                                    <span class="prp-chip pend"><i class="ri-time-line"></i> <?= $payrollReviewPending ?> Awaiting</span>
+                                    <?php if ((int)$status === 3 && $payrollReviewPending > 0): ?>
+                                    <button type="button" class="prp-act-btn remind" onclick="remindPayrollReview(<?= $id ?>)" title="Remind employees who haven't reviewed">
+                                        <i class="ri-notification-badge-line"></i> Remind (<?= $payrollReviewPending ?>)
+                                    </button>
+                                    <?php endif; ?>
+                                    <a class="prp-act-btn export" href="ajax.php?action=export_payroll_reviews&id=<?= $id ?>" title="Download review log (CSV)">
+                                        <i class="ri-download-2-line"></i> Export
+                                    </a>
+                                </div>
+                            </div>
+                            <?php if ($payrollReviewDisputed > 0): ?>
+                            <div class="prp-disputes">
+                                <?php foreach ($payrollReviewRows as $prv): if ((int)$prv['status'] !== 2) continue; ?>
+                                <div class="prp-dispute-item">
+                                    <i class="ri-error-warning-line"></i>
+                                    <div style="flex:1;">
+                                        <div class="prp-emp"><?= htmlspecialchars($prv['name']) ?>
+                                            <span class="prp-when"><?= date('M j, g:i A', strtotime($prv['reviewed_at'])) ?></span>
+                                        </div>
+                                        <div class="prp-comment"><?= htmlspecialchars($prv['comment']) ?></div>
+                                        <?php if (!empty($prv['resolved_at'])): ?>
+                                            <div class="prp-resolved"><i class="ri-checkbox-circle-line"></i> Resolved — HR reply: <?= htmlspecialchars($prv['admin_reply']) ?></div>
+                                        <?php else: ?>
+                                            <button type="button" class="prp-act-btn resolve" onclick="openResolveDispute('payroll', <?= (int)$prv['id'] ?>, <?= htmlspecialchars(json_encode($prv['name']), ENT_QUOTES) ?>)">
+                                                <i class="ri-chat-check-line"></i> Resolve &amp; Reply
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <?php endif; ?>
+                            <?php if ($payrollReviewConfirmed > 0): ?>
+                            <div class="prp-confirmed-names">
+                                <span class="prp-confirmed-lbl"><i class="ri-checkbox-circle-line"></i> Confirmed by:</span>
+                                <?php $pcn = [];
+                                    foreach ($payrollReviewRows as $prv) if ((int)$prv['status'] === 1) $pcn[] = $prv['name'];
+                                    echo htmlspecialchars(implode('  •  ', $pcn));
+                                ?>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                        <?php endif; ?>
 
                         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
                             <div class="xl-search-wrap">
@@ -565,10 +754,13 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                                                 <a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>" target="_blank" class="emp-name-link" title="View employee details">
                                                                     <i class="ri-user-3-line"></i><b><?= $row['lastname'] ?>, <?= $row['firstname'] ?></b>
                                                                 </a>
-                                                                <div class="emp-no"><i class="ri-bank-card-line"></i><?= htmlspecialchars($row['employee_no']) ?></div>
-                                                                <div data-badges="<?= $row['id'] ?>">
-                                                                    <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= $row['absent'] ?> absent</span><?php endif; ?>
-                                                                    <?php if ($row['late'] > 0): ?><span class="pay-badge late"><?= number_format($row['late']) ?> min late</span><?php endif; ?>
+                                                                <div class="emp-meta-row">
+                                                                    <span class="emp-no"><i class="ri-bank-card-line"></i><?= htmlspecialchars($row['employee_no']) ?></span>
+                                                                    <span data-badges="<?= $row['id'] ?>">
+                                                                        <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= $row['absent'] ?> absent</span><?php endif; ?>
+                                                                        <?php if ($row['late'] > 0): ?><span class="pay-badge late"><?= number_format($row['late']) ?> min late</span><?php endif; ?>
+                                                                        <?php if ($row['absent'] <= 0 && $row['late'] <= 0): ?><span class="pay-badge clear">clear</span><?php endif; ?>
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -905,10 +1097,17 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                                     <td style="min-width: 90px;" class="text-right net-content">
                                                         <b data-computed="net"><?= number_format($net, 2) ?></b>
                                                     </td>
-                                                    <td style="min-width: 90px;" class="text-center">
-                                                        <a href="view_payslip.php?id=<?= $row['id'] ?>" class="xl-btn" data-toggle="tooltip" title="View Payslip" onclick="window.open(this.href,'_blank','width=900,height=700,scrollbars=yes'); return false;">
+                                                    <td style="min-width: 150px;" class="text-center">
+                                                        <a href="view_payslip.php?id=<?= $row['id'] ?>" class="xl-btn" data-toggle="tooltip" title="View Payslip" onclick="openPayslipPreview(<?= $row['id'] ?>); return false;">
                                                             <i class="ri-file-text-line"></i> View
                                                         </a>
+                                                        <?php $empDays = $dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []; ?>
+                                                        <span class="xl-btn dtr-view-days" data-bs-toggle="popover" data-bs-trigger="click"
+                                                            data-bs-placement="top" data-bs-html="true"
+                                                            data-bs-content="<?= htmlspecialchars(dtr_days_popover_content($empDays)) ?>"
+                                                            title="Approved Attendance Logs">
+                                                            <i class="ri-time-line"></i> Logs (<?= count($empDays) ?>)
+                                                        </span>
                                                     </td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
 
@@ -920,9 +1119,7 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                         </tbody>
                                         <tfoot>
                                             <tr>
-                                                <th></th>
-                                                <th></th>
-                                                <th class="text-center">TOTAL</th>
+                                                <th colspan="3" class="text-center tfoot-total-cell">TOTAL</th>
                                                 <th></th>
                                                 <th class="text-right"><?= number_format($t_monthly, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_quinsena, 2) ?></th>
@@ -1164,10 +1361,13 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                                                 <a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>"  class="emp-name-link" title="View employee details">
                                                                     <i class="ri-user-3-line"></i><b><?= $row['lastname'] ?>, <?= $row['firstname'] ?></b>
                                                                 </a>
-                                                                <div class="emp-no"><i class="ri-bank-card-line"></i><?= htmlspecialchars($row['employee_no']) ?></div>
-                                                                <div data-badges="<?= $row['id'] ?>">
-                                                                    <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= $row['absent'] ?> absent</span><?php endif; ?>
-                                                                    <?php if ($row['late'] > 0): ?><span class="pay-badge late"><?= number_format($row['late']) ?> min late</span><?php endif; ?>
+                                                                <div class="emp-meta-row">
+                                                                    <span class="emp-no"><i class="ri-bank-card-line"></i><?= htmlspecialchars($row['employee_no']) ?></span>
+                                                                    <span data-badges="<?= $row['id'] ?>">
+                                                                        <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= $row['absent'] ?> absent</span><?php endif; ?>
+                                                                        <?php if ($row['late'] > 0): ?><span class="pay-badge late"><?= number_format($row['late']) ?> min late</span><?php endif; ?>
+                                                                        <?php if ($row['absent'] <= 0 && $row['late'] <= 0): ?><span class="pay-badge clear">clear</span><?php endif; ?>
+                                                                    </span>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -1180,8 +1380,6 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                                             <div class="input-group mb-3">
                                                                 <input type="text" value="<?= $row['present'] ?>" data-id="<?= $row['id'] ?>" data-type="present" class="form-control input-class" placeholder="No. of Days" aria-describedby="basic-addon2">
                                                             </div>
-                                                        <?php } else { ?>
-                                                            <?= $row['present'] ?>
                                                         <?php } ?>
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-right">
@@ -1354,10 +1552,17 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                                     <td style="min-width: 90px;" class="text-right net-content">
                                                         <b data-computed="net"><?= number_format($net, 2) ?></b>
                                                     </td>
-                                                    <td style="min-width: 90px;" class="text-center">
-                                                        <a href="view_payslip.php?id=<?= $row['id'] ?>" class="xl-btn" data-toggle="tooltip" title="View Payslip" onclick="window.open(this.href,'_blank','width=900,height=700,scrollbars=yes'); return false;">
+                                                    <td style="min-width: 150px;" class="text-center">
+                                                        <a href="view_payslip.php?id=<?= $row['id'] ?>" class="xl-btn" data-toggle="tooltip" title="View Payslip" onclick="openPayslipPreview(<?= $row['id'] ?>); return false;">
                                                             <i class="ri-file-text-line"></i> View
                                                         </a>
+                                                        <?php $empDays = $dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []; ?>
+                                                        <span class="xl-btn dtr-view-days" data-bs-toggle="popover" data-bs-trigger="click"
+                                                            data-bs-placement="top" data-bs-html="true"
+                                                            data-bs-content="<?= htmlspecialchars(dtr_days_popover_content($empDays)) ?>"
+                                                            title="Approved Attendance Logs">
+                                                            <i class="ri-time-line"></i> Logs (<?= count($empDays) ?>)
+                                                        </span>
                                                     </td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
 
@@ -1370,9 +1575,7 @@ td.net-content { background: #e3f2fd !important; color: #1565c0 !important; font
                                         </tbody>
                                         <tfoot>
                                             <tr>
-                                                <th></th>
-                                                <th></th>
-                                                <th class="text-center">TOTAL</th>
+                                                <th colspan="3" class="text-center tfoot-total-cell">TOTAL</th>
                                                 <th></th>
                                                 <th class="text-center"><?= number_format($total_number_days, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_per_day, 2) ?></th>
@@ -1767,6 +1970,43 @@ function openPayrollHistory(id) {
     </div>
 </div>
 
+<!-- Payslip Preview Modal (preview first, print from here — no auto-print pop-up) -->
+<div class="modal fade" id="modal-payslip-preview" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" style="border-radius:12px;overflow:hidden;">
+            <div class="modal-header" style="background:#fff;color:#107c41;border-bottom:1px solid #e6efe8;">
+                <h5 class="modal-title mb-0" style="color:#107c41;"><i class="ri-file-text-line me-1"></i>Payslip Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="background:#e8e8e8;padding:0;overflow:hidden;">
+                <iframe id="payslip-preview-frame" title="Payslip preview" style="width:100%;height:72vh;border:0;display:block;background:#e8e8e8;"></iframe>
+            </div>
+            <div class="modal-footer" style="background:#fff;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-sm" style="background:#107c41;color:#fff;font-weight:600;border:none;" onclick="printPayslipPreview()">
+                    <i class="ri-printer-line me-1"></i>Print
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+// Show the payslip inside a modal first, then print from the modal — no auto-print pop-up.
+function openPayslipPreview(itemId) {
+    var frame = document.getElementById('payslip-preview-frame');
+    if (!frame) return;
+    frame.src = 'view_payslip.php?id=' + encodeURIComponent(itemId) + '&preview=1';
+    new bootstrap.Modal(document.getElementById('modal-payslip-preview')).show();
+}
+function printPayslipPreview() {
+    var frame = document.getElementById('payslip-preview-frame');
+    if (frame && frame.contentWindow) {
+        frame.contentWindow.focus();
+        frame.contentWindow.print();
+    }
+}
+</script>
+
 <div class="modal" id="modal-sites-2" tabindex="-1" role="dialog">
     <div class="modal-dialog modal-lg" role="document">
         <div class="modal-content">
@@ -1855,14 +2095,17 @@ function openPayrollHistory(id) {
         if (!col1Ref) return;
         const col1W = col1Ref.getBoundingClientRect().width;
         // Col 2 (No.) sits right after the checkbox column
+        // (tfoot's checkbox+No.+Name cells are merged into one .tfoot-total-cell
+        // at left:0 via CSS, so tfoot is intentionally excluded here — its
+        // child(2)/(3) indices now point at unrelated cells after the merge.)
         table.querySelectorAll(
-            'tbody td:nth-child(2), tfoot th:nth-child(2), thead tr:first-child th:nth-child(2)'
+            'tbody td:nth-child(2), thead tr:first-child th:nth-child(2)'
         ).forEach(el => { el.style.left = col1W + 'px'; });
         // Col 3 (Name) sits right after checkbox + No. columns
         if (col2Ref) {
             const leftFor3 = col1W + col2Ref.getBoundingClientRect().width;
             table.querySelectorAll(
-                'tbody td:nth-child(3), tfoot th:nth-child(3), thead tr:first-child th:nth-child(3)'
+                'tbody td:nth-child(3), thead tr:first-child th:nth-child(3)'
             ).forEach(el => { el.style.left = leftFor3 + 'px'; });
         }
     }
@@ -1877,6 +2120,23 @@ function openPayrollHistory(id) {
         var deduct = document.getElementById('tfoot-deduct');
         if (gross)  document.getElementById('stat-gross').textContent  = '₱ ' + gross.textContent.trim();
         if (deduct) document.getElementById('stat-deduct').textContent = '₱ ' + deduct.textContent.trim();
+
+        // No. of Days — attendance logs popover
+        document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (el) {
+            new bootstrap.Popover(el, { sanitize: false });
+            el.addEventListener('shown.bs.popover', function () {
+                document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (other) {
+                    if (other !== el) bootstrap.Popover.getInstance(other)?.hide();
+                });
+            });
+        });
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('.dtr-view-days')) {
+                document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (el) {
+                    bootstrap.Popover.getInstance(el)?.hide();
+                });
+            }
+        });
     });
     window.addEventListener('resize', () => {
         fitTableToViewport();

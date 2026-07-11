@@ -6,6 +6,10 @@ if ($sq) while ($r = $sq->fetch_assoc()) $settings[$r['setting_key']] = $r;
 function ps($key, $settings) {
     return isset($settings[$key]) ? (float)$settings[$key]['setting_value'] : 0;
 }
+// Payroll period is stored as a numeric code (float column): 1=semi_monthly, 2=weekly, 3=monthly.
+$period_codes   = [1 => 'semi_monthly', 2 => 'weekly', 3 => 'monthly'];
+$pp_code        = (int) ps('payroll_period', $settings);
+$payroll_period = isset($period_codes[$pp_code]) ? $period_codes[$pp_code] : 'semi_monthly';
 ?>
 <div class="main-content">
     <div class="page-content">
@@ -39,6 +43,26 @@ function ps($key, $settings) {
 
                             <form id="form-pay-settings">
                                 <div class="row g-4">
+
+                                    <!-- Payroll Period -->
+                                    <div class="col-12">
+                                        <h6 class="fw-bold text-uppercase text-muted mb-3" style="font-size:11px;letter-spacing:1px;">
+                                            <i class="ri-calendar-2-line me-1"></i>Payroll Cutoff Period
+                                        </h6>
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <label class="form-label fw-semibold">Period Type</label>
+                                                <select class="form-select" name="payroll_period">
+                                                    <option value="semi_monthly" <?= $payroll_period==='semi_monthly'?'selected':'' ?>>Semi-monthly (1–15 / 16–end)</option>
+                                                    <option value="weekly" <?= $payroll_period==='weekly'?'selected':'' ?>>Weekly (Mon–Sun)</option>
+                                                    <option value="monthly" <?= $payroll_period==='monthly'?'selected':'' ?>>Monthly (1–end)</option>
+                                                </select>
+                                                <small class="text-muted">Controls how biometric attendance is grouped into DTR batches for approval. You can change this anytime.</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12"><hr class="my-1"></div>
 
                                     <!-- Holiday Rates -->
                                     <div class="col-12">

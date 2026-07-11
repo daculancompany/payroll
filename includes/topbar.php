@@ -8,7 +8,7 @@
 
             <div class="navbar-brand">
                 <a   href="index.php"><img  style="width: 25px;" src="assets/images/logo.jpeg" alt="Lucid Logo" class="img-responsive "></a> 
-                <span>JEJORS Payroll</span>               
+                <span>HRIS System</span>
             </div>
             
             <!-- <div class="navbar-right">

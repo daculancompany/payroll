@@ -11,7 +11,7 @@
  * Body (JSON or form-post):
  *   employee_id  int    required
  *   scan_time    string required  format: Y-m-d H:i:s  e.g. 2025-06-30 08:05:00
- *   site_id      int    required
+ *   site_id      int    required 
  *   device_id    int    required
  */
 

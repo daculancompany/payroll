@@ -42,27 +42,43 @@ $initials = strtoupper(substr($firstname, 0, 1)) . strtoupper(substr($lastname, 
 $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' ' . substr($middlename, 0, 1) . '.' : ''));
 ?>
 <style>
-    .emp-profile-bar { display:flex; align-items:center; gap:16px; padding:14px 0 12px; border-bottom:2px solid #d0d7ee; margin-bottom:14px; flex-wrap:wrap; }
-    .emp-big-avatar { width:52px; height:52px; border-radius:50%; background:#009688; color:#fff; font-size:20px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; letter-spacing:1px; }
-    .emp-profile-name { font-size:17px; font-weight:700; color:#009688; line-height:1.2; }
-    .emp-profile-sub { font-size:12px; color:#555; margin-top:3px; }
-    .emp-profile-stats { display:flex; gap:20px; margin-left:auto; flex-wrap:wrap; }
-    .emp-profile-stat { text-align:right; }
-    .emp-profile-stat-val { font-size:13px; font-weight:700; color:#009688; font-family:'Segoe UI',monospace; }
-    .emp-profile-stat-lbl { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.3px; }
-    .detail-section { border:1px solid #d0d7ee; border-radius:4px; margin-bottom:10px; overflow:hidden; }
-    .detail-section-title { background:#009688; color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:5px 12px; display:flex; align-items:center; gap:6px; }
+    :root { --emp-brand:#009688; --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
+
+    /* ---- Left profile sidebar ---- */
+    .emp-sidebar { border:1px solid #d0d7ee; border-radius:8px; overflow:hidden; background:#fff; }
+    .emp-sidebar-head { background:var(--emp-brand); color:#fff; text-align:center; padding:18px 14px 16px; }
+    .emp-side-avatar { width:72px; height:72px; border-radius:50%; background:#fff; color:var(--emp-brand); font-size:26px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+    .emp-side-name { font-size:16px; font-weight:700; line-height:1.25; }
+    .emp-side-role { font-size:12px; opacity:.9; margin-top:3px; }
+    .emp-side-empno { font-family:monospace; font-size:12px; font-weight:700; letter-spacing:.5px; margin-top:6px; background:rgba(255,255,255,.15); display:inline-block; padding:2px 10px; border-radius:20px; }
+    .emp-side-meta { padding:10px 14px; border-bottom:1px solid #eef0f8; display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:center; }
+    .emp-side-stats { padding:4px 0; }
+    .emp-side-stat { display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-bottom:1px solid #f1f3f9; }
+    .emp-side-stat:last-child { border-bottom:none; }
+    .emp-side-stat-lbl { font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.3px; font-weight:700; }
+    .emp-side-stat-val { font-size:14px; font-weight:700; color:var(--emp-brand); font-family:'Segoe UI',monospace; }
+    .emp-side-barcode { text-align:center; padding:12px 14px; border-top:1px solid #eef0f8; background:#f8f9fa; }
+    @media (min-width:992px){ .emp-sidebar-sticky { position:sticky; top:80px; } }
+
+    /* ---- Section cards (Overview) ---- */
+    .detail-section { border:1px solid #d0d7ee; border-radius:6px; margin-bottom:12px; overflow:hidden; }
+    .detail-section-title { background:var(--emp-brand); color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:6px 12px; display:flex; align-items:center; gap:6px; }
     .detail-row { display:flex; flex-wrap:wrap; }
-    .detail-item { padding:7px 14px; border-bottom:1px solid #eef0f8; border-right:1px solid #eef0f8; flex:1; min-width:200px; }
+    .detail-item { padding:7px 14px; border-bottom:1px solid #eef0f8; border-right:1px solid #eef0f8; flex:1; min-width:180px; }
     .detail-item:last-child { border-right:none; }
     .detail-label { font-size:10px; color:#888; font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
     .detail-value { font-size:13px; font-weight:600; color:#1a1a1a; }
-    .emp-currency-val { font-weight:700; color:#009688; font-family:'Segoe UI',monospace; }
+    .emp-currency-val { font-weight:700; color:var(--emp-brand); font-family:'Segoe UI',monospace; }
     .cn-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:10px; margin-top:4px; }
-    .cn-item { border:1px solid #c5cde8; border-radius:4px; padding:10px 12px; background:#eef0f8; }
-    .cn-item label { font-size:10px; color:#009688; font-weight:700; text-transform:uppercase; letter-spacing:.3px; display:block; margin-bottom:5px; }
-    .cn-item .form-control { font-size:13px; font-weight:600; border-color:#c5cde8; }
-    .barcode-wrap { background:#f8f9fa; border:1px solid #d0d7ee; border-radius:4px; padding:10px 16px; display:inline-block; margin-top:4px; }
+    .cn-item { border:1px solid var(--emp-brand-border); border-radius:4px; padding:10px 12px; background:var(--emp-brand-soft); }
+    .cn-item label { font-size:10px; color:var(--emp-brand); font-weight:700; text-transform:uppercase; letter-spacing:.3px; display:block; margin-bottom:5px; }
+    .cn-item .form-control { font-size:13px; font-weight:600; border-color:var(--emp-brand-border); }
+    .barcode-wrap { background:#fff; border:1px solid #d0d7ee; border-radius:4px; padding:8px 12px; display:inline-block; }
+
+    /* ---- Brand-navy tabs (override nav-success green) ---- */
+    #emp-tabs.nav-pills .nav-link { color:var(--emp-brand); font-size:13px; }
+    #emp-tabs.nav-pills .nav-link.active { background:var(--emp-brand); color:#fff; }
+    #emp-tabs.nav-pills .nav-link.active::before { border-top-color:var(--emp-brand) !important; }
 </style>
 
 <div class="main-content">
@@ -115,51 +131,67 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                     </div>
 
                     <div class="card-body">
-                        <!-- Employee Profile Bar -->
-                        <div class="emp-profile-bar">
-                            <div class="emp-big-avatar"><?= $initials ?></div>
-                            <div>
-                                <div class="emp-profile-name"><?= $fullname ?></div>
-                                <div class="emp-profile-sub">
-                                    <i class="ri-briefcase-4-line me-1 text-success"></i><?= htmlspecialchars(ucwords($pname)) ?>
-                                    <?php if (!empty($dept_name)): ?>
-                                    &nbsp;&bull;&nbsp;
-                                    <i class="ri-building-3-line me-1 text-success"></i><?= htmlspecialchars($dept_name) ?>
-                                    <?php endif; ?>
-                                    &nbsp;&bull;&nbsp;
-                                    <span class="badge" style="display:inline-flex;align-items:center;gap:2px;vertical-align:middle;<?= clasif_badge_style($clasification) ?>">
+                        <div class="row g-3">
+
+                        <!-- ============ LEFT PROFILE SIDEBAR ============ -->
+                        <div class="col-lg-3">
+                            <div class="emp-sidebar emp-sidebar-sticky">
+                                <div class="emp-sidebar-head">
+                                    <div class="emp-side-avatar"><?= $initials ?></div>
+                                    <div class="emp-side-name"><?= $fullname ?></div>
+                                    <div class="emp-side-role">
+                                        <i class="ri-briefcase-4-line me-1"></i><?= htmlspecialchars(ucwords($pname)) ?>
+                                        <?php if (!empty($dept_name)): ?>
+                                            <br><i class="ri-building-3-line me-1"></i><?= htmlspecialchars($dept_name) ?>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="emp-side-empno"><i class="ri-barcode-line me-1"></i><?= htmlspecialchars($employee_no) ?></div>
+                                </div>
+                                <div class="emp-side-meta">
+                                    <span class="badge" style="display:inline-flex;align-items:center;gap:2px;<?= clasif_badge_style($clasification) ?>">
                                         <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
                                     </span>
-                                    &nbsp;&bull;&nbsp;
-                                    <span class="emp-id" style="font-family:monospace;color:#1976d2;font-weight:700;"><?= htmlspecialchars($employee_no) ?></span>
-                                </div>
-                            </div>
-                            <div class="emp-profile-stats">
-                                <div class="emp-profile-stat">
-                                    <div class="emp-profile-stat-val">&#8369;<?= number_format($basic_pay, 2) ?></div>
-                                    <div class="emp-profile-stat-lbl">Basic Pay</div>
-                                </div>
-                                <div class="emp-profile-stat">
-                                    <div class="emp-profile-stat-val">&#8369;<?= number_format($salary, 2) ?></div>
-                                    <div class="emp-profile-stat-lbl">Daily Rate</div>
-                                </div>
-                                <div class="emp-profile-stat">
-                                    <div class="emp-profile-stat-val">&#8369;<?= number_format($ot_rate, 2) ?></div>
-                                    <div class="emp-profile-stat-lbl">OT Rate</div>
-                                </div>
-                                <div class="emp-profile-stat">
-                                    <?php if ($weekly_payroll == 1): ?>
-                                        <div><span class="badge bg-primary">Weekly</span></div>
+                                    <?php if ($status == 1): ?>
+                                        <span class="badge rounded-pill bg-success"><i class="ri-checkbox-circle-line me-1"></i>Active</span>
                                     <?php else: ?>
-                                        <div><span class="badge bg-dark">Monthly</span></div>
+                                        <span class="badge rounded-pill bg-danger"><i class="ri-close-circle-line me-1"></i>Inactive</span>
                                     <?php endif; ?>
-                                    <div class="emp-profile-stat-lbl">Payroll Type</div>
+                                    <?php if ($weekly_payroll == 1): ?>
+                                        <span class="badge bg-primary"><i class="ri-calendar-2-line me-1"></i>Weekly</span>
+                                    <?php else: ?>
+                                        <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Monthly</span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="emp-side-stats">
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Basic Pay</span>
+                                        <span class="emp-side-stat-val">&#8369;<?= number_format($basic_pay, 2) ?></span>
+                                    </div>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Daily Rate</span>
+                                        <span class="emp-side-stat-val">&#8369;<?= number_format($salary, 2) ?></span>
+                                    </div>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">OT Rate</span>
+                                        <span class="emp-side-stat-val">&#8369;<?= number_format($ot_rate, 2) ?></span>
+                                    </div>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Allowance</span>
+                                        <span class="emp-side-stat-val">&#8369;<?= number_format($allowance_rate, 2) ?></span>
+                                    </div>
+                                </div>
+                                <div class="emp-side-barcode">
+                                    <div class="barcode-wrap">
+                                        <img alt="<?= htmlspecialchars($employee_no) ?>" src="includes/barcode.php?codetype=Code39&size=40&text=<?= urlencode($employee_no) ?>&print=true" style="max-width:100%;" />
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
+                        <!-- ============ RIGHT CONTENT COLUMN ============ -->
+                        <div class="col-lg-9">
                         <!-- Tabs -->
-                        <ul class="nav nav-pills arrow-navtabs nav-success bg-light mb-3" role="tablist">
+                        <ul id="emp-tabs" class="nav nav-pills arrow-navtabs nav-success bg-light mb-3" role="tablist">
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link active" data-bs-toggle="tab" href="#arrow-overview" role="tab">
                                     <i class="ri-user-3-line me-1"></i><span class="d-none d-sm-inline">Overview</span>
@@ -251,14 +283,6 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                 <span class="badge" style="display:inline-flex;align-items:center;gap:2px;<?= clasif_badge_style($clasification) ?>">
                                                     <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
                                                 </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div class="detail-row">
-                                        <div class="detail-item" style="border-right:none;">
-                                            <div class="detail-label">Employee ID / Barcode</div>
-                                            <div class="barcode-wrap">
-                                                <img alt="<?= htmlspecialchars($employee_no) ?>" src="includes/barcode.php?codetype=Code39&size=40&text=<?= urlencode($employee_no) ?>&print=true" />
                                             </div>
                                         </div>
                                     </div>
@@ -459,7 +483,10 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                         <thead class="table-dark">
                                             <tr>
                                                 <th><i class="ri-subtract-line me-1"></i>Deduction Name</th>
-                                                <th class="text-end" style="width:200px;"><i class="ri-money-dollar-circle-line me-1"></i>Amount</th>
+                                                <th class="text-end"><i class="ri-money-dollar-circle-line me-1"></i>Amount</th>
+                                                <th class="text-end"><i class="ri-bank-card-line me-1"></i>Total</th>
+                                                <th class="text-end"><i class="ri-wallet-3-line me-1"></i>Balance</th>
+                                                <th class="text-center"><i class="ri-pulse-line me-1"></i>Status</th>
                                                 <th class="text-center" style="width:100px;"><i class="ri-settings-3-line me-1"></i>Action</th>
                                             </tr>
                                         </thead>
@@ -468,9 +495,21 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                             $deductions = $conn->query("SELECT ea.*,d.deduction as dname FROM employee_deductions ea INNER JOIN deductions d ON d.id = ea.deduction_id WHERE ea.employee_id=" . $emp_id . " ORDER BY ea.type ASC, DATE(ea.effective_date) ASC, d.deduction ASC");
                                             while ($row = $deductions->fetch_assoc()):
                                             ?>
+                                                <?php $amortizing = (float)$row['total_amount'] > 0; ?>
                                                 <tr>
                                                     <td><span style="font-weight:600;"><?= htmlspecialchars($row['dname']) ?></span></td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['amount'], 2) ?></span></td>
+                                                    <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['total_amount'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
+                                                    <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['balance'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
+                                                    <td class="text-center">
+                                                        <?php if (!$amortizing): ?>
+                                                            <span class="badge bg-secondary">Recurring</span>
+                                                        <?php elseif ((int)$row['status'] === 1): ?>
+                                                            <span class="badge bg-success">Paid</span>
+                                                        <?php else: ?>
+                                                            <span class="badge bg-warning text-dark">Active</span>
+                                                        <?php endif; ?>
+                                                    </td>
                                                     <td class="text-center">
                                                         <button type="button" data-id="<?= $row['id'] ?>"
                                                             class="btn btn-sm btn-outline-danger remove_deduction"
@@ -536,7 +575,10 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                            ws.is_graveyard, ws.has_nsd, ws.nsd_rate
                                     FROM employee_schedules es
                                     INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-                                    WHERE es.employee_id = $emp_id AND es.effective_to IS NULL
+                                    WHERE es.employee_id = $emp_id
+                                      AND es.effective_from <= CURDATE()
+                                      AND (es.effective_to IS NULL OR es.effective_to >= CURDATE())
+                                    ORDER BY es.effective_from DESC
                                     LIMIT 1
                                 ");
                                 $cur_sched = $cur_sched_q ? $cur_sched_q->fetch_assoc() : null;
@@ -576,7 +618,7 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                 <!-- History Table -->
                                 <h6 class="fw-semibold mt-4 mb-2"><i class="ri-history-line me-1 text-muted"></i>Schedule History</h6>
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-hover table-bordered align-middle">
+                                    <table id="table-schedule-history" class="table table-sm table-hover table-bordered align-middle">
                                         <thead class="table-dark">
                                             <tr>
                                                 <th>Shift</th>
@@ -596,7 +638,7 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                        ws.description, ws.start_time, ws.end_time,
                                                        ws.total_hours, ws.break_minutes,
                                                        ws.is_graveyard, ws.has_nsd, ws.nsd_rate,
-                                                       CONCAT(u.firstname,' ',u.lastname) AS changed_by_name
+                                                       u.name AS changed_by_name
                                                 FROM employee_schedules es
                                                 INNER JOIN work_schedules ws ON ws.id = es.schedule_id
                                                 LEFT JOIN users u ON u.id = es.changed_by
@@ -604,7 +646,7 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                 ORDER BY es.effective_from DESC
                                             ");
                                             if (!$hist) { echo '<!-- query error: ' . htmlspecialchars($conn->error) . ' -->'; }
-                                            while ($h = $hist && $hist->fetch_assoc()):
+                                            while ($hist && ($h = $hist->fetch_assoc())):
                                             ?>
                                             <tr>
                                                 <td>
@@ -703,6 +745,15 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                     <td class="text-center"><span class="badge <?= $rem <= 0 ? 'bg-danger' : 'bg-success' ?> rounded-pill"><?= rtrim(rtrim(number_format($rem, 1), '0'), '.') ?> day(s)</span></td>
                                                 </tr>
                                                 <?php endwhile; ?>
+                                                <?php if (!$cr || !$cr->num_rows): ?>
+                                                <tr><td colspan="4">
+                                                    <div class="dt-empty-state">
+                                                        <div class="dt-empty-ic"><i class="ri-coins-line"></i></div>
+                                                        <p class="dt-empty-title">No leave types configured</p>
+                                                        <span class="dt-empty-sub">Add leave types to assign credits.</span>
+                                                    </div>
+                                                </td></tr>
+                                                <?php endif; ?>
                                             </tbody>
                                         </table>
                                     </div>
@@ -717,14 +768,14 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                     WHERE h.employee_id = " . $emp_id . "
                                     ORDER BY h.created_at DESC LIMIT 20
                                 ");
-                                if ($bh && $bh->num_rows): ?>
+                                ?>
                                 <div class="card border mb-3">
                                     <div class="card-header bg-light py-2"><h6 class="mb-0"><i class="ri-history-line me-2 text-success"></i>Balance Change History</h6></div>
                                     <div class="card-body p-0" style="max-height:240px;overflow-y:auto;">
                                         <table class="table table-sm table-hover mb-0" style="font-size:12px;">
                                             <thead class="table-light"><tr><th>When</th><th>Type</th><th class="text-center">Change</th><th>By</th></tr></thead>
                                             <tbody>
-                                            <?php while ($h = $bh->fetch_assoc()):
+                                            <?php if ($bh && $bh->num_rows): while ($h = $bh->fetch_assoc()):
                                                 $f = function ($n) { return rtrim(rtrim(number_format($n, 1), '0'), '.'); };
                                                 $up = (float)$h['new_credits'] >= (float)$h['old_credits'];
                                             ?>
@@ -734,12 +785,19 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                     <td class="text-center"><span class="text-muted"><?= $f($h['old_credits']) ?></span> <i class="ri-arrow-right-line <?= $up ? 'text-success' : 'text-danger' ?>"></i> <b class="<?= $up ? 'text-success' : 'text-danger' ?>"><?= $f($h['new_credits']) ?></b></td>
                                                     <td><?= htmlspecialchars($h['changed_name'] ?? 'System') ?></td>
                                                 </tr>
-                                            <?php endwhile; ?>
+                                            <?php endwhile; else: ?>
+                                                <tr><td colspan="4">
+                                                    <div class="dt-empty-state">
+                                                        <div class="dt-empty-ic"><i class="ri-history-line"></i></div>
+                                                        <p class="dt-empty-title">No balance changes yet</p>
+                                                        <span class="dt-empty-sub">Leave credit adjustments will appear here.</span>
+                                                    </div>
+                                                </td></tr>
+                                            <?php endif; ?>
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
-                                <?php endif; ?>
 
                                 <div class="table-responsive mt-2">
                                     <table id="table-leave" class="table table-hover table-bordered align-middle">
@@ -798,6 +856,8 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                             </div>
 
                         </div><!-- end tab-content -->
+                        </div><!-- end col-lg-9 -->
+                        </div><!-- end row -->
 
                         <script>
                         // Save per-employee leave credits (delegated → works before jQuery loads).
@@ -897,13 +957,17 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
         document.getElementById('form-assign-schedule').addEventListener('submit', async function(e) {
             e.preventDefault();
             const data = new FormData(this);
-            const res  = await fetch('ajax.php?action=assign_employee_schedule', { method: 'POST', body: new URLSearchParams(data) });
-            const json = await res.json();
-            if (json?.result) {
-                bootstrap.Modal.getInstance(document.getElementById('modal-assign-schedule')).hide();
-                location.reload();
-            } else {
-                alert(json?.message || 'Failed to assign schedule.');
+            try {
+                const res  = await fetch('ajax.php?action=assign_employee_schedule', { method: 'POST', body: new URLSearchParams(data) });
+                const json = await res.json();
+                if (json?.result) {
+                    bootstrap.Modal.getInstance(document.getElementById('modal-assign-schedule'))?.hide();
+                    location.reload();
+                } else {
+                    alert(json?.message || 'Failed to assign schedule.');
+                }
+            } catch (err) {
+                alert('Failed to assign schedule. Please try again.');
             }
         });
     </script>

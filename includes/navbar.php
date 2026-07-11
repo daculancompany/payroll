@@ -4,12 +4,12 @@
     <!-- LOGO -->
     <div class="navbar-brand-box">
         <a href="home" class="logo logo-dark">
-            <span class="logo-sm">JP</span>
-            <span class="logo-lg"><img src="assets/images/logo-dark.png" alt="" height="17"></span>
+            <span class="logo-sm">HR</span>
+            <span class="logo-lg"><div class="logo">HRIS System</div></span>
         </a>
         <a href="home" class="logo logo-light">
-            <span class="logo-sm">JP</span>
-            <span class="logo-lg"><div class="logo">JEJORS Payroll</div></span>
+            <span class="logo-sm">HR</span>
+            <span class="logo-lg"><div class="logo">HRIS System</div></span>
         </a>
         <button type="button" class="btn btn-sm p-0 fs-20 header-item float-end btn-vertical-sm-hover" id="vertical-hover">
             <i class="ri-record-circle-line"></i>
@@ -23,120 +23,56 @@
             <ul class="navbar-nav" id="navbar-nav">
 
                 <?php if ($login_role !== 6 && $login_role !== 7): ?>
+
+                <!-- ===== MENU ===== -->
                 <li class="menu-title"><span>Menu</span></li>
 
-                <!-- Dashboard -->
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= $page === 'home' ? 'active' : '' ?>" href="home">
                         <i class="ri-dashboard-fill"></i> <span>Dashboard</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="daily-board" class="nav-link menu-link <?= $page === 'daily-board' ? 'active' : '' ?>">
+                        <i class="ri-dashboard-3-line"></i> <span>Daily Board</span>
+                    </a>
+                </li>
+
+                <!-- ===== ORGANIZATION ===== -->
+                <li class="menu-title"><span>Organization</span></li>
 
                 <li class="nav-item">
-                    <a href="employee" class="nav-link <?= in_array($page, ['employee','employee-details']) ? 'active' : '' ?>">
+                    <a href="employee" class="nav-link menu-link <?= in_array($page, ['employee','employee-details']) ? 'active' : '' ?>">
                         <i class="ri-group-line"></i> <span>Employees</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="department" class="nav-link <?= $page === 'department' ? 'active' : '' ?>">
-                        <i class="ri-building-3-line"></i> <span>Department</span>
+                    <a href="department" class="nav-link menu-link <?= $page === 'department' ? 'active' : '' ?>">
+                        <i class="ri-building-3-line"></i> <span>Departments</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="position" class="nav-link <?= $page === 'position' ? 'active' : '' ?>">
-                        <i class="ri-briefcase-4-line"></i> <span>Position</span>
+                    <a href="position" class="nav-link menu-link <?= $page === 'position' ? 'active' : '' ?>">
+                        <i class="ri-briefcase-4-line"></i> <span>Positions</span>
                     </a>
                 </li>
+
+                <!-- ===== SCHEDULING & TIME ===== -->
+                <li class="menu-title"><span>Scheduling &amp; Time</span></li>
+
                 <li class="nav-item">
-                    <a href="work-schedules" class="nav-link <?= $page === 'work-schedules' ? 'active' : '' ?>">
+                    <a href="work-schedules" class="nav-link menu-link <?= $page === 'work-schedules' ? 'active' : '' ?>">
                         <i class="ri-time-line"></i> <span>Work Schedules</span>
                     </a>
                 </li>
-                <?php if (in_array($login_role, [1, 8, 9], true)): ?>
                 <li class="nav-item">
-                    <a href="pay-settings" class="nav-link <?= $page === 'pay-settings' ? 'active' : '' ?>">
-                        <i class="ri-money-dollar-circle-line"></i> <span>Pay Settings</span>
-                    </a>
-                </li>
-                <?php endif; ?>
-                <!-- <li class="nav-item">
-                    <a href="branch" class="nav-link <?= $page === 'branch' ? 'active' : '' ?>">
-                        <i class="ri-building-2-line"></i> <span>Branches</span>
-                    </a>
-                </li> -->
-
-                <!-- Payroll -->
-                <li class="nav-item">
-                    <a class="nav-link menu-link <?= (in_array($page, ['payroll','payroll_items','payroll_calculations']) && (!isset($_GET['p2']) || $_GET['p2'] === 'false')) ? 'active' : '' ?>"
-                        href="payroll?p2=false">
-                        <i class="ri-calculator-line"></i> <span>Payroll</span>
+                    <a href="schedule-roster" class="nav-link menu-link <?= $page === 'schedule-roster' ? 'active' : '' ?>">
+                        <i class="ri-calendar-todo-line"></i> <span>Shift Roster</span>
                     </a>
                 </li>
 
-                <!-- Payroll tools sub-menu -->
-                <?php $pt_pages = ['payroll-comparison','loans','remittance-report']; ?>
-                <li class="nav-item">
-                    <a class="nav-link menu-link <?= in_array($page, $pt_pages) ? 'active' : '' ?>"
-                        href="#sidebarPayrollTools" data-bs-toggle="collapse" role="button"
-                        aria-expanded="<?= in_array($page, $pt_pages) ? 'true' : 'false' ?>">
-                        <i class="ri-tools-line"></i> <span>Payroll Tools</span>
-                    </a>
-                    <div class="menu-dropdown collapse <?= in_array($page, $pt_pages) ? 'show' : '' ?>" id="sidebarPayrollTools">
-                        <ul class="nav nav-sm flex-column">
-                            <li class="nav-item">
-                                <a href="payroll-comparison" class="nav-link <?= $page === 'payroll-comparison' ? 'active' : '' ?>">
-                                    <i class="ri-arrow-left-right-line me-1"></i>Payroll Comparison
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="loans" class="nav-link <?= $page === 'loans' ? 'active' : '' ?>">
-                                    <i class="ri-bank-line me-1"></i>Active Loans
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="remittance-report" class="nav-link <?= $page === 'remittance-report' ? 'active' : '' ?>">
-                                    <i class="ri-government-line me-1"></i>Remittance Report
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
-                </li>
-                <!-- <li class="nav-item">
-                    <a class="nav-link menu-link <?= (in_array($page, ['payroll','payroll_items','payroll_calculations']) && isset($_GET['p2']) && $_GET['p2'] === 'true') ? 'active' : '' ?>"
-                        href="payroll?p2=true">
-                        <i class="ri-calculator-line"></i> <span>P2</span>
-                    </a>
-                </li> -->
-
-                <!-- Benefits & Compensation -->
-                <li class="nav-item">
-                    <a class="nav-link menu-link" href="#sidebarBenefits" data-bs-toggle="collapse" role="button"
-                        aria-expanded="<?= in_array($page, ['deductions','contributions','refunds']) ? 'true' : 'false' ?>">
-                        <i class="ri-gift-line"></i> <span>Benefits & Compensation</span>
-                    </a>
-                    <div class="menu-dropdown collapse <?= in_array($page, ['deductions','contributions','refunds']) ? 'show' : '' ?>" id="sidebarBenefits">
-                        <ul class="nav nav-sm flex-column">
-                            <li class="nav-item">
-                                <a href="contributions" class="nav-link <?= $page === 'contributions' ? 'active' : '' ?>">
-                                    <i class="ri-hand-coin-line me-1"></i>Contributions
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="deductions" class="nav-link <?= $page === 'deductions' ? 'active' : '' ?>">
-                                    <i class="ri-subtract-line me-1"></i>Deductions
-                                </a>
-                            </li>
-                            <li class="nav-item">
-                                <a href="refunds" class="nav-link <?= $page === 'refunds' ? 'active' : '' ?>">
-                                    <i class="ri-refund-2-line me-1"></i>Refunds
-                                </a>
-                            </li>
-                        </ul>
-                    </div>
-                </li>
-
-                <!-- Time & Attendance -->
-                <?php $att_pages = ['attendance','biometric-dtr','attendance-requests']; ?>
+                <!-- Attendance sub-menu -->
+                <?php $att_pages = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests']; ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= in_array($page, $att_pages) ? 'active' : '' ?>"
                         href="#sidebarAtt" data-bs-toggle="collapse" role="button"
@@ -152,7 +88,7 @@
                             </li>
                             <?php if (in_array($login_role, [1, 8, 9], true)): ?>
                             <li class="nav-item">
-                                <a href="biometric-dtr" class="nav-link <?= $page === 'biometric-dtr' ? 'active' : '' ?>">
+                                <a href="dtr" class="nav-link <?= in_array($page, ['dtr','dtr-details']) ? 'active' : '' ?>">
                                     <i class="ri-fingerprint-line me-1"></i>DTR Review
                                 </a>
                             </li>
@@ -166,7 +102,7 @@
                     </div>
                 </li>
 
-                <!-- Leave Management -->
+                <!-- Leave sub-menu -->
                 <?php $lv_pages = ['leaves','leave_types','leave_balances','calendar']; ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= in_array($page, $lv_pages) ? 'active' : '' ?>"
@@ -200,12 +136,102 @@
                     </div>
                 </li>
 
-                <!-- Projects -->
-                <!-- <li class="nav-item">
-                    <a href="clusters" class="nav-link menu-link <?= $page === 'clusters' ? 'active' : '' ?>">
-                        <i class="ri-global-line"></i> <span>Clusters</span>
+                <!-- ===== PAYROLL ===== -->
+                <li class="menu-title"><span>Payroll</span></li>
+
+                <li class="nav-item">
+                    <a class="nav-link menu-link <?= (in_array($page, ['payroll','payroll_items','payroll_calculations']) && (!isset($_GET['p2']) || $_GET['p2'] === 'false')) ? 'active' : '' ?>"
+                        href="payroll?p2=false">
+                        <i class="ri-calculator-line"></i> <span>Payroll</span>
                     </a>
-                </li> -->
+                </li>
+                <?php if (in_array($login_role, [1, 8, 9], true)): ?>
+                <li class="nav-item">
+                    <a href="pay-settings" class="nav-link menu-link <?= $page === 'pay-settings' ? 'active' : '' ?>">
+                        <i class="ri-money-dollar-circle-line"></i> <span>Pay Settings</span>
+                    </a>
+                </li>
+                <?php endif; ?>
+
+                <!-- Loan management (Payroll Comparison & Remittance now live under Reports) -->
+                <li class="nav-item">
+                    <a href="loans" class="nav-link menu-link <?= $page === 'loans' ? 'active' : '' ?>">
+                        <i class="ri-bank-line"></i> <span>Active Loans</span>
+                    </a>
+                </li>
+
+                <!-- Benefits & Compensation sub-menu -->
+                <li class="nav-item">
+                    <a class="nav-link menu-link" href="#sidebarBenefits" data-bs-toggle="collapse" role="button"
+                        aria-expanded="<?= in_array($page, ['deductions','contributions','refunds']) ? 'true' : 'false' ?>">
+                        <i class="ri-gift-line"></i> <span>Benefits &amp; Compensation</span>
+                    </a>
+                    <div class="menu-dropdown collapse <?= in_array($page, ['deductions','contributions','refunds']) ? 'show' : '' ?>" id="sidebarBenefits">
+                        <ul class="nav nav-sm flex-column">
+                            <li class="nav-item">
+                                <a href="contributions" class="nav-link <?= $page === 'contributions' ? 'active' : '' ?>">
+                                    <i class="ri-hand-coin-line me-1"></i>Contributions
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="deductions" class="nav-link <?= $page === 'deductions' ? 'active' : '' ?>">
+                                    <i class="ri-subtract-line me-1"></i>Deductions
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="refunds" class="nav-link <?= $page === 'refunds' ? 'active' : '' ?>">
+                                    <i class="ri-refund-2-line me-1"></i>Refunds
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- ===== REPORTS ===== -->
+                <?php
+                $rep_acct = ['payroll-register','loan-deduction-ledger','remittance-report','payroll-comparison','payroll-report'];
+                $rep_hris = ['employee-masterlist','attendance-summary'];
+                $rep_all  = array_merge(['reports'], $rep_acct, $rep_hris);
+                ?>
+                <li class="menu-title"><span>Reports</span></li>
+                <li class="nav-item">
+                    <a href="index.php?page=reports" class="nav-link menu-link <?= $page === 'reports' ? 'active' : '' ?>">
+                        <i class="ri-bar-chart-box-line"></i> <span>All Reports</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link menu-link <?= in_array($page, $rep_acct) ? 'active' : '' ?>"
+                        href="#sidebarAcctReports" data-bs-toggle="collapse" role="button"
+                        aria-expanded="<?= in_array($page, $rep_acct) ? 'true' : 'false' ?>">
+                        <i class="ri-calculator-line"></i> <span>Accounting</span>
+                    </a>
+                    <div class="menu-dropdown collapse <?= in_array($page, $rep_acct) ? 'show' : '' ?>" id="sidebarAcctReports">
+                        <ul class="nav nav-sm flex-column">
+                            <li class="nav-item"><a href="payroll-register" class="nav-link <?= $page === 'payroll-register' ? 'active' : '' ?>"><i class="ri-file-list-3-line me-1"></i>Payroll Register</a></li>
+                            <li class="nav-item"><a href="loan-deduction-ledger" class="nav-link <?= $page === 'loan-deduction-ledger' ? 'active' : '' ?>"><i class="ri-bank-card-line me-1"></i>Loan &amp; Deduction Ledger</a></li>
+                            <li class="nav-item"><a href="remittance-report" class="nav-link <?= $page === 'remittance-report' ? 'active' : '' ?>"><i class="ri-government-line me-1"></i>Remittance Report</a></li>
+                            <li class="nav-item"><a href="payroll-comparison" class="nav-link <?= $page === 'payroll-comparison' ? 'active' : '' ?>"><i class="ri-arrow-left-right-line me-1"></i>Payroll Comparison</a></li>
+                            <li class="nav-item"><a href="payroll-report" class="nav-link <?= $page === 'payroll-report' ? 'active' : '' ?>"><i class="ri-list-check-2 me-1"></i>Payroll List</a></li>
+                        </ul>
+                    </div>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link menu-link <?= in_array($page, $rep_hris) ? 'active' : '' ?>"
+                        href="#sidebarHrisReports" data-bs-toggle="collapse" role="button"
+                        aria-expanded="<?= in_array($page, $rep_hris) ? 'true' : 'false' ?>">
+                        <i class="ri-team-line"></i> <span>HRIS</span>
+                    </a>
+                    <div class="menu-dropdown collapse <?= in_array($page, $rep_hris) ? 'show' : '' ?>" id="sidebarHrisReports">
+                        <ul class="nav nav-sm flex-column">
+                            <li class="nav-item"><a href="employee-masterlist" class="nav-link <?= $page === 'employee-masterlist' ? 'active' : '' ?>"><i class="ri-team-line me-1"></i>Employee Masterlist</a></li>
+                            <li class="nav-item"><a href="attendance-summary" class="nav-link <?= $page === 'attendance-summary' ? 'active' : '' ?>"><i class="ri-time-line me-1"></i>Attendance Summary</a></li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- ===== SYSTEM ===== -->
+                <li class="menu-title"><span>System</span></li>
+
                 <li class="nav-item">
                     <a href="sites" class="nav-link menu-link <?= $page === 'sites' ? 'active' : '' ?>">
                         <i class="ri-fingerprint-line"></i> <span>Biometric Sites</span>
@@ -220,7 +246,6 @@
                     </a>
                 </li>
                 */ ?>
-                <!-- Users -->
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= $page === 'users' ? 'active' : '' ?>" href="users">
                         <i class="ri-shield-user-line"></i> <span>User Management</span>

@@ -1,9 +1,15 @@
 <?php
-// Backward-compat: read URL params for initial filter state
-$init_from         = isset($_GET['from'])        ? htmlspecialchars($_GET['from'])  : '';
-$init_to           = isset($_GET['to'])          ? htmlspecialchars($_GET['to'])    : '';
+// Backward-compat: read URL params for initial filter state.
+// Defaults to today so the table (and its COUNT/SUM aggregates) never
+// scans the entire attendance history on an unfiltered page load.
+$today             = date('Y-m-d');
+$init_from         = isset($_GET['from'])        ? htmlspecialchars($_GET['from'])  : $today;
+$init_to           = isset($_GET['to'])          ? htmlspecialchars($_GET['to'])    : $today;
 $init_employee_ids = isset($_GET['employee_id']) ? implode(',', array_map('intval', (array)$_GET['employee_id'])) : '';
 $init_site_id      = isset($_GET['site_id'])     ? intval($_GET['site_id'])         : '';
+$init_range_label  = ($init_from === $today && $init_to === $today)
+    ? 'Today'
+    : date('M j, Y', strtotime($init_from)) . ' – ' . date('M j, Y', strtotime($init_to));
 ?>
 <style>
     .att-stat-box { flex:1; min-width:120px; border:1px solid #d0d7ee; border-radius:4px; background:#eef0f8; padding:9px 12px; display:flex; align-items:center; gap:10px; }
@@ -37,7 +43,7 @@ $init_site_id      = isset($_GET['site_id'])     ? intval($_GET['site_id'])     
     .att-pill-late { background:#f8d7da; color:#721c24; }
     .att-log-bio   { background:#009688; color:#fff; font-size:10px; }
     .att-log-manual{ background:#dc3545; color:#fff; font-size:10px; }
-    #attendance-table thead th { background-color:#009688 !important; border-color:#2d3d66 !important; color:#fff !important; }
+  
     .att-empty { text-align:center; padding:3.5rem 1rem 3rem; background:#f7f8fc; border-radius:8px; border:2px dashed #c5cde8; }
     .att-empty .att-empty-icon { width:64px; height:64px; border-radius:50%; background:#eef0f8; border:2px solid #d0d7ee; display:flex; align-items:center; justify-content:center; margin:0 auto 14px; }
     .att-empty .att-empty-icon i { font-size:28px; color:#009688; opacity:.6; }
@@ -78,11 +84,11 @@ $init_site_id      = isset($_GET['site_id'])     ? intval($_GET['site_id'])     
                                     <label class="att-flabel"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
                                     <div id="att-daterange" class="att-range-picker">
                                         <i class="ri-calendar-2-line"></i>
-                                        <span id="att-range-label">Select date range…</span>
+                                        <span id="att-range-label"><?= htmlspecialchars($init_range_label) ?></span>
                                         <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
                                     </div>
-                                    <input type="hidden" name="from" id="from">
-                                    <input type="hidden" name="to" id="to">
+                                    <input type="hidden" name="from" id="from" value="<?= $init_from ?>">
+                                    <input type="hidden" name="to" id="to" value="<?= $init_to ?>">
                                 </div>
                                 <div class="col-12 col-md-5 col-lg-5">
                                     <label class="att-flabel"><i class="ri-user-line me-1"></i>Employee</label>
@@ -101,8 +107,8 @@ $init_site_id      = isset($_GET['site_id'])     ? intval($_GET['site_id'])     
                                     <button type="submit" class="btn btn-sm text-white" style="background:#009688;border-color:#009688;">
                                         <i class="ri-search-line me-1"></i>Apply Filter
                                     </button>
-                                    <button type="button" id="btn-clear-filter" class="btn btn-sm btn-outline-secondary" style="display:none;">
-                                        <i class="ri-close-line me-1"></i>Clear
+                                    <button type="button" id="btn-clear-filter" class="btn btn-sm btn-outline-secondary">
+                                        <i class="ri-restart-line me-1"></i>Reset to Today
                                     </button>
                                 </div>
                             </div>
@@ -139,7 +145,7 @@ $init_site_id      = isset($_GET['site_id'])     ? intval($_GET['site_id'])     
                         <!-- DataTable -->
                         <div class="table-responsive">
                             <table id="attendance-table" class="table table-hover table-bordered align-middle">
-                                <thead>
+                                <thead class="table-dark">
                                     <tr>
                                         <th style="width:110px;"><i class="ri-calendar-line me-1"></i>Date</th>
                                         <th style="width:190px;"><i class="ri-user-line me-1"></i>Employee</th>

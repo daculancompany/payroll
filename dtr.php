@@ -11,6 +11,15 @@ if ($login_role === 6) {
 } else {
     $filter_query = '';
 }
+
+// Status badge helper for server-rendered rows.
+function dtr_status_badge($s) {
+    $s = (int)$s;
+    if ($s === 2) return '<span class="badge bg-success"><i class="ri-checkbox-circle-line me-1"></i>Approved</span>';
+    if ($s === 3) return '<span class="badge bg-info text-dark"><i class="ri-user-received-2-line me-1"></i>Ready for Review</span>';
+    if ($s === 1) return '<span class="badge bg-warning text-dark"><i class="ri-time-line me-1"></i>Pending</span>';
+    return '<span class="badge bg-secondary"><i class="ri-loader-2-line me-1"></i>Open</span>';
+}
 ?>
 <style>
     .dtr-period { font-weight:700; color:#009688; font-size:13px; font-family:'Segoe UI',monospace; }
@@ -40,129 +49,122 @@ if ($login_role === 6) {
                 </div>
 
                 <div class="card" style="border-top:3px solid #009688;">
-                    <div class="card-header align-items-center d-flex py-2">
+                    <div class="card-header align-items-center d-flex flex-wrap gap-2 py-2">
                         <h4 class="card-title mb-0 flex-grow-1">
                             <i class="ri-time-line me-2" style="color:#009688;"></i>DTR List
                         </h4>
-                        <button type="button" class="btn btn-sm text-white" style="background:#009688;border-color:#009688;" onclick="uploadFile()">
-                            <i class="ri-upload-2-line me-1"></i>Upload File
+                        <button type="button" id="btn-bulk-send-dtr" class="btn btn-sm btn-info" onclick="bulkSendDTRForReview()" disabled>
+                            <i class="ri-user-received-2-line me-1"></i>Send Selected for Review (<span id="dtr-bulk-count">0</span>)
                         </button>
                     </div>
 
                     <div class="card-body">
-                        <ul class="nav nav-pills arrow-navtabs nav-success bg-light mb-3" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <a class="nav-link active" data-bs-toggle="tab" href="#arrow-new" role="tab">
-                                    <i class="ri-file-add-line me-1"></i><span class="d-none d-sm-inline">New</span>
-                                </a>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-approved" role="tab">
-                                    <i class="ri-checkbox-circle-line me-1"></i><span class="d-none d-sm-inline">Approved</span>
-                                </a>
-                            </li>
-                        </ul>
-
-                        <div class="tab-content text-muted">
-
-                            <!-- NEW TAB -->
-                            <div class="tab-pane active" id="arrow-new" role="tabpanel">
-                                <div class="table-responsive">
-                                    <table id="data-table1" class="table table-hover table-bordered dt-responsive nowrap align-middle">
-                                        <thead class="table-dark">
-                                            <tr>
-                                                <th><i class="ri-calendar-range-line me-1"></i>Period</th>
-                                                <th><i class="ri-building-2-line me-1"></i>Employer</th>
-                                                <th><i class="ri-map-pin-2-line me-1"></i>Site</th>
-                                                <th><i class="ri-upload-2-line me-1"></i>Uploaded By</th>
-                                                <th><i class="ri-user-3-line me-1"></i>Timekeeper</th>
-                                                <th class="text-center" style="width:120px;"><i class="ri-settings-3-line me-1"></i>Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php
-                                            $query = $conn->query("SELECT DTR.*, sites.site_code, sites.site_name, sites.site_address,
-                                                timekeeper.name AS timekeeper_name, uploaded.name AS uploaded_by, employer_name
-                                                FROM DTR
-                                                LEFT JOIN sites ON DTR.site_id = sites.id
-                                                LEFT JOIN users AS timekeeper ON DTR.timekeeper_id = timekeeper.id
-                                                LEFT JOIN users AS uploaded ON DTR.uploaded_by = uploaded.id
-                                                LEFT JOIN employers ON sites.employer_id = employers.id
-                                                WHERE DTR.status = 1 AND DTR.file != 'biometric'
-                                                $filter_query
-                                                ORDER BY DTR.id DESC");
-                                            while ($row = $query->fetch_assoc()):
-                                                $period = date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M j, Y", strtotime($row['date_to']));
-                                                $viewUrl = "index.php?page=dtr-details&id=" . base64_encode($row['id'])
-                                                    . "&timekeeper_name=" . base64_encode($row['timekeeper_name'])
-                                                    . "&device_id=" . base64_encode($row['device_id'])
-                                                    . "&site_id=" . base64_encode($row['site_id'])
-                                                    . "&status=" . base64_encode($row['status']);
-                                            ?>
-                                                <tr>
-                                                    <td>
-                                                        <div class="dtr-period">
-                                                            <i class="ri-calendar-2-line me-1 text-muted"></i><?= $period ?>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <span class="dtr-user"><?= htmlspecialchars($row['employer_name']) ?></span>
-                                                    </td>
-                                                    <td>
-                                                        <span class="dtr-site-code"><?= htmlspecialchars($row['site_code']) ?></span>
-                                                        <div class="dtr-site-name"><?= htmlspecialchars($row['site_name']) ?></div>
-                                                        <div class="dtr-site-addr"><?= htmlspecialchars($row['site_address']) ?></div>
-                                                    </td>
-                                                    <td>
-                                                        <div class="dtr-user">
-                                                            <i class="ri-user-3-line me-1 text-muted"></i><?= htmlspecialchars($row['uploaded_by']) ?>
-                                                        </div>
-                                                    </td>
-                                                    <td>
-                                                        <div class="dtr-user">
-                                                            <i class="ri-user-settings-line me-1 text-muted"></i><?= htmlspecialchars($row['timekeeper_name']) ?>
-                                                        </div>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <div class="dtr-action">
-                                                            <a href="<?= $viewUrl ?>" class="btn btn-sm btn-outline-success"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top" title="View DTR Details">
-                                                                <i class="ri-eye-line me-1"></i>View
-                                                            </a>
-                                                            <button onclick="deleteDTR(<?= $row['id'] ?>)" type="button"
-                                                                class="btn btn-sm btn-outline-danger"
-                                                                data-bs-toggle="tooltip" data-bs-placement="top" title="Delete DTR">
-                                                                <i class="ri-delete-bin-line"></i>
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            <?php endwhile; ?>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-
-                            <!-- APPROVED TAB -->
-                            <div class="tab-pane" id="arrow-approved" role="tabpanel">
-                                <div class="table-responsive">
-                                    <table id="data-table" class="table table-hover table-bordered dt-responsive nowrap align-middle" style="width:100%;">
-                                        <thead>
-                                            <tr>
-                                                <th><i class="ri-calendar-range-line me-1"></i>Period</th>
-                                                <th><i class="ri-building-2-line me-1"></i>Employer</th>
-                                                <th><i class="ri-map-pin-2-line me-1"></i>Site</th>
-                                                <th><i class="ri-upload-2-line me-1"></i>Uploaded By</th>
-                                                <th><i class="ri-user-3-line me-1"></i>Timekeeper</th>
-                                                <th><i class="ri-shield-check-line me-1"></i>Approved By</th>
-                                                <th class="text-center" style="width:90px;"><i class="ri-settings-3-line me-1"></i>Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody></tbody>
-                                    </table>
-                                </div>
-                            </div>
-
+                        <div class="table-responsive">
+                            <table id="data-table" class="table table-hover table-bordered dt-responsive nowrap align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th style="width:34px;" class="text-center" data-orderable="false">
+                                            <input type="checkbox" id="dtr-check-all" title="Select all reviewable">
+                                        </th>
+                                        <th><i class="ri-calendar-range-line me-1"></i>Period</th>
+                                        <th><i class="ri-map-pin-2-line me-1"></i>Site</th>
+                                        <th><i class="ri-file-list-3-line me-1"></i>Attendance Summary</th>
+                                        <th class="text-center"><i class="ri-flag-line me-1"></i>Status</th>
+                                        <th><i class="ri-shield-check-line me-1"></i>Approved By</th>
+                                        <th class="text-center" style="width:140px;"><i class="ri-settings-3-line me-1"></i>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php
+                                    $query = $conn->query("SELECT DTR.*, sites.site_code, sites.site_name, sites.site_address,
+                                        timekeeper.name AS timekeeper_name, uploaded.name AS uploaded_by, approved.name AS approve_by, employer_name,
+                                        SUM(CASE WHEN DTR_details.status = 0 THEN 1 ELSE 0 END) AS pending_count,
+                                        SUM(CASE WHEN DTR_details.status = 1 THEN 1 ELSE 0 END) AS approved_count,
+                                        SUM(CASE WHEN DTR_details.status = 2 THEN 1 ELSE 0 END) AS disapproved_count
+                                        FROM DTR
+                                        LEFT JOIN sites ON DTR.site_id = sites.id
+                                        LEFT JOIN users AS timekeeper ON DTR.timekeeper_id = timekeeper.id
+                                        LEFT JOIN users AS uploaded ON DTR.uploaded_by = uploaded.id
+                                        LEFT JOIN users AS approved ON DTR.approved_by = approved.id
+                                        LEFT JOIN employers ON sites.employer_id = employers.id
+                                        LEFT JOIN DTR_details ON DTR_details.ddtr_id = DTR.id
+                                        WHERE 1=1
+                                        $filter_query
+                                        GROUP BY DTR.id
+                                        ORDER BY DTR.id DESC");
+                                    while ($row = $query->fetch_assoc()):
+                                        $status = (int)$row['status'];
+                                        $period = date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M j, Y", strtotime($row['date_to']));
+                                        $viewUrl = "index.php?page=dtr-details&id=" . base64_encode($row['id'])
+                                            . "&timekeeper_name=" . base64_encode($row['timekeeper_name'])
+                                            . "&device_id=" . base64_encode($row['device_id'])
+                                            . "&site_id=" . base64_encode($row['site_id'])
+                                            . "&status=" . base64_encode($row['status']);
+                                    ?>
+                                        <tr>
+                                            <td class="text-center">
+                                                <?php if ($status === 1): ?>
+                                                    <input type="checkbox" class="dtr-bulk-check" value="<?= (int)$row['id'] ?>">
+                                                <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <div class="dtr-period">
+                                                    <i class="ri-calendar-2-line me-1 text-muted"></i><?= $period ?>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="dtr-site-code"><?= htmlspecialchars($row['site_code']) ?></span>
+                                                <div class="dtr-site-name"><?= htmlspecialchars($row['site_name']) ?></div>
+                                                <div class="dtr-site-addr"><?= htmlspecialchars($row['site_address']) ?></div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex gap-1 flex-wrap">
+                                                    <span class="badge bg-warning text-dark"><?= (int)$row['pending_count'] ?> Pending</span>
+                                                    <span class="badge bg-success"><?= (int)$row['approved_count'] ?> Approved</span>
+                                                    <span class="badge bg-danger"><?= (int)$row['disapproved_count'] ?> Disapproved</span>
+                                                </div>
+                                            </td>
+                                            <td class="text-center"><?= dtr_status_badge($row['status']) ?></td>
+                                            <td>
+                                                <?php if (!empty($row['approve_by'])): ?>
+                                                <div class="dtr-user"><i class="ri-shield-check-line me-1 text-muted"></i><?= htmlspecialchars($row['approve_by']) ?></div>
+                                                <?php else: ?>
+                                                <span class="text-muted">&mdash;</span>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td class="text-center">
+                                                <div class="dtr-action">
+                                                    <a href="<?= $viewUrl ?>" class="btn btn-sm btn-outline-success"
+                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="View DTR Details">
+                                                        <i class="ri-eye-line"></i>
+                                                    </a>
+                                                    <?php if ($status === 1): ?>
+                                                    <button onclick="sendDTRForReview(<?= $row['id'] ?>)" type="button"
+                                                        class="btn btn-sm btn-outline-info"
+                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Send to Employees for Review">
+                                                        <i class="ri-user-received-2-line"></i>
+                                                    </button>
+                                                    <?php endif; ?>
+                                                    <?php if ($status === 3): ?>
+                                                    <button onclick="approveDTR(<?= $row['id'] ?>)" type="button"
+                                                        class="btn btn-sm btn-outline-primary"
+                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Final Approve for Payroll">
+                                                        <i class="ri-checkbox-circle-line"></i>
+                                                    </button>
+                                                    <?php endif; ?>
+                                                    <?php if ($status !== 2): ?>
+                                                    <button onclick="deleteDTR(<?= $row['id'] ?>)" type="button"
+                                                        class="btn btn-sm btn-outline-danger"
+                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Delete DTR">
+                                                        <i class="ri-delete-bin-line"></i>
+                                                    </button>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endwhile; ?>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -170,8 +172,6 @@ if ($login_role === 6) {
         </div>
     </div>
 </div>
-
-<?php include 'component/drt_form.php'; ?>
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {

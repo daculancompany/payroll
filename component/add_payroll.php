@@ -1,9 +1,20 @@
+<?php
+// Shared option lists for payroll deduction settings. Rendered pre-checked in
+// the Create modal (so a new payroll auto-calculates a complete payslip) and
+// again in the gear "Payroll Settings" modal for editing an existing payroll.
+$payroll_setting_sections = [
+    ['title' => 'Contributions', 'icon' => 'ri-hand-coin-line', 'query' => "SELECT id, contribution AS label FROM contributions ORDER BY id ASC", 'prefix' => 'contributions', 'name' => 'contributions[]', 'id_col' => 'id'],
+    ['title' => 'Deductions',    'icon' => 'ri-subtract-line',  'query' => "SELECT id, deduction AS label FROM deductions ORDER BY id ASC",       'prefix' => 'deductions',    'name' => 'deductions[]',    'id_col' => 'id'],
+    ['title' => 'Loans',         'icon' => 'ri-bank-card-line', 'query' => "SELECT clt_id AS id, loan_type AS label FROM contribution_loan_types ORDER BY clt_id ASC", 'prefix' => 'loan', 'name' => 'loans[]', 'id_col' => 'id'],
+    ['title' => 'Refunds',       'icon' => 'ri-refund-2-line',  'query' => "SELECT id, refunds AS label FROM refunds ORDER BY id ASC",             'prefix' => 'refund',        'name' => 'refunds[]',       'id_col' => 'id'],
+];
+?>
 <!-- ── Create Payroll ─────────────────────────────────────────────── -->
 <div class="modal fade" id="modal" tabindex="-1" role="dialog">
     <form id="form-submit" novalidate>
         <input type="hidden" name="id" id="id">
         <input type="hidden" name="p2" value="<?= (isset($_GET['p2']) && $_GET['p2'] === 'true') ? 'yes' : 'no' ?>">
-        <div class="modal-dialog" role="document">
+        <div class="modal-dialog modal-lg" role="document">
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
@@ -31,21 +42,46 @@
                             <input type="hidden" name="date_to" id="date_to" required>
                         </div>
 
-                        <div class="col-md-6">
+                        <!-- Deductions to apply — chosen here (all ticked by default) so the
+                             payroll auto-calculates a complete payslip on create. Untick any
+                             you don't want. Replaces the old post-create Settings step. -->
+                        <div class="col-md-12">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
-                                <i class="ri-list-check-2 me-1"></i>Payroll Type <span class="text-danger">*</span>
+                                <i class="ri-list-settings-line me-1"></i>Deductions to apply
                             </label>
-                            <select id="type" name="type" class="form-control"
-                                data-placeholder="Select type"
-                                data-parsley-required-message="Please select type." required>
-                                <option value="">Select a type</option>
-                                <option value="1"><i class="ri-calendar-2-line"></i> Week 1</option>
-                                <option value="2">Week 2</option>
-                                <option value="3">Week 3</option>
-                                <option value="4">Week 4</option>
-                                <option value="5">Monthly</option>
-                            </select>
+                            <div style="max-height:250px;overflow-y:auto;border:1px solid #e8eaf6;border-radius:6px;padding:10px;background:#fafaff;">
+                                <?php foreach ($payroll_setting_sections as $i => $sec):
+                                    $rows = $conn->query($sec['query']); ?>
+                                    <?= $i > 0 ? '<hr class="my-2">' : '' ?>
+                                    <div class="d-flex align-items-center gap-2 mb-2">
+                                        <i class="<?= $sec['icon'] ?>" style="color:#009688;font-size:15px;"></i>
+                                        <span class="fw-bold" style="font-size:12px;color:#009688;"><?= $sec['title'] ?></span>
+                                    </div>
+                                    <div class="row g-2">
+                                        <?php while ($row = $rows->fetch_assoc()): ?>
+                                        <div class="col-md-4 col-sm-6">
+                                            <div class="form-check" style="border:1px solid #e8eaf6;border-radius:4px;padding:6px 10px 6px 32px;background:#fff;">
+                                                <input class="form-check-input" type="checkbox"
+                                                    id="new-<?= $sec['prefix'] ?>-<?= $row[$sec['id_col']] ?>"
+                                                    name="<?= $sec['name'] ?>"
+                                                    value="<?= $row[$sec['id_col']] ?>" checked>
+                                                <label class="form-check-label" style="font-size:12px;font-weight:600;cursor:pointer;"
+                                                    for="new-<?= $sec['prefix'] ?>-<?= $row[$sec['id_col']] ?>">
+                                                    <?= htmlspecialchars($row['label']) ?>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <?php endwhile; ?>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                            <small class="text-muted" style="font-size:11px;">All selected by default — untick any you don't want applied.</small>
                         </div>
+
+                        <!-- Payroll Type dropdown removed — all payrolls run on the standard
+                             semi-monthly (1-15 / 16-30) cutoff, so this is fixed to 1 (non-monthly
+                             branch). Only the "== 5" check elsewhere cares about this value. -->
+                        <input type="hidden" id="type" name="type" value="1">
 
                         <!-- Category/Site fixed to default (1) — selection removed -->
                         <input type="hidden" id="category-select" name="category_id" value="1">
@@ -57,7 +93,7 @@
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
                     <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
-                        <i class="ri-arrow-right-line me-1"></i>Next
+                        <i class="ri-add-circle-line me-1"></i>Create Payroll
                     </button>
                 </div>
             </div>
@@ -80,40 +116,7 @@
                     <input type="hidden" name="id" id="settings-id">
 
                     <?php
-                    $sections = [
-                        [
-                            'title' => 'Contributions',
-                            'icon'  => 'ri-hand-coin-line',
-                            'query' => "SELECT id, contribution AS label FROM contributions ORDER BY id ASC",
-                            'prefix'=> 'contributions',
-                            'name'  => 'contributions[]',
-                            'id_col'=> 'id',
-                        ],
-                        [
-                            'title' => 'Deductions',
-                            'icon'  => 'ri-subtract-line',
-                            'query' => "SELECT id, deduction AS label FROM deductions ORDER BY id ASC",
-                            'prefix'=> 'deductions',
-                            'name'  => 'deductions[]',
-                            'id_col'=> 'id',
-                        ],
-                        [
-                            'title' => 'Loans',
-                            'icon'  => 'ri-bank-card-line',
-                            'query' => "SELECT clt_id AS id, loan_type AS label FROM contribution_loan_types ORDER BY clt_id ASC",
-                            'prefix'=> 'loan',
-                            'name'  => 'loans[]',
-                            'id_col'=> 'id',
-                        ],
-                        [
-                            'title' => 'Refunds',
-                            'icon'  => 'ri-refund-2-line',
-                            'query' => "SELECT id, refunds AS label FROM refunds ORDER BY id ASC",
-                            'prefix'=> 'refund',
-                            'name'  => 'refunds[]',
-                            'id_col'=> 'id',
-                        ],
-                    ];
+                    $sections = $payroll_setting_sections;
 
                     foreach ($sections as $i => $sec):
                         $rows = $conn->query($sec['query']);

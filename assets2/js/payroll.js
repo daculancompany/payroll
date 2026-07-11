@@ -1,4 +1,37 @@
 let id = null;
+
+// ── Lightweight non-blocking toast (replaces the SweetAlert "Success!" popups) ──
+function showToast(message, type = "success") {
+    const accent = { success: "#009688", error: "#dc3545", info: "#0d6efd", warning: "#f0ad4e" }[type] || "#009688";
+    let box = document.getElementById("app-toast-box");
+    if (!box) {
+        box = document.createElement("div");
+        box.id = "app-toast-box";
+        box.style.cssText = "position:fixed;top:16px;right:16px;z-index:20000;display:flex;flex-direction:column;gap:8px;";
+        document.body.appendChild(box);
+    }
+    const t = document.createElement("div");
+    t.style.cssText = "min-width:220px;max-width:340px;background:#fff;border-left:4px solid " + accent +
+        ";box-shadow:0 4px 14px rgba(0,0,0,.15);border-radius:6px;padding:10px 14px;font-size:13px;color:#333;" +
+        "opacity:0;transform:translateX(20px);transition:opacity .25s,transform .25s;";
+    t.textContent = message;
+    box.appendChild(t);
+    requestAnimationFrame(() => { t.style.opacity = "1"; t.style.transform = "translateX(0)"; });
+    setTimeout(() => {
+        t.style.opacity = "0"; t.style.transform = "translateX(20px)";
+        setTimeout(() => t.remove(), 300);
+    }, 2600);
+}
+
+// Refresh the payroll list without a full page reload (keeps the toast visible).
+function reloadPayrollTable() {
+    if ($.fn.DataTable && $.fn.DataTable.isDataTable("#table")) {
+        $("#table").DataTable().ajax.reload(null, false);
+    } else {
+        location.reload();
+    }
+}
+
 $(document).ready(function () {
     // Get p2 from URL or set default
     function getUrlParameter(name) {
@@ -16,7 +49,7 @@ $(document).ready(function () {
     $("#table").DataTable({
         processing: true,
         serverSide: true,
-        order: [[2, "desc"]], // Default sort: Period (date) newest first
+        order: [[3, "desc"]], // Default sort: Period (date) newest first (col 0 = select)
         ajax: {
             url: "payroll-server.php",
             type: "POST",
@@ -25,11 +58,10 @@ $(document).ready(function () {
             },
         },
         columns: [
+            { data: "select", orderable: false, className: "text-center" },
             { data: "ref_no" },
             { data: "employer_name" },
             { data: "period" },
-            { data: "category" },
-            { data: "type" },
             { data: "status" },
             { data: "action", orderable: false },
         ],
@@ -38,8 +70,60 @@ $(document).ready(function () {
             bootstrap.Tooltip.getInstance(el)?.dispose();
             new bootstrap.Tooltip(el, { trigger: "hover" });
         });
+        // reset selection state on each redraw (page change / sort / search)
+        var all = document.getElementById("pay-check-all");
+        if (all) all.checked = false;
+        refreshPayBulk();
     });
 });
+
+// ── Payroll bulk "Send for Review" selection ──
+function refreshPayBulk() {
+    var n = document.querySelectorAll(".pay-bulk-check:checked").length;
+    var cnt = document.getElementById("pay-bulk-count");
+    var btn = document.getElementById("btn-bulk-send-pay");
+    if (cnt) cnt.textContent = n;
+    if (btn) btn.disabled = (n === 0);
+}
+document.addEventListener("change", function (e) {
+    if (e.target && e.target.id === "pay-check-all") {
+        document.querySelectorAll(".pay-bulk-check").forEach(function (c) { c.checked = e.target.checked; });
+        refreshPayBulk();
+    } else if (e.target && e.target.classList.contains("pay-bulk-check")) {
+        refreshPayBulk();
+    }
+});
+
+function bulkSendPayrollForReview() {
+    var ids = Array.prototype.map.call(document.querySelectorAll(".pay-bulk-check:checked"), function (c) { return c.value; });
+    if (!ids.length) return;
+    Swal.fire({
+        title: "Send " + ids.length + " payroll batch(es) for review?",
+        text: "Employees in the selected payrolls will be notified to review their payslip.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonColor: "#0dcaf0",
+        cancelButtonColor: "#6c757d",
+        confirmButtonText: "Yes, send them",
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        $.ajax({
+            url: "ajax.php?action=bulk_send_payroll_for_review",
+            method: "POST",
+            dataType: "JSON",
+            data: { ids: ids },
+            error: (xhr, status, error) => handleError(error || ""),
+            success: function (res) {
+                if (res?.result) {
+                    showToast(res.message || "Sent for review.", "success");
+                    reloadPayrollTable();
+                } else {
+                    handleError(res?.message || "");
+                }
+            },
+        });
+    });
+}
 
 $(document).ready(function () {
     oTable = $("#data-table").DataTable({
@@ -130,39 +214,22 @@ $(document).ready(function () {
         ]);
     });
 
-    $(document).on("click", ".calculate_payroll", async function () {
-        Swal.fire({
-            title: "Calculating, please wait...",
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            },
-        });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+    $(document).on("click", ".calculate_payroll", function () {
         const id = $(this).attr("data-id");
+        $(this).attr("disabled", true);
         $.ajax({
             url: "ajax.php?action=calculate_payroll",
             method: "POST",
             dataType: "json",
             data: { id: id },
             error: (xhr, status, error) => {
-                Swal.close();
                 handleError(error || "");
                 $(".submitbutton").removeAttr("disabled");
             },
             success: function (res) {
                 if (res?.result) {
-                    Swal.fire({
-                        icon: "success",
-                        title: "Success!",
-                        text: "Payroll successfully calculated.",
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            window.location.href = `index.php?page=payroll_calculations&id=${id}`;
-                        }
-                    });
+                    window.location.href = `index.php?page=payroll_calculations&id=${id}`;
                 } else {
-                    Swal.close();
                     handleError(res?.message || "");
                     $(".submitbutton").removeAttr("disabled");
                 }
@@ -171,159 +238,96 @@ $(document).ready(function () {
     });
 });
 
-async function remove_payroll(id) {
-    Swal.fire({
-        title: "Deleting, please wait...",
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+function remove_payroll(id) {
     $.ajax({
         url: "ajax.php?action=delete_payroll",
         method: "POST",
+        dataType: "json",
         data: { id: id },
-        error: (err) => {
-            Swal.close();
-            handleError();
-        },
+        error: (err) => handleError(),
         success: function (resp) {
-            if (resp == 1) {
-                Swal.fire({
-                    icon: "success",
-                    title: "Success!",
-                    text: "Selected payroll successfully deleted.",
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        location.reload();
-                    }
-                });
+            if (resp?.result) {
+                showToast("Payroll deleted.", "success");
+                reloadPayrollTable();
             } else {
-                Swal.close();
-                handleError();
+                handleError(resp?.message || "");
             }
         },
     });
 }
 
 let form_data = "";
-$("#form-submit").on("submit", async function (e) {
+$("#form-submit").on("submit", function (e) {
     e.preventDefault();
     var form = $(this);
     form.parsley().validate();
+    if (!form.parsley().isValid()) return;
 
-    if (form.parsley().isValid()) {
-        e.preventDefault();
-        Swal.fire({
-            title: "Creating, please wait...",
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            },
-        });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        form_data = $(this).serialize();
-        $.ajax({
-            url: "ajax.php?action=get_sites",
-            method: "POST",
-            // dataType: "JSON",
-            data: $(this).serialize(),
-            error: (xhr, status, error) => {
-                Swal.close();
-                handleError(error || "");
-            },
-            success: function (res) {
-                $("#modal").modal("hide");
-                // Load the sites, auto-select them all, and create immediately
-                // (no Select Sites modal step).
-                $("#show-sites").html(res);
-                $("#show-sites").find("input[type='checkbox']").prop("checked", true);
-                Swal.close();
-                $("#form-add").trigger("submit");
-            },
-        });
-    }
-});
-
-$("#form-add").on("submit", async function (e) {
-    e.preventDefault();
-    Swal.fire({
-        title: "Creating, please wait...",
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
+    // Dates + chosen deductions are serialized together and carried to save_payroll.
+    form_data = $(this).serialize();
+    $(".submitbutton").attr("disabled", true);
+    $.ajax({
+        url: "ajax.php?action=get_sites",
+        method: "POST",
+        data: form_data,
+        error: (xhr, status, error) => {
+            handleError(error || "");
+            $(".submitbutton").removeAttr("disabled");
+        },
+        success: function (res) {
+            $("#modal").modal("hide");
+            // Load the sites, auto-select them all, and create immediately.
+            $("#show-sites").html(res);
+            $("#show-sites").find("input[type='checkbox']").prop("checked", true);
+            $("#form-add").trigger("submit");
         },
     });
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+});
+
+$("#form-add").on("submit", function (e) {
+    e.preventDefault();
     $.ajax({
         url: "ajax.php?action=save_payroll",
         method: "POST",
         dataType: "JSON",
         data: { site_ids: $(this).serialize(), form_data },
         error: (xhr, status, error) => {
-            Swal.close();
             handleError(error || "");
             $(".submitbutton").removeAttr("disabled");
         },
         success: function (res) {
+            $(".submitbutton").removeAttr("disabled");
             if (res?.result) {
-                Swal.fire({
-                    icon: "success",
-                    title: "Success!",
-                    text: "Payroll successfully create.",
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        $("#modal-sites").modal("hide");
-                        $("#settings-id").val(res?.id);
-                        $("#modal-settings").modal("show");
-                    }
-                });
+                $("#modal-sites").modal("hide");
+                showToast("Payroll created and calculated.", "success");
+                reloadPayrollTable();
             } else {
-                Swal.close();
                 handleError(res?.message || "");
-                $(".submitbutton").removeAttr("disabled");
             }
         },
     });
 });
 
-$("#form-settings").on("submit", async function (e) {
+$("#form-settings").on("submit", function (e) {
     e.preventDefault();
-    Swal.fire({
-        title: "Creating, please wait...",
-        allowOutsideClick: false,
-        didOpen: () => {
-            Swal.showLoading();
-        },
-    });
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    $(".submitbutton").attr("disabled", true);
     $.ajax({
         url: "ajax.php?action=save_settings",
         method: "POST",
         dataType: "JSON",
         data: $(this).serialize(),
         error: (xhr, status, error) => {
-            Swal.close();
             handleError(error || "");
             $(".submitbutton").removeAttr("disabled");
         },
         success: function (res) {
+            $(".submitbutton").removeAttr("disabled");
             $("#modal-settings").modal("hide");
             if (res?.result) {
-                Swal.fire({
-                    icon: "success",
-                    title: "Success!",
-                    text: "Payroll successfully create.",
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        location.reload();
-                    }
-                });
+                showToast("Settings saved. Recalculate to apply the changes.", "success");
+                reloadPayrollTable();
             } else {
-                Swal.close();
                 handleError(res?.message || "");
-                $(".submitbutton").removeAttr("disabled");
             }
         },
     });
@@ -342,42 +346,19 @@ async function islock(id, isLock) {
         confirmButtonText: "Yes, " + message + " it!",
     });
 
-    // If the user confirmed the deletion
     if (result.isConfirmed) {
-        // Show loading dialog
-        Swal.fire({
-            title: "Updating, please wait...",
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            },
-        });
-
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
         $.ajax({
             url: "ajax.php?action=isLock222",
             method: "POST",
             data: { id: id, isLock },
             dataType: "JSON",
-            error: (err) => {
-                Swal.close();
-                handleError();
-            },
+            error: (err) => handleError(),
             success: function (res) {
                 if (res?.result) {
-                    Swal.fire({
-                        icon: "success",
-                        title: "Success!",
-                        text: "Selected payroll successfully updated.",
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            location.reload();
-                        }
-                    });
+                    showToast(message + " successful.", "success");
+                    reloadPayrollTable();
                 } else {
-                    Swal.close();
-                    handleError();
+                    handleError(res?.message || "");
                 }
             },
         });
@@ -396,42 +377,18 @@ async function recalculate(id) {
         confirmButtonText: "Yes, recalculate it!",
     });
 
-    // If the user confirmed the deletion
     if (result.isConfirmed) {
-        // Show loading dialog
-        Swal.fire({
-            title: "Recalculating, please wait...",
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            },
-        });
-
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-
         $.ajax({
             url: "ajax.php?action=calculate_payroll",
             method: "POST",
             data: { id: id, type: "recalculate" },
             dataType: "JSON",
-            error: (err) => {
-                Swal.close();
-                handleError();
-            },
+            error: (err) => handleError(),
             success: function (res) {
                 if (res?.result) {
-                    Swal.fire({
-                        icon: "success",
-                        title: "Success!",
-                        text: "Selected payroll successfully recalculated.",
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            window.location.href = `index.php?page=payroll_calculations&id=${id}`;
-                        }
-                    });
+                    window.location.href = `index.php?page=payroll_calculations&id=${id}`;
                 } else {
-                    Swal.close();
-                    handleError();
+                    handleError(res?.message || "");
                 }
             },
         });

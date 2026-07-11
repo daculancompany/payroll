@@ -1,3 +1,26 @@
+// ── Lightweight non-blocking toast (replaces the SweetAlert "Success!" popups) ──
+function showToast(message, type = "success") {
+    const accent = { success: "#009688", error: "#dc3545", info: "#0d6efd", warning: "#f0ad4e" }[type] || "#009688";
+    let box = document.getElementById("app-toast-box");
+    if (!box) {
+        box = document.createElement("div");
+        box.id = "app-toast-box";
+        box.style.cssText = "position:fixed;top:16px;right:16px;z-index:20000;display:flex;flex-direction:column;gap:8px;";
+        document.body.appendChild(box);
+    }
+    const t = document.createElement("div");
+    t.style.cssText = "min-width:220px;max-width:340px;background:#fff;border-left:4px solid " + accent +
+        ";box-shadow:0 4px 14px rgba(0,0,0,.15);border-radius:6px;padding:10px 14px;font-size:13px;color:#333;" +
+        "opacity:0;transform:translateX(20px);transition:opacity .25s,transform .25s;";
+    t.textContent = message;
+    box.appendChild(t);
+    requestAnimationFrame(() => { t.style.opacity = "1"; t.style.transform = "translateX(0)"; });
+    setTimeout(() => {
+        t.style.opacity = "0"; t.style.transform = "translateX(20px)";
+        setTimeout(() => t.remove(), 300);
+    }, 2600);
+}
+
 // Restore + persist horizontal scroll position
 window.addEventListener("load", () => {
     const scrollContainer = document.getElementById("table-responsive2");
@@ -166,6 +189,117 @@ function handleError(e) {
     );
 }
 
+// ── Resolve a disputed review (shared shape with DTR page) ──
+function openResolveDispute(type, reviewId, empName) {
+    Swal.fire({
+        title: "Resolve dispute",
+        html: 'Reply to <b>' + (empName || 'employee') + '</b>. They will be notified.',
+        input: "textarea",
+        inputPlaceholder: "Explain what was checked / corrected…",
+        showCancelButton: true,
+        confirmButtonColor: "#107c41",
+        confirmButtonText: "Resolve & notify",
+        preConfirm: (val) => {
+            if (!val || !val.trim()) {
+                Swal.showValidationMessage("A reply is required.");
+                return false;
+            }
+            return val.trim();
+        },
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        Swal.fire({ title: "Saving…", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.ajax({
+            url: "ajax.php?action=resolve_review_dispute",
+            method: "POST",
+            dataType: "JSON",
+            data: { type: type, id: reviewId, reply: result.value },
+            error: (xhr, status, error) => { Swal.close(); handleError(error || ""); },
+            success: function (res) {
+                if (res?.result) {
+                    Swal.fire({ icon: "success", title: "Resolved", text: res.message })
+                        .then((r) => { if (r.isConfirmed) location.reload(); });
+                } else {
+                    Swal.close(); handleError(res?.message || "");
+                }
+            },
+        });
+    });
+}
+
+// ── Remind employees who haven't reviewed this payroll yet ──
+function remindPayrollReview(id) {
+    Swal.fire({
+        title: "Send reminder?",
+        text: "Only employees who haven't reviewed yet will be notified.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonColor: "#f7b84b",
+        confirmButtonText: "Yes, remind them",
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+        Swal.fire({ title: "Sending…", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.ajax({
+            url: "ajax.php?action=remind_payroll_review",
+            method: "POST",
+            dataType: "JSON",
+            data: { id: id },
+            error: (xhr, status, error) => { Swal.close(); handleError(error || ""); },
+            success: function (res) {
+                if (res?.result) {
+                    Swal.fire({ icon: "success", title: "Reminder sent", text: res.message });
+                } else {
+                    Swal.close(); handleError(res?.message || "");
+                }
+            },
+        });
+    });
+}
+
+// Send the whole payroll batch to employees for review (status 1 → 3).
+function sendPayrollForReview(id) {
+    Swal.fire({
+        title: "Send for Employee Review?",
+        text: "Employees in this payroll will be notified to review their payslip before it's locked.",
+        icon: "question",
+        showCancelButton: true,
+        confirmButtonColor: "#107c41",
+        cancelButtonColor: "#6c757d",
+        confirmButtonText: "Yes, send for review",
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+        Swal.fire({
+            title: "Sending, please wait...",
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading(),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 800));
+        $.ajax({
+            url: "ajax.php?action=send_payroll_for_review",
+            method: "POST",
+            dataType: "JSON",
+            data: { id: id },
+            error: (xhr, status, error) => {
+                Swal.close();
+                handleError(error || "");
+            },
+            success: function (res) {
+                if (res?.result) {
+                    Swal.fire({
+                        icon: "success",
+                        title: "Sent for Review",
+                        text: res.message || "Employees have been notified.",
+                    }).then((r) => {
+                        if (r.isConfirmed) location.reload();
+                    });
+                } else {
+                    Swal.fire({ icon: "error", title: "Error!", text: res.message });
+                }
+            },
+        });
+    });
+}
+
 async function lockPayroll(id) {
     const result = await Swal.fire({
         title: "Are you sure?",
@@ -176,17 +310,7 @@ async function lockPayroll(id) {
         cancelButtonColor: "#d33",
         confirmButtonText: "Yes, lock it!",
     });
-    // If the user confirmed the deletion
     if (result.isConfirmed) {
-        // Show loading dialog
-        Swal.fire({
-            title: "Saving, please wait...",
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            },
-        });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
         $.ajax({
             url: "ajax.php?action=update_payroll_status",
             method: "POST",
@@ -194,23 +318,12 @@ async function lockPayroll(id) {
                 id: id,
                 status: 2,
             },
-            error: (xhr, status, error) => {
-                Swal.close();
-                handleError(error || "");
-            },
+            error: (xhr, status, error) => handleError(error || ""),
             success: function (res) {
                 if (res) {
-                    Swal.fire({
-                        icon: "success",
-                        title: "Success!",
-                        text: "Selected logs successfully saved.",
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            location.reload();
-                        }
-                    });
+                    showToast("Payroll locked.", "success");
+                    setTimeout(() => location.reload(), 1200);
                 } else {
-                    Swal.close();
                     handleError(res?.message || "");
                 }
             },

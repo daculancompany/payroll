@@ -97,7 +97,13 @@ async function deleteDTR(id) {
                     });
                 } else {
                     Swal.close();
-                    handleError();
+                    let msg = "";
+                    try { msg = (JSON.parse(resp) || {}).message || ""; } catch (e) {}
+                    if (msg) {
+                        Swal.fire({ icon: "error", title: "Cannot delete", text: msg });
+                    } else {
+                        handleError();
+                    }
                 }
             },
         });

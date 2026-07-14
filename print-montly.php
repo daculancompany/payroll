@@ -125,19 +125,28 @@ $payroll_type = $payroll['type'];
         }
 
         .company-wrapper {
-            display: flex;
-            flex-direction: row;
             font-weight: bold;
             line-height: 2;
         }
 
+        .company-wrapper .name,
+        .company-wrapper .details {
+            display: inline-block;
+            vertical-align: top;
+        }
+
         .name {
-            min-width: 250px;
+            width: 250px;
         }
 
         .top {
-            display: flex;
-            justify-content: center;
+            text-align: center;
+        }
+
+        .top > div {
+            display: inline-block;
+            vertical-align: middle;
+            text-align: center;
         }
 
         .top h1,
@@ -605,36 +614,36 @@ $payroll_type = $payroll['type'];
                             </tr>
                         </tfoot>
                     </table>
-                    <div style="margin-top: 40px; display: flex;justify-content: space-evenly; font-size: 11px;">
-                        <div>
+                    <div style="margin-top: 40px; display: table; width: 100%; font-size: 11px;">
+                        <div style="display: table-cell; padding: 0 10px;">
                             Prepared By:
                             <div style="margin-left: 20px;">
                                 <p><b><?= $payroll['prepared_by'] ?></b></p>
                                 <p><?= $payroll['prepared_by_role'] ?></p>
                             </div>
                         </div>
-                        <div>
+                        <div style="display: table-cell; padding: 0 10px;">
                             Verified By:
                             <div style="margin-left: 20px;">
                                 <p><b><?= $payroll['verified_by'] ?></b></p>
                                 <p><?= $payroll['verified_by_role'] ?></p>
                             </div>
                         </div>
-                        <div>
+                        <div style="display: table-cell; padding: 0 10px;">
                             Noted By:
                             <div style="margin-left: 20px;">
                                 <p><b>JAY 0. VERAS</b></p>
                                 <p>HR HEAD</p>
                             </div>
                         </div>
-                        <div>
+                        <div style="display: table-cell; padding: 0 10px;">
                             Checked By:
                             <div style="margin-left: 20px;">
                                 <p><b>Jovanie Alab</b></p>
                                 <p> ACCOUNTING PAYABLE TEAM LEADER</p>
                             </div>
                         </div>
-                        <div>
+                        <div style="display: table-cell; padding: 0 10px;">
                             Approved By:
                             <p><b><?= $payroll['approved_by'] ?></b></p>
                             <p><?= $payroll['approved_by_role'] ?></p>

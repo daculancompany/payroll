@@ -1,0 +1,16 @@
+{
+  "name": "COMC Employee Portal",
+  "short_name": "COMC Portal",
+  "description": "Payslips, attendance, leave and loans self-service.",
+  "start_url": "employee-portal.php?src=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#176358",
+  "theme_color": "#219688",
+  "icons": [
+    { "src": "assets2/images/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets2/images/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets2/images/pwa/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

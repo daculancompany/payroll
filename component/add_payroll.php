@@ -76,6 +76,10 @@ $payroll_setting_sections = [
                                 <?php endforeach; ?>
                             </div>
                             <small class="text-muted" style="font-size:11px;">All selected by default — untick any you don't want applied.</small>
+                            <!-- Marker so save_payroll() can tell "user unticked everything"
+                                 (respect the empty selection) from "form never offered the
+                                 checkboxes" (fall back to all defaults). -->
+                            <input type="hidden" name="settings_offered" value="1">
                         </div>
 
                         <!-- Payroll Type dropdown removed — all payrolls run on the standard

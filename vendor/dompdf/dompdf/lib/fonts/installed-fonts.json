@@ -1,0 +1,18 @@
+{
+    "material design icons": {
+        "normal": "material_design_icons_normal_e79d61eb41e8588e5c6c9a461b5e73ca"
+    },
+    "boxicons": {
+        "normal": "boxicons_normal_00a4e06a50ae77391349579b4961bab5"
+    },
+    "line awesome brands": {
+        "normal": "line_awesome_brands_normal_26da8fc84fea154ef88d3040b352c9cc"
+    },
+    "line awesome free": {
+        "normal": "\/Applications\/XAMPP\/xamppfiles\/htdocs\/payroll\/vendor\/dompdf\/dompdf\/lib\/fonts\/line_awesome_free_normal_da8b6c83dd8d4800c6d9e1139fb055a9",
+        "900": "line_awesome_free_900_58207d1cee1b99c6560c72a57d7f2c87"
+    },
+    "remixicon": {
+        "normal": "remixicon_normal_66f6c0003b273ea7e3abbc80b813cee7"
+    }
+}

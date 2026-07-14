@@ -104,20 +104,29 @@ $site_details = $result_site->fetch_assoc();
         }
 
         .company-wrapper {
-            display: flex;
-            flex-direction: row;
             font-weight: bold;
             line-height: 2;
         }
 
+        .company-wrapper .name,
+        .company-wrapper .details {
+            display: inline-block;
+            vertical-align: top;
+        }
+
         .name {
-            min-width: 250px;
+            width: 250px;
         }
 
         .top {
-            display: flex;
-            justify-content: center;
+            text-align: center;
             font-size: 12px;
+        }
+
+        .top > div {
+            display: inline-block;
+            vertical-align: middle;
+            text-align: center;
         }
 
         .top h1,

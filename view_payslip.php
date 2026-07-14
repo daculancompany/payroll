@@ -1,5 +1,16 @@
 <?php
+if (session_status() === PHP_SESSION_NONE) { session_start(); }
 include 'db_connect.php';
+
+// Auth: staff sessions may view any payslip; employee-portal sessions only their own
+// (ownership enforced after the fetch below). Anonymous access is refused.
+$is_staff_session    = !empty($_SESSION['is_login']);
+$is_employee_session = !empty($_SESSION['emp_is_login']);
+if (!$is_staff_session && !$is_employee_session) {
+    http_response_code(403);
+    exit('Not authorized.');
+}
+
 if (!isset($_GET['id'])) { return; }
 $id = (int)$_GET['id'];
 
@@ -19,6 +30,16 @@ $stmt = $conn->prepare($query);
 $stmt->bind_param("i", $id);
 $stmt->execute();
 $payroll = $stmt->get_result()->fetch_assoc();
+
+if (!$payroll) {
+    http_response_code(404);
+    exit('Payslip not found.');
+}
+// An employee session may only view its own payslip (IDOR guard).
+if (!$is_staff_session && (int)$payroll['employee_id'] !== (int)($_SESSION['emp_id'] ?? 0)) {
+    http_response_code(403);
+    exit('Not authorized.');
+}
 
 $contributions_settings = json_decode($payroll['settings'], true) ?: [];
 // Per-minute rate = daily rate / (8h × 60m). (Matches payroll_calculations.php /
@@ -126,7 +147,7 @@ $net_in_words = jp_peso_words($net_pay);
 <?php endif; ?>
 <?php if (empty($GLOBALS['PAYSLIP_STYLES_DONE'])): $GLOBALS['PAYSLIP_STYLES_DONE'] = true; ?>
 <style>
-/* ── Force backgrounds & colors to print in ALL browsers ── */
+/* ── Simple black-on-white payslip: no fill colors, just borders + logo ── */
 * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -146,41 +167,25 @@ body {
     background: #e8e8e8;
 }
 
-/* ── Re-declare backgrounds in @media print as fallback ── */
 @media print {
     body { background: #fff; }
     .ps-wrap { box-shadow: none !important; margin: 0 !important; width: 100% !important; }
-
-    .ps-hdr              { background: #219688 !important; }
-    .ps-period           { background: #176358 !important; }
-    .ps-period td        { color: rgba(255,255,255,.85) !important; }
-    .ps-period td strong { color: #fff !important; }
-    .ps-emp              { background: #f4fbfa !important; }
-    .ps-sec-lbl          { background: #eaf6f4 !important; }
-    .ps-totals td:last-child { background: #219688 !important; }
-    .ps-totals td:last-child .tot-lbl { color: #fff !important; }
-    .ps-totals td:last-child .tot-val { color: #fff !important; }
-    .ps-foot             { background: #f4fbfa !important; }
-    .ps-hdr-company      { color: #fff !important; }
-    .ps-hdr-addr         { color: rgba(255,255,255,.80) !important; }
-    .ps-hdr-badge        { color: #fff !important; border-color: rgba(255,255,255,.7) !important; }
 }
 
 /* ── Outer wrapper ── */
 .ps-wrap {
     width: 780px;
     margin: 16px auto;
-    border: 2px solid #176358;
+    border: 1px solid #333;
     background: #fff;
     box-shadow: 0 4px 20px rgba(0,0,0,.18);
 }
 
 /* ─────────────── HEADER ─────────────── */
 .ps-hdr {
-    background: #219688;
     display: table;
     width: 100%;
-    border-bottom: 3px solid #176358;
+    border-bottom: 2px solid #333;
 }
 .ps-hdr-logo-cell {
     display: table-cell;
@@ -190,9 +195,6 @@ body {
 }
 .ps-hdr-logo-cell img {
     width: 52px; height: 52px;
-    border-radius: 6px;
-    background: #fff;
-    padding: 3px;
     display: block;
 }
 .ps-hdr-text-cell {
@@ -203,13 +205,13 @@ body {
 .ps-hdr-company {
     font-size: 15pt;
     font-weight: 900;
-    color: #fff;
+    color: #111;
     letter-spacing: .3px;
     line-height: 1.2;
 }
 .ps-hdr-addr {
     font-size: 8pt;
-    color: rgba(255,255,255,.80);
+    color: #555;
     margin-top: 3px;
     line-height: 1.4;
 }
@@ -221,8 +223,8 @@ body {
     padding: 14px 16px 14px 10px;
 }
 .ps-hdr-badge {
-    border: 2px solid rgba(255,255,255,.6);
-    color: #fff;
+    border: 1.5px solid #333;
+    color: #111;
     font-size: 11pt;
     font-weight: 900;
     letter-spacing: 3px;
@@ -232,44 +234,41 @@ body {
 
 /* ─────────────── PERIOD BAR ─────────────── */
 .ps-period {
-    background: #176358;
     display: table;
     width: 100%;
-    border-bottom: 1px solid #219688;
+    border-bottom: 1px solid #999;
 }
 .ps-period td {
     font-size: 8pt;
-    color: rgba(255,255,255,.85);
+    color: #333;
     padding: 5px 16px;
     white-space: nowrap;
 }
-.ps-period td strong { color: #fff; }
-.ps-period .sep { color: rgba(255,255,255,.3); padding: 5px 4px; }
+.ps-period td strong { color: #111; }
+.ps-period .sep { color: #ccc; padding: 5px 4px; }
 
 /* ─────────────── EMPLOYEE INFO ─────────────── */
 .ps-emp {
     display: table;
     width: 100%;
-    border-bottom: 2px solid #219688;
-    background: #f4fbfa;
+    border-bottom: 1px solid #333;
 }
 .ps-emp td {
     display: table-cell;
     width: 50%;
     padding: 10px 16px;
     vertical-align: top;
-    border-right: 1px solid #c8e6e2;
+    border-right: 1px solid #ccc;
 }
 .ps-emp td:last-child { border-right: none; }
-.emp-lbl { font-size: 7.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #111; margin-bottom: 2px; }
+.emp-lbl { font-size: 7.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; color: #555; margin-bottom: 2px; }
 .emp-val { font-size: 11pt; font-weight: 800; color: #111; line-height: 1.2; }
-.emp-sub { font-size: 8pt; color: #111; margin-top: 2px; }
+.emp-sub { font-size: 8pt; color: #333; margin-top: 2px; }
 
 /* ─────────────── SECTION LABEL ─────────────── */
 .ps-sec-lbl {
-    background: #eaf6f4;
-    border-top: 1px solid #b2dfdb;
-    border-bottom: 1px solid #b2dfdb;
+    border-top: 1px solid #999;
+    border-bottom: 1px solid #999;
     padding: 4px 16px;
     font-size: 8pt;
     font-weight: 800;
@@ -282,13 +281,13 @@ body {
 .ps-body {
     width: 100%;
     border-collapse: collapse;
-    border-bottom: 2px solid #219688;
+    border-bottom: 1px solid #333;
 }
 .ps-body > tbody > tr > td {
     width: 50%;
     vertical-align: top;
     padding: 10px 14px;
-    border-right: 1px solid #c8e6e2;
+    border-right: 1px solid #ccc;
 }
 .ps-body > tbody > tr > td:last-child { border-right: none; }
 
@@ -297,17 +296,17 @@ body {
     text-transform: uppercase; letter-spacing: .5px;
     color: #111; margin-bottom: 8px;
     padding-bottom: 4px;
-    border-bottom: 1.5px solid #219688;
+    border-bottom: 1px solid #333;
 }
 .grp-lbl {
     font-size: 7.5pt; font-weight: 800;
     text-transform: uppercase; letter-spacing: .5px;
-    color: #111; margin: 7px 0 3px;
+    color: #333; margin: 7px 0 3px;
     padding-top: 4px;
-    border-top: 1px dotted #ddd;
+    border-top: 1px dotted #ccc;
 }
 .grp-lbl:first-child { border-top: none; margin-top: 0; }
-.grp-lbl.red { color: #111; border-top-color: #ddd; }
+.grp-lbl.red { color: #333; border-top-color: #ccc; }
 
 .item {
     width: 100%;
@@ -326,35 +325,35 @@ body {
 .item .amt { text-align: right; font-weight: 700; color: #111; white-space: nowrap; width: 90px; }
 .item .amt.red { color: #111; }
 .item.bold td { font-weight: 700; color: #111; }
-.item .sub-lbl { font-size: 8pt; color: #111; padding-left: 16px; }
-.item .sub-amt { font-size: 8pt; color: #111; font-weight: 600; text-align: right; width: 90px; white-space: nowrap; }
-.item .sub-amt.red { color: #111; }
+.item .sub-lbl { font-size: 8pt; color: #333; padding-left: 16px; }
+.item .sub-amt { font-size: 8pt; color: #333; font-weight: 600; text-align: right; width: 90px; white-space: nowrap; }
+.item .sub-amt.red { color: #333; }
 
 /* ─────────────── TOTALS ─────────────── */
 .ps-totals {
     width: 100%;
     border-collapse: collapse;
-    border-bottom: 2px solid #176358;
+    border-bottom: 1px solid #333;
 }
 .ps-totals td {
     width: 33.33%;
     padding: 10px 16px;
     text-align: center;
-    border-right: 1px solid #c8e6e2;
+    border-right: 1px solid #ccc;
     vertical-align: middle;
 }
-.ps-totals td:last-child { border-right: none; background: #219688; }
-.tot-lbl { font-size: 7.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: #111; margin-bottom: 3px; }
+.ps-totals td:last-child { border-right: none; }
+.tot-lbl { font-size: 7.5pt; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; color: #555; margin-bottom: 3px; }
 .tot-val { font-size: 14pt; font-weight: 900; color: #111; }
 .tot-val.red { color: #111; }
-.ps-totals td:last-child .tot-lbl { color: #fff; }
-.ps-totals td:last-child .tot-val { color: #fff; font-size: 16pt; }
+.ps-totals td:last-child .tot-lbl { color: #111; }
+.ps-totals td:last-child .tot-val { color: #111; font-size: 16pt; }
 
 /* ─────────────── SIGNATURE ─────────────── */
 .ps-sig {
     width: 100%;
     border-collapse: collapse;
-    border-bottom: 1px solid #c8e6e2;
+    border-bottom: 1px solid #ccc;
 }
 .ps-sig td {
     padding: 12px 16px;
@@ -365,20 +364,19 @@ body {
 .ack-text { font-size: 8.5pt; color: #111; line-height: 1.5; margin-bottom: 28px; }
 .sig-line { border-top: 1px solid #333; margin-top: 28px; }
 .sig-lbl  { font-size: 7.5pt; color: #111; text-align: center; margin-top: 2px; }
-.date-lbl { font-size: 7.5pt; color: #111; }
+.date-lbl { font-size: 7.5pt; color: #333; }
 .date-val { font-size: 10pt; font-weight: 700; color: #111; margin-top: 2px; }
 
 /* ─────────────── FOOTER ─────────────── */
 .ps-foot {
-    background: #f4fbfa;
-    border-top: 1px solid #c8e6e2;
+    border-top: 1px solid #ccc;
     display: table;
     width: 100%;
 }
 .ps-foot td {
     display: table-cell;
     font-size: 7.5pt;
-    color: #111;
+    color: #333;
     padding: 5px 16px;
     vertical-align: middle;
 }
@@ -388,25 +386,23 @@ body {
 .ps-summary {
     width: 100%;
     border-collapse: collapse;
-    border-bottom: 2px solid #219688;
-    background: #f9fdfc;
+    border-bottom: 1px solid #333;
 }
 .ps-summary td {
     text-align: center;
     padding: 7px 4px;
-    border-right: 1px solid #d9ece9;
+    border-right: 1px solid #ccc;
     vertical-align: middle;
 }
 .ps-summary td:last-child { border-right: none; }
-.sum-val { font-size: 12pt; font-weight: 900; color: #176358; line-height: 1; }
-.sum-val.warn { color: #c0392b; }
-.sum-val.amber { color: #b8860b; }
+.sum-val { font-size: 12pt; font-weight: 900; color: #111; line-height: 1; }
+.sum-val.warn { color: #111; }
+.sum-val.amber { color: #111; }
 .sum-lbl { font-size: 6.8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #555; margin-top: 3px; }
 
 /* ─────────────── AMOUNT IN WORDS ─────────────── */
 .ps-words {
-    background: #eaf6f4;
-    border-bottom: 2px solid #219688;
+    border-bottom: 1px solid #333;
     padding: 7px 16px;
     display: table;
     width: 100%;
@@ -418,7 +414,7 @@ body {
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: .5px;
-    color: #176358;
+    color: #555;
     vertical-align: middle;
 }
 .ps-words .w-val {

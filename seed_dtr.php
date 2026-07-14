@@ -10,15 +10,16 @@
  *
  * Idempotent: seeded batches are tagged note='SEED' and wiped on each run.
  *
- * Run:  http://localhost/payroll/seed_dtr.php?run=1     (or from CLI)
+ * Run:  php seed_dtr.php   (CLI only — never web-reachable)
  */
+
+if (php_sapi_name() !== 'cli') {
+    http_response_code(403);
+    exit("Forbidden: this seeder can only be run from the command line.\n");
+}
 
 require __DIR__ . '/db_connect.php';
 header('Content-Type: text/plain; charset=utf-8');
-
-if (php_sapi_name() !== 'cli' && (($_GET['run'] ?? '') !== '1')) {
-    exit("Safety guard: append ?run=1 to the URL to execute the seeder.\n");
-}
 
 $YEAR = 2026; // June of this year
 $periods = [

@@ -56,7 +56,8 @@ class Action
         $password = (string)($_POST['password'] ?? '');
         $ip       = $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
         $identity = 'login:' . strtolower($username) . '|' . $ip;
-        $MAX = 5; $LOCK = 15; // attempts / minutes
+        $MAX = 5;
+        $LOCK = 15; // attempts / minutes
 
         if ($username === '' || $password === '') {
             return ['result' => false, 'message' => 'Please enter your username and password.'];
@@ -69,7 +70,8 @@ class Action
 
         // Lockout check (only if the table exists)
         if ($has_rl && ($rl = $this->db->prepare("SELECT (locked_until > NOW()) AS locked, TIMESTAMPDIFF(SECOND, NOW(), locked_until) AS secs FROM login_attempts WHERE identifier = ?"))) {
-            $rl->bind_param('s', $identity); $rl->execute();
+            $rl->bind_param('s', $identity);
+            $rl->execute();
             $att = $rl->get_result()->fetch_assoc();
             if ($att && $att['locked']) {
                 return ['result' => false, 'message' => 'Too many failed attempts. Try again in ' . ceil($att['secs'] / 60) . ' minute(s).'];
@@ -78,7 +80,8 @@ class Action
 
         // ── 1) ADMIN / STAFF (users table) ──
         $stmt = $this->db->prepare("SELECT * FROM users WHERE username = ? AND status = 1");
-        $stmt->bind_param('s', $username); $stmt->execute();
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
         $ures = $stmt->get_result();
         if ($ures->num_rows === 1) {
             $row = $ures->fetch_assoc();
@@ -86,12 +89,12 @@ class Action
                 $this->clearLoginAttempts($identity);
                 @session_regenerate_id(true);
                 // clear any employee session, then set admin session
-                foreach (['emp_is_login','emp_id','emp_no','emp_name','emp_dept','emp_position','emp_bday'] as $k) unset($_SESSION[$k]);
+                foreach (['emp_is_login', 'emp_id', 'emp_no', 'emp_name', 'emp_dept', 'emp_position', 'emp_bday'] as $k) unset($_SESSION[$k]);
                 foreach ($row as $key => $value) {
                     if ($key != 'password' && !is_numeric($key)) $_SESSION['login_' . $key] = $value;
                 }
                 $_SESSION['is_login'] = true;
-                return ['result' => true, 'message' => 'login successful', 'redirect' => 'index.php?page=home'];
+                return ['result' => true, 'message' => 'login successful', 'redirect' => $this->roleLanding((int)$row['role'])];
             }
         }
 
@@ -108,7 +111,11 @@ class Action
             WHERE e.employee_no = ? AND e.status = 1 LIMIT 1
         ");
         $emp = false;
-        if ($estmt) { $estmt->bind_param('s', $username); $estmt->execute(); $emp = $estmt->get_result()->fetch_assoc(); }
+        if ($estmt) {
+            $estmt->bind_param('s', $username);
+            $estmt->execute();
+            $emp = $estmt->get_result()->fetch_assoc();
+        }
         $emp_ok = false;
         if ($emp) {
             if (!empty($emp['acct_pass'])) {
@@ -123,7 +130,9 @@ class Action
             $this->db->query("UPDATE employee_portal_accounts SET last_login = NOW() WHERE employee_id = " . (int)$emp['id']);
             @session_regenerate_id(true);
             // clear any admin session, then set employee session
-            foreach ($_SESSION as $k => $v) { if (strpos($k, 'login_') === 0) unset($_SESSION[$k]); }
+            foreach ($_SESSION as $k => $v) {
+                if (strpos($k, 'login_') === 0) unset($_SESSION[$k]);
+            }
             unset($_SESSION['is_login']);
             $_SESSION['emp_is_login'] = true;
             $_SESSION['emp_id']       = $emp['id'];
@@ -141,15 +150,35 @@ class Action
             ON DUPLICATE KEY UPDATE attempts = attempts + 1,
                 locked_until = IF(attempts + 1 >= $MAX, DATE_ADD(NOW(), INTERVAL $LOCK MINUTE), locked_until)
         ");
-        $up->bind_param('ss', $identity, $ip); $up->execute();
+        $up->bind_param('ss', $identity, $ip);
+        $up->execute();
 
         return ['result' => false, 'message' => 'Invalid username or password.'];
+    }
+
+    // Post-login landing page per staff role. Falls back to the dashboard for
+    // any role without a dedicated page. Employees are handled separately and
+    // always land on employee-portal.php.
+    private function roleLanding($role)
+    {
+        $map = [
+            1 => 'index.php?page=home',        // Administrator
+            2 => 'index.php?page=home',        // Staff
+            3 => 'index.php?page=reports',     // Auditor
+            4 => 'index.php?page=payroll',     // Payroll Clerk
+            6 => 'index.php?page=daily-board', // PIC
+            7 => 'index.php?page=reports',     // Auditor
+            8 => 'index.php?page=leaves',      // Department Head
+            9 => 'index.php?page=leaves',      // HR
+        ];
+        return $map[(int)$role] ?? 'index.php?page=home';
     }
 
     private function clearLoginAttempts($identity)
     {
         $d = $this->db->prepare("DELETE FROM login_attempts WHERE identifier = ?");
-        $d->bind_param('s', $identity); $d->execute();
+        $d->bind_param('s', $identity);
+        $d->execute();
     }
 
     // Returns true if the given table exists in the current database.
@@ -461,7 +490,7 @@ class Action
         if ($position_id <= 0)                              return 'error:Please select a valid position.';
         if ($clasification_id <= 0)                         return 'error:Please select a valid classification.';
         if ($salary < 0 || $basic_pay < 0 || $ot_rate < 0 || $allowance_rate < 0 || $sss_fund < 0)
-                                                            return 'error:Pay/rate values cannot be negative.';
+            return 'error:Pay/rate values cannot be negative.';
         if ($basic_pay > 100000000 || $salary > 100000000) return 'error:Pay value is unrealistically large.';
         if ($bday !== '' && strtotime($bday) === false)     return 'error:Birthday is not a valid date.';
 
@@ -663,15 +692,34 @@ class Action
                 "UPDATE work_schedules SET description=?, start_time=?, end_time=?, total_hours=?,
                  break_minutes=?, is_graveyard=?, has_nsd=?, nsd_rate=? WHERE id=?"
             );
-            $stmt->bind_param('sssdiiidi', $description, $start_time, $end_time, $total_hours,
-                              $break_minutes, $is_graveyard, $has_nsd, $nsd_rate, $id);
+            $stmt->bind_param(
+                'sssdiiidi',
+                $description,
+                $start_time,
+                $end_time,
+                $total_hours,
+                $break_minutes,
+                $is_graveyard,
+                $has_nsd,
+                $nsd_rate,
+                $id
+            );
         } else {
             $stmt = $this->db->prepare(
                 "INSERT INTO work_schedules (description, start_time, end_time, total_hours,
                  break_minutes, is_graveyard, has_nsd, nsd_rate) VALUES (?,?,?,?,?,?,?,?)"
             );
-            $stmt->bind_param('sssdiiid', $description, $start_time, $end_time, $total_hours,
-                              $break_minutes, $is_graveyard, $has_nsd, $nsd_rate);
+            $stmt->bind_param(
+                'sssdiiid',
+                $description,
+                $start_time,
+                $end_time,
+                $total_hours,
+                $break_minutes,
+                $is_graveyard,
+                $has_nsd,
+                $nsd_rate
+            );
         }
         $ok = $stmt->execute();
         if (!$ok) return ['result' => false, 'message' => $stmt->error];
@@ -743,7 +791,8 @@ class Action
     // (with same-day correction). Caller owns the transaction. Returns 'updated' | 'unchanged' | 'skipped'.
     private function applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by)
     {
-        $emp = (int) $emp; $schedule_id = (int) $schedule_id;
+        $emp = (int) $emp;
+        $schedule_id = (int) $schedule_id;
 
         $openStmt = $this->db->prepare(
             "SELECT id, schedule_id, effective_from FROM employee_schedules
@@ -821,9 +870,13 @@ class Action
         if (isset($_POST['employee_ids'])) {
             $raw = $_POST['employee_ids'];
             if (!is_array($raw)) $raw = explode(',', $raw);
-            foreach ($raw as $v) { $v = intval($v); if ($v) $ids[] = $v; }
+            foreach ($raw as $v) {
+                $v = intval($v);
+                if ($v) $ids[] = $v;
+            }
         } elseif (isset($_POST['employee_id'])) {
-            $v = intval($_POST['employee_id']); if ($v) $ids[] = $v;
+            $v = intval($_POST['employee_id']);
+            if ($v) $ids[] = $v;
         }
         $ids = array_values(array_unique($ids));
 
@@ -834,14 +887,19 @@ class Action
             return ['result' => false, 'message' => 'Invalid effective date.'];
         }
 
-        $updated = 0; $unchanged = 0; $skipped = 0; $notify = [];
+        $updated = 0;
+        $unchanged = 0;
+        $skipped = 0;
+        $notify = [];
 
         $this->db->begin_transaction();
         try {
             foreach ($ids as $emp) {
                 $r = $this->applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by);
-                if ($r === 'updated')   { $updated++; $notify[] = $emp; }
-                elseif ($r === 'unchanged') $unchanged++;
+                if ($r === 'updated') {
+                    $updated++;
+                    $notify[] = $emp;
+                } elseif ($r === 'unchanged') $unchanged++;
                 else $skipped++;
             }
             $this->db->commit();
@@ -881,9 +939,13 @@ class Action
         if (isset($_POST['employee_ids'])) {
             $raw = $_POST['employee_ids'];
             if (!is_array($raw)) $raw = explode(',', $raw);
-            foreach ($raw as $v) { $v = intval($v); if ($v) $ids[] = $v; }
+            foreach ($raw as $v) {
+                $v = intval($v);
+                if ($v) $ids[] = $v;
+            }
         } elseif (isset($_POST['employee_id'])) {
-            $v = intval($_POST['employee_id']); if ($v) $ids[] = $v;
+            $v = intval($_POST['employee_id']);
+            if ($v) $ids[] = $v;
         }
         $ids = array_values(array_unique($ids));
 
@@ -973,14 +1035,19 @@ class Action
             return ['result' => false, 'message' => 'There are no planned changes to apply.'];
         }
 
-        $applied = 0; $unchanged = 0; $skipped = 0; $notify = [];
+        $applied = 0;
+        $unchanged = 0;
+        $skipped = 0;
+        $notify = [];
 
         $this->db->begin_transaction();
         try {
             foreach ($drafts as $d) {
                 $r = $this->applyScheduleChange($d['employee_id'], $d['schedule_id'], $d['effective_from'], $d['notes'], $changed_by);
-                if ($r === 'updated')   { $applied++; $notify[] = $d; }
-                elseif ($r === 'unchanged') $unchanged++;
+                if ($r === 'updated') {
+                    $applied++;
+                    $notify[] = $d;
+                } elseif ($r === 'unchanged') $unchanged++;
                 else $skipped++;
 
                 // Mark this draft as applied regardless of outcome (it has been processed)
@@ -1035,7 +1102,7 @@ class Action
         $time_in      = trim($_POST['claimed_time_in'] ?? '') ?: null;
         $time_out     = trim($_POST['claimed_time_out'] ?? '') ?: null;
         $ot_hours     = isset($_POST['ot_hours_requested']) && $_POST['ot_hours_requested'] !== ''
-                         ? floatval($_POST['ot_hours_requested']) : null;
+            ? floatval($_POST['ot_hours_requested']) : null;
         $notes        = trim($_POST['notes'] ?? '');
 
         if (!$employee_id || !in_array($request_type, ['incident', 'overtime'], true) || !$request_date || !$reason) {
@@ -1056,8 +1123,14 @@ class Action
         $ename = $erow['n'] ?? 'Employee';
         $label = $request_type === 'incident' ? 'attendance incident report' : 'overtime request';
         foreach ([1, 8, 9] as $role) {
-            $this->notifyRole($role, 'New ' . $label, "$ename filed a $label for " . date('M d, Y', strtotime($request_date)) . '.',
-                              'ri-error-warning-line', 'warning', 'index.php?page=attendance-requests');
+            $this->notifyRole(
+                $role,
+                'New ' . $label,
+                "$ename filed a $label for " . date('M d, Y', strtotime($request_date)) . '.',
+                'ri-error-warning-line',
+                'warning',
+                'index.php?page=attendance-requests'
+            );
         }
 
         return ['result' => true, 'message' => 'Request submitted. Awaiting approval.'];
@@ -1097,8 +1170,9 @@ class Action
 
             // Overtime requests, once approved, auto-fill the DTR_details.overtime figure
             // instead of leaving it at 0 pending a manual edit by the timekeeper.
+            $ot_applied = true;
             if ($status == 1 && $req['request_type'] === 'overtime' && $req['ot_hours_requested'] !== null) {
-                $this->applyOvertimeToDtr($req);
+                $ot_applied = $this->applyOvertimeToDtr($req);
             }
 
             $this->db->commit();
@@ -1112,16 +1186,30 @@ class Action
         $datestr = $req['request_date'] ? date('M d, Y', strtotime($req['request_date'])) : '';
         $emp_link = 'employee-portal.php?tab=att-requests';
         if ($status == 1) {
-            $this->notifyEmployee((int) $req['employee_id'], 'Request approved',
+            $this->notifyEmployee(
+                (int) $req['employee_id'],
+                'Request approved',
                 "Your $label" . ($datestr ? " for $datestr" : '') . ' was approved.' . ($remarks ? " Note: $remarks" : ''),
-                'ri-checkbox-circle-line', 'success', $emp_link);
+                'ri-checkbox-circle-line',
+                'success',
+                $emp_link
+            );
         } else {
-            $this->notifyEmployee((int) $req['employee_id'], 'Request rejected',
+            $this->notifyEmployee(
+                (int) $req['employee_id'],
+                'Request rejected',
                 "Your $label" . ($datestr ? " for $datestr" : '') . ' was rejected.' . ($remarks ? " Reason: $remarks" : ''),
-                'ri-close-circle-line', 'danger', $emp_link);
+                'ri-close-circle-line',
+                'danger',
+                $emp_link
+            );
         }
 
-        return ['result' => true, 'message' => $status == 1 ? 'Request approved' : 'Request rejected'];
+        $msg = $status == 1 ? 'Request approved' : 'Request rejected';
+        if (!$ot_applied) {
+            $msg .= '. Warning: no DTR record exists for that date yet, so the OT hours were NOT written to the DTR — enter them on the DTR once attendance for that date is imported.';
+        }
+        return ['result' => true, 'message' => $msg];
     }
 
     private function applyIncidentToDtr($req)
@@ -1191,6 +1279,8 @@ class Action
 
     // Writes an approved OT request's requested hours onto the matching DTR_details
     // row (same employee + date) so the timekeeper sees it filled in, not 0.
+    // Returns false when no DTR row exists for that date (e.g. rest-day OT or the
+    // biometric import hasn't run yet) so the caller can warn the approver.
     private function applyOvertimeToDtr($req)
     {
         $employee_id = (int) $req['employee_id'];
@@ -1198,14 +1288,16 @@ class Action
         $ot_hours    = (float) $req['ot_hours_requested'];
 
         $existing = $this->db->query(
-            "SELECT id FROM DTR_details WHERE employee_id = $employee_id AND DATE(date_time) = '$date' ORDER BY id DESC LIMIT 1"
+            "SELECT id FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' ORDER BY id DESC LIMIT 1"
         )->fetch_assoc();
 
         if ($existing) {
             $stmt = $this->db->prepare("UPDATE DTR_details SET overtime = ? WHERE id = ?");
             $stmt->bind_param('di', $ot_hours, $existing['id']);
             $stmt->execute();
+            return true;
         }
+        return false;
     }
 
     function delete_attendance_request()
@@ -1374,8 +1466,8 @@ class Action
                 ? "'" . $this->db->real_escape_string($effective[$k]) . "'"
                 : "NULL";
             $data = " employee_id = $employee_id, deduction_id = $did, type = $t,"
-                  . " amount = $amt, total_amount = $total, balance = $balance,"
-                  . " effective_date = $edate ";
+                . " amount = $amt, total_amount = $total, balance = $balance,"
+                . " effective_date = $edate ";
             $save[] = $this->db->query("INSERT INTO employee_deductions set " . $data);
         }
 
@@ -1451,7 +1543,16 @@ class Action
 
     function delete_dtr()
     {
-        extract($_POST);
+        $id = intval($_POST['id'] ?? 0);
+        if (!$id) return 0;
+
+        // Biometric batches have no source file to re-import — deleting one
+        // cascades to DTR_details and destroys the cutoff's raw punches for good.
+        $batch = $this->db->query("SELECT file, status FROM DTR WHERE id = $id")->fetch_assoc();
+        if (!$batch) return 0;
+        if ($batch['file'] === 'biometric') {
+            return json_encode(['result' => false, 'message' => 'Biometric batches cannot be deleted — their raw punches have no source file to restore from.']);
+        }
 
         $delete = $this->db->query("DELETE FROM DTR where id = " . $id);
 
@@ -2663,18 +2764,14 @@ class Action
         $this->db->query("DELETE FROM dtr_employee_reviews WHERE ddtr_id = $id");
 
         $period = date('M j', strtotime($dtr['date_from'])) . ' – ' . date('M j, Y', strtotime($dtr['date_to']));
-        $link   = 'employee-portal.php?tab=mydtr';
-        $emps = $this->db->query("SELECT DISTINCT employee_id FROM DTR_details WHERE ddtr_id = $id");
-        $count = 0;
-        if ($emps) while ($e = $emps->fetch_assoc()) {
-            $this->notifyEmployee(
-                $e['employee_id'],
-                'DTR ready for your review',
-                "Your attendance for $period is ready. Please review and confirm before payroll processing.",
-                'ri-file-list-3-line', 'warning', $link
-            );
-            $count++;
-        }
+        $count = $this->notifyEmployeesFromQuery(
+            "SELECT DISTINCT employee_id FROM DTR_details WHERE ddtr_id = $id",
+            'DTR ready for your review',
+            "Your attendance for $period is ready. Please review and confirm before payroll processing.",
+            'ri-file-list-3-line',
+            'warning',
+            'employee-portal.php?tab=mydtr'
+        );
 
         return ['result' => true, 'message' => "Sent for review. $count employee(s) notified."];
     }
@@ -2700,7 +2797,9 @@ class Action
 
         return [
             'result' => true,
-            'total' => $total, 'confirmed' => $conf, 'disputed' => $disp,
+            'total' => $total,
+            'confirmed' => $conf,
+            'disputed' => $disp,
             'pending' => max(0, $total - $conf - $disp),
             'rows' => $rows,
         ];
@@ -2726,7 +2825,10 @@ class Action
         if (!$rv) return ['result' => false, 'message' => 'Review not found'];
         if ((int)$rv['status'] !== 2) return ['result' => false, 'message' => 'Only disputes can be resolved.'];
 
-        $stmt = $this->db->prepare("UPDATE $table SET resolved_at = NOW(), resolved_by = ?, admin_reply = ? WHERE id = ?");
+        // reviewed_at = reviewed_at guards against schemas where the column still
+        // has ON UPDATE CURRENT_TIMESTAMP: resolving must not overwrite when the
+        // employee actually signed off.
+        $stmt = $this->db->prepare("UPDATE $table SET resolved_at = NOW(), resolved_by = ?, admin_reply = ?, reviewed_at = reviewed_at WHERE id = ?");
         $stmt->bind_param('isi', $admin, $reply, $id);
         if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
 
@@ -2746,7 +2848,9 @@ class Action
             (int) $rv['employee_id'],
             'Your dispute was addressed',
             "HR responded to your $what dispute for $period: $reply",
-            'ri-chat-check-line', 'info', $link
+            'ri-chat-check-line',
+            'info',
+            $link
         );
 
         return ['result' => true, 'message' => 'Dispute resolved and the employee has been notified.'];
@@ -2758,22 +2862,31 @@ class Action
         $ids = $this->_intIds($_POST['ids'] ?? []);
         if (!$ids) return ['result' => false, 'message' => 'No DTR batches selected.'];
 
-        $sent = 0; $skipped = [];
+        $sent = 0;
+        $skipped = [];
         foreach ($ids as $id) {
             $dtr = $this->db->query("SELECT id, date_from, date_to, status FROM DTR WHERE id = $id")->fetch_assoc();
-            if (!$dtr || (int)$dtr['status'] !== 1) { $skipped[] = $id; continue; }
+            if (!$dtr || (int)$dtr['status'] !== 1) {
+                $skipped[] = $id;
+                continue;
+            }
             $pend = $this->db->query("SELECT COUNT(*) AS c FROM DTR_details WHERE ddtr_id = $id AND status = 0")->fetch_assoc();
-            if ($pend && (int)$pend['c'] > 0) { $skipped[] = $id; continue; }
+            if ($pend && (int)$pend['c'] > 0) {
+                $skipped[] = $id;
+                continue;
+            }
 
             $this->db->query("UPDATE DTR SET status = 3 WHERE id = $id");
             $this->db->query("DELETE FROM dtr_employee_reviews WHERE ddtr_id = $id");
             $period = date('M j', strtotime($dtr['date_from'])) . ' – ' . date('M j, Y', strtotime($dtr['date_to']));
-            $emps = $this->db->query("SELECT DISTINCT employee_id FROM DTR_details WHERE ddtr_id = $id");
-            if ($emps) while ($e = $emps->fetch_assoc()) {
-                $this->notifyEmployee($e['employee_id'], 'DTR ready for your review',
-                    "Your attendance for $period is ready. Please review and confirm before payroll processing.",
-                    'ri-file-list-3-line', 'warning', 'employee-portal.php?tab=mydtr');
-            }
+            $this->notifyEmployeesFromQuery(
+                "SELECT DISTINCT employee_id FROM DTR_details WHERE ddtr_id = $id",
+                'DTR ready for your review',
+                "Your attendance for $period is ready. Please review and confirm before payroll processing.",
+                'ri-file-list-3-line',
+                'warning',
+                'employee-portal.php?tab=mydtr'
+            );
             $sent++;
         }
         $msg = "$sent DTR batch(es) sent for review.";
@@ -2787,20 +2900,26 @@ class Action
         $ids = $this->_intIds($_POST['ids'] ?? []);
         if (!$ids) return ['result' => false, 'message' => 'No payroll batches selected.'];
 
-        $sent = 0; $skipped = [];
+        $sent = 0;
+        $skipped = [];
         foreach ($ids as $id) {
             $p = $this->db->query("SELECT id, date_from, date_to, status FROM payroll WHERE id = $id")->fetch_assoc();
-            if (!$p || (int)$p['status'] !== 1) { $skipped[] = $id; continue; }
+            if (!$p || (int)$p['status'] !== 1) {
+                $skipped[] = $id;
+                continue;
+            }
 
             $this->db->query("UPDATE payroll SET status = 3 WHERE id = $id");
             $this->db->query("DELETE FROM payroll_employee_reviews WHERE payroll_id = $id");
             $period = date('M j', strtotime($p['date_from'])) . ' – ' . date('M j, Y', strtotime($p['date_to']));
-            $emps = $this->db->query("SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $id");
-            if ($emps) while ($e = $emps->fetch_assoc()) {
-                $this->notifyEmployee($e['employee_id'], 'Payslip ready for your review',
-                    "Your payslip for $period is ready. Please review and confirm before it's locked.",
-                    'ri-file-list-3-line', 'warning', 'employee-portal.php?tab=payslips');
-            }
+            $this->notifyEmployeesFromQuery(
+                "SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $id",
+                'Payslip ready for your review',
+                "Your payslip for $period is ready. Please review and confirm before it's locked.",
+                'ri-file-list-3-line',
+                'warning',
+                'employee-portal.php?tab=payslips'
+            );
             $this->save_payroll_history($id, 5, 'Send for Review');
             $sent++;
         }
@@ -2810,8 +2929,14 @@ class Action
     }
 
     // Re-notify only the employees on a batch who have NOT reviewed yet (still pending).
-    function remind_dtr_review()   { return $this->_remindReview('dtr'); }
-    function remind_payroll_review() { return $this->_remindReview('payroll'); }
+    function remind_dtr_review()
+    {
+        return $this->_remindReview('dtr');
+    }
+    function remind_payroll_review()
+    {
+        return $this->_remindReview('payroll');
+    }
 
     private function _remindReview($type)
     {
@@ -2820,41 +2945,62 @@ class Action
 
         if ($type === 'payroll') {
             $b = $this->db->query("SELECT date_from, date_to, status FROM payroll WHERE id = $id")->fetch_assoc();
-            $itemsTbl = 'payroll_items'; $itemsKey = 'payroll_id';
-            $revTbl = 'payroll_employee_reviews'; $revKey = 'payroll_id';
-            $title = 'Reminder: review your payslip'; $link = 'employee-portal.php?tab=payslips'; $what = 'payslip';
+            $itemsTbl = 'payroll_items';
+            $itemsKey = 'payroll_id';
+            $revTbl = 'payroll_employee_reviews';
+            $revKey = 'payroll_id';
+            $title = 'Reminder: review your payslip';
+            $link = 'employee-portal.php?tab=payslips';
+            $what = 'payslip';
         } else {
             $b = $this->db->query("SELECT date_from, date_to, status FROM DTR WHERE id = $id")->fetch_assoc();
-            $itemsTbl = 'DTR_details'; $itemsKey = 'ddtr_id';
-            $revTbl = 'dtr_employee_reviews'; $revKey = 'ddtr_id';
-            $title = 'Reminder: review your DTR'; $link = 'employee-portal.php?tab=mydtr'; $what = 'DTR';
+            $itemsTbl = 'DTR_details';
+            $itemsKey = 'ddtr_id';
+            $revTbl = 'dtr_employee_reviews';
+            $revKey = 'ddtr_id';
+            $title = 'Reminder: review your DTR';
+            $link = 'employee-portal.php?tab=mydtr';
+            $what = 'DTR';
         }
         if (!$b || (int)$b['status'] !== 3) return ['result' => false, 'message' => 'This batch is not open for review.'];
 
         $period = date('M j', strtotime($b['date_from'])) . ' – ' . date('M j, Y', strtotime($b['date_to']));
-        $res = $this->db->query("SELECT DISTINCT i.employee_id
+        $count = $this->notifyEmployeesFromQuery(
+            "SELECT DISTINCT i.employee_id
             FROM $itemsTbl i
             LEFT JOIN $revTbl r ON r.$revKey = i.$itemsKey AND r.employee_id = i.employee_id
-            WHERE i.$itemsKey = $id AND r.id IS NULL");
-        $count = 0;
-        if ($res) while ($e = $res->fetch_assoc()) {
-            $this->notifyEmployee($e['employee_id'], $title,
-                "Please review and confirm your $what for $period. It's still awaiting your response.",
-                'ri-notification-badge-line', 'warning', $link);
-            $count++;
-        }
+            WHERE i.$itemsKey = $id AND r.id IS NULL",
+            $title,
+            "Please review and confirm your $what for $period. It's still awaiting your response.",
+            'ri-notification-badge-line',
+            'warning',
+            $link
+        );
         return ['result' => true, 'message' => $count > 0 ? "Reminder sent to $count employee(s)." : 'Everyone has already reviewed — no reminders sent.'];
     }
 
     // Stream a per-batch review log as CSV (employee, decision, comment, timestamps, reply).
-    function export_dtr_reviews()     { $this->_exportReviews('dtr'); }
-    function export_payroll_reviews() { $this->_exportReviews('payroll'); }
+    function export_dtr_reviews()
+    {
+        $this->_exportReviews('dtr');
+    }
+    function export_payroll_reviews()
+    {
+        $this->_exportReviews('payroll');
+    }
 
     private function _exportReviews($type)
     {
         $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-        if ($type === 'payroll') { $tbl = 'payroll_employee_reviews'; $key = 'payroll_id'; $label = 'payroll'; }
-        else                     { $tbl = 'dtr_employee_reviews';     $key = 'ddtr_id';    $label = 'dtr'; }
+        if ($type === 'payroll') {
+            $tbl = 'payroll_employee_reviews';
+            $key = 'payroll_id';
+            $label = 'payroll';
+        } else {
+            $tbl = 'dtr_employee_reviews';
+            $key = 'ddtr_id';
+            $label = 'dtr';
+        }
 
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename="' . $label . '_review_log_' . $id . '.csv"');
@@ -2878,7 +3024,9 @@ class Action
     {
         if (is_string($raw)) $raw = explode(',', $raw);
         if (!is_array($raw)) return [];
-        $ids = array_values(array_unique(array_filter(array_map('intval', $raw), function ($v) { return $v > 0; })));
+        $ids = array_values(array_unique(array_filter(array_map('intval', $raw), function ($v) {
+            return $v > 0;
+        })));
         return $ids;
     }
 
@@ -2942,11 +3090,14 @@ class Action
             }
             $data .= ", ref_no='$ref_no' ";
             // Settings (which contributions/deductions/loans/refunds to apply) are
-            // now chosen in the Create modal. Use what was ticked; if the form sent
-            // none, fall back to ALL available so the auto-calc still produces a
-            // complete payslip.
+            // now chosen in the Create modal. Use what was ticked. Only fall back to
+            // ALL available when the form didn't offer the checkboxes at all
+            // (settings_offered marker absent) — an admin who deliberately unticks
+            // everything gets a no-deduction payroll, not every deduction.
             $chosen = $this->settingsFromInput($resultArray2);
-            if (empty($chosen)) $chosen = $this->defaultPayrollSettings();
+            if (empty($chosen) && empty($resultArray2['settings_offered'])) {
+                $chosen = $this->defaultPayrollSettings();
+            }
             $settings_json = $this->db->real_escape_string(json_encode($chosen));
             $data .= ", settings='$settings_json' ";
             $save = $this->db->query("INSERT INTO payroll set " . $data);
@@ -3371,7 +3522,7 @@ class Action
         }
 
         // Validate employee
-        $stmt = $this->db->prepare("SELECT id, time_in, time_out FROM employee WHERE id = ? AND status = 1 LIMIT 1");
+        $stmt = $this->db->prepare("SELECT id, firstname, lastname, time_in, time_out FROM employee WHERE id = ? AND status = 1 LIMIT 1");
         $stmt->bind_param('i', $employee_id);
         $stmt->execute();
         $emp = $stmt->get_result()->fetch_assoc();
@@ -3394,29 +3545,60 @@ class Action
         $stmt_sched->execute();
         $schedule = $stmt_sched->get_result()->fetch_assoc();
 
-        // For graveyard shifts, a scan pairs with an already-open shift from the
-        // previous day if one exists — this handles early/late punches around the
-        // scheduled boundary (not just a scan at-or-before the exact end time).
-        // Guard: only pair if that open record's lone punch actually looks like an
-        // evening clock-in near the shift's start time, so a stray/forgotten punch
-        // from an unrelated day never gets merged into a new scan.
-        if ($schedule && $schedule['is_graveyard']) {
+        // Overnight shift = graveyard flag OR any schedule whose end time wraps past
+        // midnight (e.g. Evening 3PM–12AM, Night 11PM–8AM), even when the flag
+        // wasn't ticked on the schedule.
+        $is_overnight = $schedule && ($schedule['is_graveyard'] || $schedule['end_time'] <= $schedule['start_time']);
+
+        // For overnight shifts a scan may belong to the shift that STARTED the
+        // previous day. Three cases:
+        //  1. Yesterday has an OPEN record and the gap since its last punch still
+        //     looks like a single shift (≤16h) → this scan is its time-out. The gap
+        //     guard is what keeps a stray punch from an unrelated time of day
+        //     (17h+ ago) from merging, while an early clock-in (e.g. 7:45 PM for an
+        //     11 PM shift) and a long-OT clock-out both still pair.
+        //  2. Yesterday's record is already COMPLETE but this scan is within the
+        //     duplicate window of its closing punch → re-date it so the debounce
+        //     below swallows the double-tap instead of opening a fresh day.
+        //  3. No record yesterday at all, but the scan lands after midnight and
+        //     BEFORE yesterday's scheduled end → a LATE time-in; anchor it to
+        //     yesterday's shift so late/undertime compute against the right day
+        //     instead of opening (and mangling) today.
+        if ($is_overnight) {
             $prev_date = date('Y-m-d', strtotime('-1 day', strtotime($scan_date)));
             $chk_prev = $this->db->prepare(
-                "SELECT id, logs FROM DTR_details WHERE employee_id = ? AND date_time = ? AND is_complete = 0 LIMIT 1"
+                "SELECT id, logs, is_complete FROM DTR_details
+                 WHERE employee_id = ? AND date_time = ? ORDER BY id DESC LIMIT 1"
             );
             $chk_prev->bind_param('is', $employee_id, $prev_date);
             $chk_prev->execute();
-            $prevOpen = $chk_prev->get_result()->fetch_assoc();
-            if ($prevOpen) {
-                $prevLogs = json_decode($prevOpen['logs'], true) ?? [];
-                if (count($prevLogs) === 1) {
-                    $firstTs       = strtotime($prevLogs[0]['dateTime']);
-                    $schedStartTs  = strtotime($prev_date . ' ' . $schedule['start_time']);
-                    if ($firstTs >= $schedStartTs - 7200) { // within 2h before scheduled start
-                        $scan_date = $prev_date;
-                    }
+            $prevRec = $chk_prev->get_result()->fetch_assoc();
+            if ($prevRec) {
+                $prevLogs = json_decode($prevRec['logs'], true) ?? [];
+                $prevTs   = array_map(function ($l) { return strtotime($l['dateTime']); }, $prevLogs);
+                $lastTs   = $prevTs ? max($prevTs) : 0;
+                $gap      = $lastTs ? $scan_ts - $lastTs : -1;
+                if (!$prevRec['is_complete']) {
+                    if ($gap > 0 && $gap <= 16 * 3600) $scan_date = $prev_date;   // case 1: time-out
+                } elseif ($gap >= 0 && $gap < 300) {
+                    $scan_date = $prev_date;                                      // case 2: double-tap
                 }
+            } else {
+                $prev_end = strtotime($prev_date . ' ' . $schedule['end_time']);
+                if ($schedule['end_time'] <= $schedule['start_time']) {
+                    $prev_end = strtotime('+1 day', $prev_end); // wraps → ends today
+                }
+                if ($scan_ts < $prev_end) $scan_date = $prev_date;                // case 3: late time-in
+            }
+
+            // The re-dated day may fall under a different schedule assignment —
+            // resolve it again so hours compute against the shift actually worked.
+            if ($scan_date === $prev_date) {
+                $stmt_sched->bind_param('iss', $employee_id, $scan_date, $scan_date);
+                $stmt_sched->execute();
+                $resched = $stmt_sched->get_result()->fetch_assoc();
+                if ($resched) $schedule = $resched;
+                $is_overnight = $schedule && ($schedule['is_graveyard'] || $schedule['end_time'] <= $schedule['start_time']);
             }
         }
 
@@ -3432,7 +3614,7 @@ class Action
         }
 
         // Resolve employer_id from site
-        $stmt2 = $this->db->prepare("SELECT employer_id FROM sites WHERE id = ? AND status = 1 LIMIT 1");
+        $stmt2 = $this->db->prepare("SELECT employer_id, site_name FROM sites WHERE id = ? AND status = 1 LIMIT 1");
         $stmt2->bind_param('i', $site_id);
         $stmt2->execute();
         $site_row = $stmt2->get_result()->fetch_assoc();
@@ -3455,21 +3637,29 @@ class Action
         $period_type = $period_code === 2 ? 'weekly' : ($period_code === 3 ? 'monthly' : 'semi_monthly');
         $period_ref  = strtotime($scan_date);
 
-        if ($period_type === 'weekly') {
-            // Monday–Sunday of the scan's week.
-            $period_from = date('Y-m-d', strtotime('monday this week', $period_ref));
-            $period_to   = date('Y-m-d', strtotime('sunday this week', $period_ref));
-        } elseif ($period_type === 'monthly') {
+        // if ($period_type === 'weekly') {
+        //     // Monday–Sunday of the scan's week.
+        //     $period_from = date('Y-m-d', strtotime('monday this week', $period_ref));
+        //     $period_to   = date('Y-m-d', strtotime('sunday this week', $period_ref));
+        // } elseif ($period_type === 'monthly') {
+        //     $period_from = date('Y-m-01', $period_ref);
+        //     $period_to   = date('Y-m-t',  $period_ref);
+        // } else { // semi_monthly: 1st–15th or 16th–end of month
+        //     if ((int) date('j', $period_ref) <= 15) {
+        //         $period_from = date('Y-m-01', $period_ref);
+        //         $period_to   = date('Y-m-15', $period_ref);
+        //     } else {
+        //         $period_from = date('Y-m-16', $period_ref);
+        //         $period_to   = date('Y-m-t',  $period_ref);
+        //     }
+        // }
+
+        if ((int) date('j', $period_ref) <= 15) {
             $period_from = date('Y-m-01', $period_ref);
+            $period_to   = date('Y-m-15', $period_ref);
+        } else {
+            $period_from = date('Y-m-16', $period_ref);
             $period_to   = date('Y-m-t',  $period_ref);
-        } else { // semi_monthly: 1st–15th or 16th–end of month
-            if ((int) date('j', $period_ref) <= 15) {
-                $period_from = date('Y-m-01', $period_ref);
-                $period_to   = date('Y-m-15', $period_ref);
-            } else {
-                $period_from = date('Y-m-16', $period_ref);
-                $period_to   = date('Y-m-t',  $period_ref);
-            }
         }
 
         $this->db->begin_transaction();
@@ -3515,36 +3705,77 @@ class Action
 
             $log_entry = ['dateTime' => $scan_time, 'type' => 'bio'];
 
+            // Shift label stored on the row (shows under Notes in the portal / DTR
+            // screens) and echoed in the API response, e.g. "Night Shift · 11:00 PM–8:00 AM".
+            $shift_label = $schedule
+                ? $schedule['description'] . ' · '
+                    . date('g:i A', strtotime($schedule['start_time'])) . '–'
+                    . date('g:i A', strtotime($schedule['end_time']))
+                : null;
+            $shift_note = $shift_label !== null ? substr($shift_label, 0, 100) : null;
+
             if (!$detail) {
                 // First scan — time-in only, mark incomplete
                 $logs = json_encode([$log_entry]);
                 $stmt6 = $this->db->prepare(
-                    "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, day_type, nsd_hours, is_complete)
-                     VALUES (?, ?, ?, 0, ?, 'biometric', ?, 0, 0)"
+                    "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, day_type, nsd_hours, is_complete, notes)
+                     VALUES (?, ?, ?, 0, ?, 'biometric', ?, 0, 0, ?)"
                 );
-                $stmt6->bind_param('iisss', $ddtr_id, $employee_id, $scan_date, $logs, $day_type);
+                $stmt6->bind_param('iissss', $ddtr_id, $employee_id, $scan_date, $logs, $day_type, $shift_note);
                 $stmt6->execute();
                 $this->db->commit();
                 // Notify the employee on their portal bell that a clock-in was captured.
                 // Best-effort: a notification hiccup must never fail an already-saved punch.
                 try {
-                    $this->notifyEmployee($employee_id, 'Time In recorded',
+                    $this->notifyEmployee(
+                        $employee_id,
+                        'Time In recorded',
                         'Your clock-in at ' . date('g:i A', $scan_ts) . ' on ' . date('M d, Y', strtotime($scan_date)) . ' was captured.',
-                        'ri-login-circle-line', 'info', 'employee-portal.php?tab=attendance');
-                } catch (\Throwable $e) { /* ignore */ }
+                        'ri-login-circle-line',
+                        'info',
+                        'employee-portal.php?tab=attendance'
+                    );
+                } catch (\Throwable $e) { /* ignore */
+                }
                 return [
                     'result'   => true,
                     'message'  => 'Scan recorded',
                     'scan'     => 'in',
                     'day_type' => $day_type,
-                    'scan_time'=> $scan_time,
+                    'scan_time' => $scan_time,
+                    'dtr_date' => $scan_date,   // shift day the punch was attached to
+                    'schedule' => $schedule ? [
+                        'description' => $schedule['description'],
+                        'start_time'  => $schedule['start_time'],
+                        'end_time'    => $schedule['end_time'],
+                        'label'       => $shift_label,
+                    ] : null,
                 ];
             } else {
                 // Subsequent scan — recalculate everything, mark complete
                 $existing_logs = json_decode($detail['logs'], true) ?? [];
+
+                // Debounce: biometric double-taps / device retries resend the same
+                // punch within moments. Appending it would close the day with 0
+                // hours (the out becomes identical to the in), so ignore any scan
+                // within 5 minutes of a punch already on this record.
+                foreach ($existing_logs as $l) {
+                    if (abs($scan_ts - strtotime($l['dateTime'])) < 300) {
+                        $this->db->commit();
+                        return [
+                            'result'  => true,
+                            'message' => 'Duplicate scan ignored (within 5 minutes of an existing punch)',
+                            'scan'    => 'duplicate',
+                            'scan_time' => $scan_time,
+                        ];
+                    }
+                }
+
                 $existing_logs[] = $log_entry;
 
-                $timestamps = array_map(function($l) { return strtotime($l['dateTime']); }, $existing_logs);
+                $timestamps = array_map(function ($l) {
+                    return strtotime($l['dateTime']);
+                }, $existing_logs);
                 $earliest   = min($timestamps);
                 $latest     = max($timestamps);
 
@@ -3552,12 +3783,16 @@ class Action
                 $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
                 $work_hours = max(0, $raw_hours - $break_hrs);
 
-                // Schedule-based: late, undertime, overtime
+                // Schedule-based: late, undertime, overtime.
+                // Anchor the shift to the DTR row's day ($scan_date), NOT the first
+                // punch's calendar date — on an overnight shift a late time-in lands
+                // after midnight, and anchoring to it would shift the whole schedule
+                // one day forward (zero late, ~22h undertime).
                 $late = $undertime = $overtime = 0;
                 if ($schedule) {
-                    $sched_start = strtotime(date('Y-m-d', $earliest) . ' ' . $schedule['start_time']);
-                    $sched_end   = strtotime(date('Y-m-d', $earliest) . ' ' . $schedule['end_time']);
-                    if ($schedule['is_graveyard']) $sched_end = strtotime('+1 day', $sched_end);
+                    $sched_start = strtotime($scan_date . ' ' . $schedule['start_time']);
+                    $sched_end   = strtotime($scan_date . ' ' . $schedule['end_time']);
+                    if ($is_overnight) $sched_end = strtotime('+1 day', $sched_end);
                     $late      = round(max(0, ($earliest - $sched_start) / 3600), 2);
                     $undertime = round(max(0, ($sched_end - $latest) / 3600), 2);
                     $overtime  = round(max(0, ($latest - $sched_end) / 3600), 2);
@@ -3573,8 +3808,10 @@ class Action
                 $nsd_windows = [
                     [strtotime($date_str . ' 22:00:00'), strtotime($date_str . ' 23:59:59')],
                     [strtotime($date_str . ' 00:00:00'), strtotime($date_str . ' 06:00:00')],
-                    [strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 00:00:00'),
-                     strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 06:00:00')],
+                    [
+                        strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 00:00:00'),
+                        strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 06:00:00')
+                    ],
                 ];
                 foreach ($nsd_windows as $w) {
                     $overlap = max(0, min($latest, $w[1]) - max($earliest, $w[0]));
@@ -3587,8 +3824,17 @@ class Action
                     "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
                      day_type=?, nsd_hours=?, is_complete=1 WHERE id=?"
                 );
-                $stmt7->bind_param('sddddsdi', $logs, $work_hours, $overtime, $late, $undertime,
-                                   $day_type, $nsd_hours, $detail['id']);
+                $stmt7->bind_param(
+                    'sddddsdi',
+                    $logs,
+                    $work_hours,
+                    $overtime,
+                    $late,
+                    $undertime,
+                    $day_type,
+                    $nsd_hours,
+                    $detail['id']
+                );
                 $stmt7->execute();
                 $this->db->commit();
 
@@ -3597,25 +3843,38 @@ class Action
                 try {
                     $ot_txt   = $overtime  > 0 ? ', ' . round($overtime, 2) . ' hr OT'         : '';
                     $late_txt = $late      > 0 ? ', ' . (int) round($late * 60) . ' min late'  : '';
-                    $this->notifyEmployee($employee_id, 'Time Out recorded',
+                    $this->notifyEmployee(
+                        $employee_id,
+                        'Time Out recorded',
                         'Attendance for ' . date('M d, Y', strtotime($scan_date)) . ' complete: '
                             . date('g:i A', $earliest) . ' – ' . date('g:i A', $latest) . ' · '
                             . round($work_hours, 2) . ' hrs worked' . $ot_txt . $late_txt . '.',
-                        'ri-logout-circle-line', 'success', 'employee-portal.php?tab=attendance');
-                } catch (\Throwable $e) { /* ignore */ }
+                        'ri-logout-circle-line',
+                        'success',
+                        'employee-portal.php?tab=attendance'
+                    );
+                } catch (\Throwable $e) { /* ignore */
+                }
 
                 return [
                     'result'            => true,
                     'message'           => 'Scan recorded',
                     'scan'              => 'out',
                     'day_type'          => $day_type,
-                    'time_in'           => date('H:i:s', $earliest),
-                    'time_out'          => date('H:i:s', $latest),
+                    'dtr_date'          => $scan_date,   // shift day the punch was attached to
+                    'time_in'           => date('Y-m-d H:i:s', $earliest),
+                    'time_out'          => date('Y-m-d H:i:s', $latest),
                     'work_hours'        => round($work_hours, 2),
                     'overtime_hours'    => round($overtime, 2),
                     'late_minutes'      => (int) round($late * 60),
                     'undertime_minutes' => (int) round($undertime * 60),
                     'nsd_hours'         => $nsd_hours,
+                    'schedule' => $schedule ? [
+                        'description' => $schedule['description'],
+                        'start_time'  => $schedule['start_time'],
+                        'end_time'    => $schedule['end_time'],
+                        'label'       => $shift_label,
+                    ] : null,
                 ];
             }
         } catch (Exception $e) {
@@ -3633,6 +3892,20 @@ class Action
             }
         }
         return $contricutions; // Return original array if no match is found
+    }
+
+    // Reviewer color mark per payroll row: 0=none, 1=ok(green), 2=issue(orange), 3=reviewing(blue)
+    function set_payroll_item_review()
+    {
+        $id = (int) ($_POST['id'] ?? 0);
+        $status = (int) ($_POST['review_status'] ?? 0);
+        $comment = trim($_POST['review_comment'] ?? '');
+        if ($id <= 0 || !in_array($status, [0, 1, 2, 3])) {
+            return 0;
+        }
+        $stmt = $this->db->prepare("UPDATE payroll_items SET review_status = ?, review_comment = ? WHERE id = ?");
+        $stmt->bind_param("isi", $status, $comment, $id);
+        return $stmt->execute() ? 1 : 0;
     }
 
     function update_payroll_item()
@@ -3809,7 +4082,7 @@ class Action
         $id_b = (int)$_POST['id_b'];
         if (!$id_a || !$id_b) return ['result' => false, 'message' => 'Invalid payroll IDs'];
 
-        $fetch = function($id) {
+        $fetch = function ($id) {
             $q = $this->db->prepare("
                 SELECT pi.employee_id,
                     CONCAT(e.lastname,', ',e.firstname) AS name,
@@ -3842,9 +4115,9 @@ class Action
         $b = $fetch($id_b);
 
         // Payroll labels
-        $lbl = function($id) {
+        $lbl = function ($id) {
             $r = $this->db->query("SELECT ref_no, date_from, date_to FROM payroll WHERE id=$id")->fetch_assoc();
-            return $r ? $r['ref_no'].' ('.date('M d',strtotime($r['date_from'])).'–'.date('M d,Y',strtotime($r['date_to'])).')' : "Payroll #$id";
+            return $r ? $r['ref_no'] . ' (' . date('M d', strtotime($r['date_from'])) . '–' . date('M d,Y', strtotime($r['date_to'])) . ')' : "Payroll #$id";
         };
 
         // Merge all unique employees
@@ -3858,14 +4131,14 @@ class Action
                 'employee_id' => $eid,
                 'name'        => $ref['name'],
                 'employee_no' => $ref['employee_no'],
-                'a'           => $ra ? ['basic'=>$ra['basic'],'gross'=>$ra['gross'],'net'=>$ra['net']] : null,
-                'b'           => $rb ? ['basic'=>$rb['basic'],'gross'=>$rb['gross'],'net'=>$rb['net']] : null,
+                'a'           => $ra ? ['basic' => $ra['basic'], 'gross' => $ra['gross'], 'net' => $ra['net']] : null,
+                'b'           => $rb ? ['basic' => $rb['basic'], 'gross' => $rb['gross'], 'net' => $rb['net']] : null,
             ];
         }
 
-        usort($rows, fn($x,$y) => strcmp($x['name'],$y['name']));
+        usort($rows, fn($x, $y) => strcmp($x['name'], $y['name']));
 
-        return ['result'=>true,'label_a'=>$lbl($id_a),'label_b'=>$lbl($id_b),'rows'=>$rows];
+        return ['result' => true, 'label_a' => $lbl($id_a), 'label_b' => $lbl($id_b), 'rows' => $rows];
     }
 
     function get_payroll_rows_data()
@@ -3888,8 +4161,11 @@ class Action
         $result = $stmt->get_result();
 
         $rows = [];
-        $t_gross = 0; $t_net = 0; $t_deductions = 0;
-        $t_absent = 0; $t_late = 0;
+        $t_gross = 0;
+        $t_net = 0;
+        $t_deductions = 0;
+        $t_absent = 0;
+        $t_late = 0;
 
         while ($row = $result->fetch_assoc()) {
             $payroll_type     = isset($row['payroll_type']) ? (int) $row['payroll_type'] : 0;
@@ -3920,7 +4196,8 @@ class Action
             $deductions    = json_decode($row['deductions'],    true) ?: [];
             $loans         = json_decode($row['loans'],         true) ?: [];
             $refunds_data  = json_decode($row['refunds'],       true) ?: [];
-            $total_ded = 0; $total_ref = 0;
+            $total_ded = 0;
+            $total_ref = 0;
             foreach ($contributions as $c) $total_ded += floatval($c['amount'] ?? 0);
             foreach ($deductions    as $c) $total_ded += floatval($c['amount'] ?? 0);
             foreach ($loans         as $c) $total_ded += floatval($c['amount'] ?? 0);
@@ -4369,18 +4646,14 @@ class Action
         $this->db->query("DELETE FROM payroll_employee_reviews WHERE payroll_id = $id");
 
         $period = date('M j', strtotime($payroll['date_from'])) . ' – ' . date('M j, Y', strtotime($payroll['date_to']));
-        $link   = 'employee-portal.php?tab=payslips';
-        $emps = $this->db->query("SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $id");
-        $count = 0;
-        if ($emps) while ($e = $emps->fetch_assoc()) {
-            $this->notifyEmployee(
-                $e['employee_id'],
-                'Payslip ready for your review',
-                "Your payslip for $period is ready. Please review and confirm before it's locked.",
-                'ri-file-list-3-line', 'warning', $link
-            );
-            $count++;
-        }
+        $count = $this->notifyEmployeesFromQuery(
+            "SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $id",
+            'Payslip ready for your review',
+            "Your payslip for $period is ready. Please review and confirm before it's locked.",
+            'ri-file-list-3-line',
+            'warning',
+            'employee-portal.php?tab=payslips'
+        );
 
         $this->save_payroll_history($id, 5, 'Send for Review');
 
@@ -4676,7 +4949,8 @@ class Action
                 if ($ts !== false) $days[date('Y-m-d', $ts)] = true;
             }
         } elseif ($date_from !== '' && $date_to !== '') {
-            $ts_f = strtotime($date_from); $ts_t = strtotime($date_to);
+            $ts_f = strtotime($date_from);
+            $ts_t = strtotime($date_to);
             if ($ts_f !== false && $ts_t !== false && $ts_t >= $ts_f) {
                 for ($d = $ts_f; $d <= $ts_t; $d = strtotime('+1 day', $d)) $days[date('Y-m-d', $d)] = true;
             }
@@ -4880,7 +5154,7 @@ class Action
                 $who = $wq['name'] ?? 'A user';
             }
             $msg = "$who updated $emp's $type balance: " . rtrim(rtrim(number_format($old_credits, 1), '0'), '.')
-                 . " → " . rtrim(rtrim(number_format($credits, 1), '0'), '.') . " day(s).";
+                . " → " . rtrim(rtrim(number_format($credits, 1), '0'), '.') . " day(s).";
 
             // Notify HR + Admins (so any balance change is visible/auditable).
             $this->notifyRole(1, 'Leave balance updated', $msg, 'ri-coins-line', 'info', 'index.php?page=leave_balances&emp=' . $employee_id);
@@ -4897,7 +5171,7 @@ class Action
     function save_pay_settings()
     {
         $uid  = $_SESSION['login_id'] ?? null;
-        $keys = ['legal_holiday_rate','special_holiday_rate','ot_regular_rate','ot_holiday_multiplier','nsd_rate','rest_day_rate'];
+        $keys = ['legal_holiday_rate', 'special_holiday_rate', 'ot_regular_rate', 'ot_holiday_multiplier', 'nsd_rate', 'rest_day_rate'];
         $this->db->begin_transaction();
         try {
             foreach ($keys as $key) {
@@ -4939,7 +5213,7 @@ class Action
         $date     = trim($_POST['date'] ?? '');
         $time_in  = trim($_POST['time_in'] ?? '');
         $time_out = trim($_POST['time_out'] ?? '');
-        if (!$id || !$date || !$time_in) return ['result'=>false,'message'=>'Missing fields'];
+        if (!$id || !$date || !$time_in) return ['result' => false, 'message' => 'Missing fields'];
 
         $in_ts  = strtotime($date . ' ' . $time_in);
         $out_ts = $time_out ? strtotime($date . ' ' . $time_out) : null;
@@ -4951,7 +5225,7 @@ class Action
         // Detect holiday
         $day_type = 'regular';
         $hol = $this->db->query("SELECT type FROM calendar_events WHERE '$date' BETWEEN start_date AND COALESCE(end_date,'$date') AND type IN (1,3) LIMIT 1")->fetch_assoc();
-        if ($hol) $day_type = $hol['type']==1 ? 'legal_holiday' : 'special_holiday';
+        if ($hol) $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
 
         // Get schedule
         $schedule = $this->db->query("
@@ -4965,7 +5239,10 @@ class Action
         $raw_hours  = $out_ts ? ($out_ts - $in_ts) / 3600 : 0;
         $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
         $work_hours = $out_ts ? round(max(0, $raw_hours - $break_hrs), 2) : 0;
-        $overtime   = 0; $late = 0; $undertime = 0; $nsd_hours = 0;
+        $overtime   = 0;
+        $late = 0;
+        $undertime = 0;
+        $nsd_hours = 0;
         $is_complete = $out_ts ? 1 : 0;
 
         if ($out_ts && $schedule) {
@@ -4977,7 +5254,7 @@ class Action
             $overtime  = round(max(0, ($out_ts - $sched_end) / 3600), 2);
             $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
 
-            foreach ([[$date.' 22:00:00',$date.' 23:59:59'],[$date.' 00:00:00',$date.' 06:00:00']] as $w) {
+            foreach ([[$date . ' 22:00:00', $date . ' 23:59:59'], [$date . ' 00:00:00', $date . ' 06:00:00']] as $w) {
                 $nsd_hours += max(0, min($out_ts, strtotime($w[1])) - max($in_ts, strtotime($w[0]))) / 3600;
             }
             $nsd_hours = round($nsd_hours, 2);
@@ -4988,8 +5265,18 @@ class Action
             "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
              day_type=?, nsd_hours=?, is_complete=?, attendance_type='manual' WHERE id=?"
         );
-        $stmt->bind_param('sddddsdii', $json_logs, $work_hours, $overtime, $late, $undertime,
-                          $day_type, $nsd_hours, $is_complete, $id);
+        $stmt->bind_param(
+            'sddddsdii',
+            $json_logs,
+            $work_hours,
+            $overtime,
+            $late,
+            $undertime,
+            $day_type,
+            $nsd_hours,
+            $is_complete,
+            $id
+        );
         return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Saved'];
     }
 
@@ -5219,6 +5506,55 @@ class Action
     }
 
     /* ──────────────────────────────────────────────────────────────
+     * Firebase Cloud Messaging (browser push, works with the site closed)
+     * ────────────────────────────────────────────────────────────── */
+
+    // Register/refresh the FCM token of the logged-in admin's browser.
+    function save_fcm_token()
+    {
+        $uid = (int) ($_SESSION['login_id'] ?? 0);
+        $token = trim($_POST['token'] ?? '');
+        if ($uid <= 0 || $token === '' || strlen($token) > 500) {
+            return 0;
+        }
+        $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
+        // Single-device, single-recipient policy. Registering this browser evicts:
+        //  a) the admin's tokens on OTHER devices (and rotated tokens on this one),
+        //     so each push lands exactly once, on the most recent login; and
+        //  b) any EMPLOYEE registration of this same browser token — a browser
+        //     belongs to whoever logged in last, so a machine an employee once
+        //     used never keeps receiving that employee's pushes after an admin
+        //     takes it over. users.id and employee.id overlap, so recipient_type
+        //     is always part of the match — never user_id alone.
+        $del = $this->db->prepare(
+            "DELETE FROM fcm_tokens
+             WHERE (user_id = ? AND recipient_type = 'user' AND token <> ?)
+                OR (token = ? AND recipient_type = 'employee')"
+        );
+        $del->bind_param('iss', $uid, $token, $token);
+        $del->execute();
+        $stmt = $this->db->prepare(
+            "INSERT INTO fcm_tokens (user_id, recipient_type, token, user_agent) VALUES (?, 'user', ?, ?)
+             ON DUPLICATE KEY UPDATE user_id = VALUES(user_id),
+                                     user_agent = VALUES(user_agent), last_seen = NOW()"
+        );
+        $stmt->bind_param('iss', $uid, $token, $ua);
+        return $stmt->execute() ? 1 : 0;
+    }
+
+    // Best-effort browser push to every registered admin. Must never break the
+    // caller — attendance saves fine even if FCM is down or not configured.
+    private function pushAdminBrowsers($title, $body, $link = 'index.php', $tag = 'comc-payroll')
+    {
+        try {
+            require_once __DIR__ . '/fcm.php';
+            return fcm_push_admins($this->db, $title, $body, $link, $tag);
+        } catch (\Throwable $e) {
+            return 0;
+        }
+    }
+
+    /* ──────────────────────────────────────────────────────────────
      * Notifications (per-user, with mark-read)
      * ────────────────────────────────────────────────────────────── */
 
@@ -5240,6 +5576,12 @@ class Action
         if ($res) while ($u = $res->fetch_assoc()) {
             $this->notify($u['id'], $title, $message, $icon, $color, $link);
         }
+        // Mirror to that role's browsers as a push (best-effort, never fatal) so
+        // reviewers get leave / attendance-request alerts with the site closed.
+        try {
+            require_once __DIR__ . '/fcm.php';
+            fcm_push_role($this->db, $role, $title, $message, $link ?: 'index.php');
+        } catch (\Throwable $e) { /* ignore */ }
     }
 
     // Employee-facing notification (portal bell). Same table as staff notifications,
@@ -5251,6 +5593,28 @@ class Action
         $stmt = $this->db->prepare("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES (?, 'employee', ?, ?, ?, ?, ?)");
         $stmt->bind_param('isssss', $employee_id, $title, $message, $icon, $color, $link);
         $stmt->execute();
+        // Mirror to the employee's browser as a push (best-effort, never fatal).
+        try {
+            require_once __DIR__ . '/fcm.php';
+            fcm_push_employee($this->db, $employee_id, $title, $message, $link ?: 'employee-portal.php');
+        } catch (\Throwable $e) { /* ignore */
+        }
+    }
+
+    // Notify every employee returned by $employeeIdSelect (a SELECT yielding one
+    // employee_id column) with one INSERT ... SELECT instead of a per-employee
+    // round trip — sending a large batch for review used to fire hundreds of
+    // sequential INSERTs. Returns the number of notifications inserted.
+    private function notifyEmployeesFromQuery($employeeIdSelect, $title, $message, $icon = 'ri-notification-3-line', $color = 'primary', $link = null)
+    {
+        $stmt = $this->db->prepare(
+            "INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link)
+             SELECT emp.employee_id, 'employee', ?, ?, ?, ?, ? FROM ($employeeIdSelect) emp"
+        );
+        if (!$stmt) return 0;
+        $stmt->bind_param('sssss', $title, $message, $icon, $color, $link);
+        $stmt->execute();
+        return $stmt->affected_rows > 0 ? $stmt->affected_rows : 0;
     }
 
     // Recent notifications + unread count for the logged-in staff user.

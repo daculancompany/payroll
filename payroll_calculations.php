@@ -32,10 +32,10 @@ $stmt->bind_param("i", $id);
 $stmt->execute();
 $result = $stmt->get_result();
 $payroll = $result->fetch_assoc();
-$site_ids = json_decode($payroll['site_ids'], true);
-$site_ids = isset($site_ids) ? $site_ids : [];
+$site_ids = json_decode($payroll['site_ids'] ?? '', true);
+$site_ids = is_array($site_ids) ? array_values(array_filter(array_map('intval', $site_ids))) : [];
 $commaSeparatedSites = implode(',', $site_ids);
-$status = $payroll['status'];
+$status = $payroll['status'] ?? 0;
 
 // ── Employee review progress (whole-batch sign-off, mirrors DTR) ──
 $payrollReviewTotalEmp = (int) ($conn->query("SELECT COUNT(DISTINCT employee_id) AS c FROM payroll_items WHERE payroll_id = $id")->fetch_assoc()['c'] ?? 0);
@@ -65,11 +65,11 @@ if ($commaSeparatedSites !== '') {
             DTR_details.overtime, DTR_details.undertime, DTR_details.late, DTR_details.logs, DTR.site_id
         FROM DTR_details
         INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
-        WHERE DATE(DTR_details.date_time) BETWEEN '$df_esc' AND '$dt_esc'
+        WHERE DTR_details.date_time BETWEEN '$df_esc' AND '$dt_esc'
         AND DTR.status = 2 AND DTR_details.status = 1
         AND DTR.site_id IN ($commaSeparatedSites)
         ORDER BY DTR_details.date_time ASC");
-    while ($dlr = $dtr_logs_q->fetch_assoc()) {
+    if ($dtr_logs_q) while ($dlr = $dtr_logs_q->fetch_assoc()) {
         $dtrLogsByEmpSite[$dlr['employee_id']][$dlr['site_id']][] = $dlr;
     }
 }
@@ -77,32 +77,29 @@ if ($commaSeparatedSites !== '') {
 // Renders the attendance-logs view-popover body: every approved day, with every punch
 // shown as an IN/OUT chip (bio vs manual), matching dtr-details.php's log-chip style.
 function dtr_days_popover_content($days) {
-    if (empty($days)) return '<span style="color:#aaa;font-size:11px;">No approved attendance found</span>';
-    $html = '<div style="max-height:260px;overflow-y:auto;min-width:230px;">';
+    if (empty($days)) return '<span class="dpp-empty">No approved attendance found</span>';
+    $html = '<div class="dpp-wrap">';
     foreach ($days as $d) {
         $logs = json_decode($d['logs'], true) ?: [];
-        $html .= '<div style="padding:5px 0;border-bottom:1px solid #eee;">';
-        $html .= '<div style="font-size:11px;font-weight:700;color:#323130;margin-bottom:3px;">'
+        $html .= '<div class="dpp-day">';
+        $html .= '<div class="dpp-date">'
                . date('M j, Y (D)', strtotime($d['date_time']))
-               . '<span style="float:right;color:#107c41;font-weight:600;">' . number_format((float)$d['work_hours'], 2) . ' hrs</span>'
+               . '<span class="dpp-hrs">' . number_format((float)$d['work_hours'], 2) . ' hrs</span>'
                . '</div>';
         if (!empty($logs)) {
             $count = count($logs);
             foreach ($logs as $li => $log) {
                 $isBio = ($log['type'] ?? '') === 'bio';
                 $label = $li === 0 ? 'IN' : ($li === $count - 1 ? 'OUT' : '#' . ($li + 1));
-                $chipStyle = $isBio
-                    ? 'background:#e6f5f3;color:#219688;border:1px solid #aad5d0;'
-                    : 'background:#fff8e1;color:#c98a00;border:1px solid #ffe082;';
                 $icon = $isBio ? 'ri-fingerprint-line' : 'ri-edit-line';
-                $html .= '<div style="display:flex;align-items:center;gap:6px;padding:2px 0;">'
-                       . '<span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">' . $label . '</span>'
-                       . '<span style="display:inline-flex;align-items:center;gap:3px;padding:1px 5px;border-radius:2px;font-size:10px;font-weight:600;' . $chipStyle . '">'
+                $html .= '<div class="dpp-row">'
+                       . '<span class="dpp-lbl">' . $label . '</span>'
+                       . '<span class="dpp-chip ' . ($isBio ? 'bio' : 'manual') . '">'
                        . '<i class="' . $icon . '"></i>' . date('g:i A', strtotime($log['dateTime'])) . '</span>'
                        . '</div>';
             }
         } else {
-            $html .= '<span style="color:#aaa;font-size:10px;">No logs</span>';
+            $html .= '<span class="dpp-none">No logs</span>';
         }
         $html .= '</div>';
     }
@@ -324,6 +321,19 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 /* Actions column — view attendance logs popover trigger (paired with .xl-btn) */
 .dtr-view-days { margin-left:4px; }
 
+/* Attendance-logs popover body (content lives once in #dtr-pop-src, classes keep it small) */
+.dpp-wrap { max-height:260px; overflow-y:auto; min-width:230px; }
+.dpp-day { padding:5px 0; border-bottom:1px solid #eee; }
+.dpp-date { font-size:11px; font-weight:700; color:#323130; margin-bottom:3px; }
+.dpp-hrs { float:right; color:#107c41; font-weight:600; }
+.dpp-row { display:flex; align-items:center; gap:6px; padding:2px 0; }
+.dpp-lbl { font-size:10px; font-weight:700; color:#888; min-width:26px; }
+.dpp-chip { display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:2px; font-size:10px; font-weight:600; }
+.dpp-chip.bio { background:#e6f5f3; color:#219688; border:1px solid #aad5d0; }
+.dpp-chip.manual { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
+.dpp-none { color:#aaa; font-size:10px; }
+.dpp-empty { color:#aaa; font-size:11px; }
+
 /* Employee review progress panel (mirrors DTR's, recolored to this page's Excel-green theme) */
 .pr-review-panel { border:1px solid #cdeacb; background:#f4faf5; border-radius:10px; padding:10px 14px; margin-bottom:10px; }
 .prp-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
@@ -347,6 +357,34 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .prp-act-btn.resolve { margin-top:5px; background:#e9f7ef; color:#107c41; border-color:#b7e4c7; }
 .prp-act-btn:hover { filter:brightness(0.97); }
 .prp-resolved { margin-top:5px; font-size:11.5px; color:#107c41; font-weight:600; background:#f0faf3; border:1px solid #cdeeda; border-radius:6px; padding:4px 8px; }
+
+/* ── Reviewer color marks: whole-row soft tint (1=ok, 2=issue, 3=reviewing) ── */
+#table-1 tbody tr.review-ok > td       { background:#e9f7ee !important; }
+#table-1 tbody tr.review-issue > td    { background:#fff4e2 !important; }
+#table-1 tbody tr.review-checking > td { background:#e8f1fb !important; }
+#table-1 tbody tr.review-ok:hover > td       { background:#dcf1e4 !important; }
+#table-1 tbody tr.review-issue:hover > td    { background:#ffedd1 !important; }
+#table-1 tbody tr.review-checking:hover > td { background:#dbe9f8 !important; }
+
+/* Green = verified: inputs freeze into display text — no accidental edits */
+tr.review-ok .input-class { pointer-events:none; background:transparent !important; border-color:transparent !important; box-shadow:none !important; font-weight:700; }
+
+/* The dot button in the Actions column */
+.review-mark-btn { margin-left:4px; }
+.rv-dot { display:inline-block; width:11px; height:11px; border-radius:50%; background:#e1e5e3; border:1px solid #aab5b0; vertical-align:-1px; }
+.rv-dot.rv-1 { background:#63c584; border-color:#3f9c63; }
+.rv-dot.rv-2 { background:#f4ad60; border-color:#d68830; }
+.rv-dot.rv-3 { background:#74ace6; border-color:#457fbd; }
+.rv-comment-flag { color:#c98a00; font-size:12px; margin-left:2px; vertical-align:-1px; }
+
+/* Swatch choices inside the review modal */
+.rv-choice { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:2px solid #e3e7e5; border-radius:10px; background:#fff; padding:9px 12px; margin-bottom:7px; cursor:pointer; font-size:13px; font-weight:600; color:#333; }
+.rv-choice .rv-dot { width:16px; height:16px; }
+.rv-choice small { display:block; font-weight:400; color:#888; font-size:11px; }
+.rv-choice:hover { border-color:#b8c4be; }
+.rv-choice.selected { border-color:#107c41; background:#f2faf5; }
+.rv-choice.selected.rv-c2 { border-color:#d68830; background:#fff8ee; }
+.rv-choice.selected.rv-c3 { border-color:#457fbd; background:#f0f6fd; }
 </style>
 <div class="main-content">
     <div class="page-content">
@@ -396,15 +434,14 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
                             <button data-toggle="tooltip" id="sf" title="Fullscreen" onclick="openFullscreen()" class="xl-btn"><i class="ri-fullscreen-line"></i></button>
                             <button style="display:none;" id="hf" data-toggle="tooltip" title="Exit Fullscreen" onclick="closeFullscreen()" class="xl-btn"><i class="ri-fullscreen-exit-line"></i></button>
                             <div class="xl-ribbon-sep"></div>
-                            <button data-toggle="tooltip" title="Print Settings" data-bs-toggle="modal" data-bs-target="#modal-print-settings" class="xl-btn"><i class="ri-settings-3-line"></i> Print Settings</button>
-                            <button data-toggle="tooltip" title="Sites" onclick="view_site()" class="xl-btn"><i class="ri-building-line"></i> Sites</button>
+                            <!-- <button data-toggle="tooltip" title="Sites" onclick="view_site()" class="xl-btn"><i class="ri-building-line"></i> Sites</button> -->
                             <div class="xl-ribbon-sep"></div>
                             <?php if ($payroll_type == 5) { ?>
-                                <a data-toggle="tooltip" title="Print" href="print-montly.php?id=<?= $id ?>" class="xl-btn"><i class="ri-printer-line"></i> Print</a>
+                                <button data-toggle="tooltip" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=monthly&id=<?= $id ?>', 'Payroll PDF')" class="xl-btn"><i class="ri-printer-line"></i> Print</button>
                             <?php } else { ?>
-                                <a data-toggle="tooltip" title="Print Payroll" href="print-payroll.php?id=<?= $id ?>&site_id=<?= $sid ?>" class="xl-btn" onclick="window.open(this.href,'_blank','width=1100,height=750,scrollbars=yes'); return false;"><i class="ri-printer-line"></i> Print</a>
-                                <a data-toggle="tooltip" title="Print By Summary" href="print-payroll-employer.php?id=<?= $id ?>&type=all" class="xl-btn" onclick="window.open(this.href,'_blank','width=1100,height=750,scrollbars=yes'); return false;"><i class="ri-printer-fill"></i> Summary</a>
-                                <a data-toggle="tooltip" title="Print Summary by Department" href="print-payroll-dept.php?id=<?= $id ?>" class="xl-btn" onclick="window.open(this.href,'_blank','width=800,height=700,scrollbars=yes'); return false;"><i class="ri-building-2-line"></i> Dept. Summary</a>
+                                <button data-toggle="tooltip" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=payroll&id=<?= $id ?>&site_id=<?= $sid ?>', 'Payroll PDF')" class="xl-btn"><i class="ri-printer-line"></i> Print</button>
+                                <!-- <button data-toggle="tooltip" title="Summary PDF" onclick="openPdfPreview('pdf-payroll.php?src=employer&id=<?= $id ?>&type=all', 'Payroll Summary PDF')" class="xl-btn"><i class="ri-printer-fill"></i> Summary</button> -->
+                                <button data-toggle="tooltip" title="Summary by Department PDF" onclick="openPdfPreview('pdf-payroll.php?src=dept&id=<?= $id ?>', 'Department Summary PDF')" class="xl-btn"><i class="ri-building-2-line"></i> Dept. Summary</button>
                             <?php } ?>
                             <button id="btn-print-payslips" title="Check rows to select employees, then click to print their payslips" onclick="printSelectedPayslips()" class="xl-btn">
                                 <i class="ri-file-text-line"></i> Payslips <span id="ps-count" style="background:#c8e6e2;color:#176358;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:2px;font-weight:700;">0</span>
@@ -743,7 +780,11 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
                                                 $t_tax         += $tax;
 
                                             ?>
-                                                <tr class="name-<?= $row['id'] ?>" data-row-id="<?= $row['id'] ?>">
+                                                <?php
+                                                    $rv = (int)($row['review_status'] ?? 0);
+                                                    $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
+                                                ?>
+                                                <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>">
                                                     <td class="ps-chk-cell"><input type="checkbox" class="ps-chk ps-row-chk" value="<?= $row['id'] ?>"></td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
                                                     <td style="min-width:220px;">
@@ -1104,9 +1145,14 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
                                                         <?php $empDays = $dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []; ?>
                                                         <span class="xl-btn dtr-view-days" data-bs-toggle="popover" data-bs-trigger="click"
                                                             data-bs-placement="top" data-bs-html="true"
-                                                            data-bs-content="<?= htmlspecialchars(dtr_days_popover_content($empDays)) ?>"
+                                                            data-pop-key="<?= (int)$row['employee_id'] ?>-<?= (int)$row['site_id'] ?>"
                                                             title="Approved Attendance Logs">
                                                             <i class="ri-time-line"></i> Logs (<?= count($empDays) ?>)
+                                                        </span>
+                                                        <span class="xl-btn review-mark-btn" onclick="openReviewMark(<?= $row['id'] ?>)" data-toggle="tooltip"
+                                                            title="<?= $rv === 0 ? 'Mark review status' : htmlspecialchars($row['review_comment'] ?: 'Marked', ENT_QUOTES) ?>">
+                                                            <span class="rv-dot rv-<?= $rv ?>"></span>
+                                                            <?php if (trim($row['review_comment'] ?? '') !== ''): ?><i class="ri-chat-3-fill rv-comment-flag"></i><?php endif; ?>
                                                         </span>
                                                     </td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
@@ -1350,7 +1396,11 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
                                                 $t_tax         += $tax;
 
                                             ?>
-                                                <tr class="name-<?= $row['id'] ?>" data-row-id="<?= $row['id'] ?>">
+                                                <?php
+                                                    $rv = (int)($row['review_status'] ?? 0);
+                                                    $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
+                                                ?>
+                                                <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>">
                                                     <td class="ps-chk-cell"><input type="checkbox" class="ps-chk ps-row-chk" value="<?= $row['id'] ?>"></td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
                                                     <td style="min-width:220px;">
@@ -1559,9 +1609,14 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
                                                         <?php $empDays = $dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []; ?>
                                                         <span class="xl-btn dtr-view-days" data-bs-toggle="popover" data-bs-trigger="click"
                                                             data-bs-placement="top" data-bs-html="true"
-                                                            data-bs-content="<?= htmlspecialchars(dtr_days_popover_content($empDays)) ?>"
+                                                            data-pop-key="<?= (int)$row['employee_id'] ?>-<?= (int)$row['site_id'] ?>"
                                                             title="Approved Attendance Logs">
                                                             <i class="ri-time-line"></i> Logs (<?= count($empDays) ?>)
+                                                        </span>
+                                                        <span class="xl-btn review-mark-btn" onclick="openReviewMark(<?= $row['id'] ?>)" data-toggle="tooltip"
+                                                            title="<?= $rv === 0 ? 'Mark review status' : htmlspecialchars($row['review_comment'] ?: 'Marked', ENT_QUOTES) ?>">
+                                                            <span class="rv-dot rv-<?= $rv ?>"></span>
+                                                            <?php if (trim($row['review_comment'] ?? '') !== ''): ?><i class="ri-chat-3-fill rv-comment-flag"></i><?php endif; ?>
                                                         </span>
                                                     </td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
@@ -1745,6 +1800,18 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
     <div class="offcanvas-body p-0" id="offcanvas-history-body" style="overflow-y:auto; background:#fff;"></div>
 </div>
 
+<!-- Attendance-logs popover bodies, rendered ONCE per employee+site. Both payroll
+     tables reference these by data-pop-key instead of duplicating the full punch
+     history into every row's data-bs-content attribute (which made large payrolls
+     multi-MB pages). -->
+<div id="dtr-pop-src" class="d-none">
+    <?php foreach ($dtrLogsByEmpSite as $dppEmp => $dppSites): ?>
+        <?php foreach ($dppSites as $dppSite => $dppDays): ?>
+            <div id="dtr-pop-<?= (int)$dppEmp ?>-<?= (int)$dppSite ?>"><?= dtr_days_popover_content($dppDays) ?></div>
+        <?php endforeach; ?>
+    <?php endforeach; ?>
+</div>
+
 <script>
 var _vhData = [];
 var _vhFilter = 'all';
@@ -1902,75 +1969,156 @@ function openPayrollHistory(id) {
 }
 </script>
 
-<!-- Print Settings Modal -->
-<div class="modal fade" id="modal-print-settings" tabindex="-1" role="dialog" aria-labelledby="modalPrintSettingsLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
-        <div class="modal-content">
-            <div class="modal-header bg-secondary text-white">
-                <h5 class="modal-title" id="modalPrintSettingsLabel"><i class="ri-settings-3-line me-2"></i>Print Settings</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+<!-- PDF Preview Modal (dompdf output shown inline; download from here) -->
+<div class="modal fade" id="modal-pdf-preview" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:1400px;width:95%;">
+        <div class="modal-content" style="border-radius:12px;overflow:hidden;">
+            <div class="modal-header" style="background:#fff;color:#107c41;border-bottom:1px solid #e6efe8;">
+                <h5 class="modal-title mb-0" style="color:#107c41;"><i class="ri-file-pdf-2-line me-1"></i><span id="pdf-preview-title">PDF Preview</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <form class="form-auth-small" id="form-print-settings" method="post" novalidate>
-                <input type="hidden" name="id" value="<?= $id ?>">
-                <div class="modal-body">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <div class="card border h-100">
-                                <div class="card-header bg-light py-2 fw-semibold"><i class="ri-edit-line me-1"></i>Prepared By</div>
-                                <div class="card-body">
-                                    <div class="form-group mb-3">
-                                        <label class="form-label small text-muted">Name</label>
-                                        <input class="form-control" value="<?= htmlspecialchars($payroll['prepared_by']) ?>" name="prepared_by" type="text" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label small text-muted">Position</label>
-                                        <input class="form-control" name="prepared_by_role" type="text" value="<?= htmlspecialchars(isset($payroll['prepared_by_role']) && trim($payroll['prepared_by_role']) !== '' ? $payroll['prepared_by_role'] : 'PAYROLL OFFICER') ?>" required>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card border h-100">
-                                <div class="card-header bg-light py-2 fw-semibold"><i class="ri-checkbox-circle-line me-1"></i>Verified By</div>
-                                <div class="card-body">
-                                    <div class="form-group mb-3">
-                                        <label class="form-label small text-muted">Name</label>
-                                        <input class="form-control" name="verified_by" value="<?= htmlspecialchars($payroll['verified_by']) ?>" type="text" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label small text-muted">Position</label>
-                                        <input class="form-control" name="verified_by_role" type="text" value="<?= htmlspecialchars(isset($payroll['verified_by_role']) && trim($payroll['verified_by_role']) !== '' ? $payroll['verified_by_role'] : 'Compensation & Benefits Supervisor') ?>" required>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="card border h-100">
-                                <div class="card-header bg-light py-2 fw-semibold"><i class="ri-shield-check-line me-1"></i>Approved By</div>
-                                <div class="card-body">
-                                    <div class="form-group mb-3">
-                                        <label class="form-label small text-muted">Name</label>
-                                        <input class="form-control" value="<?= htmlspecialchars(isset($payroll['approved_by']) && trim($payroll['approved_by']) !== '' ? $payroll['approved_by'] : 'Jordan G. Tiu/Jerry G. Tiu/Jean T. Chin') ?>" name="approved_by" type="text" required>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label small text-muted">Position</label>
-                                        <input class="form-control" name="approved_by_role" type="text" value="<?= htmlspecialchars(isset($payroll['approved_by_role']) && trim($payroll['approved_by_role']) !== '' ? $payroll['approved_by_role'] : 'MANAGEMENT') ?>" required>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-info"><i class="ri-save-line me-1"></i>Save Changes</button>
-                </div>
-            </form>
+            <div class="modal-body" style="background:#525659;padding:0;overflow:hidden;">
+                <iframe id="pdf-preview-frame" title="PDF preview" style="width:100%;height:80vh;border:0;display:block;background:#525659;"></iframe>
+            </div>
+            <div class="modal-footer" style="background:#fff;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                <a id="pdf-preview-download" href="#" class="btn btn-sm" style="background:#107c41;color:#fff;font-weight:600;border:none;">
+                    <i class="ri-download-2-line me-1"></i>Download PDF
+                </a>
+            </div>
         </div>
     </div>
 </div>
+<script>
+// All payroll prints render as PDF via dompdf and preview here — no browser print pop-ups.
+function openPdfPreview(url, title) {
+    var frame = document.getElementById('pdf-preview-frame');
+    if (!frame) return;
+    document.getElementById('pdf-preview-title').textContent = title || 'PDF Preview';
+    document.getElementById('pdf-preview-download').href = url + '&download=1';
+    frame.src = url;
+    new bootstrap.Modal(document.getElementById('modal-pdf-preview')).show();
+}
+</script>
 
-<!-- Payslip Preview Modal (preview first, print from here — no auto-print pop-up) -->
+<!-- Review Mark Modal — color-code a payroll row + reviewer comment -->
+<div class="modal fade" id="modal-review-mark" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
+        <div class="modal-content" style="border-radius:12px;">
+            <div class="modal-header" style="border-bottom:1px solid #e6efe8;">
+                <h5 class="modal-title mb-0" style="color:#107c41;font-size:15px;">
+                    <i class="ri-checkbox-multiple-line me-1"></i>Review Mark — <span id="rv-emp-name"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <button type="button" class="rv-choice rv-c1" data-rv="1" onclick="pickReviewChoice(this)">
+                    <span class="rv-dot rv-1"></span>
+                    <span>Okay <small>Figures verified — inputs lock to display only</small></span>
+                </button>
+                <button type="button" class="rv-choice rv-c2" data-rv="2" onclick="pickReviewChoice(this)">
+                    <span class="rv-dot rv-2"></span>
+                    <span>Something wrong <small>Needs correction — say what in the comment</small></span>
+                </button>
+                <button type="button" class="rv-choice rv-c3" data-rv="3" onclick="pickReviewChoice(this)">
+                    <span class="rv-dot rv-3"></span>
+                    <span>Ongoing review <small>Still being checked</small></span>
+                </button>
+                <button type="button" class="rv-choice rv-c0" data-rv="0" onclick="pickReviewChoice(this)">
+                    <span class="rv-dot rv-0"></span>
+                    <span>No mark <small>Clear the color and comment</small></span>
+                </button>
+                <label class="form-label small text-muted mt-2 mb-1" for="rv-comment">Comment</label>
+                <textarea id="rv-comment" class="form-control" rows="2" maxlength="500" placeholder="e.g. OT hours look too high — verify with site logs"></textarea>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #e6efe8;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm" style="background:#107c41;color:#fff;font-weight:600;border:none;" onclick="saveReviewMark()">
+                    <i class="ri-save-line me-1"></i>Save Mark
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+// ── Reviewer color marks: green = okay (locks row inputs), orange = issue, blue = reviewing ──
+var rvCurrentItem = null;
+var rvClassMap = { 1: 'review-ok', 2: 'review-issue', 3: 'review-checking' };
+
+function openReviewMark(itemId) {
+    var tr = document.querySelector('tr[data-row-id="' + itemId + '"]');
+    if (!tr) return;
+    rvCurrentItem = itemId;
+    var nameEl = tr.querySelector('.emp-name-link b');
+    document.getElementById('rv-emp-name').textContent = nameEl ? nameEl.textContent : '#' + itemId;
+    document.getElementById('rv-comment').value = tr.getAttribute('data-review-comment') || '';
+    var current = tr.getAttribute('data-review') || '0';
+    document.querySelectorAll('#modal-review-mark .rv-choice').forEach(function (b) {
+        b.classList.toggle('selected', b.getAttribute('data-rv') === current);
+    });
+    new bootstrap.Modal(document.getElementById('modal-review-mark')).show();
+}
+
+function pickReviewChoice(btn) {
+    document.querySelectorAll('#modal-review-mark .rv-choice').forEach(function (b) { b.classList.remove('selected'); });
+    btn.classList.add('selected');
+}
+
+function saveReviewMark() {
+    var picked = document.querySelector('#modal-review-mark .rv-choice.selected');
+    if (!picked || rvCurrentItem === null) return;
+    var status = parseInt(picked.getAttribute('data-rv'), 10);
+    var comment = status === 0 ? '' : document.getElementById('rv-comment').value.trim();
+    $.ajax({
+        url: 'ajax.php?action=set_payroll_item_review',
+        method: 'POST',
+        data: { id: rvCurrentItem, review_status: status, review_comment: comment },
+        success: function () {
+            applyReviewToRow(rvCurrentItem, status, comment);
+            bootstrap.Modal.getInstance(document.getElementById('modal-review-mark')).hide();
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Review mark saved', showConfirmButton: false, timer: 1800 });
+        },
+        error: function () {
+            Swal.fire({ icon: 'error', title: 'Oops...', text: 'Could not save the review mark.' });
+        }
+    });
+}
+
+function applyReviewToRow(itemId, status, comment) {
+    var tr = document.querySelector('tr[data-row-id="' + itemId + '"]');
+    if (!tr) return;
+    tr.classList.remove('review-ok', 'review-issue', 'review-checking');
+    if (rvClassMap[status]) tr.classList.add(rvClassMap[status]);
+    tr.setAttribute('data-review', status);
+    tr.setAttribute('data-review-comment', comment);
+    var btn = tr.querySelector('.review-mark-btn');
+    if (btn) {
+        var dot = btn.querySelector('.rv-dot');
+        dot.className = 'rv-dot rv-' + status;
+        btn.setAttribute('title', comment || (status === 0 ? 'Mark review status' : 'Marked'));
+        btn.setAttribute('data-bs-original-title', comment || (status === 0 ? 'Mark review status' : 'Marked'));
+        var flag = btn.querySelector('.rv-comment-flag');
+        if (comment && !flag) {
+            btn.insertAdjacentHTML('beforeend', '<i class="ri-chat-3-fill rv-comment-flag"></i>');
+        } else if (!comment && flag) {
+            flag.remove();
+        }
+    }
+    setReviewInputLock(tr, status === 1);
+}
+
+// Green = verified: freeze the row's inputs so figures can't be changed by accident.
+function setReviewInputLock(tr, locked) {
+    tr.querySelectorAll('.input-class').forEach(function (inp) { inp.readOnly = locked; });
+}
+
+// Apply the input lock to rows already marked green on page load.
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('tr.review-ok').forEach(function (tr) { setReviewInputLock(tr, true); });
+});
+</script>
+
+<!-- Bulk Payslip Preview Modal (multiple selected payslips — HTML preview) -->
 <div class="modal fade" id="modal-payslip-preview" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content" style="border-radius:12px;overflow:hidden;">
@@ -1991,13 +2139,12 @@ function openPayrollHistory(id) {
     </div>
 </div>
 <script>
-// Show the payslip inside a modal first, then print from the modal — no auto-print pop-up.
+// Single payslip → dompdf PDF in the shared PDF modal, same flow as the other
+// payroll prints (preview inline, download from the modal).
 function openPayslipPreview(itemId) {
-    var frame = document.getElementById('payslip-preview-frame');
-    if (!frame) return;
-    frame.src = 'view_payslip.php?id=' + encodeURIComponent(itemId) + '&preview=1';
-    new bootstrap.Modal(document.getElementById('modal-payslip-preview')).show();
+    openPdfPreview('pdf-payroll.php?src=payslip&id=' + encodeURIComponent(itemId), 'Payslip PDF');
 }
+// Bulk selected payslips still preview as HTML in the modal above.
 function printPayslipPreview() {
     var frame = document.getElementById('payslip-preview-frame');
     if (frame && frame.contentWindow) {
@@ -2048,7 +2195,7 @@ function printPayslipPreview() {
                                     <td><?php echo htmlspecialchars($site_details['site_address']); ?></td>
                                     <td><?php echo htmlspecialchars($site_details['timekeeper']); ?></td>
                                     <td class="text-center" width="100">
-                                        <a data-toggle="tooltip" title="Print Payroll on this Site" href="print-payroll.php?id=<?= $id ?>&type=site&site_id=<?= $site_details['id'] ?>" class="btn btn-sm btn-outline-info mr-1" title="Print" onclick="window.open(this.href,'_blank','width=1100,height=750,scrollbars=yes'); return false;"><span class="sr-only">Print</span> <i class="fa fa-print"></i></a>
+                                        <button data-toggle="tooltip" title="Payroll PDF for this Site" onclick="openPdfPreview('pdf-payroll.php?src=payroll&id=<?= $id ?>&type=site&site_id=<?= $site_details['id'] ?>', 'Site Payroll PDF — <?= htmlspecialchars($site_details['site_code'], ENT_QUOTES) ?>')" class="btn btn-sm btn-outline-info mr-1"><span class="sr-only">Print</span> <i class="fa fa-print"></i></button>
                                     </td>
                                 </tr>
                         <?php }
@@ -2121,9 +2268,18 @@ function printPayslipPreview() {
         if (gross)  document.getElementById('stat-gross').textContent  = '₱ ' + gross.textContent.trim();
         if (deduct) document.getElementById('stat-deduct').textContent = '₱ ' + deduct.textContent.trim();
 
-        // No. of Days — attendance logs popover
+        // No. of Days — attendance logs popover. Content is looked up lazily from the
+        // single hidden #dtr-pop-src copy (one per employee+site) instead of being
+        // duplicated into every row's data-bs-content attribute in both tables.
         document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (el) {
-            new bootstrap.Popover(el, { sanitize: false });
+            new bootstrap.Popover(el, {
+                sanitize: false,
+                html: true,
+                content: function () {
+                    var src = document.getElementById('dtr-pop-' + el.getAttribute('data-pop-key'));
+                    return src ? src.innerHTML : '<span class="dpp-empty">No approved attendance found</span>';
+                }
+            });
             el.addEventListener('shown.bs.popover', function () {
                 document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (other) {
                     if (other !== el) bootstrap.Popover.getInstance(other)?.hide();

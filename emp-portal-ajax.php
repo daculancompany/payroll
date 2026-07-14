@@ -28,6 +28,37 @@ function notify_user($conn, $user_id, $title, $message, $icon, $color, $link)
 
 switch ($action) {
 
+    // ── Firebase Cloud Messaging: register this employee browser for push ──
+    case 'save_fcm_token': {
+        $token = trim($_POST['token'] ?? '');
+        if ($token === '' || strlen($token) > 500) {
+            echo json_encode(0);
+            break;
+        }
+        $ua = substr($_SERVER['HTTP_USER_AGENT'] ?? '', 0, 255);
+        // Single-device, single-recipient policy. Registering this browser evicts:
+        //  a) the employee's tokens on OTHER devices (and rotated tokens on this
+        //     one), so each push lands exactly once, on the most recent login; and
+        //  b) any STAFF registration of this same browser token — a browser
+        //     belongs to whoever logged in last. users.id and employee.id overlap,
+        //     so recipient_type is always part of the match — never user_id alone.
+        $del = $conn->prepare(
+            "DELETE FROM fcm_tokens
+             WHERE (user_id = ? AND recipient_type = 'employee' AND token <> ?)
+                OR (token = ? AND recipient_type = 'user')"
+        );
+        $del->bind_param('iss', $emp_id, $token, $token);
+        $del->execute();
+        $st = $conn->prepare(
+            "INSERT INTO fcm_tokens (user_id, recipient_type, token, user_agent) VALUES (?, 'employee', ?, ?)
+             ON DUPLICATE KEY UPDATE user_id = VALUES(user_id),
+                                     user_agent = VALUES(user_agent), last_seen = NOW()"
+        );
+        $st->bind_param('iss', $emp_id, $token, $ua);
+        echo json_encode($st->execute() ? 1 : 0);
+        break;
+    }
+
     // ── Notification bell ──
     case 'emp_notifications': {
         $items = [];
@@ -309,6 +340,12 @@ switch ($action) {
             $uid = (int) $hu['id'];
             $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES ($uid,'user','$title','$msg','ri-calendar-event-line','warning','index.php?page=leaves')");
         }
+        // Mirror to reviewer staff browsers as a push (best-effort, never fatal).
+        try {
+            require_once __DIR__ . '/fcm.php';
+            fcm_push_role($conn, [1, 8, 9], 'New leave request',
+                "$ename requested $tname ($durLabel) via portal.", 'index.php?page=leaves');
+        } catch (\Throwable $e) { /* ignore */ }
 
         $leave_pending_count = (int) ($conn->query("SELECT COUNT(*) AS c FROM leave_requests WHERE employee_id = $emp_id AND status = 0")->fetch_assoc()['c'] ?? 0);
 
@@ -370,6 +407,13 @@ switch ($action) {
             $uid = (int) $ru['id'];
             $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES ($uid, 'user', '$title', '$msg', 'ri-error-warning-line', 'warning', 'index.php?page=attendance-requests')");
         }
+        // Mirror to reviewer staff browsers as a push (best-effort, never fatal).
+        try {
+            require_once __DIR__ . '/fcm.php';
+            fcm_push_role($conn, [1, 8, 9], 'New ' . $label,
+                "$ename filed a $label for " . date('M d, Y', strtotime($req_date)) . '.',
+                'index.php?page=attendance-requests');
+        } catch (\Throwable $e) { /* ignore */ }
 
         $att_req_pending_count = (int) ($conn->query("SELECT COUNT(*) AS c FROM attendance_requests WHERE employee_id = $emp_id AND status = 0")->fetch_assoc()['c'] ?? 0);
 

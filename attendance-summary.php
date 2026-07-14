@@ -27,7 +27,7 @@ $q = $conn->query("
     FROM DTR_details dd
     INNER JOIN DTR d ON d.id = dd.ddtr_id
     INNER JOIN employee e ON e.id = dd.employee_id
-    WHERE DATE(dd.date_time) BETWEEN '$from' AND '$to'
+    WHERE dd.date_time BETWEEN '$from' AND '$to'
       AND dd.status = 1
       $siteSql
     GROUP BY dd.employee_id, e.employee_no, emp

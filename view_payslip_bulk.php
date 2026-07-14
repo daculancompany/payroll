@@ -341,9 +341,11 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
 
 <?php endforeach; ?>
 
+<?php if (empty($_GET['preview'])): // no auto-print when shown inside the preview modal ?>
 <script>
 window.print();
 window.onafterprint = function() { window.close(); };
 </script>
+<?php endif; ?>
 </body>
 </html>

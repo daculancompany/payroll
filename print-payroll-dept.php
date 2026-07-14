@@ -77,236 +77,162 @@ function n2($v){ return number_format((float)$v, 2); }
 <meta charset="UTF-8">
 <title>Payroll Dept Summary</title>
 <style>
-* { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; box-sizing:border-box; margin:0; padding:0; }
-@page { size: A4 landscape; margin: 8mm 10mm; }
-body { font-family: Arial, sans-serif; font-size: 7.5pt; color: #111; background: #eee; }
+* { box-sizing:border-box; margin:0; padding:0; }
+@page { size: legal landscape; margin: 8mm 10mm; }
+body { font-family: Arial, sans-serif; color: #000; background: #fff; }
 
-@media print {
-    body { background: #fff; }
-    .wrapper { box-shadow: none !important; margin: 0 !important; max-width: 100% !important; }
-    .hdr-bar  { background: #219688 !important; }
-    .hdr-sub  { background: #176358 !important; }
-    .tbl thead tr.hd1 th { background: #219688 !important; color:#fff !important; }
-    .tbl thead tr.hd2 th { background: #2aa897 !important; color:#fff !important; }
-    .tbl tfoot th         { background: #176358 !important; color:#fff !important; }
-    .tbl tbody tr:nth-child(even) td { background: #f4fbfa !important; }
-    .grp-earn   { background: #e8f7f5 !important; }
-    .grp-ded    { background: #fdf0f0 !important; }
-}
+.top { text-align: center; font-size: 12px; }
+.top > div { display: inline-block; vertical-align: middle; text-align: center; }
+.logo-area { width: 70px; }
+.text-center { text-align: center; }
 
-.wrapper { max-width: 1060px; margin: 14px auto; background: #fff; border: 2px solid #176358; box-shadow: 0 4px 18px rgba(0,0,0,.15); }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 9px; }
+th, td { border: 1px solid #000; padding: 3px; text-align: center; }
+th { background-color: #f2f2f2; font-weight: bold; text-transform: uppercase; }
+td.dept { font-weight: bold; text-align: left; text-transform: uppercase; }
+td.r { text-align: right; }
+tfoot th { text-align: right; }
+tfoot th.c { text-align: center; }
+tfoot th.l { text-align: left; }
 
-.hdr-bar {
-    background: #219688;
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 16px; border-bottom: 3px solid #176358;
-}
-.hdr-bar img  { width: 40px; height: 40px; border-radius: 5px; background:#fff; padding:2px; }
-.hdr-co   { font-size: 11pt; font-weight: 900; color: #fff; line-height:1.2; }
-.hdr-addr { font-size: 7pt; color: rgba(255,255,255,.8); margin-top:2px; }
-.hdr-badge{ margin-left:auto; border:2px solid rgba(255,255,255,.5); color:#fff; font-size:8pt; font-weight:800; padding:4px 10px; letter-spacing:1px; white-space:nowrap; text-align:center; }
+tr { page-break-inside: avoid; }
+thead { display: table-header-group; }
 
-.hdr-sub {
-    background: #176358; color: rgba(255,255,255,.9);
-    font-size: 8pt; padding: 4px 16px; display:flex; gap:24px;
-}
-.hdr-sub strong { color:#fff; }
-
-.tbl-wrap { padding: 10px 12px 0; overflow-x:auto; }
-.tbl { width:100%; border-collapse:collapse; font-size:7pt; white-space:nowrap; }
-
-.tbl thead tr.hd1 th {
-    background:#219688; color:#fff; font-size:7pt; font-weight:800;
-    text-transform:uppercase; letter-spacing:.3px;
-    border:1px solid #176358; padding:5px 6px; text-align:center;
-}
-.tbl thead tr.hd2 th {
-    background:#2aa897; color:#fff; font-size:6.5pt; font-weight:700;
-    border:1px solid #176358; padding:4px 5px; text-align:center;
-}
-.tbl thead tr.hd2 th.grp-earn { background:#1a8a7a !important; }
-.tbl thead tr.hd2 th.grp-ded  { background:#c0392b !important; }
-
-.tbl tbody td {
-    padding:5px 6px; border:1px solid #dce8e6;
-    font-size:7pt; color:#111; vertical-align:middle;
-}
-.tbl tbody tr:nth-child(even) td { background:#f4fbfa; }
-.tbl tbody td.dept  { font-weight:800; text-transform:uppercase; letter-spacing:.2px; white-space:normal; min-width:90px; }
-.tbl tbody td.c     { text-align:center; color:#555; }
-.tbl tbody td.r     { text-align:right; }
-.tbl tbody td.earn  { text-align:right; }
-.tbl tbody td.ded   { text-align:right; color:#c0392b; }
-.tbl tbody td.gross { text-align:right; font-weight:800; color:#176358; }
-.tbl tbody td.net   { text-align:right; font-weight:900; color:#176358; background:#e8f7f5; }
-
-.tbl tfoot th {
-    background:#176358; color:#fff; padding:6px 6px;
-    font-size:7.5pt; font-weight:800; border:1px solid #176358;
-    text-align:right;
-}
-.tbl tfoot th.c { text-align:center; }
-.tbl tfoot th.l { text-align:left; }
-
-.sigs {
-    display:flex; justify-content:space-between;
-    padding:16px 16px 14px; gap:8px;
-    border-top:2px solid #219688; margin-top:12px;
-}
-.sig-block { text-align:center; flex:1; }
-.sig-lbl  { font-size:7pt; color:#888; }
-.sig-name { font-size:8pt; font-weight:800; border-top:1px solid #333; padding-top:3px; margin-top:28px; }
-.sig-role { font-size:7pt; color:#555; margin-top:1px; }
-
-.pg-foot {
-    background:#f4fbfa; border-top:1px solid #c8e6e2;
-    padding:4px 16px; font-size:7pt; color:#888;
-    display:flex; justify-content:space-between;
-}
+.sigs { display: table; width: 100%; margin-top: 40px; font-size: 11px; }
+.sig-block { display: table-cell; padding: 0 10px; }
+.sig-block p { line-height: 1; margin: 4px 0; }
+.sig-inner { margin-left: 20px; }
 </style>
 </head>
 <body>
-<div class="wrapper">
 
-  <!-- Header -->
-  <div class="hdr-bar">
-    <img src="assets/images/logo.jpeg" alt="">
-    <div>
-      <div class="hdr-co">COMC</div>
-      <div class="hdr-addr">Tiano Brothers Street, Nacalaban Street, Cagayan De Oro City, 9000 Misamis Oriental</div>
+  <div class="top">
+    <div class="logo-area">
+      <img style="width: 60px;" src="assets2/images/logo.jpeg" alt="Logo">
     </div>
-    <div class="hdr-badge">PAYROLL SUMMARY<br>BY DEPARTMENT</div>
+    <div>
+      <div>COMC</div>
+      <div>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</div>
+      <div class="text-center">PAYROLL SUMMARY BY DEPARTMENT</div>
+      <div class="text-center">PAYROLL PERIOD:
+        <strong><?= date('F d', strtotime($payroll['date_from'])) ?> - <?= date('F j, Y', strtotime($payroll['date_to'])) ?></strong>
+      </div>
+    </div>
   </div>
 
-  <!-- Sub bar -->
-  <div class="hdr-sub">
-    <span>Pay Period: <strong><?= date('M d', strtotime($payroll['date_from'])) ?> – <?= date('M d, Y', strtotime($payroll['date_to'])) ?></strong></span>
-    <span>Employer: <strong><?= htmlspecialchars($payroll['employer_name']) ?></strong></span>
-    <span>Total Employees: <strong><?= number_format($g['emp']) ?></strong></span>
-  </div>
+  <table cellspacing="0">
+    <thead>
+      <tr>
+        <th rowspan="2" style="text-align:left;">Department</th>
+        <th rowspan="2">Emp.</th>
+        <th colspan="9">Earnings</th>
+        <th colspan="6">Deductions</th>
+        <th rowspan="2">Net Pay</th>
+      </tr>
+      <tr>
+        <th>Basic Pay</th>
+        <th>Allowance</th>
+        <th>Absent</th>
+        <th>Total Amt</th>
+        <th>Overtime</th>
+        <th>Legal Hol.</th>
+        <th>Sun. Duty</th>
+        <th>Sp. Hol.</th>
+        <th>Late</th>
+        <th>Gross</th>
+        <th>Contribs.</th>
+        <th>SSS Fund</th>
+        <th>Tax</th>
+        <th>JEI Adv.</th>
+        <th>JCC Adv.</th>
+      </tr>
+    </thead>
+    <tbody>
+      <?php foreach ($dept_rows as $r): ?>
+      <tr>
+        <td class="dept"><?= htmlspecialchars($r['dept_name']) ?></td>
+        <td><?= $r['emp_count'] ?></td>
+        <td class="r"><?= n2($r['total_basic']) ?></td>
+        <td class="r"><?= n2($r['total_allowance']) ?></td>
+        <td class="r">(<?= n2($r['total_absent']) ?>)</td>
+        <td class="r"><?= n2($r['total_amount']) ?></td>
+        <td class="r"><?= n2($r['total_ot']) ?></td>
+        <td class="r"><?= n2($r['total_legal']) ?></td>
+        <td class="r"><?= n2($r['total_sunday']) ?></td>
+        <td class="r"><?= n2($r['total_special']) ?></td>
+        <td class="r">(<?= n2($r['total_late']) ?>)</td>
+        <td class="r"><?= n2($r['total_gross']) ?></td>
+        <td class="r"><?= n2($r['total_contributions']) ?></td>
+        <td class="r"><?= n2($r['total_sss']) ?></td>
+        <td class="r"><?= n2($r['total_tax']) ?></td>
+        <td class="r"><?= n2($r['total_jei']) ?></td>
+        <td class="r"><?= n2($r['total_jcc']) ?></td>
+        <td class="r"><b><?= n2($r['total_net']) ?></b></td>
+      </tr>
+      <?php endforeach; ?>
+    </tbody>
+    <tfoot>
+      <tr>
+        <th class="l">TOTAL</th>
+        <th class="c"><?= number_format($g['emp']) ?></th>
+        <th><?= n2($g['basic']) ?></th>
+        <th><?= n2($g['allow']) ?></th>
+        <th><?= n2($g['absent']) ?></th>
+        <th><?= n2($g['amount']) ?></th>
+        <th><?= n2($g['ot']) ?></th>
+        <th><?= n2($g['legal']) ?></th>
+        <th><?= n2($g['sunday']) ?></th>
+        <th><?= n2($g['special']) ?></th>
+        <th><?= n2($g['late']) ?></th>
+        <th><?= n2($g['gross']) ?></th>
+        <th><?= n2($g['contribs']) ?></th>
+        <th><?= n2($g['sss']) ?></th>
+        <th><?= n2($g['tax']) ?></th>
+        <th><?= n2($g['jei']) ?></th>
+        <th><?= n2($g['jcc']) ?></th>
+        <th><?= n2($g['net']) ?></th>
+      </tr>
+    </tfoot>
+  </table>
 
-  <!-- Table -->
-  <div class="tbl-wrap">
-    <table class="tbl" cellspacing="0">
-      <thead>
-        <tr class="hd1">
-          <th rowspan="2" style="min-width:90px; text-align:left;">Department</th>
-          <th rowspan="2" style="width:38px;">Emp.</th>
-          <!-- Earnings group -->
-          <th colspan="9" style="background:#176358 !important;">EARNINGS</th>
-          <!-- Deductions group -->
-          <th colspan="6" style="background:#a93226 !important;">DEDUCTIONS</th>
-          <!-- Net -->
-          <th rowspan="2" style="width:72px;">NET PAY</th>
-        </tr>
-        <tr class="hd2">
-          <!-- Earnings sub-headers -->
-          <th class="grp-earn" style="width:60px;">Basic Pay</th>
-          <th class="grp-earn" style="width:58px;">Allowance</th>
-          <th class="grp-earn" style="width:52px;">Absent</th>
-          <th class="grp-earn" style="width:60px;">Total Amt</th>
-          <th class="grp-earn" style="width:52px;">Overtime</th>
-          <th class="grp-earn" style="width:50px;">Legal Hol.</th>
-          <th class="grp-earn" style="width:50px;">Sun. Duty</th>
-          <th class="grp-earn" style="width:52px;">Sp. Hol.</th>
-          <th class="grp-earn" style="width:50px; color:#ffcccc;">Late</th>
-          <!-- Deductions sub-headers -->
-          <th class="grp-ded" style="width:58px;">Gross</th>
-          <th class="grp-ded" style="width:55px;">Contribs.</th>
-          <th class="grp-ded" style="width:50px;">SSS Fund</th>
-          <th class="grp-ded" style="width:50px;">Tax</th>
-          <th class="grp-ded" style="width:50px;">JEI Adv.</th>
-          <th class="grp-ded" style="width:50px;">JCC Adv.</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php foreach ($dept_rows as $r): ?>
-        <tr>
-          <td class="dept"><?= htmlspecialchars($r['dept_name']) ?></td>
-          <td class="c"><?= $r['emp_count'] ?></td>
-          <!-- Earnings -->
-          <td class="earn"><?= n2($r['total_basic']) ?></td>
-          <td class="earn"><?= n2($r['total_allowance']) ?></td>
-          <td class="ded">(<?= n2($r['total_absent']) ?>)</td>
-          <td class="earn"><?= n2($r['total_amount']) ?></td>
-          <td class="earn"><?= n2($r['total_ot']) ?></td>
-          <td class="earn"><?= n2($r['total_legal']) ?></td>
-          <td class="earn"><?= n2($r['total_sunday']) ?></td>
-          <td class="earn"><?= n2($r['total_special']) ?></td>
-          <td class="ded">(<?= n2($r['total_late']) ?>)</td>
-          <!-- Gross then deductions -->
-          <td class="gross"><?= n2($r['total_gross']) ?></td>
-          <td class="ded"><?= n2($r['total_contributions']) ?></td>
-          <td class="ded"><?= n2($r['total_sss']) ?></td>
-          <td class="ded"><?= n2($r['total_tax']) ?></td>
-          <td class="ded"><?= n2($r['total_jei']) ?></td>
-          <td class="ded"><?= n2($r['total_jcc']) ?></td>
-          <!-- Net -->
-          <td class="net"><?= n2($r['total_net']) ?></td>
-        </tr>
-        <?php endforeach; ?>
-      </tbody>
-      <tfoot>
-        <tr>
-          <th class="l">TOTAL</th>
-          <th class="c"><?= number_format($g['emp']) ?></th>
-          <th><?= n2($g['basic']) ?></th>
-          <th><?= n2($g['allow']) ?></th>
-          <th><?= n2($g['absent']) ?></th>
-          <th><?= n2($g['amount']) ?></th>
-          <th><?= n2($g['ot']) ?></th>
-          <th><?= n2($g['legal']) ?></th>
-          <th><?= n2($g['sunday']) ?></th>
-          <th><?= n2($g['special']) ?></th>
-          <th><?= n2($g['late']) ?></th>
-          <th><?= n2($g['gross']) ?></th>
-          <th><?= n2($g['contribs']) ?></th>
-          <th><?= n2($g['sss']) ?></th>
-          <th><?= n2($g['tax']) ?></th>
-          <th><?= n2($g['jei']) ?></th>
-          <th><?= n2($g['jcc']) ?></th>
-          <th><?= n2($g['net']) ?></th>
-        </tr>
-      </tfoot>
-    </table>
-  </div>
-
-  <!-- Signatures -->
   <div class="sigs">
     <div class="sig-block">
-      <div class="sig-lbl">Prepared By</div>
-      <div class="sig-name"><?= htmlspecialchars($payroll['prepared_by'] ?? '') ?></div>
-      <div class="sig-role"><?= htmlspecialchars($payroll['prepared_by_role'] ?? '') ?></div>
+      Prepared By:
+      <div class="sig-inner">
+        <p><b><?= htmlspecialchars($payroll['prepared_by'] ?? '') ?></b></p>
+        <p><?= htmlspecialchars($payroll['prepared_by_role'] ?? '') ?></p>
+      </div>
     </div>
     <div class="sig-block">
-      <div class="sig-lbl">Verified By</div>
-      <div class="sig-name"><?= htmlspecialchars($payroll['verified_by'] ?? '') ?></div>
-      <div class="sig-role"><?= htmlspecialchars($payroll['verified_by_role'] ?? '') ?></div>
+      Verified By:
+      <div class="sig-inner">
+        <p><b><?= htmlspecialchars($payroll['verified_by'] ?? '') ?></b></p>
+        <p><?= htmlspecialchars($payroll['verified_by_role'] ?? '') ?></p>
+      </div>
     </div>
     <div class="sig-block">
-      <div class="sig-lbl">Noted By</div>
-      <div class="sig-name">JAY O. VERAS</div>
-      <div class="sig-role">HR HEAD</div>
+      Noted By:
+      <div class="sig-inner">
+        <p><b>JAY O. VERAS</b></p>
+        <p>HR HEAD</p>
+      </div>
     </div>
     <div class="sig-block">
-      <div class="sig-lbl">Checked By</div>
-      <div class="sig-name">JOVANIE ALAB</div>
-      <div class="sig-role">A/P Team Leader</div>
+      Checked By:
+      <div class="sig-inner">
+        <p><b>JOVANIE ALAB</b></p>
+        <p>ACCOUNTING PAYABLE TEAM LEADER</p>
+      </div>
     </div>
     <div class="sig-block">
-      <div class="sig-lbl">Approved By</div>
-      <div class="sig-name"><?= htmlspecialchars($payroll['approved_by'] ?? '') ?></div>
-      <div class="sig-role"><?= htmlspecialchars($payroll['approved_by_role'] ?? '') ?></div>
+      Approved By:
+      <div class="sig-inner">
+        <p><b><?= htmlspecialchars($payroll['approved_by'] ?? '') ?></b></p>
+        <p><?= htmlspecialchars($payroll['approved_by_role'] ?? '') ?></p>
+      </div>
     </div>
   </div>
 
-  <!-- Footer -->
-  <div class="pg-foot">
-    <span>COMC — Confidential Payroll Document</span>
-    <span>Generated: <?= date('M d, Y g:i A') ?></span>
-  </div>
-
-</div>
 <script>
 window.print();
 window.onafterprint = function() { window.close(); };

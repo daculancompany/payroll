@@ -40,14 +40,44 @@ $stmt->close();
 
 $initials = strtoupper(substr($firstname, 0, 1)) . strtoupper(substr($lastname, 0, 1));
 $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' ' . substr($middlename, 0, 1) . '.' : ''));
+
+$age = null;
+if (!empty($bday) && strtotime($bday)) {
+    $age = (new DateTime($bday))->diff(new DateTime())->y;
+}
+
+// Aggregates for tab counters, sidebar and summary cards
+$fetch_agg = function ($sql) use ($conn) {
+    $r = $conn->query($sql);
+    return $r ? $r->fetch_assoc() : [];
+};
+$loan_agg = $fetch_agg("SELECT COUNT(*) cnt,
+        COALESCE(SUM(loan_amount),0) amt,
+        COALESCE(SUM(CASE WHEN loan_status = 0 THEN loan_balance ELSE 0 END),0) bal,
+        COALESCE(SUM(CASE WHEN loan_status = 0 THEN damount ELSE 0 END),0) ded,
+        COALESCE(SUM(loan_status = 0),0) active
+    FROM loans WHERE employee_id = $emp_id");
+$contri_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(amount),0) amt
+    FROM employee_contributions WHERE employee_id = $emp_id");
+$deduct_agg = $fetch_agg("SELECT COUNT(*) cnt,
+        COALESCE(SUM(CASE WHEN total_amount <= 0 OR status = 0 THEN amount ELSE 0 END),0) amt,
+        COALESCE(SUM(CASE WHEN total_amount > 0 AND status = 0 THEN balance ELSE 0 END),0) bal,
+        COALESCE(SUM(total_amount > 0 AND status = 0),0) active,
+        COALESCE(SUM(total_amount <= 0),0) recurring
+    FROM employee_deductions WHERE employee_id = $emp_id");
+$leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pending
+    FROM leave_requests WHERE employee_id = $emp_id");
 ?>
 <style>
-    :root { --emp-brand:#009688; --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
+    :root { --emp-brand:#009688; --emp-brand-dark:#00776b; --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
 
     /* ---- Left profile sidebar ---- */
-    .emp-sidebar { border:1px solid #d0d7ee; border-radius:8px; overflow:hidden; background:#fff; }
-    .emp-sidebar-head { background:var(--emp-brand); color:#fff; text-align:center; padding:18px 14px 16px; }
-    .emp-side-avatar { width:72px; height:72px; border-radius:50%; background:#fff; color:var(--emp-brand); font-size:26px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+    .emp-sidebar { border:1px solid #d0d7ee; border-radius:10px; overflow:hidden; background:#fff; box-shadow:0 2px 10px rgba(20,30,60,.05); }
+    .emp-sidebar-head { position:relative; background:linear-gradient(145deg, var(--emp-brand) 0%, var(--emp-brand-dark) 100%); color:#fff; text-align:center; padding:20px 14px 16px; overflow:hidden; }
+    .emp-sidebar-head::before { content:""; position:absolute; top:-40px; right:-40px; width:140px; height:140px; border-radius:50%; background:rgba(255,255,255,.08); }
+    .emp-sidebar-head::after { content:""; position:absolute; bottom:-60px; left:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.06); }
+    .emp-sidebar-head > * { position:relative; z-index:1; }
+    .emp-side-avatar { width:76px; height:76px; border-radius:50%; background:#fff; color:var(--emp-brand); font-size:27px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.2), 0 0 0 4px rgba(255,255,255,.25); }
     .emp-side-name { font-size:16px; font-weight:700; line-height:1.25; }
     .emp-side-role { font-size:12px; opacity:.9; margin-top:3px; }
     .emp-side-empno { font-family:monospace; font-size:12px; font-weight:700; letter-spacing:.5px; margin-top:6px; background:rgba(255,255,255,.15); display:inline-block; padding:2px 10px; border-radius:20px; }
@@ -64,7 +94,8 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
     .detail-section { border:1px solid #d0d7ee; border-radius:6px; margin-bottom:12px; overflow:hidden; }
     .detail-section-title { background:var(--emp-brand); color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:6px 12px; display:flex; align-items:center; gap:6px; }
     .detail-row { display:flex; flex-wrap:wrap; }
-    .detail-item { padding:7px 14px; border-bottom:1px solid #eef0f8; border-right:1px solid #eef0f8; flex:1; min-width:180px; }
+    .detail-item { padding:7px 14px; border-bottom:1px solid #eef0f8; border-right:1px solid #eef0f8; flex:1; min-width:180px; transition:background .15s ease; }
+    .detail-item:hover { background:#f6fbfa; }
     .detail-item:last-child { border-right:none; }
     .detail-label { font-size:10px; color:#888; font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
     .detail-value { font-size:13px; font-weight:600; color:#1a1a1a; }
@@ -75,10 +106,44 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
     .cn-item .form-control { font-size:13px; font-weight:600; border-color:var(--emp-brand-border); }
     .barcode-wrap { background:#fff; border:1px solid #d0d7ee; border-radius:4px; padding:8px 12px; display:inline-block; }
 
-    /* ---- Brand-navy tabs (override nav-success green) ---- */
-    #emp-tabs.nav-pills .nav-link { color:var(--emp-brand); font-size:13px; }
-    #emp-tabs.nav-pills .nav-link.active { background:var(--emp-brand); color:#fff; }
-    #emp-tabs.nav-pills .nav-link.active::before { border-top-color:var(--emp-brand) !important; }
+    /* ---- Custom segmented tab bar ---- */
+    .emp-tabs-nav { display:flex; gap:4px; flex-wrap:nowrap; background:#fff; border:1px solid #d0d7ee; border-radius:10px; padding:6px; margin-bottom:14px; overflow-x:auto; scrollbar-width:thin; box-shadow:0 2px 8px rgba(20,30,60,.04); }
+    .emp-tabs-nav::-webkit-scrollbar { height:4px; }
+    .emp-tabs-nav::-webkit-scrollbar-thumb { background:#d0d7ee; border-radius:4px; }
+    .emp-tabs-nav .nav-item { flex-shrink:0; }
+    .emp-tabs-nav .nav-link { display:flex; align-items:center; gap:7px; padding:8px 14px; border-radius:7px; font-size:12.5px; font-weight:600; color:#5a6474; white-space:nowrap; border:1px solid transparent; transition:all .18s ease; }
+    .emp-tabs-nav .nav-link i { font-size:15px; line-height:1; }
+    .emp-tabs-nav .nav-link:hover { background:#e9f5f3; color:var(--emp-brand); transform:translateY(-1px); }
+    .emp-tabs-nav .nav-link.active { background:linear-gradient(145deg, var(--emp-brand) 0%, var(--emp-brand-dark) 100%); color:#fff; box-shadow:0 3px 10px rgba(0,150,136,.3); }
+    .tab-count { font-size:10px; font-weight:700; line-height:1; padding:3px 7px; border-radius:20px; background:#e8ecf5; color:#5a6474; transition:all .18s ease; }
+    .emp-tabs-nav .nav-link:hover .tab-count { background:#d4ebe7; color:var(--emp-brand); }
+    .emp-tabs-nav .nav-link.active .tab-count { background:rgba(255,255,255,.25); color:#fff; }
+    .tab-count.tab-count-alert { background:#ffe4c4; color:#b45309; }
+
+    /* ---- Summary stat cards ---- */
+    .emp-stat-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; margin:6px 0 14px; }
+    .emp-stat-card { display:flex; align-items:center; gap:11px; background:#fff; border:1px solid #d0d7ee; border-radius:8px; padding:11px 14px; transition:all .18s ease; }
+    .emp-stat-card:hover { border-color:var(--emp-brand); box-shadow:0 3px 10px rgba(0,150,136,.12); transform:translateY(-1px); }
+    .emp-stat-ic { width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; background:var(--emp-brand-soft); color:var(--emp-brand); }
+    .emp-stat-ic.ic-brand { background:#e0f2f1; color:var(--emp-brand); }
+    .emp-stat-ic.ic-danger { background:#fdecec; color:#d63939; }
+    .emp-stat-ic.ic-warn { background:#fff4e0; color:#b45309; }
+    .emp-stat-ic.ic-dark { background:#eceff4; color:#39434f; }
+    .emp-stat-lbl { font-size:10px; color:#889; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
+    .emp-stat-val { font-size:16px; font-weight:700; color:#1a1a1a; line-height:1.2; font-family:'Segoe UI',monospace; }
+    .emp-stat-val.text-brand { color:var(--emp-brand); }
+    .emp-stat-val.text-loss { color:#d63939; }
+
+    /* ---- Loan repayment progress ---- */
+    .loan-progress { height:5px; background:#edf0f6; border-radius:4px; overflow:hidden; margin-top:5px; min-width:90px; }
+    .loan-progress-bar { height:100%; border-radius:4px; background:linear-gradient(90deg, var(--emp-brand), #26bfae); transition:width .3s ease; }
+    .loan-progress-pct { font-size:10px; color:#889; font-weight:600; }
+
+    /* ---- Table empty states ---- */
+    .emp-empty { text-align:center; padding:28px 10px; color:#98a1b0; }
+    .emp-empty i { font-size:34px; display:block; margin-bottom:6px; opacity:.5; }
+    .emp-empty b { display:block; font-size:13px; color:#6b7484; margin-bottom:2px; }
+    .emp-empty span { font-size:11.5px; }
 </style>
 
 <div class="main-content">
@@ -161,6 +226,9 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                     <?php else: ?>
                                         <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Monthly</span>
                                     <?php endif; ?>
+                                    <?php if ($age !== null): ?>
+                                        <span class="badge bg-light text-dark border"><i class="ri-cake-2-line me-1"></i><?= $age ?> yrs old</span>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="emp-side-stats">
                                     <div class="emp-side-stat">
@@ -179,57 +247,67 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                         <span class="emp-side-stat-lbl">Allowance</span>
                                         <span class="emp-side-stat-val">&#8369;<?= number_format($allowance_rate, 2) ?></span>
                                     </div>
+                                    <?php if ($loan_agg['bal'] > 0): ?>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Loan Balance</span>
+                                        <span class="emp-side-stat-val" style="color:#d63939;">&#8369;<?= number_format($loan_agg['bal'], 2) ?></span>
+                                    </div>
+                                    <?php endif; ?>
                                 </div>
-                                <div class="emp-side-barcode">
+                                <!-- <div class="emp-side-barcode">
                                     <div class="barcode-wrap">
                                         <img alt="<?= htmlspecialchars($employee_no) ?>" src="includes/barcode.php?codetype=Code39&size=40&text=<?= urlencode($employee_no) ?>&print=true" style="max-width:100%;" />
                                     </div>
-                                </div>
+                                </div> -->
                             </div>
                         </div>
 
                         <!-- ============ RIGHT CONTENT COLUMN ============ -->
                         <div class="col-lg-9">
                         <!-- Tabs -->
-                        <ul id="emp-tabs" class="nav nav-pills arrow-navtabs nav-success bg-light mb-3" role="tablist">
+                        <ul id="emp-tabs" class="nav emp-tabs-nav" role="tablist">
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link active" data-bs-toggle="tab" href="#arrow-overview" role="tab">
-                                    <i class="ri-user-3-line me-1"></i><span class="d-none d-sm-inline">Overview</span>
+                                    <i class="ri-user-3-line"></i><span class="d-none d-sm-inline">Overview</span>
                                 </a>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-profile" role="tab">
-                                    <i class="ri-bank-card-line me-1"></i><span class="d-none d-sm-inline">Loans</span>
+                                    <i class="ri-bank-card-line"></i><span class="d-none d-sm-inline">Loans</span>
+                                    <?php if ($loan_agg['cnt'] > 0): ?><span class="tab-count"><?= $loan_agg['cnt'] ?></span><?php endif; ?>
                                 </a>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-contact" role="tab">
-                                    <i class="ri-hand-coin-line me-1"></i><span class="d-none d-sm-inline">Contributions</span>
+                                    <i class="ri-hand-coin-line"></i><span class="d-none d-sm-inline">Contributions</span>
+                                    <?php if ($contri_agg['cnt'] > 0): ?><span class="tab-count"><?= $contri_agg['cnt'] ?></span><?php endif; ?>
                                 </a>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-cn" role="tab">
-                                    <i class="ri-id-card-line me-1"></i><span class="d-none d-sm-inline">Contribution Numbers</span>
+                                    <i class="ri-id-card-line"></i><span class="d-none d-sm-inline">Gov&rsquo;t IDs</span>
                                 </a>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-deductions" role="tab">
-                                    <i class="ri-subtract-line me-1"></i><span class="d-none d-sm-inline">Deductions</span>
+                                    <i class="ri-subtract-line"></i><span class="d-none d-sm-inline">Deductions</span>
+                                    <?php if ($deduct_agg['cnt'] > 0): ?><span class="tab-count"><?= $deduct_agg['cnt'] ?></span><?php endif; ?>
                                 </a>
                             </li>
                             <!-- <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-sites" role="tab">
-                                    <i class="ri-map-pin-2-line me-1"></i><span class="d-none d-sm-inline">Sites</span>
+                                    <i class="ri-map-pin-2-line"></i><span class="d-none d-sm-inline">Sites</span>
                                 </a>
                             </li> -->
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-schedule" role="tab">
-                                    <i class="ri-time-line me-1"></i><span class="d-none d-sm-inline">Schedule</span>
+                                    <i class="ri-time-line"></i><span class="d-none d-sm-inline">Schedule</span>
                                 </a>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-leave" role="tab">
-                                    <i class="ri-calendar-event-line me-1"></i><span class="d-none d-sm-inline">Leave</span>
+                                    <i class="ri-calendar-event-line"></i><span class="d-none d-sm-inline">Leave</span>
+                                    <?php if ($leave_agg['pending'] > 0): ?><span class="tab-count tab-count-alert"><?= $leave_agg['pending'] ?> pending</span><?php endif; ?>
                                 </a>
                             </li>
                         </ul>
@@ -264,6 +342,10 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                         <div class="detail-item">
                                             <div class="detail-label">Birthdate</div>
                                             <div class="detail-value"><?= $bday ? date('F d, Y', strtotime($bday)) : '<span class="text-muted">—</span>' ?></div>
+                                        </div>
+                                        <div class="detail-item">
+                                            <div class="detail-label">Age</div>
+                                            <div class="detail-value"><?= $age !== null ? $age . ' years old' : '<span class="text-muted">—</span>' ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Employee Code</div>
@@ -359,7 +441,37 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
 
                             <!-- LOANS TAB -->
                             <div class="tab-pane" id="arrow-profile" role="tabpanel">
-                                <div class="table-responsive mt-2">
+                                <div class="emp-stat-cards">
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-brand"><i class="ri-bank-card-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Total Loaned</div>
+                                            <div class="emp-stat-val">&#8369;<?= number_format($loan_agg['amt'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-danger"><i class="ri-scales-3-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Outstanding Balance</div>
+                                            <div class="emp-stat-val <?= $loan_agg['bal'] > 0 ? 'text-loss' : 'text-brand' ?>">&#8369;<?= number_format($loan_agg['bal'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-warn"><i class="ri-subtract-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Per-Cutoff Deduction</div>
+                                            <div class="emp-stat-val">&#8369;<?= number_format($loan_agg['ded'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-dark"><i class="ri-pulse-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Active Loans</div>
+                                            <div class="emp-stat-val"><?= (int)$loan_agg['active'] ?> <span style="font-size:11px;color:#889;font-weight:600;">of <?= (int)$loan_agg['cnt'] ?></span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
                                     <table id="table-loan" class="table table-hover table-bordered align-middle">
                                         <thead class="table-dark">
                                             <tr>
@@ -380,12 +492,19 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                             WHERE loans.employee_id = $emp_id
                                             ORDER BY loan_id ASC");
                                             while ($row = $loans->fetch_assoc()):
+                                                $paid_pct = (float)$row['loan_amount'] > 0
+                                                    ? max(0, min(100, round((($row['loan_amount'] - $row['loan_balance']) / $row['loan_amount']) * 100)))
+                                                    : 0;
                                             ?>
                                                 <tr>
                                                     <td><span style="font-weight:600;"><?= htmlspecialchars($row['loan_type']) ?></span></td>
                                                     <td><span style="font-size:12px;color:#555;"><i class="ri-calendar-2-line me-1 text-muted"></i><?= htmlspecialchars($row['loan_date']) ?></span></td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['loan_amount'], 2) ?></span></td>
-                                                    <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['loan_balance'], 2) ?></span></td>
+                                                    <td class="text-end">
+                                                        <span class="emp-currency-val">&#8369; <?= number_format($row['loan_balance'], 2) ?></span>
+                                                        <div class="loan-progress" title="<?= $paid_pct ?>% repaid"><div class="loan-progress-bar" style="width:<?= $paid_pct ?>%;"></div></div>
+                                                        <span class="loan-progress-pct"><?= $paid_pct ?>% repaid</span>
+                                                    </td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['damount'], 2) ?></span></td>
                                                     <td class="text-center">
                                                         <?php if ($row['loan_status'] == 1): ?>
@@ -414,6 +533,15 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                     </td>
                                                 </tr>
                                             <?php endwhile; ?>
+                                            <?php if (!$loans->num_rows): ?>
+                                                <tr><td colspan="7">
+                                                    <div class="emp-empty">
+                                                        <i class="ri-bank-card-line"></i>
+                                                        <b>No loans recorded</b>
+                                                        <span>Use the &ldquo;Add Loan&rdquo; button above to record one.</span>
+                                                    </div>
+                                                </td></tr>
+                                            <?php endif; ?>
                                         </tbody>
                                     </table>
                                 </div>
@@ -449,7 +577,25 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                     </td>
                                                 </tr>
                                             <?php endwhile; ?>
+                                            <?php if (!$contributions->num_rows): ?>
+                                                <tr><td colspan="3">
+                                                    <div class="emp-empty">
+                                                        <i class="ri-hand-coin-line"></i>
+                                                        <b>No contributions set</b>
+                                                        <span>Government contributions will appear here once configured.</span>
+                                                    </div>
+                                                </td></tr>
+                                            <?php endif; ?>
                                         </tbody>
+                                        <?php if ($contributions->num_rows): ?>
+                                        <tfoot>
+                                            <tr class="table-light">
+                                                <td class="text-end fw-bold" style="font-size:12px;text-transform:uppercase;letter-spacing:.3px;">Total per cutoff</td>
+                                                <td class="text-end"><span class="emp-currency-val" style="font-size:14px;">&#8369; <?= number_format($contri_agg['amt'], 2) ?></span></td>
+                                                <td></td>
+                                            </tr>
+                                        </tfoot>
+                                        <?php endif; ?>
                                     </table>
                                 </div>
                             </div>
@@ -478,7 +624,37 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
 
                             <!-- DEDUCTIONS TAB -->
                             <div class="tab-pane" id="arrow-deductions" role="tabpanel">
-                                <div class="table-responsive mt-2">
+                                <div class="emp-stat-cards">
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-warn"><i class="ri-subtract-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Per-Cutoff Total</div>
+                                            <div class="emp-stat-val">&#8369;<?= number_format($deduct_agg['amt'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-danger"><i class="ri-wallet-3-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Remaining Balance</div>
+                                            <div class="emp-stat-val <?= $deduct_agg['bal'] > 0 ? 'text-loss' : 'text-brand' ?>">&#8369;<?= number_format($deduct_agg['bal'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-brand"><i class="ri-refresh-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Recurring</div>
+                                            <div class="emp-stat-val"><?= (int)$deduct_agg['recurring'] ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-dark"><i class="ri-pulse-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Amortizing Active</div>
+                                            <div class="emp-stat-val"><?= (int)$deduct_agg['active'] ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="table-responsive">
                                     <table id="table-deductions" class="table table-hover table-bordered align-middle">
                                         <thead class="table-dark">
                                             <tr>
@@ -519,6 +695,15 @@ $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' '
                                                     </td>
                                                 </tr>
                                             <?php endwhile; ?>
+                                            <?php if (!$deductions->num_rows): ?>
+                                                <tr><td colspan="6">
+                                                    <div class="emp-empty">
+                                                        <i class="ri-subtract-line"></i>
+                                                        <b>No deductions recorded</b>
+                                                        <span>Use the &ldquo;Add Deduction&rdquo; button above to add one.</span>
+                                                    </div>
+                                                </td></tr>
+                                            <?php endif; ?>
                                         </tbody>
                                     </table>
                                 </div>

@@ -319,6 +319,16 @@ if ($action == "update_payroll_item") {
 	echo json_encode($save);
 }
 
+if ($action == "set_payroll_item_review") {
+	$save = $crud->set_payroll_item_review();
+	echo json_encode($save);
+}
+
+if ($action == "save_fcm_token") {
+	$save = $crud->save_fcm_token();
+	echo json_encode($save);
+}
+
 if ($action == "update_payroll_item_new") {
 	$save = $crud->update_payroll_item_new();
 	echo json_encode($save);

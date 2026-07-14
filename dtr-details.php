@@ -258,10 +258,12 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 .xl-ribbon-title { color:#176358 !important; }
 .xl-ribbon-title i { color:#219688 !important; }
 .xl-btn i { color:#219688 !important; }
-.xl-btn:hover { background:#e6f5f3 !important; border-color:#aad5d0 !important; color:#176358 !important; }
-.xl-btn-save { background:#219688 !important; border-color:#176358 !important; animation:none !important; }
-.xl-btn-save i { color:#fff !important; }
-.xl-btn-save:hover { background:#176358 !important; color:#fff !important; }
+/* Soft ribbon buttons — pastel mint fill, deeper on hover */
+.xl-btn { background:#eef7f5 !important; border:1px solid #d5e6e2 !important; color:#176358 !important; border-radius:8px !important; }
+.xl-btn:hover { background:#dcefec !important; border-color:#aad5d0 !important; color:#176358 !important; }
+.xl-btn-save { background:#d7ece9 !important; border-color:#aad5d0 !important; color:#116257 !important; animation:none !important; }
+.xl-btn-save i { color:#116257 !important; }
+.xl-btn-save:hover { background:#c2e2dd !important; border-color:#8cc7c0 !important; color:#0d4d44 !important; }
 .xl-search-wrap i { color:#219688 !important; }
 .xl-search-wrap:focus-within { border-color:#219688 !important; box-shadow:0 0 0 2px rgba(33,150,136,0.15) !important; }
 
@@ -306,6 +308,14 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 }
 .dtr-stat-box .stat-val  { font-size:17px; font-weight:800; line-height:1.1; font-family:'Segoe UI',Arial,sans-serif; }
 .dtr-stat-box .stat-lbl  { font-size:10px; color:#a19f9d; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
+/* Per-stat accent: top border + faint gradient wash matching the metric color */
+.dtr-stat-box.sb-wh   { border-top-color:#219688; background:linear-gradient(180deg,#f5fbfa 0%,#fff 60%); }
+.dtr-stat-box.sb-ot   { border-top-color:#f7b84b; background:linear-gradient(180deg,#fffcf3 0%,#fff 60%); }
+.dtr-stat-box.sb-ut   { border-top-color:#50a5f1; background:linear-gradient(180deg,#f4f9fe 0%,#fff 60%); }
+.dtr-stat-box.sb-late { border-top-color:#f06548; background:linear-gradient(180deg,#fef6f4 0%,#fff 60%); }
+.dtr-stat-box.sb-appr { border-top-color:#0f9d58; background:linear-gradient(180deg,#f3fbf6 0%,#fff 60%); }
+.dtr-stat-box.sb-disa { border-top-color:#c62828; background:linear-gradient(180deg,#fdf5f5 0%,#fff 60%); }
+.dtr-stat-box.sb-pend { border-top-color:#c98a00; background:linear-gradient(180deg,#fffcf3 0%,#fff 60%); }
 
 /* ── Collapsible date groups ── */
 .date-separator { cursor:pointer; user-select:none; }
@@ -421,12 +431,13 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 /* OT/Late figures keep their status color even inside the banner */
 #table-1 tbody tr.date-separator td .dtr-date-ot   { color:#8a6d1a !important; font-weight:700; }
 #table-1 tbody tr.date-separator td .dtr-date-late { color:#b02a37 !important; font-weight:700; }
-/* "Approve day" pill — small solid green CTA, legible on the mint banner */
+/* "Approve day" pill — soft green pill, legible on the mint banner */
 .approveday-btn {
-    background:#107c41 !important; border-color:#107c41 !important; color:#fff !important;
+    background:#eafaf0 !important; border:1px solid #b7e4c7 !important; color:#0b5e31 !important;
     border-radius:20px !important;
 }
-.approveday-btn:hover { background:#0b5e31 !important; border-color:#0b5e31 !important; }
+.approveday-btn:hover { background:#d9f2e3 !important; border-color:#8fd3a8 !important; color:#0b5e31 !important; }
+.approveday-btn i, .approveday-btn span { color:#0b5e31 !important; }
 
 /* ── Employee card row ── */
 #table-1 tbody tr.employee-header td {
@@ -465,6 +476,51 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 #table-1 tbody tr.grand-total-row td:nth-child(1),
 #table-1 tbody tr.grand-total-row td:nth-child(2) { z-index:15 !important; background:#c6e4cd !important; }
 
+/* ── Page title: icon badge + soft meta chips ── */
+.dtr-title-icon {
+    width:42px; height:42px; border-radius:12px; flex-shrink:0;
+    background:linear-gradient(135deg,#219688,#2fb3a3); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:20px;
+    box-shadow:0 3px 8px rgba(33,150,136,.30);
+}
+.dtr-meta-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
+.dtr-meta-chip {
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:11px; font-weight:600; color:#176358;
+    background:#eef7f5; border:1px solid #d5e6e2; border-radius:20px; padding:3px 10px;
+}
+.dtr-meta-chip i { color:#219688; font-size:13px; }
+
+/* ── Column header icons ── */
+#table-1 thead tr:first-child th i { font-size:13px; margin-right:4px; vertical-align:-1.5px; color:#3d8b80 !important; }
+
+/* ── Soft status badges (pastel pills instead of solid Bootstrap fills) ── */
+#table-1 [data-rec-badge] .badge, .ecard-entry-status .badge, #cmpl-badge .badge,
+#table-1 .badge.bg-success, .ecard [data-rec-badge] .badge { border-radius:20px; }
+#table-1 .badge.bg-success, .ecard .badge.bg-success {
+    background:#eafaf0 !important; color:#0f9d58 !important; border:1px solid #b7e4c7;
+}
+#table-1 .badge.bg-danger, .ecard .badge.bg-danger {
+    background:#fdecea !important; color:#c62828 !important; border:1px solid #f5c6cb;
+}
+#table-1 .badge.bg-warning, .ecard .badge.bg-warning {
+    background:#fff8e1 !important; color:#c98a00 !important; border:1px solid #ffe082;
+}
+
+/* ── View counter chip ── */
+.dtr-count-chip {
+    display:inline-flex; align-items:center; gap:5px;
+    font-size:11px; font-weight:600; color:#176358;
+    background:#eef7f5; border:1px solid #d5e6e2; border-radius:20px; padding:3px 10px;
+}
+.dtr-count-chip i { color:#219688; font-size:13px; }
+
+/* Ribbon "pending" badge — soft amber pill */
+#batch-pending-badge {
+    background:#fff8e1 !important; color:#c98a00 !important;
+    border:1px solid #ffe082; border-radius:20px; font-weight:700;
+}
+
 /* ── bg-soft utilities ── */
 .bg-soft-primary   { background:rgba(33,150,136,0.10) !important; }
 .bg-soft-secondary { background:rgba(108,117,125,0.08) !important; }
@@ -493,14 +549,25 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 }
 .update-dtr-field:hover { background:#219688 !important; border-color:#176358 !important; color:#fff !important; }
 
-/* ── Action buttons ── */
-#table-1 td .btn-group .btn { width:26px; height:26px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; border-radius:3px; box-shadow:none; }
-#table-1 td .btn-group .btn-outline-danger { background:transparent; border:1px solid transparent; color:#a4262c; }
-#table-1 td .btn-group .btn-outline-danger:hover { background:#fdeceb; border-color:#f1c0bd; }
+/* ── Action buttons — soft pastel fills ── */
+#table-1 td .btn-group .btn, .ecard .btn-group .btn { width:26px; height:26px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; box-shadow:none; margin-right:2px; }
+#table-1 .btn-group .btn-outline-success, .ecard .btn-group .btn-outline-success {
+    background:#eafaf0 !important; border:1px solid #b7e4c7 !important; color:#0f9d58 !important;
+}
+#table-1 .btn-group .btn-outline-success:hover, .ecard .btn-group .btn-outline-success:hover { background:#d9f2e3 !important; border-color:#8fd3a8 !important; }
+#table-1 .btn-group .btn-outline-danger, .ecard .btn-group .btn-outline-danger {
+    background:#fdecea !important; border:1px solid #f5c6cb !important; color:#c62828 !important;
+}
+#table-1 .btn-group .btn-outline-danger:hover, .ecard .btn-group .btn-outline-danger:hover { background:#fadbd8 !important; border-color:#efaab2 !important; }
+#table-1 .btn-group .btn-outline-secondary, .ecard .btn-group .btn-outline-secondary {
+    background:#f3f2f1 !important; border:1px solid #e1dfdd !important; color:#605e5c !important;
+}
+#table-1 .btn-group .btn-outline-secondary:hover, .ecard .btn-group .btn-outline-secondary:hover { background:#e8e6e4 !important; border-color:#c8c6c4 !important; }
 #table-1 td .btn-group .btn-outline-warning,
-#table-1 td .btn-group a.btn-outline-warning { background:transparent; border:1px solid transparent; color:#c98a00; }
+#table-1 td .btn-group a.btn-outline-warning { background:#fff8e1 !important; border:1px solid #ffe082 !important; color:#c98a00 !important; }
 #table-1 td .btn-group .btn-outline-warning:hover,
-#table-1 td .btn-group a.btn-outline-warning:hover { background:#fff8e1; border-color:#ffe082; }
+#table-1 td .btn-group a.btn-outline-warning:hover { background:#fdefc3 !important; border-color:#f5d264 !important; }
+#table-1 .btn-group .btn:disabled, .ecard .btn-group .btn:disabled { opacity:.45; }
 
 /* ── Logs ── */
 .logs-container { max-height:90px; overflow-y:auto; }
@@ -577,7 +644,8 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
             <div class="row">
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-                        <div class="page-title-enhanced">
+                        <div class="page-title-enhanced d-flex align-items-center gap-3">
+                            <div class="dtr-title-icon"><i class="ri-calendar-check-line"></i></div>
                             <div>
                                 <div class="d-flex align-items-center gap-2 mb-1">
                                     <h4 class="mb-0 fw-bold">DTR Details</h4>
@@ -591,12 +659,12 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                                         <span class="payroll-status-badge bg-success text-white"><i class="ri-checkbox-circle-line me-1"></i>Approved</span>
                                     <?php endif; ?>
                                 </div>
-                                <small class="text-muted">
-                                    <i class="ri-calendar-2-line me-1"></i><?= date('M d', strtotime($dtr['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($dtr['date_to'])) ?>
-                                    &nbsp;&bull;&nbsp;<i class="ri-building-line me-1"></i><?= htmlspecialchars($dtr['site_name']) ?> (<?= htmlspecialchars($dtr['site_code']) ?>)
-                                    &nbsp;&bull;&nbsp;<i class="ri-user-2-line me-1"></i><?= htmlspecialchars($dtr['employer_name']) ?>
-                                    &nbsp;&bull;&nbsp;<i class="ri-shield-user-line me-1"></i><?= htmlspecialchars($timekeeper_name) ?>
-                                </small>
+                                <div class="dtr-meta-chips">
+                                    <span class="dtr-meta-chip"><i class="ri-calendar-2-line"></i><?= date('M d', strtotime($dtr['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($dtr['date_to'])) ?></span>
+                                    <span class="dtr-meta-chip"><i class="ri-building-line"></i><?= htmlspecialchars($dtr['site_name']) ?> (<?= htmlspecialchars($dtr['site_code']) ?>)</span>
+                                    <span class="dtr-meta-chip"><i class="ri-user-2-line"></i><?= htmlspecialchars($dtr['employer_name']) ?></span>
+                                    <span class="dtr-meta-chip"><i class="ri-shield-user-line"></i><?= htmlspecialchars($timekeeper_name) ?></span>
+                                </div>
                             </div>
                         </div>
                         <div class="page-title-right">
@@ -939,14 +1007,13 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                                 <input id="myInput" type="text" placeholder="Search employee...">
                             </div>
                             <div class="xl-ribbon-sep"></div>
-                            <button onclick="toggleAllGroups(true)"  class="xl-btn"><i class="ri-expand-up-down-line"></i> Expand All</button>
-                            <button onclick="toggleAllGroups(false)" class="xl-btn"><i class="ri-contract-up-down-line"></i> Collapse All</button>
+                            <button id="btn-toggle-groups" onclick="toggleAllGroups()" class="xl-btn"><i class="ri-contract-up-down-line"></i> Collapse All</button>
                             <div class="xl-ribbon-sep"></div>
                             <button onclick="printDTRTable()" class="xl-btn"><i class="ri-printer-line"></i> Print</button>
                             <button onclick="toggleDtrFullscreen()" class="xl-btn" id="btn-dtr-fullscreen" title="Fullscreen table (Esc to exit)"><i class="ri-fullscreen-line"></i> Fullscreen</button>
                             <?php if ($login_role !== 6): ?>
                                 <div class="xl-ribbon-sep"></div>
-                                <label class="xl-btn" style="cursor:pointer;" title="Select all records">
+                                <label class="xl-btn" style="cursor:pointer;margin-top: 10px;" title="Select all records">
                                     <input type="checkbox" id="chk-all-records" class="me-1"> All
                                 </label>
                                 <button id="btn-approve-selected" onclick="decideSelected(1)" class="xl-btn xl-btn-save" disabled>
@@ -981,50 +1048,50 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                     <div class="xl-panel-body" id="dtr-panel-body">
                         <!-- Summary stat cards -->
                         <div class="dtr-stats-row">
-                            <div class="dtr-stat-box">
+                            <div class="dtr-stat-box sb-wh">
                                 <div class="stat-icon" style="background:#e6f5f3;color:#219688;"><i class="ri-time-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#219688;"><?= number_format($grandTotals['work_hours'], 2) ?></div>
                                     <div class="stat-lbl">Work Hours</div>
                                 </div>
                             </div>
-                            <div class="dtr-stat-box">
+                            <div class="dtr-stat-box sb-ot">
                                 <div class="stat-icon" style="background:#fff8e1;color:#f7b84b;"><i class="ri-sun-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#c98a00;"><?= number_format($grandTotals['overtime'], 2) ?></div>
                                     <div class="stat-lbl">Overtime</div>
                                 </div>
                             </div>
-                            <div class="dtr-stat-box">
+                            <div class="dtr-stat-box sb-ut">
                                 <div class="stat-icon" style="background:#e3f2fd;color:#50a5f1;"><i class="ri-arrow-down-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#1565c0;"><?= number_format($grandTotals['undertime'], 2) ?></div>
                                     <div class="stat-lbl">Undertime</div>
                                 </div>
                             </div>
-                            <div class="dtr-stat-box">
+                            <div class="dtr-stat-box sb-late">
                                 <div class="stat-icon" style="background:#fce4ec;color:#f06548;"><i class="ri-alarm-warning-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#c62828;"><?= number_format($grandTotals['late'], 2) ?></div>
                                     <div class="stat-lbl">Late (min)</div>
                                 </div>
                             </div>
-                            <div class="dtr-stat-box">
+                            <div class="dtr-stat-box sb-appr">
                                 <div class="stat-icon" style="background:#eafaf0;color:#0f9d58;"><i class="ri-checkbox-circle-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#0f9d58;"><span id="stat-approved"><?= (int)$grandTotals['approved'] ?></span> / <?= (int)$grandTotals['total'] ?></div>
                                     <div class="stat-lbl">Approved</div>
                                 </div>
                             </div>
-                            <div class="dtr-stat-box">
+                            <div class="dtr-stat-box sb-disa">
                                 <div class="stat-icon" style="background:#fdecea;color:#f06548;"><i class="ri-close-circle-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#c62828;"><span id="stat-disapproved"><?= (int)$grandTotals['disapproved'] ?></span></div>
                                     <div class="stat-lbl">Disapproved</div>
                                 </div>
                             </div>
-                            <div class="dtr-stat-box">
-                                <div class="stat-icon" style="background:#fff8e1;color:#f7b84b;"><i class="ri-time-line"></i></div>
+                            <div class="dtr-stat-box sb-pend">
+                                <div class="stat-icon" style="background:#fff8e1;color:#f7b84b;"><i class="ri-hourglass-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#c98a00;"><span id="stat-pending"><?= (int)$grandTotals['pending'] ?></span></div>
                                     <div class="stat-lbl">Pending</div>
@@ -1097,8 +1164,8 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                         <div class="modal fade" id="employeeNotesModal" tabindex="-1" aria-hidden="true">
                             <div class="modal-dialog modal-dialog-centered">
                                 <div class="modal-content">
-                                    <div class="modal-header" style="border-bottom:2px solid #219688;">
-                                        <h5 class="modal-title" style="color:#219688;"><i class="ri-sticky-note-line me-2"></i>Employee Notes</h5>
+                                    <div class="modal-header" style="background:#f0faf8;border-bottom:1px solid #d5e6e2;">
+                                        <h5 class="modal-title" style="color:#176358;font-weight:700;"><i class="ri-sticky-note-line me-2" style="color:#219688;"></i>Employee Notes</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
@@ -1125,24 +1192,24 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                                     <i class="ri-group-line"></i> By Employee
                                 </button>
                             </div>
-                            <span id="dtr-view-count" style="font-size:11px;color:#888;"></span>
+                            <span class="dtr-count-chip"><i class="ri-list-check-2"></i><span id="dtr-view-count"></span></span>
                         </div>
 
                         <div class="table-responsive2" id="dtr-table-responsive">
                             <table cellspacing="0" id="table-1">
                                 <thead>
                                     <tr>
-                                        <th class="text-center primary-header">Date</th>
-                                        <th class="text-center primary-header">Employee</th>
-                                        <th class="text-center primary-header">Position</th>
-                                        <th class="text-center primary-header">Time In</th>
-                                        <th class="text-center primary-header">Time Out</th>
-                                        <th class="text-center primary-header">Hours</th>
-                                        <th class="text-center primary-header">OT</th>
-                                        <th class="text-center primary-header">Undertime</th>
-                                        <th class="text-center primary-header">Late</th>
-                                        <th class="text-center primary-header">Logs</th>
-                                        <th class="text-center primary-header">Action</th>
+                                        <th class="text-center primary-header"><i class="ri-calendar-2-line"></i>Date</th>
+                                        <th class="text-center primary-header"><i class="ri-user-3-line"></i>Employee</th>
+                                        <th class="text-center primary-header"><i class="ri-briefcase-4-line"></i>Position</th>
+                                        <th class="text-center primary-header"><i class="ri-login-circle-line"></i>Time In</th>
+                                        <th class="text-center primary-header"><i class="ri-logout-circle-line"></i>Time Out</th>
+                                        <th class="text-center primary-header"><i class="ri-time-line"></i>Hours</th>
+                                        <th class="text-center primary-header"><i class="ri-sun-line"></i>OT</th>
+                                        <th class="text-center primary-header"><i class="ri-arrow-down-line"></i>Undertime</th>
+                                        <th class="text-center primary-header"><i class="ri-alarm-warning-line"></i>Late</th>
+                                        <th class="text-center primary-header"><i class="ri-history-line"></i>Logs</th>
+                                        <th class="text-center primary-header"><i class="ri-settings-3-line"></i>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-by-day">
@@ -1604,17 +1671,35 @@ function human_time_diff(int $ts): string {
                 var key = sep.getAttribute('data-toggle-group');
                 var isCollapsed = sep.classList.toggle('collapsed');
                 setGroupVisible(key, !isCollapsed);
+                _syncToggleGroupsBtn();
             });
         });
     }
     document.addEventListener('DOMContentLoaded', initDateSeparators);
 
+    function _anyGroupExpanded() {
+        return Array.from(document.querySelectorAll('.date-separator')).some(function (sep) {
+            return !sep.classList.contains('collapsed');
+        });
+    }
+
+    function _syncToggleGroupsBtn() {
+        var btn = document.getElementById('btn-toggle-groups');
+        if (!btn) return;
+        btn.innerHTML = _anyGroupExpanded()
+            ? '<i class="ri-contract-up-down-line"></i> Collapse All'
+            : '<i class="ri-expand-up-down-line"></i> Expand All';
+    }
+
     function toggleAllGroups(expand) {
+        // No argument → single-button toggle: collapse if anything is expanded, else expand
+        if (typeof expand === 'undefined') expand = !_anyGroupExpanded();
         document.querySelectorAll('.date-separator').forEach(function (sep) {
             var key = sep.getAttribute('data-toggle-group');
-            if (expand) { sep.classList.remove('collapsed'); } else { sep.classList.add('collapsed'); }
+            sep.classList.toggle('collapsed', !expand);
             setGroupVisible(key, expand);
         });
+        _syncToggleGroupsBtn();
     }
 </script>
 
@@ -1697,6 +1782,7 @@ function human_time_diff(int $ts): string {
 
         initDtrPopovers();
         initDateSeparators();
+        _syncToggleGroupsBtn();
         fitDtrTable();
         if (typeof _resetRecSelection === 'function') _resetRecSelection();
 

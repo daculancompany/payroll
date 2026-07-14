@@ -1,5 +1,16 @@
 RewriteEngine On
 
+# Firebase service-account credentials must never be downloadable
+<Files "firebase-service-account.json">
+    Require all denied
+</Files>
+
+# Serve the PWA manifest with the correct MIME type (some Apache builds don't
+# map .webmanifest by default) so browsers treat the app as installable.
+<IfModule mod_mime.c>
+    AddType application/manifest+json .webmanifest
+</IfModule>
+
 # Pass Authorization header through to PHP (Apache strips it by default)
 RewriteCond %{HTTP:Authorization} .
 RewriteRule ^ - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]

@@ -36,21 +36,31 @@ $(document).ready(function () {
             },
         },
         columns: [
-            { data: "0" },                                              // Employee (name + no.)
-            { data: "1" },                                              // Position
-            { data: "2" },                                              // Department
-            { data: "3", className: "text-end" },                       // Basic Pay
-            { data: "4", className: "text-end" },                       // Daily Rate
-            { data: "5", className: "text-end" },                       // OT Rate
-            { data: "7", className: "text-center" },                    // Payroll Type (6 = loan, hidden)
-            { data: "8", className: "text-center" },                    // Status
-            { data: "9", className: "text-center", orderable: false },  // Action
+            { data: "0", createdCell: (td) => td.setAttribute("data-label", "Employee") },        // Employee (name + no.)
+            { data: "1", createdCell: (td) => td.setAttribute("data-label", "Position") },         // Position
+            { data: "2", createdCell: (td) => td.setAttribute("data-label", "Department") },       // Department
+            { data: "3", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Basic Pay") },      // Basic Pay
+            { data: "4", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Daily Rate") },     // Daily Rate
+            { data: "5", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "OT Rate") },        // OT Rate
+            { data: "7", className: "text-center", createdCell: (td) => td.setAttribute("data-label", "Classification") }, // Classification (6 = loan, hidden)
+            { data: "8", className: "text-center", createdCell: (td) => td.setAttribute("data-label", "Status") },      // Status
+            { data: "9", className: "text-center", orderable: false, createdCell: (td) => td.setAttribute("data-label", "Action") }, // Action
         ],
         columnDefs: [
-            { width: "230px", targets: 0 },
-            { width: "90px", targets: 6 },
-            { width: "90px", targets: 7 },
+           
+          
         ],
+        createdRow: function (row) {
+            // Make the whole employee card/row clickable (View link stays as-is)
+            var link = row.querySelector('.emp-actions a[href]');
+            if (link) {
+                row.style.cursor = "pointer";
+                row.addEventListener("click", function (e) {
+                    if (e.target.closest("a, button")) return; // let real buttons/links work
+                    window.location.href = link.getAttribute("href");
+                });
+            }
+        },
     }).on("draw.dt", function () {
         document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
             bootstrap.Tooltip.getInstance(el)?.dispose();

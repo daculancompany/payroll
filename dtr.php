@@ -152,7 +152,8 @@ function dtr_status_badge($s) {
                                                         <i class="ri-checkbox-circle-line"></i>
                                                     </button>
                                                     <?php endif; ?>
-                                                    <?php if ($status !== 2): ?>
+                                                    <?php // Biometric batches have no source file to re-import — never deletable. ?>
+                                                    <?php if ($status !== 2 && $row['file'] !== 'biometric'): ?>
                                                     <button onclick="deleteDTR(<?= $row['id'] ?>)" type="button"
                                                         class="btn btn-sm btn-outline-danger"
                                                         data-bs-toggle="tooltip" data-bs-placement="top" title="Delete DTR">

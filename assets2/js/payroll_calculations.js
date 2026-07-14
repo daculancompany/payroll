@@ -95,7 +95,14 @@ function printSelectedPayslips() {
         Swal.fire({ toast:true, position:'top-end', icon:'info', title:'Check at least one employee row first', showConfirmButton:false, timer:2500 });
         return;
     }
-    window.open('view_payslip_bulk.php?ids=' + ids.join(','), '_blank', 'width=1000,height=750,scrollbars=yes');
+    // Preview inside the payslip modal instead of a print pop-up window.
+    var frame = document.getElementById('payslip-preview-frame');
+    if (frame) {
+        frame.src = 'view_payslip_bulk.php?ids=' + ids.join(',') + '&preview=1';
+        new bootstrap.Modal(document.getElementById('modal-payslip-preview')).show();
+    } else {
+        window.open('view_payslip_bulk.php?ids=' + ids.join(','), '_blank', 'width=1000,height=750,scrollbars=yes');
+    }
 }
 
 async function updateData(el, id, type, dd_id = null) {
@@ -363,45 +370,47 @@ function closeFullscreen() {
     }
 }
 
-$("#form-print-settings").on("submit", async function (e) {
-    e.preventDefault();
-    var form = $(this);
-    form.parsley().validate();
-
-    if (form.parsley().isValid()) {
-        e.preventDefault();
-        Swal.fire({
-            title: "Updating, please wait...",
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            },
-        });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        form_data = $(this).serialize();
-        $.ajax({
-            url: "ajax.php?action=update_payroll_print",
-            method: "POST",
-            // dataType: "JSON",
-            data: $(this).serialize(),
-            error: (xhr, status, error) => {
-                Swal.close();
-                handleError(error || "");
-            },
-            success: function (res) {
-                Swal.fire({
-                    icon: "success",
-                    title: "Success!",
-                    text: "Print Setting successfully updated!",
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        window.location.reload();
-                    }
-                });
-            },
+// ── Keep Bootstrap modals visible while #myDiv is in the Fullscreen top-layer ──
+// A fullscreened element only paints its own subtree. The page modals live on
+// <body> (outside #myDiv), so in fullscreen they render *behind* the fullscreen
+// layer and disappear. Relocate any opening modal + its backdrop into the
+// fullscreen element while fullscreen is active, and restore them on exit.
+(function () {
+    function fsEl() {
+        return document.fullscreenElement || document.webkitFullscreenElement || null;
+    }
+    // On open: pull the modal into the fullscreen element so it sits in the top-layer.
+    document.addEventListener("show.bs.modal", function (e) {
+        var fs = fsEl();
+        if (fs && e.target && !fs.contains(e.target)) {
+            e.target._fsPrevParent = e.target.parentNode;
+            fs.appendChild(e.target);
+        }
+    });
+    // Backdrop is created during show() and appended to <body>; move it in too so
+    // the dim overlay stays visible behind the dialog.
+    document.addEventListener("shown.bs.modal", function () {
+        var fs = fsEl();
+        if (fs) {
+            document.querySelectorAll("body > .modal-backdrop").forEach(function (b) {
+                fs.appendChild(b);
+            });
+        }
+    });
+    // On leaving fullscreen: send any relocated modals back to their original parent.
+    function restoreModals() {
+        if (fsEl()) return;
+        document.querySelectorAll(".modal").forEach(function (m) {
+            if (m._fsPrevParent) {
+                m._fsPrevParent.appendChild(m);
+                m._fsPrevParent = null;
+            }
         });
     }
-});
+    document.addEventListener("fullscreenchange", restoreModals);
+    document.addEventListener("webkitfullscreenchange", restoreModals);
+})();
+
 let changedInputs = [];
 $(document).ready(function () {
     countUnsaved();

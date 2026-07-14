@@ -86,6 +86,34 @@ $reasonLabels = [
                                 <i class="ri-shield-user-line me-1"></i>Admin / Dept Head / HR Head
                             </span>
                         </div>
+                        <div class="card-header border-bottom-dashed pt-3 pb-0">
+                            <ul class="nav nav-tabs-custom card-header-tabs border-bottom-0" id="att-req-tabs" role="tablist">
+                                <li class="nav-item">
+                                    <a class="nav-link active" data-status="all" href="javascript:void(0);" role="tab">
+                                        <i class="ri-file-list-3-line me-1 align-bottom"></i>All
+                                        <span class="badge bg-primary-subtle text-primary align-middle ms-1"><?= $counts['total'] ?></span>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" data-status="0" href="javascript:void(0);" role="tab">
+                                        <i class="ri-time-line me-1 align-bottom"></i>Pending
+                                        <span class="badge bg-warning-subtle text-warning align-middle ms-1"><?= $counts['pending'] ?></span>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" data-status="1" href="javascript:void(0);" role="tab">
+                                        <i class="ri-checkbox-circle-line me-1 align-bottom"></i>Approved
+                                        <span class="badge bg-success-subtle text-success align-middle ms-1"><?= $counts['approved'] ?></span>
+                                    </a>
+                                </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" data-status="2" href="javascript:void(0);" role="tab">
+                                        <i class="ri-close-circle-line me-1 align-bottom"></i>Rejected
+                                        <span class="badge bg-danger-subtle text-danger align-middle ms-1"><?= $counts['rejected'] ?></span>
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
                         <div class="card-body">
                             <div class="table-responsive">
                                 <table id="att-req-table" class="table table-hover table-bordered align-middle">
@@ -120,10 +148,10 @@ $reasonLabels = [
                                             ];
                                             [$slabel, $sclass] = $statusMap[$row['status']] ?? ['Unknown', 'bg-secondary'];
                                         ?>
-                                        <tr>
+                                        <tr data-status="<?= (int)$row['status'] ?>">
                                             <td><?= date('M d, Y', strtotime($row['created_at'])) ?></td>
                                             <td>
-                                                <b><?= htmlspecialchars($row['employee_name']) ?></b>
+                                                <a href="index.php?page=employee-details&id=<?= (int)$row['employee_id'] ?>" class="rpt-emp-link fw-semibold" title="View employee details"><?= htmlspecialchars($row['employee_name']) ?></a>
                                                 <div class="text-muted" style="font-size:11px;"><i class="ri-hashtag"></i><?= htmlspecialchars($row['employee_no']) ?></div>
                                             </td>
                                             <td>
@@ -179,11 +207,27 @@ $reasonLabels = [
 <script>
 document.addEventListener('DOMContentLoaded', function () {
     if (window.jQuery && jQuery.fn.DataTable && !jQuery.fn.DataTable.isDataTable('#att-req-table')) {
-        jQuery('#att-req-table').DataTable({
+        var currentStatus = 'all';
+
+        // Filter rows by the status stored on each <tr data-status="…">
+        jQuery.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+            if (settings.nTable.id !== 'att-req-table' || currentStatus === 'all') return true;
+            var row = settings.aoData[dataIndex].nTr;
+            return row && row.getAttribute('data-status') === currentStatus;
+        });
+
+        var table = jQuery('#att-req-table').DataTable({
             order: [[0, 'desc']],
             pageLength: 25,
             columnDefs: [{ orderable: false, targets: 8 }],
             language: { search: '', searchPlaceholder: 'Search requests…' }
+        });
+
+        jQuery('#att-req-tabs .nav-link').on('click', function () {
+            currentStatus = jQuery(this).data('status').toString();
+            jQuery('#att-req-tabs .nav-link').removeClass('active');
+            jQuery(this).addClass('active');
+            table.draw();
         });
     }
 });

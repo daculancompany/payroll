@@ -7,50 +7,44 @@ $f_kind   = isset($_GET['kind'])   ? $_GET['kind']   : 'all';      // all | loan
 $f_q      = isset($_GET['q']) ? trim($_GET['q']) : '';
 
 // ── Pull loans + amortizing deductions into one ledger ──
+// The kind filter skips whole queries; the rest is filtered in PHP below.
 $rows = [];
 
-$lq = $conn->query("
-    SELECT l.loan_id, l.employee_id, l.loan_amount AS original, l.damount AS per_period,
-           l.loan_balance AS balance, l.loan_status AS status, l.loan_date AS start_date,
-           clt.loan_type AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
-    FROM loans l
-    INNER JOIN contribution_loan_types clt ON clt.clt_id = l.loan_type
-    INNER JOIN employee e ON e.id = l.employee_id
-    ORDER BY e.lastname, e.firstname
-");
-while ($r = $lq->fetch_assoc()) {
-    $rows[] = ['kind' => 'Loan', 'key' => 'L' . $r['loan_id'], 'id' => (int)$r['loan_id']] + $r;
+if ($f_kind !== 'deduction') {
+    $lq = $conn->query("
+        SELECT l.loan_id, l.employee_id, l.loan_amount AS original, l.damount AS per_period,
+               l.loan_balance AS balance, l.loan_status AS status, l.loan_date AS start_date,
+               clt.loan_type AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
+        FROM loans l
+        INNER JOIN contribution_loan_types clt ON clt.clt_id = l.loan_type
+        INNER JOIN employee e ON e.id = l.employee_id
+        ORDER BY e.lastname, e.firstname
+    ");
+    while ($r = $lq->fetch_assoc()) {
+        $rows[] = ['kind' => 'Loan', 'key' => 'L' . $r['loan_id'], 'id' => (int)$r['loan_id']] + $r;
+    }
 }
 
-$dq = $conn->query("
-    SELECT ed.id, ed.employee_id, ed.total_amount AS original, ed.amount AS per_period,
-           ed.balance, ed.status, ed.effective_date AS start_date,
-           d.deduction AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
-    FROM employee_deductions ed
-    INNER JOIN deductions d ON d.id = ed.deduction_id
-    INNER JOIN employee e ON e.id = ed.employee_id
-    WHERE ed.total_amount > 0
-    ORDER BY e.lastname, e.firstname
-");
-while ($r = $dq->fetch_assoc()) {
-    $rows[] = ['kind' => 'Deduction', 'key' => 'D' . $r['id'], 'id' => (int)$r['id']] + $r;
+if ($f_kind !== 'loan') {
+    $dq = $conn->query("
+        SELECT ed.id, ed.employee_id, ed.total_amount AS original, ed.amount AS per_period,
+               ed.balance, ed.status, ed.effective_date AS start_date,
+               d.deduction AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
+        FROM employee_deductions ed
+        INNER JOIN deductions d ON d.id = ed.deduction_id
+        INNER JOIN employee e ON e.id = ed.employee_id
+        WHERE ed.total_amount > 0
+        ORDER BY e.lastname, e.firstname
+    ");
+    while ($r = $dq->fetch_assoc()) {
+        $rows[] = ['kind' => 'Deduction', 'key' => 'D' . $r['id'], 'id' => (int)$r['id']] + $r;
+    }
 }
-
-// ── Preload history keyed by loan_id / ded_id ──
-$hist = [];
-$lh = $conn->query("SELECT lh.loan_id AS k, lh.amount, lh.current_bal, lh.new_bal, p.ref_no, p.date_from, p.date_to
-                    FROM loan_history lh LEFT JOIN payroll p ON p.id = lh.payroll_id ORDER BY lh.loan_his_id ASC");
-while ($h = $lh->fetch_assoc()) $hist['L' . $h['k']][] = $h;
-$dh = $conn->query("SELECT dh.ded_id AS k, dh.amount, dh.current_bal, dh.new_bal, p.ref_no, p.date_from, p.date_to
-                    FROM deduction_history dh LEFT JOIN payroll p ON p.id = dh.payroll_id ORDER BY dh.ded_his_id ASC");
-while ($h = $dh->fetch_assoc()) $hist['D' . $h['k']][] = $h;
 
 // ── Apply filters + totals ──
 $t_orig = $t_bal = $t_paid = 0;
 $view = [];
 foreach ($rows as $r) {
-    if ($f_kind === 'loan' && $r['kind'] !== 'Loan') continue;
-    if ($f_kind === 'deduction' && $r['kind'] !== 'Deduction') continue;
     $paid = (float)$r['original'] - (float)$r['balance'];
     $isPaid = ((int)$r['status'] === 1) || (float)$r['balance'] <= 0;
     if ($f_status === 'active' && $isPaid) continue;
@@ -59,6 +53,28 @@ foreach ($rows as $r) {
     $r['paid'] = $paid; $r['isPaid'] = $isPaid;
     $view[] = $r;
     $t_orig += (float)$r['original']; $t_bal += (float)$r['balance']; $t_paid += $paid;
+}
+
+// ── Payment history only for the ledgers actually displayed (not the whole
+//    loan_history / deduction_history tables) ──
+$hist = [];
+$loanIds = $dedIds = [];
+foreach ($view as $r) {
+    if ($r['kind'] === 'Loan') $loanIds[] = $r['id']; else $dedIds[] = $r['id'];
+}
+if ($loanIds) {
+    $in = implode(',', $loanIds);
+    $lh = $conn->query("SELECT lh.loan_id AS k, lh.amount, lh.current_bal, lh.new_bal, p.ref_no, p.date_from, p.date_to
+                        FROM loan_history lh LEFT JOIN payroll p ON p.id = lh.payroll_id
+                        WHERE lh.loan_id IN ($in) ORDER BY lh.loan_his_id ASC");
+    while ($h = $lh->fetch_assoc()) $hist['L' . $h['k']][] = $h;
+}
+if ($dedIds) {
+    $in = implode(',', $dedIds);
+    $dh = $conn->query("SELECT dh.ded_id AS k, dh.amount, dh.current_bal, dh.new_bal, p.ref_no, p.date_from, p.date_to
+                        FROM deduction_history dh LEFT JOIN payroll p ON p.id = dh.payroll_id
+                        WHERE dh.ded_id IN ($in) ORDER BY dh.ded_his_id ASC");
+    while ($h = $dh->fetch_assoc()) $hist['D' . $h['k']][] = $h;
 }
 function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
 ?>

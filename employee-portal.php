@@ -20,14 +20,14 @@ $portal_leave_eligible = $elig_r && in_array($elig_r['c'], LEAVE_ELIGIBLE_CLASSI
 // Leave, LWOP, and attendance/OT requests are submitted via AJAX (emp-portal-ajax.php:
 // submit_leave_request / submit_attendance_request) so the page never reloads on save.
 
-$my_attendance_requests = [];
-$marq = $conn->prepare("SELECT * FROM attendance_requests WHERE employee_id = ? ORDER BY created_at DESC LIMIT 30");
-$marq->bind_param('i', $emp_id);
-$marq->execute();
-$mar_res = $marq->get_result();
-while ($r = $mar_res->fetch_assoc()) $my_attendance_requests[] = $r;
+// The Requests tab now loads its history via infinite scroll from
+// attendance-requests-portal-server.php (server-side, paginated) so we no longer
+// prefetch rows here — only the pending count is needed for the tab badge.
 $att_req_pending_count = 0;
-foreach ($my_attendance_requests as $ar) if ($ar['status'] == 0) $att_req_pending_count++;
+$arpc = $conn->prepare("SELECT COUNT(*) AS c FROM attendance_requests WHERE employee_id = ? AND status = 0");
+$arpc->bind_param('i', $emp_id);
+$arpc->execute();
+$att_req_pending_count = (int)($arpc->get_result()->fetch_assoc()['c'] ?? 0);
 
 // DTRs awaiting this employee's review (status 3) and not yet signed off.
 $dtr_review_pending_count = 0;
@@ -279,11 +279,40 @@ $asq = $conn->prepare("
            COALESCE(SUM(overtime), 0)                          AS ot,
            COALESCE(SUM(CASE WHEN is_complete = 1 THEN 1 ELSE 0 END), 0) AS complete
     FROM DTR_details
-    WHERE employee_id = ? AND DATE(date_time) BETWEEN ? AND ?");
+    WHERE employee_id = ? AND date_time BETWEEN ? AND ?");
 $asq->bind_param('iss', $emp_id, $mo_from, $mo_to);
 $asq->execute();
 $att_summary = $asq->get_result()->fetch_assoc() ?: ['days'=>0,'hours'=>0,'ot'=>0,'complete'=>0];
 $att_avg_hrs = ((float)$att_summary['days'] > 0) ? (float)$att_summary['hours'] / (float)$att_summary['days'] : 0;
+
+// ── Today's attendance (Overview hero card) — first/last punch + hours ──
+$today_str = date('Y-m-d');
+$tdq = $conn->prepare("SELECT work_hours, overtime, logs, attendance_type
+                       FROM DTR_details WHERE employee_id = ? AND DATE(date_time) = ?
+                       ORDER BY date_time DESC LIMIT 1");
+$tdq->bind_param('is', $emp_id, $today_str);
+$tdq->execute();
+$today_att = $tdq->get_result()->fetch_assoc();
+$td_in = $td_out = null; $td_hours = 0.0; $td_ot = 0.0; $td_live = false;
+$td_type = ''; $td_type_cls = 'att-P';
+if ($today_att) {
+    $td_logs = $today_att['logs'] ? json_decode($today_att['logs']) : [];
+    if (!is_array($td_logs)) $td_logs = [];
+    if (!empty($td_logs)) {
+        $td_in = date('g:i A', strtotime($td_logs[0]->dateTime ?? ''));
+        if (count($td_logs) > 1) $td_out = date('g:i A', strtotime(end($td_logs)->dateTime ?? ''));
+    }
+    $td_hours = (float)$today_att['work_hours'];
+    $td_ot    = (float)$today_att['overtime'];
+    if ($td_hours <= 0 && $td_in && !$td_out && !empty($td_logs[0]->dateTime)) {
+        // still on duty — show hours elapsed since the first punch
+        $td_hours = max(0, (time() - strtotime($td_logs[0]->dateTime)) / 3600);
+        $td_live  = true;
+    }
+    $td_type = $today_att['attendance_type'] ?: 'Present';
+    $td_t1   = strtoupper(substr($td_type, 0, 1));
+    $td_type_cls = in_array($td_t1, ['P','A','H','S','O']) ? 'att-'.$td_t1 : 'att-P';
+}
 
 // ── Active loans ────────────────────────────────────────────────
 $s4 = $conn->prepare("
@@ -343,8 +372,19 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>My Portal — <?= htmlspecialchars($emp['firstname']) ?></title>
+
+<!-- ── PWA: installable home-screen app (Android + iOS) ── -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#219688">
+<link rel="icon" type="image/png" href="assets2/images/pwa/icon-192.png">
+<!-- iOS: no manifest install prompt — it reads these tags on "Add to Home Screen" -->
+<link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="COMC Portal">
 <link href="assets/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/css/icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
@@ -357,36 +397,34 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 *{box-sizing:border-box;}
 body{
     margin:0;
-    font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#33312c;
-    /* warm paper backdrop with a faint fibre texture */
-    background-color:#ece7da;
+    font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#2b3330;
+    /* clean, cool off-white backdrop with a faint teal wash */
+    background-color:#eef2f1;
     background-image:
-        radial-gradient(circle at 25% 15%, rgba(255,255,255,.55) 0, transparent 45%),
-        radial-gradient(circle at 80% 80%, rgba(255,255,255,.35) 0, transparent 40%),
-        repeating-linear-gradient(0deg, rgba(120,110,90,.025) 0 1px, transparent 1px 4px),
-        repeating-linear-gradient(90deg, rgba(120,110,90,.025) 0 1px, transparent 1px 4px);
+        radial-gradient(circle at 20% 0%, rgba(33,150,136,.06) 0, transparent 42%),
+        radial-gradient(circle at 100% 100%, rgba(33,150,136,.05) 0, transparent 40%);
     background-attachment:fixed;
 }
 /* Paper sheet helper — warm white with a hairline edge + layered shadow */
 .paper{
-    background:#fffdf8;
-    border:1px solid #e7e0d0;
-    box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);
+    background:#ffffff;
+    border:1px solid #e4ecea;
+    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);
 }
 
 /* Top bar */
-.ptop{background:linear-gradient(135deg,#176358,#219688);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:54px;position:sticky;top:0;z-index:200;box-shadow:0 2px 12px rgba(0,0,0,.18);}
-.ptop-brand{color:#fff;font-size:14px;font-weight:800;display:flex;align-items:center;gap:8px;}
-.ptop-logo{width:30px;height:30px;border-radius:7px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;}
-.ptop-logout{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:8px;padding:4px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:background .2s;}
-.ptop-logout:hover{background:rgba(255,255,255,.28);color:#fff;}
+.ptop{background:#fff;padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:200;border-bottom:1px solid #e4ecea;box-shadow:0 1px 3px rgba(16,55,50,.06);}
+.ptop-brand{color:#176358;font-size:14px;font-weight:800;display:flex;align-items:center;gap:9px;letter-spacing:.2px;}
+.ptop-logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#219688,#176358);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;box-shadow:0 3px 8px rgba(33,150,136,.28);}
+.ptop-logout{background:#f0f7f5;color:#176358;border:1px solid #d5e8e4;border-radius:9px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;}
+.ptop-logout:hover{background:#e0f0ec;color:#176358;border-color:#bfe0d9;}
 
 /* Layout — wide on desktop, fluid below */
 .portal-wrap{max-width:1280px;margin:0 auto;padding:22px 18px 50px;}
 @media(min-width:1500px){.portal-wrap{max-width:1400px;}}
 
 /* Employee header card */
-.emp-hdr{background:#fffdf8;border:1px solid #e7e0d0;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 10px 26px -14px rgba(60,50,30,.22);margin-bottom:18px;}
+.emp-hdr{background:#ffffff;border:1px solid #e4ecea;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 10px 26px -14px rgba(16,55,50,.22);margin-bottom:18px;}
 .emp-hdr-top{background:linear-gradient(135deg,#219688,#176358);padding:20px 22px;display:flex;align-items:center;gap:16px;}
 .emp-av{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.4);}
 .emp-nm{font-size:17px;font-weight:900;color:#fff;line-height:1.2;}
@@ -438,15 +476,16 @@ body{
 .drev-prev{font-size:12px;font-weight:700;padding:9px 12px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
 .drev-prev.ok{background:#eafaf0;color:#0f9d58;} .drev-prev.dis{background:#fdecea;color:#c62828;}
 .emp-stats{display:grid;grid-template-columns:repeat(5,1fr);}
-.est{padding:12px 14px;border-right:1px solid #f0ece0;text-align:center;}
+.est{padding:12px 14px;border-right:1px solid #eef3f2;text-align:center;}
 .est:last-child{border-right:none;}
 .est-v{font-size:16px;font-weight:800;color:#219688;line-height:1;}
 .est-l{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;}
 
 /* Tabs */
-.tab-strip{display:flex;gap:4px;background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;padding:5px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 6px 18px -12px rgba(60,50,30,.18);margin-bottom:16px;flex-wrap:wrap;}
+.tab-strip{display:flex;gap:4px;background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:5px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 6px 18px -12px rgba(16,55,50,.18);margin-bottom:16px;flex-wrap:wrap;}
 .tab-btn{flex:1;padding:9px 6px;border:none;background:transparent;border-radius:8px;font-size:12px;font-weight:700;color:#888;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .18s;}
 .tab-btn.active{background:linear-gradient(135deg,#219688,#176358);color:#fff;box-shadow:0 2px 8px rgba(33,150,136,.3);}
+.tab-btn:not(.active):hover{background:#f0f7f5;color:#176358;}
 .tab-btn .badge-count{background:rgba(255,255,255,.25);color:#fff;border-radius:10px;padding:0 6px;font-size:10px;font-weight:800;}
 .tab-btn:not(.active) .badge-count{background:#e8f7f5;color:#219688;}
 .tab-panel{display:none;} .tab-panel.active{display:block;}
@@ -462,12 +501,12 @@ body{
     transition:transform .24s cubic-bezier(.4,0,.2,1),opacity .24s;}
 .more-sheet.open{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto;}
 .more-grip{display:none;}
-.more-head{font-size:15px;font-weight:800;color:#33312c;margin-bottom:16px;text-align:center;}
+.more-head{font-size:15px;font-weight:800;color:#2b3330;margin-bottom:16px;text-align:center;}
 .more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-content:center;}
 .more-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;background:#f7f8fa;border:1px solid #eef0f2;border-radius:16px;padding:15px 6px;cursor:pointer;}
 .more-item:active{background:#eef0f2;}
 .more-ic{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;}
-.more-lbl{font-size:11px;font-weight:700;color:#33312c;}
+.more-lbl{font-size:11px;font-weight:700;color:#2b3330;}
 .more-dot{position:absolute;top:9px;right:16px;background:#dc3545;color:#fff;border-radius:9px;min-width:16px;height:16px;padding:0 4px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;}
 
 /* Section title */
@@ -475,7 +514,7 @@ body{
 .sec::after{content:'';flex:1;height:1px;background:#ddecea;}
 
 /* Latest payslip */
-.ps-card{background:#fffdf8;border:1px solid #e7e0d0;border-radius:14px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);overflow:hidden;margin-bottom:14px;}
+.ps-card{background:#ffffff;border:1px solid #e4ecea;border-radius:14px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);overflow:hidden;margin-bottom:14px;}
 .ps-period{background:#176358;color:#fff;padding:10px 18px;font-size:12px;font-weight:700;display:flex;justify-content:space-between;}
 .ps-body{display:grid;grid-template-columns:1fr 1fr;gap:0;}
 .ps-col{padding:14px 18px;}
@@ -508,26 +547,26 @@ body{
 
 /* ── Payslips — dedicated mobile card list (shown < 600px, hidden on desktop) ── */
 .ps-mlist{display:none;padding:12px 0 2px;}
-.psm-card{position:relative;background:#fffdf8;border:1px solid #e7e0d0;border-left:3px solid #219688;border-radius:14px;
+.psm-card{position:relative;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;border-radius:14px;
     padding:13px 14px 0;margin:0 12px 12px;overflow:hidden;cursor:pointer;
-    box-shadow:0 1px 2px rgba(60,50,30,.05),0 8px 20px -14px rgba(60,50,30,.28);}
+    box-shadow:0 1px 2px rgba(16,55,50,.05),0 8px 20px -14px rgba(16,55,50,.28);}
 .psm-chk{position:absolute;top:14px;right:12px;width:17px;height:17px;z-index:2;}
 .psm-period{font-size:15px;font-weight:800;color:#176358;line-height:1.2;padding-right:30px;}
 .psm-period small{display:block;font-size:10px;font-weight:600;color:#aaa;margin-top:1px;}
 .psm-ref{font-family:monospace;font-size:11px;font-weight:700;color:#219688;margin:3px 0 2px;}
-.psm-stats{display:flex;gap:2px;border-top:1px solid #f0ece0;margin-top:10px;}
+.psm-stats{display:flex;gap:2px;border-top:1px solid #eef3f2;margin-top:10px;}
 .psm-stats>div{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 2px;}
-.psm-stats span{font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+.psm-stats span{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
 .psm-stats b{font-size:13px;font-weight:800;color:#176358;}
 .psm-stats b.mut{color:#ccc;font-weight:600;}
 .psm-stats b.abs{color:#dc3545;} .psm-stats b.lt{color:#fd7e14;} .psm-stats b.ot{color:#fd7e14;}
-.psm-money{display:flex;border-top:1px solid #f0ece0;}
+.psm-money{display:flex;border-top:1px solid #eef3f2;}
 .psm-money>div{flex:1;display:flex;flex-direction:column;gap:2px;padding:11px 0 12px;}
-.psm-money .lbl{font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+.psm-money .lbl{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
 .psm-money .val{font-size:15px;font-weight:800;color:#219688;}
 .psm-money .ded{align-items:flex-end;text-align:right;}
 .psm-money .ded .val{color:#dc3545;}
-.psm-action{border-top:1px solid #f0ece0;padding:11px 0 12px;text-align:center;}
+.psm-action{border-top:1px solid #eef3f2;padding:11px 0 12px;text-align:center;}
 .psm-action .mydtr-badge{display:inline-block;margin-bottom:8px;}
 .psm-action .mydtr-btn{width:100%;padding:10px;font-size:13px;text-align:center;}
 .psm-net{display:flex;align-items:center;justify-content:space-between;
@@ -555,6 +594,60 @@ body{
 .hrs-bar{height:5px;border-radius:3px;background:#e0eeec;overflow:hidden;margin-top:4px;}
 .hrs-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#219688,#176358);}
 
+/* ── Attendance mobile card feed (infinite scroll) — hidden on desktop ── */
+.att-mlist-wrap{display:none;padding:12px 12px 14px;}
+.attm-card{position:relative;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;
+    border-radius:14px;margin-bottom:10px;padding:13px 14px 2px;
+    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
+.attm-card:last-child{margin-bottom:0;}
+.attm-head{padding:0 104px 11px 0;}
+.attm-head .attm-d1{font-size:15px;font-weight:800;color:#176358;}
+.attm-head .attm-d2{font-size:10.5px;color:#8a9794;font-weight:600;margin-top:1px;}
+.attm-card>.att-type{position:absolute;top:12px;right:12px;}
+.attm-stats{display:flex;border-top:1px solid #eef3f2;}
+.attm-stat{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;
+    padding:11px 4px;text-align:center;}
+.attm-stat+.attm-stat{border-left:1px solid #f2f6f5;}
+.attm-stat .attm-sl{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+.attm-stat .attm-sv{font-size:15px;font-weight:800;color:#176358;width:100%;max-width:110px;}
+.attm-io{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:11px 0 10px;border-top:1px solid #eef3f2;}
+.attm-io .attm-sl{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+.attm-notes{display:flex;justify-content:space-between;align-items:center;gap:12px;
+    padding:9px 0 12px;border-top:1px dashed #e4ecea;text-align:right;}
+.attm-notes::before{content:"Notes";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+.attm-foot{text-align:center;padding:14px 0 6px;font-size:11px;color:#8a9794;font-weight:700;}
+.attm-foot .attm-spin{display:inline-block;width:16px;height:16px;border:2px solid #cfe3e0;border-top-color:#219688;
+    border-radius:50%;vertical-align:-3px;margin-right:7px;animation:attmSpin .7s linear infinite;}
+@keyframes attmSpin{to{transform:rotate(360deg);}}
+.attm-empty{text-align:center;padding:26px 14px;font-size:12px;color:#7a8783;font-weight:600;}
+.attm-empty i{display:block;font-size:26px;color:#b3c0bc;margin-bottom:6px;}
+
+/* ── Requests (OT / incident) mobile card feed (infinite scroll) — hidden on desktop ── */
+.areq-mlist-wrap{display:none;padding:12px 12px 14px;}
+.areq-card{position:relative;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;
+    border-radius:14px;margin-bottom:10px;padding:13px 14px;
+    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
+.areq-card:last-child{margin-bottom:0;}
+.areq-card.st-pending{border-left-color:#e6a817;}
+.areq-card.st-approved{border-left-color:#219688;}
+.areq-card.st-rejected{border-left-color:#c62828;}
+.areq-head{padding:0 92px 4px 0;}
+.areq-head .areq-d1{font-size:15px;font-weight:800;color:#176358;display:flex;align-items:center;gap:6px;}
+.areq-head .areq-d1 i{color:#219688;font-size:15px;}
+.areq-type{display:inline-flex;align-items:center;gap:4px;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:700;margin-top:8px;}
+.areq-type.t-incident{background:#fff3cd;color:#856404;}
+.areq-type.t-overtime{background:#cff4fc;color:#055160;}
+.areq-status{position:absolute;top:12px;right:12px;border-radius:10px;padding:3px 11px;font-size:10px;font-weight:800;color:#fff;letter-spacing:.2px;}
+.areq-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
+    margin-top:9px;padding-top:9px;border-top:1px solid #eef3f2;font-size:12px;}
+.areq-row .areq-l{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;
+    display:flex;align-items:center;gap:5px;flex-shrink:0;padding-top:1px;}
+.areq-row .areq-l i{font-size:12px;color:#b3c0bc;}
+.areq-row .areq-v{text-align:right;color:#414a46;font-weight:600;word-break:break-word;}
+.areq-rev{margin-top:9px;padding-top:9px;border-top:1px dashed #e4ecea;font-size:11px;color:#7a8783;
+    display:flex;gap:6px;align-items:flex-start;}
+.areq-rev i{color:#b3c0bc;font-size:13px;flex-shrink:0;margin-top:1px;}
+
 /* Mobile: every data table becomes a stacked list of cards (label : value rows)
    instead of a horizontally-scrolling table. Cells carry data-label="…" —
    a data-label="" cell (icons / narrow chips) collapses its label row. */
@@ -564,15 +657,15 @@ body{
     .ps-hist-table tbody, .att-table tbody, .drev-tbl tbody,
     .ps-hist-table tbody tr, .att-table tbody tr, .drev-tbl tbody tr{display:block;width:100%;}
     .ps-hist-table tbody tr, .att-table tbody tr, .drev-tbl tbody tr{
-        background:#fffdf8;border:1px solid #e7e0d0;border-left:3px solid #219688;border-radius:14px;
-        margin-bottom:10px;padding:2px 13px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 20px -14px rgba(60,50,30,.28);}
+        background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;border-radius:14px;
+        margin-bottom:10px;padding:2px 13px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
     .ps-hist-table tbody tr:last-child, .att-table tbody tr:last-child, .drev-tbl tbody tr:last-child{margin-bottom:0;}
     .ps-hist-table tbody td, .att-table tbody td, .drev-tbl tbody td{
         display:flex;align-items:center;justify-content:space-between;gap:12px;
-        padding:8px 0;border-top:1px solid #f4f2ea;white-space:normal;text-align:right;width:auto;}
+        padding:8px 0;border-top:1px solid #f2f6f5;white-space:normal;text-align:right;width:auto;}
     .ps-hist-table tbody td:first-child, .att-table tbody td:first-child, .drev-tbl tbody td:first-child{border-top:none;}
     .ps-hist-table tbody td::before, .att-table tbody td::before, .drev-tbl tbody td::before{
-        content:attr(data-label);font-size:9.5px;font-weight:800;color:#a59f90;
+        content:attr(data-label);font-size:9.5px;font-weight:800;color:#8a9794;
         text-transform:uppercase;letter-spacing:.4px;text-align:left;flex-shrink:0;}
     .ps-hist-table tbody td[data-label=""], .att-table tbody td[data-label=""]{justify-content:center;padding:6px 0;}
     .ps-hist-table tbody td[data-label=""]::before, .att-table tbody td[data-label=""]::before{content:none;}
@@ -590,68 +683,15 @@ body{
     #tab-payslips .table-responsive{display:none;}
     #tab-payslips .ps-mlist{display:block;}
 
-    /* ── Attendance Records (#att-tbl) — enhanced day card (matches payslip cards) ── */
-    #att-tbl tbody tr{display:flex;flex-wrap:wrap;position:relative;overflow:hidden;padding:13px 14px 2px;}
-    #att-tbl tbody td{border-top:none;padding:0;}
-    #att-tbl tbody td::before{content:none;}
-    /* Header: date (bold) + weekday; attendance-type badge floated top-right */
-    #att-tbl tbody td[data-label="Date"]{order:1;flex:0 0 100%;display:block;text-align:left;padding:0 104px 11px 0;}
-    #att-tbl tbody td[data-label="Date"] div:first-child{font-size:15px;font-weight:800;color:#176358;}
-    #att-tbl tbody td[data-label="Date"] div:last-child{font-size:10.5px;color:#a59f90;font-weight:600;margin-top:1px;}
-    #att-tbl tbody td[data-label="Type"]{position:absolute;top:12px;right:12px;display:block;}
-    /* Work Hours + OT Hours — two equal mini-stats with a divider */
-    #att-tbl tbody td[data-label="Work Hours"],
-    #att-tbl tbody td[data-label="OT Hours"]{
-        order:2;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;
-        padding:11px 4px;border-top:1px solid #f0ece0;text-align:center;}
-    #att-tbl tbody td[data-label="OT Hours"]{border-left:1px solid #f4f2ea;}
-    #att-tbl tbody td[data-label="Work Hours"] > div:first-child{font-size:15px;font-weight:800;color:#176358;}
-    #att-tbl tbody td[data-label="OT Hours"] > span{font-size:15px;}
-    #att-tbl tbody td[data-label="Work Hours"]::before,
-    #att-tbl tbody td[data-label="OT Hours"]::before{
-        content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#a59f90;
-        text-transform:uppercase;letter-spacing:.3px;}
-    #att-tbl tbody td[data-label="Work Hours"] > div{width:100%;max-width:110px;}
-    /* Time In / Out — full-width row */
-    #att-tbl tbody td[data-label="Time In / Out"]{
-        order:3;flex:0 0 100%;display:flex;flex-direction:column;align-items:flex-start;gap:6px;
-        padding:11px 0 10px;border-top:1px solid #f0ece0;text-align:left;}
-    #att-tbl tbody td[data-label="Time In / Out"]::before{
-        content:attr(data-label);font-size:9px;font-weight:800;color:#a59f90;
-        text-transform:uppercase;letter-spacing:.3px;}
-    /* Notes — full-width footer row */
-    #att-tbl tbody td[data-label="Notes"]{
-        order:4;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:9px 0 12px;border-top:1px dashed #eadfce;text-align:right;}
-    #att-tbl tbody td[data-label="Notes"]::before{
-        content:"Notes";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
-    #att-tbl tbody td.dataTables_empty{flex:0 0 100%;display:block;text-align:center;padding:22px 0;color:#aaa;}
+    /* ── Attendance Records — drop the DataTable entirely on mobile; the
+       dedicated .att-mlist infinite-scroll card feed replaces it. ── */
+    #tab-attendance .table-responsive{display:none;}
+    #tab-attendance .att-mlist-wrap{display:block;}
 
-    /* ── My Requests (OT / incident) — request card ── */
-    #att-req-list-wrap .att-table tbody tr{display:flex;flex-wrap:wrap;position:relative;padding:12px 13px 6px;}
-    #att-req-list-wrap .att-table tbody td{border-top:none;padding:0;}
-    #att-req-list-wrap .att-table tbody td::before{content:none;}
-    #att-req-list-wrap .att-table tbody td[data-label="Date"]{
-        order:1;flex:0 0 100%;display:block;text-align:left;font-size:14px;color:#176358;padding:0 110px 1px 0;}
-    #att-req-list-wrap .att-table tbody td[data-label="Type"]{position:absolute;top:13px;right:13px;display:block;}
-    #att-req-list-wrap .att-table tbody td[data-label="Filed"]{
-        order:2;flex:0 0 100%;display:block;text-align:left;font-size:10px !important;color:#a59f90;padding:0 0 10px;}
-    #att-req-list-wrap .att-table tbody td[data-label="Filed"]::before{content:"Filed ";font-size:10px;font-weight:700;color:#c5bfb0;}
-    #att-req-list-wrap .att-table tbody td[data-label="Reason"],
-    #att-req-list-wrap .att-table tbody td[data-label="Details"],
-    #att-req-list-wrap .att-table tbody td[data-label="Status"]{
-        order:3;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:8px 0;border-top:1px solid #f0ece0;text-align:right;}
-    #att-req-list-wrap .att-table tbody td[data-label="Reason"]::before,
-    #att-req-list-wrap .att-table tbody td[data-label="Details"]::before,
-    #att-req-list-wrap .att-table tbody td[data-label="Status"]::before{
-        content:attr(data-label);font-size:9px;font-weight:800;color:#a59f90;
-        text-transform:uppercase;letter-spacing:.3px;}
-    #att-req-list-wrap .att-table tbody td[data-label="Reviewer Notes"]{
-        order:4;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:8px 0;border-top:1px dashed #f0ece0;text-align:right;}
-    #att-req-list-wrap .att-table tbody td[data-label="Reviewer Notes"]::before{
-        content:"Reviewer";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+    /* ── My Requests (OT / incident) — drop the DataTable entirely on mobile;
+       the dedicated .areq-mlist infinite-scroll card feed replaces it. ── */
+    #tab-att-requests .table-responsive{display:none;}
+    #tab-att-requests .areq-mlist-wrap{display:block;}
 
     /* ── My Leave Requests — leave card ── */
     #leave-list-wrap .ps-hist-table tbody tr{display:flex;flex-wrap:wrap;position:relative;padding:12px 13px 6px;}
@@ -661,55 +701,55 @@ body{
         order:1;flex:0 0 100%;display:block;text-align:left;padding:0 0 1px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Type"] span{font-size:14px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Date Applied"]{
-        order:2;flex:0 0 100%;display:block;text-align:left;font-size:10px;color:#a59f90;padding:0 0 10px;}
+        order:2;flex:0 0 100%;display:block;text-align:left;font-size:10px;color:#8a9794;padding:0 0 10px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Date Applied"]::before{
-        content:"Filed ";font-size:10px;font-weight:700;color:#c5bfb0;}
+        content:"Filed ";font-size:10px;font-weight:700;color:#b3c0bc;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Period"]{
         order:3;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:8px 0;border-top:1px solid #f0ece0;text-align:right;font-size:12px !important;}
+        padding:8px 0;border-top:1px solid #eef3f2;text-align:right;font-size:12px !important;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Period"]::before{
-        content:"Period";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+        content:"Period";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Days"],
     #leave-list-wrap .ps-hist-table tbody td[data-label="HR"],
     #leave-list-wrap .ps-hist-table tbody td[data-label="Final"]{
         order:4;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
-        padding:9px 4px;border-top:1px solid #f0ece0;text-align:center;font-size:14px;}
+        padding:9px 4px;border-top:1px solid #eef3f2;text-align:center;font-size:14px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Days"]::before,
     #leave-list-wrap .ps-hist-table tbody td[data-label="HR"]::before,
     #leave-list-wrap .ps-hist-table tbody td[data-label="Final"]::before{
-        content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#a59f90;
+        content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#8a9794;
         text-transform:uppercase;letter-spacing:.3px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]{
         order:5;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:9px 0;border-top:1px solid #f0ece0;text-align:right;}
+        padding:9px 0;border-top:1px solid #eef3f2;text-align:right;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]::before{
-        content:"Status";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+        content:"Status";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
 
     /* ── Contributions (.con-tbl) — remittance card ── */
     .con-tbl{min-width:0;width:100%;border-collapse:separate;border-spacing:0;}
     .con-tbl thead{display:none;}
     .con-tbl tbody, .con-tbl tbody tr{display:block;width:100%;}
     .con-tbl tbody tr{
-        display:flex;flex-wrap:wrap;background:#fffdf8;border:1px solid #e7e0d0;border-left:3px solid #219688;
+        display:flex;flex-wrap:wrap;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;
         border-radius:14px;margin-bottom:10px;padding:12px 13px 6px;
-        box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 20px -14px rgba(60,50,30,.28);}
+        box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
     .con-tbl tbody td{border-top:none;padding:0;}
     .con-tbl tbody td[data-label="Pay Period"]{flex:0 0 100%;display:block;text-align:left;padding-bottom:10px;}
     .con-tbl tbody td[data-label="Contributions"],
     .con-tbl tbody td[data-label="SSS Provident"],
     .con-tbl tbody td[data-label="Tax"]{
         flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
-        padding:9px 4px;border-top:1px solid #f0ece0;text-align:center;font-size:12px;}
+        padding:9px 4px;border-top:1px solid #eef3f2;text-align:center;font-size:12px;}
     .con-tbl tbody td[data-label="Contributions"]::before,
     .con-tbl tbody td[data-label="SSS Provident"]::before,
     .con-tbl tbody td[data-label="Tax"]::before{
-        content:attr(data-label);display:block;font-size:8.5px;font-weight:800;color:#a59f90;
+        content:attr(data-label);display:block;font-size:8.5px;font-weight:800;color:#8a9794;
         text-transform:uppercase;letter-spacing:.2px;}
     .con-tbl tbody td[data-label="Total"]{
         flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:9px 0;border-top:1px solid #f0ece0;text-align:right;font-size:14px;}
+        padding:9px 0;border-top:1px solid #eef3f2;text-align:right;font-size:14px;}
     .con-tbl tbody td[data-label="Total"]::before{
-        content:"Total";font-size:9px;font-weight:800;color:#a59f90;text-transform:uppercase;letter-spacing:.3px;}
+        content:"Total";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
     /* Lifetime totals footer becomes its own gradient summary card */
     .con-tbl tfoot, .con-tbl tfoot tr{display:block;width:100%;}
     .con-tbl tfoot tr{background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:2px 13px;margin-top:2px;}
@@ -744,7 +784,7 @@ body{
     #payroll-review-body .prev-stats .drev-tbl tbody td{
         justify-content:space-between;text-align:right;font-weight:800;color:#176358;font-size:13px;padding:9px 0;}
     #payroll-review-body .prev-stats .drev-tbl tbody td::before{
-        content:attr(data-label);font-size:10px;font-weight:800;color:#a59f90;
+        content:attr(data-label);font-size:10px;font-weight:800;color:#8a9794;
         text-transform:uppercase;letter-spacing:.3px;}
     /* Earnings / Deductions: two columns → stacked full-width sections */
     #payroll-review-body .ps-body{grid-template-columns:1fr;}
@@ -760,7 +800,7 @@ body{
 }
 
 /* DataTables chrome — pared down to fit the paper theme */
-#att-tbl_wrapper .dataTables_processing{background:#fffdf8;color:#219688;font-weight:700;font-size:12px;border:none;box-shadow:none;}
+#att-tbl_wrapper .dataTables_processing{background:#ffffff;color:#219688;font-weight:700;font-size:12px;border:none;box-shadow:none;}
 #att-tbl_wrapper .dataTables_info{font-size:11px;color:#aaa;padding:10px 14px;}
 #att-tbl_wrapper .dataTables_paginate{padding:8px 14px;}
 #att-tbl_wrapper .dataTables_paginate .paginate_button{padding:4px 10px;margin-left:3px;border-radius:7px;font-size:11px;border:1px solid transparent !important;background:transparent !important;color:#888 !important;}
@@ -784,7 +824,7 @@ body{
 .daterangepicker td.start-date,.daterangepicker td.end-date{background-color:#176358 !important;}
 
 /* Loan cards */
-.loan-c{background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);padding:16px 18px;margin-bottom:10px;}
+.loan-c{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);padding:16px 18px;margin-bottom:10px;}
 .loan-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
 .loan-type-lbl{font-size:12px;font-weight:800;color:#176358;}
 .loan-bal-val{font-size:18px;font-weight:900;color:#e83e8c;}
@@ -805,9 +845,38 @@ body{
 .dtr-log-chip.manual{background:#fff8e1;color:#c98a00;border:1px solid #ffe082;}
 .time-io{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;}
 
+/* Today's attendance card (Overview) */
+.today-att{background:#ffffff;border:1px solid #e4ecea;border-top:3px solid #219688;border-radius:14px;
+    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);
+    padding:13px 16px 14px;margin-bottom:16px;}
+.today-att-head{display:flex;align-items:center;gap:8px;margin-bottom:11px;}
+.today-att-title{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;color:#176358;}
+.today-att-title i{color:#219688;font-size:15px;}
+.today-att-date{font-size:10.5px;font-weight:700;color:#8a9794;}
+.today-att-head .att-type{margin-left:auto;}
+.today-att-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+.tda-box{display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;
+    background:#faf8f1;border:1px solid #eef3f2;border-radius:12px;padding:11px 6px 10px;}
+.tda-ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:2px;}
+.tda-ic.in {background:#e6f5f3;color:#219688;}
+.tda-ic.out{background:#fce4ec;color:#c62828;}
+.tda-ic.hrs{background:#eef0f8;color:#4a5bbf;}
+.tda-ic.ot {background:#fff6e0;color:#c98a00;}
+.tda-l{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+.tda-v{font-size:14px;font-weight:900;color:#176358;line-height:1.15;}
+.tda-duty{display:inline-block;background:#e6f5f3;color:#219688;border:1px solid #aad5d0;border-radius:10px;
+    padding:2px 9px;font-size:10px;font-weight:800;}
+.today-att-empty{display:flex;align-items:center;gap:9px;font-size:12px;color:#7a8783;font-weight:600;
+    background:#faf8f1;border:1px dashed #e0d8c4;border-radius:12px;padding:12px 14px;line-height:1.45;}
+.today-att-empty i{font-size:19px;color:#b7b1a4;flex-shrink:0;}
+@media(max-width:600px){
+    .today-att-grid{grid-template-columns:repeat(2,1fr);}
+    .tda-v{font-size:15px;}
+}
+
 /* Year-to-date strip */
 .ytd-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
-.ytd-box{background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);padding:14px 16px;border-top:3px solid #219688;}
+.ytd-box{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);padding:14px 16px;border-top:3px solid #219688;}
 .ytd-box.g{border-top-color:#219688;}
 .ytd-box.d{border-top-color:#dc3545;}
 .ytd-box.n{border-top-color:#176358;}
@@ -818,26 +887,26 @@ body{
 .ytd-lbl{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;margin-top:5px;}
 /* Subtle hover lift on stat + chart cards (style polish) */
 .ytd-box{transition:transform .16s,box-shadow .16s;}
-.ytd-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.3);}
+.ytd-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.3);}
 
 /* Pay Insights strip (Overview) */
 .ins-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
-.ins-box{display:flex;align-items:center;gap:12px;background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);transition:transform .16s,box-shadow .16s;}
-.ins-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.28);}
+.ins-box{display:flex;align-items:center;gap:12px;background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);transition:transform .16s,box-shadow .16s;}
+.ins-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
 .ins-ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:#e8f7f5;color:#219688;}
 .ins-box.up .ins-ic{background:#eafaf0;color:#0f9d58;} .ins-box.down .ins-ic{background:#fdecea;color:#dc3545;}
 .ins-box.gold .ins-ic{background:#fff6e0;color:#c98a00;} .ins-box.purple .ins-ic{background:#f2edfb;color:#6f42c1;}
 .ins-v{font-size:16px;font-weight:900;line-height:1.05;color:#176358;}
 .ins-box.up .ins-v{color:#0f9d58;} .ins-box.down .ins-v{color:#dc3545;}
-.ins-l{font-size:10px;color:#a59f90;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;font-weight:700;}
+.ins-l{font-size:10px;color:#8a9794;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;font-weight:700;}
 .ins-sub{font-size:10px;color:#b7b1a4;margin-top:1px;}
 
 /* Contributions tab */
 .con-hero{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
-.con-box{background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);padding:14px 16px;border-top:3px solid #219688;transition:transform .16s,box-shadow .16s;}
-.con-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.28);}
+.con-box{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);padding:14px 16px;border-top:3px solid #219688;transition:transform .16s,box-shadow .16s;}
+.con-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
 .con-box.b2{border-top-color:#4a5bbf;} .con-box.b3{border-top-color:#b26a00;} .con-box.b4{border-top-color:#176358;}
-.con-cap{font-size:10px;color:#a59f90;text-transform:uppercase;letter-spacing:.4px;font-weight:700;display:flex;align-items:center;gap:5px;}
+.con-cap{font-size:10px;color:#8a9794;text-transform:uppercase;letter-spacing:.4px;font-weight:700;display:flex;align-items:center;gap:5px;}
 .con-val{font-size:19px;font-weight:900;line-height:1;color:#176358;margin-top:7px;}
 .con-box.b2 .con-val{color:#4a5bbf;} .con-box.b3 .con-val{color:#b26a00;}
 .con-note{font-size:10px;color:#b7b1a4;margin-top:5px;}
@@ -859,7 +928,7 @@ body{
 @media(max-width:600px){.ins-strip,.con-hero{grid-template-columns:repeat(2,1fr);}}
 
 /* Net-pay trend mini chart */
-.trend-card{background:#fffdf8;border:1px solid #e7e0d0;border-radius:14px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);padding:16px 18px 12px;margin-bottom:14px;}
+.trend-card{background:#ffffff;border:1px solid #e4ecea;border-radius:14px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);padding:16px 18px 12px;margin-bottom:14px;}
 .trend-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
 .trend-title{font-size:12px;font-weight:800;color:#176358;}
 .trend-bars{display:flex;align-items:flex-end;gap:8px;height:120px;}
@@ -893,8 +962,8 @@ body{
 
 /* Quick actions */
 .qa-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
-.qa-btn{display:flex;align-items:center;gap:10px;background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;padding:12px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#176358;text-align:left;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);transition:transform .15s,box-shadow .15s;}
-.qa-btn:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.28);}
+.qa-btn{display:flex;align-items:center;gap:10px;background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:12px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#176358;text-align:left;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);transition:transform .15s,box-shadow .15s;}
+.qa-btn:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
 .qa-btn i{width:34px;height:34px;border-radius:9px;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
 .qa-badge{margin-left:auto;background:#e6a817;color:#fff;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;}
 
@@ -904,7 +973,7 @@ body{
 .evt-date{width:44px;flex-shrink:0;text-align:center;background:#f3f8f7;border:1px solid #ddecea;border-radius:9px;padding:4px 0;}
 .evt-date .d{font-size:15px;font-weight:900;color:#176358;line-height:1.1;}
 .evt-date .m{font-size:9px;font-weight:800;color:#219688;text-transform:uppercase;letter-spacing:.5px;}
-.evt-title{font-size:12px;font-weight:700;color:#33312c;line-height:1.3;}
+.evt-title{font-size:12px;font-weight:700;color:#2b3330;line-height:1.3;}
 .evt-note{font-size:10.5px;color:#999;margin-top:1px;}
 .evt-pill{margin-left:auto;flex-shrink:0;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;}
 .evt-pill.hol{background:#fff0f0;color:#c62828;}
@@ -914,7 +983,7 @@ body{
 .lvc-row{padding:7px 0;border-bottom:1px dashed #ece4d2;}
 .lvc-row:last-child{border-bottom:none;}
 .lvc-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
-.lvc-name{font-size:11.5px;font-weight:700;color:#33312c;}
+.lvc-name{font-size:11.5px;font-weight:700;color:#2b3330;}
 .lvc-num{font-size:11px;font-weight:800;color:#176358;}
 .lvc-num .dim2{color:#aaa;font-weight:600;}
 .lvc-bar{height:6px;border-radius:3px;background:#e0eeec;overflow:hidden;}
@@ -934,7 +1003,7 @@ body{
 }
 
 /* Basic info grid */
-.info-section{background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);overflow:hidden;margin-bottom:14px;}
+.info-section{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);overflow:hidden;margin-bottom:14px;}
 .info-sec-title{background:#219688;color:#fff;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;padding:8px 16px;display:flex;align-items:center;gap:7px;}
 .info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0;}
 .info-item{padding:10px 16px;border-bottom:1px solid #f0f5f4;border-right:1px solid #f0f5f4;}
@@ -945,26 +1014,26 @@ body{
 .info-val.teal{color:#219688;}
 
 /* Empty state — uniform card across every tab */
-.empty-state{text-align:center;padding:34px 22px;background:#fffdf8;border:1px solid #e7e0d0;border-radius:14px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);}
+.empty-state{text-align:center;padding:34px 22px;background:#ffffff;border:1px solid #e4ecea;border-radius:14px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);}
 .empty-ic{width:52px;height:52px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:23px;margin:0 auto 12px;}
-.empty-state p{font-size:12.5px;color:#8a857a;margin:0;font-weight:600;line-height:1.5;}
-.empty-state p strong{color:#33312c;}
+.empty-state p{font-size:12.5px;color:#7a8783;margin:0;font-weight:600;line-height:1.5;}
+.empty-state p strong{color:#2b3330;}
 .empty-state.success .empty-ic{background:#e8f7f5;color:#219688;}
 .empty-state.success p{color:#176358;font-weight:800;}
 .empty-state.warn .empty-ic{background:#fff3cd;color:#c98a00;}
 .empty-state.warn p{color:#8a6d1a;}
 
 /* bootstrap-select — make the dropdown + search box visible on the paper theme */
-.bootstrap-select .dropdown-toggle{background:#fff !important;border:1px solid #cfe3e0 !important;color:#33312c !important;font-size:13px;border-radius:8px;padding:7px 11px;box-shadow:none !important;}
+.bootstrap-select .dropdown-toggle{background:#fff !important;border:1px solid #cfe3e0 !important;color:#2b3330 !important;font-size:13px;border-radius:8px;padding:7px 11px;box-shadow:none !important;}
 .bootstrap-select .dropdown-toggle:focus{outline:none !important;border-color:#219688 !important;box-shadow:0 0 0 2px rgba(33,150,136,.15) !important;}
-.bootstrap-select .dropdown-menu{font-size:13px;border:1px solid #e7e0d0;box-shadow:0 8px 22px -10px rgba(60,50,30,.3);}
-.bootstrap-select .dropdown-menu li a{color:#33312c;}
+.bootstrap-select .dropdown-menu{font-size:13px;border:1px solid #e4ecea;box-shadow:0 8px 22px -10px rgba(16,55,50,.3);}
+.bootstrap-select .dropdown-menu li a{color:#2b3330;}
 .bootstrap-select .dropdown-menu li.selected a,.bootstrap-select .dropdown-menu li a:hover{background:#e6f5f3 !important;color:#176358 !important;}
 .bootstrap-select .bs-searchbox{padding:8px;}
 .bootstrap-select .bs-searchbox .form-control{
-    background:#fff !important;color:#33312c !important;
+    background:#fff !important;color:#2b3330 !important;
     border:1px solid #cfe3e0 !important;border-radius:6px;font-size:13px;padding:6px 10px;
-    -webkit-text-fill-color:#33312c;
+    -webkit-text-fill-color:#2b3330;
 }
 .bootstrap-select .bs-searchbox .form-control::placeholder{color:#9aa3a0 !important;-webkit-text-fill-color:#9aa3a0;}
 .bootstrap-select .bs-searchbox .form-control:focus{border-color:#219688 !important;box-shadow:0 0 0 2px rgba(33,150,136,.15) !important;}
@@ -975,36 +1044,36 @@ body{
 .help-hero-t{font-size:17px;font-weight:900;line-height:1.2;}
 .help-hero-s{font-size:11.5px;color:rgba(255,255,255,.82);margin-top:4px;}
 .help-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px;}
-.help-card{background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;padding:14px 15px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);transition:transform .15s,box-shadow .15s;}
-.help-card:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(60,50,30,.05), 0 14px 28px -14px rgba(60,50,30,.28);}
+.help-card{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:14px 15px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);transition:transform .15s,box-shadow .15s;}
+.help-card:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
 .help-card-ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:9px;}
-.help-card-t{font-size:13px;font-weight:800;color:#33312c;margin-bottom:3px;}
-.help-card-d{font-size:11.5px;color:#8a857a;line-height:1.45;}
+.help-card-t{font-size:13px;font-weight:800;color:#2b3330;margin-bottom:3px;}
+.help-card-d{font-size:11.5px;color:#7a8783;line-height:1.45;}
 /* glossary rows */
 .gloss{display:flex;gap:12px;padding:8px 16px;border-bottom:1px dashed #ece4d2;}
 .gloss:last-child{border-bottom:none;}
 .gloss-t{font-size:12px;font-weight:800;color:#176358;min-width:150px;flex-shrink:0;}
-.gloss-d{font-size:12px;color:#6f6a60;line-height:1.4;}
+.gloss-d{font-size:12px;color:#66706c;line-height:1.4;}
 /* FAQ accordion */
 .faq{margin-bottom:6px;}
-.faq-item{background:#fffdf8;border:1px solid #e7e0d0;border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:0 1px 2px rgba(60,50,30,.04);}
-.faq-q{width:100%;border:none;background:transparent;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;font-size:12.5px;font-weight:700;color:#33312c;cursor:pointer;text-align:left;}
+.faq-item{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:0 1px 2px rgba(16,55,50,.04);}
+.faq-q{width:100%;border:none;background:transparent;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;font-size:12.5px;font-weight:700;color:#2b3330;cursor:pointer;text-align:left;}
 .faq-q i{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:15px;transition:transform .2s;}
 .faq-item.open .faq-q i{transform:rotate(45deg);background:#219688;color:#fff;}
 .faq-a{max-height:0;overflow:hidden;transition:max-height .25s ease;}
 .faq-item.open .faq-a{max-height:400px;}
-.faq-a p{margin:0;padding:0 16px 14px;font-size:12px;color:#6f6a60;line-height:1.55;}
-.faq-a code{background:#f0ece0;color:#176358;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;}
+.faq-a p{margin:0;padding:0 16px 14px;font-size:12px;color:#66706c;line-height:1.55;}
+.faq-a code{background:#eef3f2;color:#176358;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;}
 /* contact card */
-.contact-card{display:flex;align-items:center;gap:14px;background:#fffdf8;border:1px solid #e7e0d0;border-left:4px solid #219688;border-radius:12px;padding:16px 18px;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -14px rgba(60,50,30,.18);flex-wrap:wrap;}
+.contact-card{display:flex;align-items:center;gap:14px;background:#ffffff;border:1px solid #e4ecea;border-left:4px solid #219688;border-radius:12px;padding:16px 18px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);flex-wrap:wrap;}
 .contact-ic{width:46px;height:46px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:23px;flex-shrink:0;}
 .contact-t{font-size:13.5px;font-weight:800;color:#176358;}
-.contact-d{font-size:11.5px;color:#8a857a;margin-top:2px;}
-.contact-meta{font-size:11px;color:#6f6a60;font-weight:600;text-align:right;}
+.contact-d{font-size:11.5px;color:#7a8783;margin-top:2px;}
+.contact-meta{font-size:11px;color:#66706c;font-weight:600;text-align:right;}
 .contact-meta i{color:#219688;}
 
 /* Footer */
-.portal-foot{text-align:center;font-size:11px;color:#a59f90;margin-top:30px;}
+.portal-foot{text-align:center;font-size:11px;color:#8a9794;margin-top:30px;}
 
 @media(max-width:600px){
     .portal-wrap{padding:14px 10px 40px;}
@@ -1014,7 +1083,7 @@ body{
     .emp-nm{font-size:15px;}
     .emp-no-badge{padding:4px 8px;font-size:10px;}
     .emp-stats{grid-template-columns:repeat(3,1fr);}
-    .est:nth-child(n+4){border-top:1px solid #f0ece0;}
+    .est:nth-child(n+4){border-top:1px solid #eef3f2;}
     .ps-body{grid-template-columns:1fr;}
     .ps-col:first-child{border-right:none;border-bottom:1px solid #f0f5f4;}
     .ps-net-val{font-size:20px;}
@@ -1054,6 +1123,14 @@ body{
     .help-grid{grid-template-columns:1fr;}
     .gloss-t{min-width:115px;}
 }
+
+/* ── Modal stacking — keep Bootstrap dialogs above ALL portal chrome ──
+   In an installed / fullscreen PWA (display:standalone) there is no browser
+   chrome to mask stacking quirks, so app overlays (notif panel z-index:1200,
+   bottom nav, sticky header, more-sheet) could render on top of a modal and
+   the dialog appeared "behind" the page. Pin the modal + backdrop above them. */
+.modal-backdrop { z-index: 1990 !important; }
+.modal          { z-index: 2000 !important; }
 
 /* ── Modal form controls — ensure visible borders and readable text ── */
 .modal .form-control,
@@ -1099,7 +1176,7 @@ body{
 /* ── Pull-to-refresh (mobile) ── */
 html, body { overscroll-behavior-y: contain; } /* let our own indicator handle the pull, not the browser's native one */
 #ptr-indicator {
-    position: fixed; top: 54px; left: 50%; margin-left: -19px; z-index: 500;
+    position: fixed; top: 56px; left: 50%; margin-left: -19px; z-index: 500;
     width: 38px; height: 38px; border-radius: 50%; background: #fff;
     box-shadow: 0 2px 10px rgba(0,0,0,.18);
     display: flex; align-items: center; justify-content: center;
@@ -1307,6 +1384,46 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="est-l">Loan Balance</div>
                 </div>
             </div>
+        </div>
+
+        <!-- Today's attendance -->
+        <div class="today-att">
+            <div class="today-att-head">
+                <span class="today-att-title"><i class="ri-time-line"></i>Today's Attendance</span>
+                <span class="today-att-date"><?= date('D, M d') ?></span>
+                <?php if ($today_att): ?>
+                <span class="att-type <?= $td_type_cls ?>"><?= htmlspecialchars($td_type) ?></span>
+                <?php endif; ?>
+            </div>
+            <?php if ($today_att): ?>
+            <div class="today-att-grid">
+                <div class="tda-box">
+                    <div class="tda-ic in"><i class="ri-login-circle-line"></i></div>
+                    <div class="tda-l">Time In</div>
+                    <div class="tda-v"><?= $td_in ?: '—' ?></div>
+                </div>
+                <div class="tda-box">
+                    <div class="tda-ic out"><i class="ri-logout-circle-line"></i></div>
+                    <div class="tda-l">Time Out</div>
+                    <div class="tda-v"><?= $td_out ?: ($td_in ? '<span class="tda-duty">On duty</span>' : '—') ?></div>
+                </div>
+                <div class="tda-box">
+                    <div class="tda-ic hrs"><i class="ri-timer-2-line"></i></div>
+                    <div class="tda-l">Hours<?= $td_live ? ' so far' : '' ?></div>
+                    <div class="tda-v"><?= $td_hours > 0 ? nd(round($td_hours, 1)).'h' : '—' ?></div>
+                </div>
+                <div class="tda-box">
+                    <div class="tda-ic ot"><i class="ri-timer-flash-line"></i></div>
+                    <div class="tda-l">OT Hours</div>
+                    <div class="tda-v"><?= $td_ot > 0 ? nd(round($td_ot, 1)).'h' : '—' ?></div>
+                </div>
+            </div>
+            <?php else: ?>
+            <div class="today-att-empty">
+                <i class="ri-fingerprint-line"></i>
+                No punches recorded yet today — your time in will show here once you clock in.
+            </div>
+            <?php endif; ?>
         </div>
 
         <!-- Quick actions -->
@@ -1875,6 +1992,11 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <tbody></tbody>
             </table>
             </div>
+            <!-- Mobile: infinite-scroll card feed (replaces the table ≤600px) -->
+            <div class="att-mlist-wrap">
+                <div id="att-mlist"></div>
+                <div class="attm-foot" id="att-mfoot" style="display:none;"></div>
+            </div>
         </div>
     </div>
 
@@ -1888,63 +2010,35 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             </button>
         </div>
 
-        <!-- My Request History -->
-        <div class="sec"><i class="ri-history-line"></i>My Requests</div>
-        <div id="att-req-list-wrap">
-        <?php if (count($my_attendance_requests)): ?>
-        <div class="paper" style="border-radius:14px;overflow:hidden;">
-            <div class="table-responsive">
-            <table class="att-table">
-                <thead>
-                    <tr>
-                        <th>Filed</th>
-                        <th>Type</th>
-                        <th>Date</th>
-                        <th>Reason</th>
-                        <th>Details</th>
-                        <th class="text-center">Status</th>
-                        <th>Reviewer Notes</th>
-                    </tr>
-                </thead>
-                <tbody>
-                <?php
-                $reasonLabels = ['forgot_scan'=>'Forgot to Scan','device_error'=>'Device Error','system_down'=>'System Down','overtime'=>'Overtime','other'=>'Other'];
-                foreach ($my_attendance_requests as $ar):
-                    $statusMap = [0=>['Pending','#e6a817'],1=>['Approved','#219688'],2=>['Rejected','#c62828']];
-                    [$slabel,$scolor] = $statusMap[$ar['status']] ?? ['Unknown','#aaa'];
-                ?>
-                <tr>
-                    <td data-label="Filed" style="font-size:11px;"><?= date('M d, Y', strtotime($ar['created_at'])) ?></td>
-                    <td data-label="Type">
-                        <?php if ($ar['request_type']==='incident'): ?>
-                            <span style="background:#fff3cd;color:#856404;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-error-warning-line me-1"></i>Incident</span>
-                        <?php else: ?>
-                            <span style="background:#cff4fc;color:#055160;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-timer-flash-line me-1"></i>OT Request</span>
-                        <?php endif; ?>
-                    </td>
-                    <td data-label="Date" style="font-weight:700;"><?= date('M d, Y', strtotime($ar['request_date'])) ?></td>
-                    <td data-label="Reason" style="font-size:11px;"><?= htmlspecialchars($reasonLabels[$ar['reason']] ?? $ar['reason']) ?></td>
-                    <td data-label="Details" style="font-size:11px;">
-                        <?php if ($ar['claimed_time_in']): ?>
-                            <?= date('h:i A', strtotime($ar['claimed_time_in'])) ?> – <?= date('h:i A', strtotime($ar['claimed_time_out'])) ?>
-                        <?php elseif ($ar['ot_hours_requested']): ?>
-                            <?= $ar['ot_hours_requested'] ?> hrs OT
-                        <?php endif; ?>
-                        <?php if ($ar['notes']): ?><div style="color:#aaa;font-size:10px;"><?= htmlspecialchars(mb_strimwidth($ar['notes'],0,40,'…')) ?></div><?php endif; ?>
-                    </td>
-                    <td class="text-center" data-label="Status">
-                        <span style="background:<?= $scolor ?>;color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;"><?= $slabel ?></span>
-                    </td>
-                    <td data-label="Reviewer Notes" style="font-size:11px;color:#888;"><?= htmlspecialchars($ar['reviewer_remarks'] ?? '—') ?></td>
-                </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-            </div>
+        <!-- My Request History — server-side DataTable on desktop; on mobile a
+             dedicated infinite-scroll card feed (#areq-mlist) hits the same endpoint. -->
+        <div class="sec"><i class="ri-history-line"></i>My Requests
+            <span style="font-weight:600;color:#8a9794;font-size:12px;">(<span id="areq-count">0</span>)</span>
         </div>
-        <?php else: ?>
-        <div class="empty-state"><div class="empty-ic"><i class="ri-file-list-3-line"></i></div><p>No requests filed yet.</p></div>
-        <?php endif; ?>
+        <div id="att-req-list-wrap">
+            <div class="paper" style="border-radius:14px;overflow:hidden;">
+                <div class="table-responsive">
+                <table class="att-table" id="att-req-tbl" style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Filed</th>
+                            <th>Type</th>
+                            <th>Date</th>
+                            <th>Reason</th>
+                            <th>Details</th>
+                            <th class="text-center">Status</th>
+                            <th>Reviewer Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                </div>
+                <!-- Mobile: infinite-scroll card feed (replaces the table ≤600px) -->
+                <div class="areq-mlist-wrap">
+                    <div id="areq-mlist"></div>
+                    <div class="attm-foot" id="areq-mfoot" style="display:none;"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -2042,7 +2136,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </div>
 
         <div class="sec"><i class="ri-history-line"></i>Remittance History</div>
-        <div style="background:#fffdf8;border:1px solid #e7e0d0;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(60,50,30,.05), 0 8px 22px -12px rgba(60,50,30,.18);">
+        <div style="background:#ffffff;border:1px solid #e4ecea;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);">
             <div style="overflow-x:auto;">
                 <table class="con-tbl">
                     <thead>
@@ -2080,7 +2174,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </table>
             </div>
         </div>
-        <div style="font-size:11px;color:#a59f90;margin-top:10px;line-height:1.5;"><i class="ri-error-warning-line me-1"></i>These figures come from your reviewed and locked payslips. For official contribution records, please coordinate with HR.</div>
+        <div style="font-size:11px;color:#8a9794;margin-top:10px;line-height:1.5;"><i class="ri-error-warning-line me-1"></i>These figures come from your reviewed and locked payslips. For official contribution records, please coordinate with HR.</div>
         <?php else: ?>
         <div class="empty-state"><div class="empty-ic"><i class="ri-shield-check-line"></i></div><p>No contributions recorded yet.<br>They'll appear here once your payslips are released.</p></div>
         <?php endif; ?>
@@ -2454,6 +2548,20 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 <script src="https://cdn.datatables.net/responsive/2.2.9/js/dataTables.responsive.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.2.9/js/responsive.bootstrap5.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<!-- Firebase Cloud Messaging: browser push (works with the portal closed) -->
+<!-- PWA: register the service worker on load, independent of the notification
+     opt-in, so Android/Chrome offers "Install app". Same SW file fcm-client.js
+     uses later, so this is idempotent. Needs HTTPS (or localhost) to run. -->
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+        navigator.serviceWorker.register('firebase-messaging-sw.js')
+            .catch(function (e) { console.warn('[PWA] SW registration failed:', e); });
+    });
+}
+</script>
+<script>window.FCM_SAVE_URL = 'emp-portal-ajax.php?action=save_fcm_token';</script>
+<script type="module" src="assets2/js/fcm-client.js"></script>
 <script>
 function toggleAttFields(type) {
     document.querySelectorAll('.att-incident-field').forEach(function(el){
@@ -2507,8 +2615,13 @@ function switchTab(id, btn) {
     }
     // DataTables mis-measures column widths while its container is display:none —
     // fix it up once the Attendance tab actually becomes visible.
+    if (id === 'attendance' && window.attMKick) window.attMKick();
     if (id === 'attendance' && window.attTable) {
         window.attTable.columns.adjust();
+    }
+    if (id === 'att-requests' && window.areqMKick) window.areqMKick();
+    if (id === 'att-requests' && window.areqTable) {
+        window.areqTable.columns.adjust();
     }
 }
 
@@ -2641,33 +2754,12 @@ function fmtTimeHM(t) {
 }
 function trimNum(n) { n = Number(n); return (Math.round(n * 10) / 10).toString().replace(/\.0$/, ''); }
 
+// A new request was just filed — pull the fresh, paginated first page from the
+// server rather than hand-building a row, so both the desktop table and the
+// mobile infinite-scroll feed stay consistent. (areqReload is defined with the
+// Requests-tab feed JS further down.)
 function prependAttRequestRow(req) {
-    var wrap = document.getElementById('att-req-list-wrap');
-    if (!wrap) return;
-    var tbody = wrap.querySelector('table.att-table tbody');
-    if (!tbody) {
-        wrap.innerHTML = '<div class="paper" style="border-radius:14px;overflow:hidden;"><div class="table-responsive">'
-            + '<table class="att-table"><thead><tr><th>Filed</th><th>Type</th><th>Date</th><th>Reason</th><th>Details</th>'
-            + '<th class="text-center">Status</th><th>Reviewer Notes</th></tr></thead><tbody></tbody></table></div></div>';
-        tbody = wrap.querySelector('tbody');
-    }
-    var typeHtml = req.request_type === 'incident'
-        ? '<span style="background:#fff3cd;color:#856404;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-error-warning-line me-1"></i>Incident</span>'
-        : '<span style="background:#cff4fc;color:#055160;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-timer-flash-line me-1"></i>OT Request</span>';
-    var detailsHtml = '';
-    if (req.claimed_time_in) detailsHtml = fmtTimeHM(req.claimed_time_in) + ' – ' + fmtTimeHM(req.claimed_time_out);
-    else if (req.ot_hours_requested) detailsHtml = req.ot_hours_requested + ' hrs OT';
-    if (req.notes) detailsHtml += '<div style="color:#aaa;font-size:10px;">' + escapeHtml(req.notes.length > 40 ? req.notes.slice(0, 40) + '…' : req.notes) + '</div>';
-    var row = '<tr>'
-        + '<td data-label="Filed" style="font-size:11px;">' + fmtMDY(req.created_at) + '</td>'
-        + '<td data-label="Type">' + typeHtml + '</td>'
-        + '<td data-label="Date" style="font-weight:700;">' + fmtMDY(req.request_date) + '</td>'
-        + '<td data-label="Reason" style="font-size:11px;">' + escapeHtml(REASON_LABELS[req.reason] || req.reason) + '</td>'
-        + '<td data-label="Details" style="font-size:11px;">' + detailsHtml + '</td>'
-        + '<td class="text-center" data-label="Status"><span style="background:#e6a817;color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;">Pending</span></td>'
-        + '<td data-label="Reviewer Notes" style="font-size:11px;color:#888;">—</td>'
-        + '</tr>';
-    tbody.insertAdjacentHTML('afterbegin', row);
+    if (window.areqReload) window.areqReload();
 }
 
 function prependLeaveRow(req) {
@@ -3223,20 +3315,16 @@ function printSelectedMyPayslips() {
     window.open('print-my-payslips.php?ids=' + ids.join(','), '_blank', 'width=960,height=760,scrollbars=yes');
 }
 
-// ── Payslip preview: show the payslip inside a modal (via iframe) first,
-// then let the employee print it from the modal — no auto-print pop-up. ──
+// ── Payslip preview: render the payslip as a dompdf PDF inside the modal, same
+// flow as the payroll prints — preview inline, download from the modal. ──
 function openPayslipPreview(itemId) {
     var frame = document.getElementById('payslip-preview-frame');
     if (!frame) return;
-    frame.src = 'view_payslip.php?id=' + encodeURIComponent(itemId) + '&preview=1';
+    var url = 'pdf-payroll.php?src=payslip&id=' + encodeURIComponent(itemId);
+    frame.src = url;
+    var dl = document.getElementById('payslip-preview-download');
+    if (dl) dl.href = url + '&download=1';
     new bootstrap.Modal(document.getElementById('modal-payslip-preview')).show();
-}
-function printPayslipPreview() {
-    var frame = document.getElementById('payslip-preview-frame');
-    if (frame && frame.contentWindow) {
-        frame.contentWindow.focus();
-        frame.contentWindow.print();
-    }
 }
 
 // ── Payroll charts (ApexCharts) ──────────────────────────────
@@ -3250,7 +3338,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initCompare();
     if (typeof ApexCharts === 'undefined') return;
     var base = { chart:{ fontFamily:'Segoe UI,Arial,sans-serif', toolbar:{show:false}, parentHeightOffset:0 },
-                 grid:{ borderColor:'#f0ece0', strokeDashArray:0 },
+                 grid:{ borderColor:'#eef3f2', strokeDashArray:0 },
                  xaxis:{ categories:CHART.labels, labels:{ style:{ fontSize:'10px', colors:'#999' } } },
                  dataLabels:{ enabled:false }, legend:{ fontSize:'11px', markers:{ width:9, height:9 } } };
 
@@ -3303,11 +3391,11 @@ document.addEventListener('DOMContentLoaded', function () {
             colors:['#219688','#4a5bbf','#b26a00','#c9366f','#5e35b1','#7a7f2a'],
             series: DED.map(function(d){ return d.value; }),
             labels: DED.map(function(d){ return d.label; }),
-            stroke:{ width:2, colors:['#fffdf8'] },
+            stroke:{ width:2, colors:['#ffffff'] },
             dataLabels:{ enabled:false },
             legend:{ position:'bottom', fontSize:'11px', markers:{ width:9, height:9 } },
             plotOptions:{ pie:{ donut:{ size:'70%', labels:{ show:true,
-                value:{ fontSize:'14px', fontWeight:800, color:'#33312c', formatter:function(v){ return peso(v); } },
+                value:{ fontSize:'14px', fontWeight:800, color:'#2b3330', formatter:function(v){ return peso(v); } },
                 total:{ show:true, label:'Total', fontSize:'10px', color:'#999', formatter:function(){ return peso(TOTDED); } }
             } } } },
             tooltip:{ y:{ formatter:peso } }
@@ -3387,18 +3475,21 @@ document.getElementById('ps-search') && document.getElementById('ps-search').add
     });
 });
 
-// ── Attendance Records — server-side DataTable, defaults to today ──
+// ── Attendance Records — server-side DataTable on desktop; on mobile a
+// dedicated infinite-scroll card feed (#att-mlist) hits the same endpoint. ──
 var attToday = moment().format('YYYY-MM-DD');
 var attFrom  = attToday, attTo = attToday;
+var attMobileMQ = window.matchMedia('(max-width:600px)');
 
-// (Re)binds Bootstrap popovers on the log-detail pills DataTables just drew.
+// (Re)binds Bootstrap popovers on the log-detail pills just drawn (table or feed).
 function initAttPopovers() {
-    document.querySelectorAll('#att-tbl [data-bs-toggle="popover"]').forEach(function (el) {
+    document.querySelectorAll('#att-tbl [data-bs-toggle="popover"], #att-mlist [data-bs-toggle="popover"]').forEach(function (el) {
         var existing = bootstrap.Popover.getInstance(el);
         if (existing) existing.dispose();
-        new bootstrap.Popover(el, { sanitize: false });
+        // 'left' (from the server markup) falls off-screen on phones — pin to top there.
+        new bootstrap.Popover(el, { sanitize: false, placement: attMobileMQ.matches ? 'top' : 'left' });
         el.addEventListener('shown.bs.popover', function () {
-            document.querySelectorAll('#att-tbl [data-bs-toggle="popover"]').forEach(function (other) {
+            document.querySelectorAll('#att-tbl [data-bs-toggle="popover"], #att-mlist [data-bs-toggle="popover"]').forEach(function (other) {
                 if (other !== el) bootstrap.Popover.getInstance(other) && bootstrap.Popover.getInstance(other).hide();
             });
         });
@@ -3407,14 +3498,98 @@ function initAttPopovers() {
 // Click outside closes any open popover
 document.addEventListener('click', function (e) {
     if (!e.target.closest('[data-bs-toggle="popover"]') && !e.target.closest('.popover')) {
-        document.querySelectorAll('#att-tbl [data-bs-toggle="popover"]').forEach(function (el) {
+        document.querySelectorAll('#att-tbl [data-bs-toggle="popover"], #att-mlist [data-bs-toggle="popover"]').forEach(function (el) {
             var inst = bootstrap.Popover.getInstance(el);
             if (inst) inst.hide();
         });
     }
 });
 
-jQuery(function ($) {
+// ── Mobile infinite-scroll feed ──────────────────────────────────
+var attM = { start: 0, pageSize: 15, total: null, loading: false, done: false, started: false };
+
+function attMCard(r) {
+    // Server cells arrive as HTML fragments; recompose them into an app-style card.
+    var card = document.createElement('div');
+    card.className = 'attm-card';
+    var noteText = (r.notes || '').replace(/<[^>]*>/g, '').trim();
+    card.innerHTML =
+        '<div class="attm-head">' + r.date + '</div>' +
+        r.type +
+        '<div class="attm-stats">' +
+            '<div class="attm-stat"><span class="attm-sl">Work Hours</span><div class="attm-sv">' + r.work_hours + '</div></div>' +
+            '<div class="attm-stat"><span class="attm-sl">OT Hours</span><div class="attm-sv">' + r.ot_hours + '</div></div>' +
+        '</div>' +
+        '<div class="attm-io"><span class="attm-sl">Time In / Out</span>' + r.time_io + '</div>' +
+        (noteText && noteText !== '—' ? '<div class="attm-notes">' + r.notes + '</div>' : '<div style="padding-bottom:11px;"></div>');
+    // Date cell arrives as two stacked <div>s — retag them for the card typography.
+    var dd = card.querySelectorAll('.attm-head > div');
+    if (dd[0]) dd[0].className = 'attm-d1';
+    if (dd[1]) dd[1].className = 'attm-d2';
+    return card;
+}
+
+function attMLoad() {
+    if (attM.loading || attM.done) return;
+    attM.loading = true;
+    attM.started = true;
+    var list = document.getElementById('att-mlist');
+    var foot = document.getElementById('att-mfoot');
+    foot.style.display = '';
+    foot.innerHTML = '<span class="attm-spin"></span>Loading…';
+    jQuery.post('attendance-portal-server.php', {
+        draw: 1, start: attM.start, length: attM.pageSize,
+        from: attFrom, to: attTo,
+        'order[0][column]': 0, 'order[0][dir]': 'desc',
+    }, function (res) {
+        attM.total = res.recordsFiltered;
+        var c = document.getElementById('att-count');
+        if (c) c.textContent = res.recordsFiltered;
+        (res.data || []).forEach(function (r) { list.appendChild(attMCard(r)); });
+        attM.start += (res.data || []).length;
+        attM.done = attM.start >= res.recordsFiltered || !(res.data || []).length;
+        if (!attM.start) {
+            list.innerHTML = '<div class="attm-empty"><i class="ri-calendar-close-line"></i>No attendance records found for this range.</div>';
+            foot.style.display = 'none';
+        } else if (attM.done) {
+            foot.innerHTML = 'All ' + attM.total + ' record' + (attM.total == 1 ? '' : 's') + ' loaded';
+        } else {
+            foot.innerHTML = '<span class="attm-spin"></span>Loading…';
+        }
+        initAttPopovers();
+        attM.loading = false;
+        // If the footer is still on screen (short first page), keep filling.
+        // offsetParent check: never chain-load while the tab itself is hidden.
+        if (!attM.done && foot.offsetParent !== null
+            && foot.getBoundingClientRect().top < window.innerHeight + 200) attMLoad();
+    }, 'json').fail(function () {
+        attM.loading = false;
+        foot.innerHTML = 'Could not load records — pull down to retry.';
+    });
+}
+
+function attMReset() {
+    attM.start = 0; attM.total = null; attM.done = false; attM.loading = false;
+    document.getElementById('att-mlist').innerHTML = '';
+    attMLoad();
+}
+
+// Loads the next page whenever the feed footer scrolls into view.
+if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting && attMobileMQ.matches && attM.started) attMLoad();
+    }, { rootMargin: '200px' }).observe(document.getElementById('att-mfoot'));
+}
+
+// Called on tab switch: starts the feed on first visit (the tab is display:none
+// at page load, so the observer can't fire until it's visible).
+window.attMKick = function () {
+    if (attMobileMQ.matches && !attM.started) attMLoad();
+};
+
+// Desktop → keep the server-side DataTable exactly as before.
+function attInitTable($) {
+    if (window.attTable) return;
     window.attTable = $('#att-tbl').DataTable({
         processing: true,
         serverSide: true,
@@ -3438,11 +3613,6 @@ jQuery(function ($) {
             { data: 'time_io', orderable: false },
             { data: 'notes' },
         ],
-        // Mobile card view reads each cell's label from data-label — mirror the header row.
-        createdRow: function (row) {
-            var labels = ['Date', 'Type', 'Work Hours', 'OT Hours', 'Time In / Out', 'Notes'];
-            row.querySelectorAll('td').forEach(function (td, i) { td.setAttribute('data-label', labels[i] || ''); });
-        },
         language: {
             emptyTable: 'No attendance records found for this range.',
             processing: 'Loading…',
@@ -3453,6 +3623,16 @@ jQuery(function ($) {
             if (c && json) c.textContent = json.recordsFiltered;
             initAttPopovers();
         },
+    });
+}
+
+jQuery(function ($) {
+    if (!attMobileMQ.matches) attInitTable($);
+    // Viewport crossed the breakpoint (rotation / window resize): bring up the
+    // view that hasn't been initialised yet.
+    attMobileMQ.addEventListener('change', function () {
+        if (attMobileMQ.matches) { window.attMKick(); }
+        else attInitTable($);
     });
 
     var $picker = $('#att-range');
@@ -3479,7 +3659,8 @@ jQuery(function ($) {
             ? 'Today'
             : picker.startDate.format('MMM D, YYYY') + ' – ' + picker.endDate.format('MMM D, YYYY');
         $('#att-range-label').text(lbl);
-        window.attTable.ajax.reload();
+        if (window.attTable) window.attTable.ajax.reload();
+        if (attM.started || attMobileMQ.matches) attMReset();
     });
     $picker.on('cancel.daterangepicker', function () {
         clearAttFilter();
@@ -3516,7 +3697,136 @@ function clearAttFilter() {
     var lbl = document.getElementById('att-range-label');
     if (lbl) lbl.textContent = 'Today';
     if (window.attTable) window.attTable.ajax.reload();
+    if (attM.started || attMobileMQ.matches) attMReset();
 }
+
+// ── My Requests (OT / incident) — server-side DataTable on desktop; on mobile a
+// dedicated infinite-scroll card feed (#areq-mlist) hits the same endpoint. This
+// mirrors the Attendance Records tab so a long request history never lags. ──
+var areqMobileMQ = window.matchMedia('(max-width:600px)');
+var areqM = { start: 0, pageSize: 15, total: null, loading: false, done: false, started: false };
+var AREQ_ENDPOINT = 'attendance-requests-portal-server.php';
+
+function areqCard(r) {
+    var card = document.createElement('div');
+    card.className = 'areq-card st-' + (r.status_slug || 'pending');
+    var typeIcon = r.type_key === 'incident' ? 'ri-error-warning-line' : 'ri-timer-flash-line';
+    var html =
+        '<span class="areq-status" style="background:' + r.status_color + ';">' + r.status_label + '</span>' +
+        '<div class="areq-head">' +
+            '<div class="areq-d1"><i class="ri-calendar-event-line"></i>' + r.date_plain + '</div>' +
+            '<span class="areq-type t-' + r.type_key + '"><i class="' + typeIcon + '"></i>' + r.type_label + '</span>' +
+        '</div>' +
+        '<div class="areq-row"><span class="areq-l"><i class="ri-question-line"></i>Reason</span><span class="areq-v">' + r.reason_plain + '</span></div>' +
+        '<div class="areq-row"><span class="areq-l"><i class="ri-time-line"></i>Details</span><span class="areq-v">' + r.details_html + '</span></div>' +
+        '<div class="areq-row"><span class="areq-l"><i class="ri-upload-2-line"></i>Filed</span><span class="areq-v">' + r.filed + '</span></div>';
+    if (r.reviewer_html) {
+        html += '<div class="areq-rev"><i class="ri-chat-1-line"></i><span>' + r.reviewer_html + '</span></div>';
+    }
+    card.innerHTML = html;
+    return card;
+}
+
+function areqMLoad() {
+    if (areqM.loading || areqM.done) return;
+    areqM.loading = true;
+    areqM.started = true;
+    var list = document.getElementById('areq-mlist');
+    var foot = document.getElementById('areq-mfoot');
+    foot.style.display = '';
+    foot.innerHTML = '<span class="attm-spin"></span>Loading…';
+    jQuery.post(AREQ_ENDPOINT, {
+        draw: 1, start: areqM.start, length: areqM.pageSize,
+        'order[0][column]': 0, 'order[0][dir]': 'desc',
+    }, function (res) {
+        areqM.total = res.recordsFiltered;
+        var c = document.getElementById('areq-count');
+        if (c) c.textContent = res.recordsFiltered;
+        (res.data || []).forEach(function (r) { list.appendChild(areqCard(r)); });
+        areqM.start += (res.data || []).length;
+        areqM.done = areqM.start >= res.recordsFiltered || !(res.data || []).length;
+        if (!areqM.start) {
+            list.innerHTML = '<div class="attm-empty"><i class="ri-file-list-3-line"></i>No requests filed yet.</div>';
+            foot.style.display = 'none';
+        } else if (areqM.done) {
+            foot.innerHTML = 'All ' + areqM.total + ' request' + (areqM.total == 1 ? '' : 's') + ' loaded';
+        } else {
+            foot.innerHTML = '<span class="attm-spin"></span>Loading…';
+        }
+        areqM.loading = false;
+        // Keep filling while the footer is still on screen (short first page).
+        if (!areqM.done && foot.offsetParent !== null
+            && foot.getBoundingClientRect().top < window.innerHeight + 200) areqMLoad();
+    }, 'json').fail(function () {
+        areqM.loading = false;
+        foot.innerHTML = 'Could not load requests — pull down to retry.';
+    });
+}
+
+function areqMReset() {
+    areqM.start = 0; areqM.total = null; areqM.done = false; areqM.loading = false;
+    document.getElementById('areq-mlist').innerHTML = '';
+    areqMLoad();
+}
+
+// Loads the next page whenever the feed footer scrolls into view.
+if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting && areqMobileMQ.matches && areqM.started) areqMLoad();
+    }, { rootMargin: '200px' }).observe(document.getElementById('areq-mfoot'));
+}
+
+// Called on tab switch: starts the feed on first visit (the tab is display:none
+// at page load, so the observer can't fire until it's visible).
+window.areqMKick = function () {
+    if (areqMobileMQ.matches && !areqM.started) areqMLoad();
+};
+
+// Desktop → server-side DataTable (paginated), same look as Attendance Records.
+function areqInitTable($) {
+    if (window.areqTable) return;
+    window.areqTable = $('#att-req-tbl').DataTable({
+        processing: true,
+        serverSide: true,
+        searching: false,
+        lengthChange: false,
+        pageLength: 15,
+        order: [[0, 'desc']],
+        ajax: { url: AREQ_ENDPOINT, type: 'POST' },
+        columns: [
+            { data: 'filed' },
+            { data: 'type', orderable: false },
+            { data: 'date' },
+            { data: 'reason', orderable: false },
+            { data: 'details', orderable: false },
+            { data: 'status', className: 'text-center', orderable: false },
+            { data: 'reviewer', orderable: false },
+        ],
+        language: {
+            emptyTable: 'No requests filed yet.',
+            processing: 'Loading…',
+        },
+        drawCallback: function (settings) {
+            var json = settings.json;
+            var c = document.getElementById('areq-count');
+            if (c && json) c.textContent = json.recordsFiltered;
+        },
+    });
+}
+
+// Reloads both views after a new request is filed via the AJAX form.
+function areqReload() {
+    if (window.areqTable) window.areqTable.ajax.reload(null, false);
+    if (areqM.started || areqMobileMQ.matches) areqMReset();
+}
+
+jQuery(function ($) {
+    if (!areqMobileMQ.matches) areqInitTable($);
+    areqMobileMQ.addEventListener('change', function () {
+        if (areqMobileMQ.matches) { window.areqMKick(); }
+        else areqInitTable($);
+    });
+});
 </script>
 
 <!-- Modal: DTR Review / Sign-off -->
@@ -3583,14 +3893,14 @@ function clearAttFilter() {
                 <h5 class="modal-title mb-0" style="color:#176358;"><i class="ri-file-text-line me-1" style="color:#219688;"></i>Payslip Preview</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" style="background:#e8e8e8;padding:0;">
-                <iframe id="payslip-preview-frame" title="Payslip preview" style="width:100%;height:70vh;border:0;display:block;background:#e8e8e8;"></iframe>
+            <div class="modal-body" style="background:#525659;padding:0;">
+                <iframe id="payslip-preview-frame" title="Payslip preview" style="width:100%;height:70vh;border:0;display:block;background:#525659;"></iframe>
             </div>
             <div class="modal-footer" style="background:#fff;">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;" onclick="printPayslipPreview()">
-                    <i class="ri-printer-line me-1"></i>Print
-                </button>
+                <a id="payslip-preview-download" href="#" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
+                    <i class="ri-download-2-line me-1"></i>Download PDF
+                </a>
             </div>
         </div>
     </div>

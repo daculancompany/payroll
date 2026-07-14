@@ -52,11 +52,12 @@ function board_attendance_status($dtrRow, $shiftStart, $isFuture, $isToday)
         usort($logs, fn($a, $b) => strcmp($a['dateTime'] ?? '', $b['dateTime'] ?? ''));
         $in  = $logs[0]['dateTime'] ?? null;
         $out = count($logs) > 1 ? end($logs)['dateTime'] : null;
+        $ot  = (float)($dtrRow['overtime'] ?? 0);
         if ((float)($dtrRow['late'] ?? 0) > 0) {
-            return ['label' => 'Late', 'class' => 'warning', 'icon' => 'ri-alarm-warning-line', 'in' => $in, 'out' => $out, 'late' => (float)$dtrRow['late']];
+            return ['label' => 'Late', 'class' => 'warning', 'icon' => 'ri-alarm-warning-line', 'in' => $in, 'out' => $out, 'late' => (float)$dtrRow['late'], 'ot' => $ot];
         }
         if (!empty($logs)) {
-            return ['label' => 'Present', 'class' => 'success', 'icon' => 'ri-checkbox-circle-line', 'in' => $in, 'out' => $out];
+            return ['label' => 'Present', 'class' => 'success', 'icon' => 'ri-checkbox-circle-line', 'in' => $in, 'out' => $out, 'ot' => $ot];
         }
         return ['label' => 'No Record', 'class' => 'secondary', 'icon' => 'ri-question-line', 'in' => null, 'out' => null];
     }
@@ -75,6 +76,11 @@ unset($r);
 // Day summary strip
 $summary = ['Present' => 0, 'Late' => 0, 'Absent' => 0, 'Not Yet Due' => 0, 'Scheduled' => 0, 'No Record' => 0];
 foreach ($employees as $r) $summary[$r['att']['label']] = ($summary[$r['att']['label']] ?? 0) + 1;
+
+// Attendance rate: who has clocked in vs who was expected to (today excludes shifts not yet due)
+$attended = $summary['Present'] + $summary['Late'];
+$expected = count($employees) - $summary['Scheduled'] - ($is_today ? $summary['Not Yet Due'] : 0);
+$att_rate = $expected > 0 ? (int)round($attended / $expected * 100) : 0;
 
 // Group by shift (ordered by start time, unassigned last)
 $by_shift = [];
@@ -105,11 +111,11 @@ function board_name($r)
 }
 ?>
 <style>
-    .db-toolbar { background:#eef6f5; border:1px solid #cfe5e2; border-radius:8px; padding:10px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .db-nav-btn { width:34px; height:34px; border-radius:50%; border:1px solid #cfe5e2; background:#fff; color:#009688; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-    .db-nav-btn:hover { background:#009688; color:#fff; }
-    .db-date-pill { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #cfe5e2; border-radius:20px; padding:6px 16px; font-weight:700; color:#00695c; cursor:pointer; font-size:14px; min-width:190px; justify-content:center; }
-    .db-date-pill:hover { border-color:#009688; }
+    .db-toolbar { background:linear-gradient(135deg,#eef6f5 0%,#e4f2f0 100%); border:1px solid #cfe5e2; border-radius:10px; padding:10px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .db-nav-btn { width:34px; height:34px; border-radius:50%; border:1px solid #cfe5e2; background:#fff; color:#009688; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s,color .15s,box-shadow .15s; }
+    .db-nav-btn:hover { background:#009688; color:#fff; box-shadow:0 2px 6px rgba(0,150,136,.35); }
+    .db-date-pill { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #cfe5e2; border-radius:20px; padding:6px 16px; font-weight:700; color:#00695c; cursor:pointer; font-size:14px; min-width:190px; justify-content:center; transition:border-color .15s, box-shadow .15s; }
+    .db-date-pill:hover { border-color:#009688; box-shadow:0 2px 6px rgba(0,150,136,.15); }
     .db-today-badge { font-size:10px; background:#009688; color:#fff; border-radius:10px; padding:1px 8px; margin-left:6px; vertical-align:middle; }
     /* daterangepicker theme override, same teal used on attendance.php */
     .daterangepicker td.active, .daterangepicker td.active:hover { background-color:#009688 !important; }
@@ -118,9 +124,22 @@ function board_name($r)
     .db-group-toggle .btn { padding:4px 10px; }
     .db-group-toggle .btn.active { background:#009688; border-color:#009688; color:#fff; }
 
-    .db-summary { display:flex; gap:10px; flex-wrap:wrap; margin:14px 0; }
-    .db-sum-card { flex:1; min-width:110px; border-radius:8px; padding:10px 12px; text-align:center; border:1px solid; }
-    .db-sum-val { font-size:20px; font-weight:800; line-height:1.1; }
+    .db-search { position:relative; }
+    .db-search i { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:#8fb8b3; font-size:14px; pointer-events:none; }
+    .db-search input { border:1px solid #cfe5e2; border-radius:20px; padding:6px 12px 6px 32px; font-size:12.5px; width:220px; outline:none; background:#fff; transition:border-color .15s, box-shadow .15s; }
+    .db-search input:focus { border-color:#009688; box-shadow:0 0 0 3px rgba(0,150,136,.12); }
+
+    .db-rate { display:flex; align-items:center; gap:10px; margin:12px 2px 0; }
+    .db-rate-track { flex:1; height:7px; background:#eceff3; border-radius:4px; overflow:hidden; }
+    .db-rate-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#26a69a,#00897b); transition:width .4s ease; }
+    .db-rate-lbl { font-size:11px; font-weight:700; color:#00695c; white-space:nowrap; }
+
+    .db-summary { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 16px; }
+    .db-sum-card { flex:1; min-width:120px; border-radius:10px; padding:10px 12px; text-align:center; border:1px solid; cursor:pointer; user-select:none; position:relative; transition:transform .12s, box-shadow .12s; }
+    .db-sum-card:hover { transform:translateY(-2px); box-shadow:0 4px 10px rgba(0,0,0,.08); }
+    .db-sum-card.filter-on { box-shadow:0 0 0 2px currentColor inset, 0 4px 10px rgba(0,0,0,.08); }
+    .db-sum-ico { font-size:15px; opacity:.75; }
+    .db-sum-val { font-size:21px; font-weight:800; line-height:1.1; }
     .db-sum-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.4px; font-weight:700; margin-top:2px; }
     .db-sum-card.success { background:#f0fbf5; border-color:#b7ebc6; color:#1a7f37; }
     .db-sum-card.warning { background:#fffbe6; border-color:#ffe58f; color:#ad6800; }
@@ -129,26 +148,38 @@ function board_name($r)
     .db-sum-card.secondary { background:#f5f5f5; border-color:#e0e0e0; color:#666; }
 
     .db-group { margin-bottom:16px; }
-    .db-group-head { display:flex; align-items:center; gap:8px; background:#eef6f5; border:1px solid #cfe5e2; border-radius:6px; padding:7px 12px; margin-bottom:8px; }
+    .db-group-head { display:flex; align-items:center; gap:8px; background:linear-gradient(135deg,#eef6f5,#e7f3f1); border:1px solid #cfe5e2; border-radius:8px; padding:7px 12px; margin-bottom:8px; }
     .db-group-title { font-size:13px; font-weight:700; color:#00695c; }
     .db-group-time { font-size:11px; color:#5c8b86; }
-    .db-group-count { margin-left:auto; }
+    .db-group-in { font-size:11px; font-weight:700; color:#1a7f37; margin-left:auto; }
+    .db-group-count { flex-shrink:0; }
 
-    .db-card { border:1px solid #e2e5ee; border-radius:8px; padding:10px 12px; background:#fff; height:100%; transition:box-shadow .15s; }
-    .db-card:hover { box-shadow:0 2px 8px rgba(0,0,0,.08); }
+    .db-card { border:1px solid #e2e5ee; border-left:3px solid #e2e5ee; border-radius:8px; padding:10px 12px; background:#fff; height:100%; transition:box-shadow .15s, transform .15s; }
+    .db-card:hover { box-shadow:0 3px 10px rgba(0,0,0,.10); transform:translateY(-1px); }
+    .db-card.st-success { border-left-color:#2eb872; }
+    .db-card.st-warning { border-left-color:#f0a800; }
+    .db-card.st-danger  { border-left-color:#e5484d; }
+    .db-card.st-info    { border-left-color:#3a9bdc; }
+    .db-card.st-secondary { border-left-color:#c5c9d3; }
     .db-card-top { display:flex; align-items:center; gap:8px; }
-    .db-avatar { width:32px; height:32px; border-radius:50%; background:#009688; color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-    .db-name { font-size:12.5px; font-weight:700; color:#1a1a1a; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .db-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#26a69a,#00796b); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .db-card.st-danger .db-avatar { background:linear-gradient(135deg,#adb5bd,#868e96); }
+    .db-name { font-size:12.5px; font-weight:700; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .db-name-link { color:#1a1a1a; text-decoration:none; }
+    .db-name-link:hover { color:#00796b; text-decoration:underline; }
+    a.db-avatar:hover { box-shadow:0 0 0 3px rgba(0,150,136,.25); text-decoration:none; color:#fff; }
     .db-sub { font-size:10.5px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .db-tag { font-size:9.5px; color:#1976d2; }
-    .db-status-row { margin-top:8px; padding-top:7px; border-top:1px dashed #eef0f8; display:flex; align-items:center; justify-content:space-between; gap:6px; }
+    .db-status-row { margin-top:8px; padding-top:7px; border-top:1px dashed #eef0f8; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
     .db-status-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; display:inline-flex; align-items:center; gap:3px; }
     .db-status-badge.success { background:#e6f9ee; color:#1a7f37; }
     .db-status-badge.warning { background:#fff7e0; color:#ad6800; }
     .db-status-badge.danger  { background:#ffefee; color:#cf1322; }
     .db-status-badge.info    { background:#e6f4ff; color:#096dd9; }
     .db-status-badge.secondary { background:#f0f0f0; color:#666; }
+    .db-ot-chip { font-size:9.5px; font-weight:700; background:#f3e8ff; color:#7c3aed; padding:1px 6px; border-radius:8px; }
     .db-in-out { font-size:10px; color:#666; white-space:nowrap; }
+    .db-no-match { display:none; text-align:center; color:#999; padding:28px 0; font-size:13px; }
 </style>
 
 <div class="main-content">
@@ -168,8 +199,12 @@ function board_name($r)
                 </div>
 
                 <div class="card">
-                    <div class="card-header align-items-center d-flex gap-2">
+                    <div class="card-header align-items-center d-flex gap-2 flex-wrap">
                         <h4 class="card-title mb-0 flex-grow-1"><i class="ri-calendar-check-line me-2 text-success"></i>Shift Lineup</h4>
+                        <div class="db-search">
+                            <i class="ri-search-line"></i>
+                            <input type="text" id="db-search-input" placeholder="Search name, ID, dept…" autocomplete="off">
+                        </div>
                         <div class="btn-group db-group-toggle" role="group">
                             <button type="button" class="btn btn-sm btn-outline-secondary active" id="btn-group-shift"><i class="ri-time-line"></i> Shift</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-group-dept"><i class="ri-building-3-line"></i> Department</button>
@@ -180,7 +215,7 @@ function board_name($r)
                         <!-- Date navigation -->
                         <div class="db-toolbar mb-2">
                             <a href="index.php?page=daily-board&date=<?= $prev_date ?>" class="db-nav-btn" title="Previous day"><i class="ri-arrow-left-s-line"></i></a>
-                            <div class="db-date-pill" style="min-width: 250px;" id="db-date-pill">
+                            <div class="db-date-pill" style="min-width: 250px;" id="db-date-pill" title="Click to pick a date">
                                 <i class="ri-calendar-2-line"></i>
                                 <span id="db-date-label"><?= date('l, F j, Y', strtotime($target_date)) ?></span>
                                 <?php if ($is_today): ?><span class="db-today-badge">TODAY</span><?php endif; ?>
@@ -195,46 +230,61 @@ function board_name($r)
                             </div>
                         </div>
 
-                        <!-- Day summary -->
+                        <?php if (!$is_future): ?>
+                        <!-- Attendance rate -->
+                        <div class="db-rate">
+                            <div class="db-rate-track"><div class="db-rate-fill" style="width:<?= $att_rate ?>%;"></div></div>
+                            <span class="db-rate-lbl"><?= $attended ?> of <?= $expected ?> clocked in · <?= $att_rate ?>%</span>
+                        </div>
+                        <?php endif; ?>
+
+                        <!-- Day summary (click a card to filter the board by that status) -->
                         <div class="db-summary">
                             <?php if ($is_future): ?>
-                                <div class="db-sum-card secondary"><div class="db-sum-val"><?= $summary['Scheduled'] ?></div><div class="db-sum-lbl">Scheduled</div></div>
+                                <div class="db-sum-card secondary" data-filter="Scheduled"><div class="db-sum-ico"><i class="ri-calendar-line"></i></div><div class="db-sum-val"><?= $summary['Scheduled'] ?></div><div class="db-sum-lbl">Scheduled</div></div>
                             <?php else: ?>
-                                <div class="db-sum-card success"><div class="db-sum-val"><?= $summary['Present'] ?></div><div class="db-sum-lbl">Present</div></div>
-                                <div class="db-sum-card warning"><div class="db-sum-val"><?= $summary['Late'] ?></div><div class="db-sum-lbl">Late</div></div>
-                                <div class="db-sum-card danger"><div class="db-sum-val"><?= $summary['Absent'] ?></div><div class="db-sum-lbl">Absent</div></div>
+                                <div class="db-sum-card success" data-filter="Present"><div class="db-sum-ico"><i class="ri-checkbox-circle-line"></i></div><div class="db-sum-val"><?= $summary['Present'] ?></div><div class="db-sum-lbl">Present</div></div>
+                                <div class="db-sum-card warning" data-filter="Late"><div class="db-sum-ico"><i class="ri-alarm-warning-line"></i></div><div class="db-sum-val"><?= $summary['Late'] ?></div><div class="db-sum-lbl">Late</div></div>
+                                <div class="db-sum-card danger" data-filter="Absent"><div class="db-sum-ico"><i class="ri-close-circle-line"></i></div><div class="db-sum-val"><?= $summary['Absent'] ?></div><div class="db-sum-lbl">Absent</div></div>
                                 <?php if ($is_today): ?>
-                                <div class="db-sum-card info"><div class="db-sum-val"><?= $summary['Not Yet Due'] ?></div><div class="db-sum-lbl">Not Yet Due</div></div>
+                                <div class="db-sum-card info" data-filter="Not Yet Due"><div class="db-sum-ico"><i class="ri-time-line"></i></div><div class="db-sum-val"><?= $summary['Not Yet Due'] ?></div><div class="db-sum-lbl">Not Yet Due</div></div>
+                                <?php endif; ?>
+                                <?php if ($summary['No Record'] > 0): ?>
+                                <div class="db-sum-card secondary" data-filter="No Record"><div class="db-sum-ico"><i class="ri-question-line"></i></div><div class="db-sum-val"><?= $summary['No Record'] ?></div><div class="db-sum-lbl">No Record</div></div>
                                 <?php endif; ?>
                             <?php endif; ?>
                         </div>
 
                         <?php
                         // Renders one grouped board (used for both Shift and Department groupings)
-                        function board_render_group($gkey, $group, $showDept)
+                        function board_render_group($gkey, $group, $isShiftGroup)
                         {
                             if (empty($group['employees'])) return;
+                            $in_count = 0;
+                            foreach ($group['employees'] as $e) if (in_array($e['att']['label'], ['Present', 'Late'])) $in_count++;
                             ?>
                             <div class="db-group" data-group-key="<?= htmlspecialchars($gkey) ?>">
                                 <div class="db-group-head">
-                                    <i class="ri-<?= $showDept ? 'building-3' : 'time' ?>-line" style="color:#009688;"></i>
+                                    <i class="ri-<?= $isShiftGroup ? 'time' : 'building-3' ?>-line" style="color:#009688;"></i>
                                     <span class="db-group-title"><?= htmlspecialchars($group['label']) ?></span>
                                     <?php if (!empty($group['time'])): ?><span class="db-group-time"><?= htmlspecialchars($group['time']) ?></span><?php endif; ?>
-                                    <span class="badge bg-secondary db-group-count ms-auto"><?= count($group['employees']) ?></span>
+                                    <span class="db-group-in"><i class="ri-user-follow-line"></i> <?= $in_count ?> in</span>
+                                    <span class="badge bg-secondary db-group-count"><?= count($group['employees']) ?></span>
                                 </div>
                                 <div class="row g-2">
-                                    <?php foreach ($group['employees'] as $r): $att = $r['att']; ?>
-                                    <div class="col-6 col-sm-4 col-md-3 col-xl-2">
-                                        <div class="db-card">
+                                    <?php foreach ($group['employees'] as $r): $att = $r['att'];
+                                        $search = strtolower($r['lastname'] . ' ' . $r['firstname'] . ' ' . $r['employee_no'] . ' ' . ($r['dept_name'] ?? '') . ' ' . ($r['shift_desc'] ?? '')); ?>
+                                    <div class="col-6 col-sm-4 col-md-3 col-xl-2 db-card-col" data-status="<?= htmlspecialchars($att['label']) ?>" data-search="<?= htmlspecialchars($search) ?>">
+                                        <div class="db-card st-<?= $att['class'] ?>">
                                             <div class="db-card-top">
-                                                <div class="db-avatar"><?= board_initials($r) ?></div>
+                                                <a href="index.php?page=employee-details&id=<?= (int)$r['id'] ?>" class="db-avatar" title="View employee details"><?= board_initials($r) ?></a>
                                                 <div style="min-width:0;flex:1;">
-                                                    <div class="db-name" title="<?= board_name($r) ?>"><?= board_name($r) ?></div>
+                                                    <div class="db-name" title="<?= board_name($r) ?>"><a href="index.php?page=employee-details&id=<?= (int)$r['id'] ?>" class="db-name-link" title="View employee details"><?= board_name($r) ?></a></div>
                                                     <div class="db-sub">
-                                                        <?php if ($showDept): ?>
-                                                            <?= $r['shift_desc'] ? htmlspecialchars($r['shift_desc']) : '<span class="text-muted">No shift</span>' ?>
-                                                        <?php else: ?>
+                                                        <?php if ($isShiftGroup): ?>
                                                             <?= !empty($r['dept_name']) ? htmlspecialchars($r['dept_name']) : '<span class="text-muted">No dept</span>' ?>
+                                                        <?php else: ?>
+                                                            <?= $r['shift_desc'] ? htmlspecialchars($r['shift_desc']) : '<span class="text-muted">No shift</span>' ?>
                                                         <?php endif; ?>
                                                     </div>
                                                     <div class="db-tag"><?= htmlspecialchars($r['employee_no']) ?></div>
@@ -242,6 +292,7 @@ function board_name($r)
                                             </div>
                                             <div class="db-status-row">
                                                 <span class="db-status-badge <?= $att['class'] ?>"><i class="<?= $att['icon'] ?>"></i><?= htmlspecialchars($att['label']) ?><?php if (!empty($att['late'])): ?> <?= (int)$att['late'] ?>m<?php endif; ?></span>
+                                                <?php if (!empty($att['ot'])): ?><span class="db-ot-chip">OT <?= rtrim(rtrim(number_format((float)$att['ot'], 1), '0'), '.') ?>h</span><?php endif; ?>
                                                 <?php if ($att['in']): ?>
                                                 <span class="db-in-out"><?= date('h:i A', strtotime($att['in'])) ?><?= $att['out'] ? ' – ' . date('h:i A', strtotime($att['out'])) : '' ?></span>
                                                 <?php endif; ?>
@@ -266,6 +317,8 @@ function board_name($r)
                             <?php foreach ($by_dept as $gkey => $group) board_render_group($gkey, $group, false); ?>
                             <?php if (empty($employees)): ?><div class="text-center text-muted py-4">No active employees found.</div><?php endif; ?>
                         </div>
+
+                        <div class="db-no-match" id="db-no-match"><i class="ri-search-eye-line me-1"></i>No employees match the current search / filter.</div>
 
                     </div>
                 </div>

@@ -38,7 +38,7 @@ $tc->execute();
 $totalRecords = (int)($tc->get_result()->fetch_assoc()['c'] ?? 0);
 
 // Filtered count (date range applied).
-$fc = $conn->prepare("SELECT COUNT(*) AS c FROM DTR_details WHERE employee_id = ? AND DATE(date_time) BETWEEN ? AND ?");
+$fc = $conn->prepare("SELECT COUNT(*) AS c FROM DTR_details WHERE employee_id = ? AND date_time BETWEEN ? AND ?");
 $fc->bind_param('iss', $emp_id, $from, $to);
 $fc->execute();
 $filteredRecords = (int)($fc->get_result()->fetch_assoc()['c'] ?? 0);
@@ -46,7 +46,7 @@ $filteredRecords = (int)($fc->get_result()->fetch_assoc()['c'] ?? 0);
 // Page of data.
 $sql = "SELECT date_time, work_hours, logs, attendance_type, overtime, notes
         FROM DTR_details
-        WHERE employee_id = ? AND DATE(date_time) BETWEEN ? AND ?
+        WHERE employee_id = ? AND date_time BETWEEN ? AND ?
         ORDER BY $orderColumn $orderDir
         LIMIT ?, ?";
 $st = $conn->prepare($sql);

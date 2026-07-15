@@ -106,12 +106,25 @@ $(document).ready(function () {
     });
 });
 
-let tloan = $("#table-loan").DataTable();
-let tcontribution = $("#table-contributions").DataTable();
-let tdeductions = $("#table-deductions").DataTable();
-let tsites = $("#table-sites").DataTable();
-let tleave = $("#table-leave").DataTable({ order: [[0, "desc"]] });
-let tschedhist = $("#table-schedule-history").DataTable({ order: [[3, "desc"]] });
+// DataTables throws on tables whose tbody holds a manual colspan empty-state row;
+// a throw here would kill every handler binding below, so init each table safely.
+function safeDataTable(selector, opts) {
+    try {
+        var $t = $(selector);
+        // Skip init when the only body row is the colspan empty-state placeholder.
+        if (!$t.length || $t.find("tbody td[colspan]").length) return null;
+        return $t.DataTable(opts || {});
+    } catch (e) {
+        console.warn("DataTable init skipped for " + selector, e);
+        return null;
+    }
+}
+let tloan = safeDataTable("#table-loan");
+let tcontribution = safeDataTable("#table-contributions");
+let tdeductions = safeDataTable("#table-deductions");
+let tsites = safeDataTable("#table-sites");
+let tleave = safeDataTable("#table-leave", { order: [[0, "desc"]] });
+let tschedhist = safeDataTable("#table-schedule-history", { order: [[3, "desc"]] });
 // $("#search-input").keyup(function () {
 //     oTable.search($(this).val()).draw();
 // });

@@ -559,7 +559,7 @@ class Action
                 // Update existing employee
                 $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : null;
                 $query = "UPDATE employee SET
-                employee_code=?, firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, salary=?, basic_pay=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?
+                employee_code=COALESCE(NULLIF(?, ''), employee_code), firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, salary=?, basic_pay=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?
                 WHERE id=?";
                 $stmt = $this->db->prepare($query);
                 $stmt->bind_param("ssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $id);
@@ -3881,6 +3881,193 @@ class Action
             $this->db->rollback();
             return ['result' => false, 'message' => $e->getMessage()];
         }
+    }
+
+    /* ── Biometric scanner app: login ─────────────────────────────────────────
+     * ADMIN-ONLY (role = 1). Validates the account and hands back the
+     * biometric API key as the access token for subsequent scanner calls. */
+    function biometric_login()
+    {
+        $username = trim($_POST['username'] ?? '');
+        $password = (string) ($_POST['password'] ?? '');
+
+        if ($username === '' || $password === '') {
+            return ['result' => false, 'message' => 'Username and password are required'];
+        }
+
+        $stmt = $this->db->prepare("SELECT id, name, site_id, password, role FROM users WHERE username = ? AND status = 1 LIMIT 1");
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+
+        if (!$user || empty($user['password']) || !password_verify($password, $user['password'])) {
+            return ['result' => false, 'message' => 'Invalid username or password'];
+        }
+
+        // Only administrators may operate the scanner desktop app.
+        if ((int) $user['role'] !== 1) {
+            return ['result' => false, 'message' => 'Access denied — administrator account required'];
+        }
+
+        // Scanner posts attendance against a site; fall back to the first active
+        // site when the account has none assigned.
+        $site_id = (int) ($user['site_id'] ?? 0);
+        if (!$site_id) {
+            $site = $this->db->query("SELECT id FROM sites WHERE status = 1 ORDER BY id ASC LIMIT 1")->fetch_assoc();
+            $site_id = $site ? (int) $site['id'] : 0;
+        }
+
+        $parts      = preg_split('/\s+/', trim($user['name']), 2);
+        $first_name = $parts[0] ?? $user['name'];
+        $last_name  = $parts[1] ?? '';
+
+        return [
+            'result'       => true,
+            'message'      => 'Login successful',
+            'access_token' => BIOMETRIC_API_KEY,
+            'user_id'      => (int) $user['id'],
+            'first_name'   => $first_name,
+            'last_name'    => $last_name,
+            'site_id'      => $site_id,
+        ];
+    }
+
+    /* ── Biometric scanner app: active employee list ────────────────────────── */
+    function get_biometric_employees()
+    {
+        $res = $this->db->query("
+            SELECT e.id, e.employee_no, e.firstname, e.lastname, e.status,
+                   COALESCE(d.name, '') AS department,
+                   COALESCE(p.name, '') AS position,
+                   COALESCE(c.clasification, '') AS classification
+            FROM employee e
+            LEFT JOIN department    d ON d.id = e.department_id
+            LEFT JOIN position      p ON p.id = e.position_id
+            LEFT JOIN clasification c ON c.id = e.clasification_id
+            WHERE e.status = 1
+            ORDER BY e.lastname, e.firstname
+        ");
+
+        $employees = [];
+        while ($row = $res->fetch_assoc()) {
+            $employees[] = [
+                'id'             => (int) $row['id'],
+                'employee_no'    => $row['employee_no'],
+                'first_name'     => $row['firstname'],
+                'last_name'      => $row['lastname'],
+                'department'     => $row['department'],
+                'position'       => $row['position'],
+                'classification' => $row['classification'],
+                'is_active'      => (int) $row['status'],
+            ];
+        }
+
+        return ['result' => true, 'employees' => $employees, 'total' => count($employees)];
+    }
+
+    /* ── Biometric scanner app: all stored fingerprint templates ────────────── */
+    function get_biometric_fingerprints()
+    {
+        $res = $this->db->query("
+            SELECT f.employee_id, f.finger_index, f.template
+            FROM employee_fingerprints f
+            INNER JOIN employee e ON e.id = f.employee_id AND e.status = 1
+            ORDER BY f.employee_id, f.finger_index
+        ");
+
+        $data = [];
+        while ($row = $res->fetch_assoc()) {
+            $data[] = [
+                'employee_id'  => (int) $row['employee_id'],
+                'finger_index' => $row['finger_index'],
+                'template'     => $row['template'],
+            ];
+        }
+
+        return ['result' => true, 'data' => $data, 'total' => count($data)];
+    }
+
+    /* ── Biometric scanner app: today's attendance summary ──────────────────── */
+    function get_biometric_attendance_summary()
+    {
+        $today = date('Y-m-d');
+
+        $total = $this->db->query("SELECT COUNT(*) AS c FROM employee WHERE status = 1")
+            ->fetch_assoc()['c'] ?? 0;
+
+        $stmt = $this->db->prepare("
+            SELECT COUNT(DISTINCT employee_id) AS present,
+                   COALESCE(SUM(is_complete = 1), 0) AS completed,
+                   COALESCE(SUM(is_complete = 0), 0) AS time_in_only,
+                   COALESCE(SUM(late > 0), 0) AS late
+            FROM DTR_details
+            WHERE date_time = ?
+        ");
+        $stmt->bind_param('s', $today);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc() ?: [];
+
+        return [
+            'result'          => true,
+            'date'            => $today,
+            'total_employees' => (int) $total,
+            'present'         => (int) ($row['present'] ?? 0),
+            'time_in_only'    => (int) ($row['time_in_only'] ?? 0),
+            'completed'       => (int) ($row['completed'] ?? 0),
+            'late'            => (int) ($row['late'] ?? 0),
+        ];
+    }
+
+    /* ── Biometric scanner app: save (upsert) a fingerprint template ──────────
+     * finger_index uses the DigitalPersona names, e.g. RIGHT_INDEX, LEFT_THUMB. */
+    function save_biometric_fingerprint()
+    {
+        $employee_id  = intval($_POST['employee_id'] ?? 0);
+        $finger_index = strtoupper(trim($_POST['finger_index'] ?? ''));
+        $template     = trim($_POST['template'] ?? '');
+
+        if (!$employee_id || $finger_index === '' || $template === '') {
+            return ['result' => false, 'message' => 'Missing employee_id, finger_index or template'];
+        }
+
+        $valid_fingers = [
+            'RIGHT_THUMB', 'RIGHT_INDEX', 'RIGHT_MIDDLE', 'RIGHT_RING', 'RIGHT_PINKY', 'RIGHT_LITTLE',
+            'LEFT_THUMB', 'LEFT_INDEX', 'LEFT_MIDDLE', 'LEFT_RING', 'LEFT_PINKY', 'LEFT_LITTLE',
+        ];
+        if (!in_array($finger_index, $valid_fingers, true)) {
+            return ['result' => false, 'message' => 'Invalid finger_index: ' . $finger_index];
+        }
+
+        // Template must be valid base64 (the scanner sends a serialized DPFP template).
+        if (base64_decode($template, true) === false) {
+            return ['result' => false, 'message' => 'Template is not valid base64'];
+        }
+
+        $stmt = $this->db->prepare("SELECT id FROM employee WHERE id = ? AND status = 1 LIMIT 1");
+        $stmt->bind_param('i', $employee_id);
+        $stmt->execute();
+        if (!$stmt->get_result()->fetch_assoc()) {
+            return ['result' => false, 'message' => 'Employee not found or inactive'];
+        }
+
+        $stmt2 = $this->db->prepare("
+            INSERT INTO employee_fingerprints (employee_id, finger_index, template)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE template = VALUES(template), updated_at = NOW()
+        ");
+        $stmt2->bind_param('iss', $employee_id, $finger_index, $template);
+        try {
+            $stmt2->execute();
+        } catch (Exception $e) {
+            return ['result' => false, 'message' => 'Failed to save fingerprint: ' . $e->getMessage()];
+        }
+
+        return [
+            'result'       => true,
+            'message'      => 'Fingerprint saved',
+            'employee_id'  => $employee_id,
+            'finger_index' => $finger_index,
+        ];
     }
 
     function updateContributionAmount($contricutions, $dd_id, $value, $id)

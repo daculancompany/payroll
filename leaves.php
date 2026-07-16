@@ -13,6 +13,8 @@ $my_role = (int) ($_SESSION['login_role'] ?? 0);
 // Department Head gives final approval. Admin can see everything but not act.
 $can_hr    = in_array($my_role, [9], true);   // HR only
 $can_admin = in_array($my_role, [8], true);   // Department Head only
+// Administrator (role 1) is strictly VIEW-ONLY: no approve, no edit, no delete.
+$is_admin_view = ($my_role === 1);
 
 // Summary counts for the cards
 $counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];
@@ -23,6 +25,14 @@ if ($cq) while ($r = $cq->fetch_assoc()) {
     if ($r['status'] == 1) $counts['approved'] = (int)$r['c'];
     if ($r['status'] == 2) $counts['rejected'] = (int)$r['c'];
 }
+
+// Active status tab (server-side filter — avoids client-side lag on large lists).
+// ?lstatus= all | pending | approved | rejected
+$tab_map    = ['all' => null, 'pending' => 0, 'approved' => 1, 'rejected' => 2];
+$active_tab = strtolower(trim($_GET['lstatus'] ?? 'all'));
+if (!array_key_exists($active_tab, $tab_map)) $active_tab = 'all';
+$status_filter = $tab_map[$active_tab];
+$where_sql = ($status_filter === null) ? '' : 'WHERE lr.status = ' . (int) $status_filter;
 
 // Render an approval-stage badge with approver + reason tooltip.
 function stageBadge($status, $by_name, $remarks, $at)
@@ -111,6 +121,26 @@ function stageBadge($status, $by_name, $remarks, $at)
                                 <i class="ri-add-line me-1"></i>File Leave
                             </button>
                         </div>
+                        <!-- Status tabs (server-side filtering via ?lstatus=…) -->
+                        <ul class="nav nav-tabs nav-tabs-custom nav-success px-3 pt-2" role="tablist">
+                            <?php
+                            $tabs = [
+                                'all'      => ['All',      $counts['total'],    'bg-primary-subtle text-primary'],
+                                'pending'  => ['Pending',  $counts['pending'],  'bg-warning-subtle text-warning'],
+                                'approved' => ['Approved', $counts['approved'], 'bg-success-subtle text-success'],
+                                'rejected' => ['Rejected', $counts['rejected'], 'bg-danger-subtle text-danger'],
+                            ];
+                            foreach ($tabs as $key => $t):
+                                $is_active = ($active_tab === $key);
+                            ?>
+                                <li class="nav-item">
+                                    <a class="nav-link <?= $is_active ? 'active' : '' ?>" href="index.php?page=leaves&lstatus=<?= $key ?>">
+                                        <?= $t[0] ?>
+                                        <span class="badge <?= $t[2] ?> ms-1"><?= (int) $t[1] ?></span>
+                                    </a>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
                         <div class="card-body">
                             <div class="table-responsive">
                                 <table id="leave-table" class="table table-hover table-bordered align-middle">
@@ -141,6 +171,7 @@ function stageBadge($status, $by_name, $remarks, $at)
                                             INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
                                             LEFT JOIN users hu ON hu.id = lr.hr_by
                                             LEFT JOIN users au ON au.id = lr.admin_by
+                                            $where_sql
                                             ORDER BY lr.date_applied DESC, lr.id DESC
                                         ");
                                         if ($q) while ($row = $q->fetch_assoc()):
@@ -163,7 +194,7 @@ function stageBadge($status, $by_name, $remarks, $at)
                                                 <b><?= rtrim(rtrim(number_format($row['duration'], 1), '0'), '.') ?></b> day(s)
                                                 <?php if ($row['is_half_day']): ?>
                                                     <span class="badge bg-warning text-dark ms-1" style="font-size:10px;">
-                                                        <?= htmlspecialchars($row['half_period']) ?> Half
+                                                        <?= htmlspecialchars($row['half_period']) ?> Half<?= !empty($row['half_date']) && (float)$row['duration'] > 0.5 ? ' · ' . date('M j', strtotime($row['half_date'])) : '' ?>
                                                     </span>
                                                 <?php endif; ?>
                                                 <div class="text-muted" style="font-size:11px;">
@@ -183,11 +214,16 @@ function stageBadge($status, $by_name, $remarks, $at)
                                                     <button class="btn btn-sm btn-success" title="Final Approve" onclick="decideLeave(<?= $row['id'] ?>,'admin',1)"><i class="ri-shield-check-line"></i></button>
                                                     <button class="btn btn-sm btn-danger" title="Final Reject" onclick="decideLeave(<?= $row['id'] ?>,'admin',2)"><i class="ri-close-line"></i></button>
                                                 <?php endif; ?>
-                                                <?php if ($editable): ?>
+                                                <?php if ($editable && !$is_admin_view): ?>
                                                     <button class="btn btn-sm btn-outline-primary" title="Edit"
                                                         onclick='editLeave(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'><i class="ri-edit-line"></i></button>
                                                 <?php endif; ?>
-                                                <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteLeave(<?= $row['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
+                                                <?php if (!$is_admin_view): ?>
+                                                    <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteLeave(<?= $row['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
+                                                <?php endif; ?>
+                                                <?php if ($is_admin_view): ?>
+                                                    <span class="text-muted" style="font-size:11px;"><i class="ri-eye-line me-1"></i>View only</span>
+                                                <?php endif; ?>
                                             </td>
                                         </tr>
                                         <?php endwhile; ?>

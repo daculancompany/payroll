@@ -28,7 +28,7 @@ $hlq = $conn->query("
     FROM leave_requests lr
     INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
     WHERE lr.is_half_day = 1 AND lr.status = 1
-    AND '$filter_date' BETWEEN lr.date_from AND lr.date_to
+    AND '$filter_date' = COALESCE(lr.half_date, lr.date_from)
 ");
 if ($hlq) while ($hl = $hlq->fetch_assoc()) {
     $half_leaves[$hl['employee_id']] = $hl;

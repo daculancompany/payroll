@@ -76,6 +76,23 @@ $lbq = $conn->query("
 ");
 if ($lbq) while ($r = $lbq->fetch_assoc()) $leave_balance[] = $r;
 
+// Remaining credits available for FILING (paid types): counts approved AND
+// still-pending requests so stacked filings can't exceed the balance. Mirrors
+// the server-side guard in emp-portal-ajax.php (submit_leave_request).
+$lv_remaining_filing = [];
+$lrf = $conn->query("
+    SELECT lt.id, COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+    FROM leave_types lt
+    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id
+    LEFT JOIN (
+        SELECT leave_type_id, SUM(duration) AS used
+        FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1)
+        GROUP BY leave_type_id
+    ) u ON u.leave_type_id = lt.id
+    WHERE lt.status = 1 AND lt.is_paid = 1
+");
+if ($lrf) while ($r = $lrf->fetch_assoc()) $lv_remaining_filing[(int)$r['id']] = round(max(0, (float)$r['remaining']), 1);
+
 $mlq = $conn->prepare("
     SELECT lr.*, lt.name AS leave_type_name, hu.name AS hr_name, au.name AS admin_name
     FROM leave_requests lr
@@ -385,12 +402,17 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="COMC Portal">
+<!-- Warm up CDN connections early — faster first paint on mobile networks -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
+<link rel="preconnect" href="https://cdn.datatables.net" crossorigin>
 <link href="assets/css/bootstrap.min.css" rel="stylesheet">
 <link href="assets/css/icons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 <link href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/css/bootstrap-select.min.css" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
+<!-- Same bootstrap-datetimepicker the admin panel (index.php) uses -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datetimepicker/4.17.47/css/bootstrap-datetimepicker.min.css">
 <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <link href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap.min.css" rel="stylesheet">
 <link href="assets2/css/modal-stacking.css" rel="stylesheet">
@@ -419,6 +441,9 @@ body{
 .ptop-logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#219688,#176358);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;box-shadow:0 3px 8px rgba(33,150,136,.28);}
 .ptop-logout{background:#f0f7f5;color:#176358;border:1px solid #d5e8e4;border-radius:9px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;}
 .ptop-logout:hover{background:#e0f0ec;color:#176358;border-color:#bfe0d9;}
+.ptop-logout i{margin-right:5px;}
+/* Per-screen title — only surfaces in the mobile app header */
+.ptop-screen-title{display:none;}
 
 /* Layout — wide on desktop, fluid below */
 .portal-wrap{max-width:1280px;margin:0 auto;padding:22px 18px 50px;}
@@ -493,16 +518,19 @@ body{
 .tab-more{display:none;}   /* only surfaces in the mobile bottom nav */
 
 /* More sheet (mobile only) */
-.more-backdrop{display:none;position:fixed;inset:0;background:rgba(20,30,55,.4);z-index:450;}
-.more-backdrop.open{display:block;}
-/* Centered popup card (not a bottom sheet) */
-.more-sheet{position:fixed;left:50%;top:50%;z-index:500;width:calc(100% - 44px);max-width:360px;
-    background:#fff;border-radius:22px;box-shadow:0 24px 60px rgba(20,30,55,.28);
-    padding:20px 18px;transform:translate(-50%,-50%) scale(.92);opacity:0;pointer-events:none;
-    transition:transform .24s cubic-bezier(.4,0,.2,1),opacity .24s;}
-.more-sheet.open{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto;}
-.more-grip{display:none;}
-.more-head{font-size:15px;font-weight:800;color:#2b3330;margin-bottom:16px;text-align:center;}
+.more-backdrop{display:block;position:fixed;inset:0;background:rgba(20,30,55,.42);z-index:450;
+    opacity:0;pointer-events:none;transition:opacity .25s ease;}
+.more-backdrop.open{opacity:1;pointer-events:auto;}
+/* True bottom sheet — slides up from the bottom edge; drag down to dismiss */
+.more-sheet{position:fixed;left:0;right:0;bottom:0;z-index:500;width:100%;
+    background:#fff;border-radius:22px 22px 0 0;box-shadow:0 -14px 44px rgba(20,30,55,.26);
+    padding:8px 16px calc(20px + env(safe-area-inset-bottom,0px));
+    transform:translateY(102%);pointer-events:none;will-change:transform;
+    transition:transform .3s cubic-bezier(.32,.72,.24,1);}
+.more-sheet.open{transform:translateY(0);pointer-events:auto;}
+.more-sheet.dragging{transition:none;}
+.more-grip{display:block;width:42px;height:4px;border-radius:2px;background:#d7dedd;margin:4px auto 12px;}
+.more-head{font-size:15px;font-weight:800;color:#2b3330;margin-bottom:14px;text-align:center;}
 .more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-content:center;}
 .more-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;background:#f7f8fa;border:1px solid #eef0f2;border-radius:16px;padding:15px 6px;cursor:pointer;}
 .more-item:active{background:#eef0f2;}
@@ -546,7 +574,7 @@ body{
 .absent-pill{background:#fff0f0;color:#dc3545;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
 .late-pill{background:#fff8e8;color:#fd7e14;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
 
-/* ── Payslips — dedicated mobile card list (shown < 600px, hidden on desktop) ── */
+/* ── Payslips — dedicated mobile card list (shown on mobile, hidden on desktop) ── */
 .ps-mlist{display:none;padding:12px 0 2px;}
 .psm-card{position:relative;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;border-radius:14px;
     padding:13px 14px 0;margin:0 12px 12px;overflow:hidden;cursor:pointer;
@@ -652,7 +680,7 @@ body{
 /* Mobile: every data table becomes a stacked list of cards (label : value rows)
    instead of a horizontally-scrolling table. Cells carry data-label="…" —
    a data-label="" cell (icons / narrow chips) collapses its label row. */
-@media(max-width:600px){
+@media (max-width:767.98px), (pointer:coarse) and (max-height:500px){
     .ps-hist-table, .att-table, .drev-tbl{width:100%;min-width:0;border-collapse:separate;border-spacing:0;}
     .ps-hist-table thead, .att-table thead, .drev-tbl thead{display:none;}
     .ps-hist-table tbody, .att-table tbody, .drev-tbl tbody,
@@ -817,6 +845,43 @@ body{
 /* Fixed-width trigger: the label truncates instead of stretching the box */
 .att-range-picker #att-range-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .att-range-picker i:last-child{flex-shrink:0;margin-left:0 !important;}
+/* bootstrap-datetimepicker (leave / LWOP dates) — brand teal + finger-sized */
+.bootstrap-datetimepicker-widget{font-size:13px;border-radius:16px;box-shadow:0 12px 34px rgba(16,55,50,.2);border:1px solid #e4ecea;padding:10px;}
+.bootstrap-datetimepicker-widget table td.day{height:34px;line-height:34px;width:36px;border-radius:10px;color:#2b3330;transition:background .12s;}
+.bootstrap-datetimepicker-widget table th{height:34px;border-radius:10px;color:#176358;}
+.bootstrap-datetimepicker-widget table th.picker-switch{font-weight:800;font-size:14px;}
+.bootstrap-datetimepicker-widget table th.prev,
+.bootstrap-datetimepicker-widget table th.next{width:38px;border-radius:50%;color:#219688;font-size:17px;}
+.bootstrap-datetimepicker-widget table th.dow{color:#8a9794;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;height:26px;}
+.bootstrap-datetimepicker-widget table td.active,
+.bootstrap-datetimepicker-widget table td.active:hover{
+    background:linear-gradient(135deg,#219688,#176358) !important;color:#fff !important;
+    text-shadow:none;box-shadow:0 3px 8px rgba(33,150,136,.35);font-weight:800;}
+.bootstrap-datetimepicker-widget table td.today:not(.active){color:#176358;font-weight:800;}
+.bootstrap-datetimepicker-widget table td.today:before{border-bottom-color:#219688;}
+.bootstrap-datetimepicker-widget table td.disabled,
+.bootstrap-datetimepicker-widget table td.disabled:hover{color:#ccd4d2;text-decoration:line-through;}
+.bootstrap-datetimepicker-widget table td.day:hover,
+.bootstrap-datetimepicker-widget table th:hover{background:#e6f5f3;}
+/* month / year / decade grids share the brand look */
+.bootstrap-datetimepicker-widget table td span{border-radius:10px;}
+.bootstrap-datetimepicker-widget table td span.active{background:linear-gradient(135deg,#219688,#176358);text-shadow:none;}
+.bootstrap-datetimepicker-widget table td span:hover{background:#e6f5f3;}
+/* Toolbar: Clear / Done become labelled pill buttons */
+.bootstrap-datetimepicker-widget a[data-action]{
+    display:flex;align-items:center;justify-content:center;
+    padding:9px 6px;margin:6px 3px 2px;border-radius:10px;width:auto;
+    text-decoration:none;cursor:pointer;transition:opacity .12s;}
+.bootstrap-datetimepicker-widget a[data-action]:active{opacity:.8;}
+.bootstrap-datetimepicker-widget a[data-action] span{
+    display:inline-flex;align-items:center;width:auto;height:auto;line-height:1;margin:0;font-size:15px;}
+.bootstrap-datetimepicker-widget a[data-action] span::after{
+    font-family:'Segoe UI',-apple-system,Arial,sans-serif;font-size:12.5px;font-weight:800;margin-left:6px;line-height:1;}
+.bootstrap-datetimepicker-widget a[data-action="clear"]{background:#fdecea;color:#c62828;}
+.bootstrap-datetimepicker-widget a[data-action="clear"] span::after{content:"Clear";}
+.bootstrap-datetimepicker-widget a[data-action="close"]{background:linear-gradient(135deg,#219688,#176358);color:#fff;box-shadow:0 3px 10px rgba(33,150,136,.3);}
+.bootstrap-datetimepicker-widget a[data-action="close"] span::after{content:"Done";}
+
 /* daterangepicker theme override → brand teal */
 .daterangepicker td.active,.daterangepicker td.active:hover{background-color:#219688 !important;}
 .daterangepicker td.in-range{background-color:#e6f5f3 !important;color:#176358 !important;}
@@ -870,7 +935,7 @@ body{
 .today-att-empty{display:flex;align-items:center;gap:9px;font-size:12px;color:#7a8783;font-weight:600;
     background:#faf8f1;border:1px dashed #e0d8c4;border-radius:12px;padding:12px 14px;line-height:1.45;}
 .today-att-empty i{font-size:19px;color:#b7b1a4;flex-shrink:0;}
-@media(max-width:600px){
+@media (max-width:767.98px), (pointer:coarse) and (max-height:500px){
     .today-att-grid{grid-template-columns:repeat(2,1fr);}
     .tda-v{font-size:15px;}
 }
@@ -926,7 +991,7 @@ body{
 @keyframes portalFadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 .tab-panel.active>*{animation:portalFadeUp .38s ease;}
 @media(prefers-reduced-motion:reduce){.tab-panel.active>*{animation:none;}}
-@media(max-width:600px){.ins-strip,.con-hero{grid-template-columns:repeat(2,1fr);}}
+@media (max-width:767.98px), (pointer:coarse) and (max-height:500px){.ins-strip,.con-hero{grid-template-columns:repeat(2,1fr);}}
 
 /* Net-pay trend mini chart */
 .trend-card{background:#ffffff;border:1px solid #e4ecea;border-radius:14px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);padding:16px 18px 12px;margin-bottom:14px;}
@@ -992,11 +1057,11 @@ body{
 .lvc-row.spent .lvc-fill{background:#dc3545;}
 
 /* Sticky tab strip on desktop so navigation stays reachable on the wide page */
-@media(min-width:601px){
+@media(min-width:768px){
     .tab-strip{position:sticky;top:62px;z-index:150;}
 }
 
-@media(max-width:600px){
+@media (max-width:767.98px), (pointer:coarse) and (max-height:500px){
     .ytd-strip{grid-template-columns:repeat(2,1fr);}
     .qa-strip{grid-template-columns:repeat(2,1fr);}
     .qa-btn{flex-direction:column;text-align:center;gap:6px;padding:10px 8px;font-size:11px;}
@@ -1076,7 +1141,7 @@ body{
 /* Footer */
 .portal-foot{text-align:center;font-size:11px;color:#8a9794;margin-top:30px;}
 
-@media(max-width:600px){
+@media (max-width:767.98px), (pointer:coarse) and (max-height:500px){
     .portal-wrap{padding:14px 10px 40px;}
     .ptop{padding:0 12px;}
     .emp-hdr-top{padding:16px 14px;gap:12px;}
@@ -1191,15 +1256,18 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 #ptr-indicator.spin i { animation: ptrSpin .7s linear infinite; }
 @keyframes ptrSpin { to { transform: rotate(360deg); } }
 </style>
+<!-- Mobile-first native-app layer — must load AFTER the inline styles it refines -->
+<link href="assets2/css/portal-mobile.css?v=1" rel="stylesheet">
 </head>
 <body>
 
 <div class="ptop">
     <div class="ptop-brand">
         <div class="ptop-logo">CP</div>
-        COMC Employee Portal
+        <span class="ptop-brand-txt">COMC Employee Portal</span>
+        <span class="ptop-screen-title" id="ptop-screen-title">Home</span>
     </div>
-    <a href="?logout=1" class="ptop-logout"><i class="ri-logout-box-line me-1"></i>Logout</a>
+    <a href="?logout=1" class="ptop-logout"><i class="ri-logout-box-line"></i><span class="ptop-logout-txt">Logout</span></a>
 </div>
 
 <div class="portal-wrap">
@@ -1994,7 +2062,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <tbody></tbody>
             </table>
             </div>
-            <!-- Mobile: infinite-scroll card feed (replaces the table ≤600px) -->
+            <!-- Mobile: infinite-scroll card feed (replaces the table on mobile) -->
             <div class="att-mlist-wrap">
                 <div id="att-mlist"></div>
                 <div class="attm-foot" id="att-mfoot" style="display:none;"></div>
@@ -2035,7 +2103,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <tbody></tbody>
                 </table>
                 </div>
-                <!-- Mobile: infinite-scroll card feed (replaces the table ≤600px) -->
+                <!-- Mobile: infinite-scroll card feed (replaces the table on mobile) -->
                 <div class="areq-mlist-wrap">
                     <div id="areq-mlist"></div>
                     <div class="attm-foot" id="areq-mfoot" style="display:none;"></div>
@@ -2545,7 +2613,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
 <script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/js/bootstrap-select.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datetimepicker/4.17.47/js/bootstrap-datetimepicker.min.js"></script>
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.datatables.net/responsive/2.2.9/js/dataTables.responsive.min.js"></script>
@@ -2796,6 +2864,7 @@ function openLeaveModal() {
     m.show();
     document.getElementById('modal-leave-request').addEventListener('shown.bs.modal', function () {
         initLeavePicker();
+        updateLvBalance();
     }, { once: true });
 }
 
@@ -2813,7 +2882,95 @@ function openAttRequestModal() {
 }
 
 var _lvPicker = null;
+var _lwopPicker = null;
 var _lvIsHalf = false;
+
+// ── Multi-date adapter over the app's standard bootstrap-datetimepicker ─────
+// The portal uses the same picker as the admin panel (index.php). The widget
+// is single-date by design, so this adapter keeps it open and toggles tapped
+// days in/out of a selection set — one tap per day, tap again to remove.
+// The hidden field carries the comma-joined YYYY-MM-DD list the server expects.
+function makeMultiDatePicker(inputId, hiddenId, opts) {
+    opts = opts || {};
+    var $inp = jQuery('#' + inputId);
+    var selected = [];                                   // 'YYYY-MM-DD', kept sorted
+    $inp.datetimepicker({
+        format: 'YYYY-MM-DD',
+        useCurrent: false,
+        ignoreReadonly: true,                            // inputs are readonly on purpose
+        keepOpen: !opts.single,                          // stack several days per visit
+        widgetPositioning: { horizontal: 'auto', vertical: 'bottom' },  // keep the month header reachable in the modal
+        minDate: moment().startOf('day'),
+        disabledDates: BLOCKED.map(function (s) { return moment(s, 'YYYY-MM-DD'); }),
+        showClear: true,                                 // toolbar: wipe the selection…
+        showClose: true,                                 // …and a Done button to dismiss
+        tooltips: { clear: 'Clear all selected days', close: 'Done — keep my selection' },
+        icons: {
+            previous: 'ri-arrow-left-s-line', next: 'ri-arrow-right-s-line',
+            clear: 'ri-eraser-line', close: 'ri-check-line'
+        }
+    });
+    var dp = $inp.data('DateTimePicker');
+
+    // The widget stops propagation on toolbar clicks, so its Clear button can
+    // only be observed through the null-date dp.change it fires. This flag
+    // marks OUR OWN dp.date(null) resets (the re-tap toggle) so they aren't
+    // mistaken for the user pressing Clear.
+    var suppressClear = false;
+    function clearAll() {
+        selected = [];
+        suppressClear = true; dp.date(null); suppressClear = false;
+        $inp.val('');
+        jQuery('#' + hiddenId).val('');
+        if (opts.onCount) opts.onCount(0);
+        paint();
+    }
+
+    function paint() {                                   // re-mark every chosen day after each render
+        $inp.parent().find('.bootstrap-datetimepicker-widget td.day').each(function () {
+            var d = moment(jQuery(this).data('day'), 'L').format('YYYY-MM-DD');
+            jQuery(this).toggleClass('active', selected.indexOf(d) !== -1);
+        });
+    }
+    function sync() {
+        selected.sort();
+        jQuery('#' + hiddenId).val(selected.join(','));
+        $inp.val(selected.map(function (d) { return moment(d, 'YYYY-MM-DD').format('MMM D, YYYY'); }).join(', '));
+        if (opts.onCount) opts.onCount(selected.length);
+        paint();
+    }
+    $inp.on('dp.change', function (e) {
+        if (!e.date) {
+            if (!suppressClear) clearAll();              // user pressed the widget's Clear button
+            else paint();                                // our own toggle reset — selection stands
+            return;
+        }
+        var d = e.date.format('YYYY-MM-DD');
+        if (opts.single) {
+            selected = [d];
+        } else {
+            var i = selected.indexOf(d);
+            if (i === -1) selected.push(d); else selected.splice(i, 1);
+            suppressClear = true; dp.date(null); suppressClear = false;  // so re-tapping any day always fires dp.change
+        }
+        sync();
+    });
+    // The widget is rebuilt on every open and swallows toolbar-click propagation,
+    // so hook Clear with a DIRECT listener on its anchor after each show (direct
+    // at-target handlers run before the widget's own stopPropagation).
+    $inp.on('dp.show', function () {
+        paint();
+        $inp.parent().find('.bootstrap-datetimepicker-widget a[data-action="clear"]')
+            .off('click.mdpclear').on('click.mdpclear', clearAll);
+    });
+    $inp.on('dp.update', paint);
+    $inp.on('click', function () { dp.show(); });        // readonly input: a tap always opens it
+
+    return {
+        destroy: function () { $inp.off('dp.change dp.show dp.update click'); dp.destroy(); },
+        clear: clearAll
+    };
+}
 
 function setLvDuration(val) {
     _lvIsHalf = (val !== 'full');
@@ -2825,52 +2982,126 @@ function setLvDuration(val) {
         b.style.color       = active ? '#fff' : '#555';
         b.style.borderColor = active ? '#219688' : '#b0c4c0';
     });
-    document.getElementById('lv-half-hint').textContent = _lvIsHalf ? '(Half-day: pick 1 date only)' : '';
-    // Reinit picker with correct mode
-    if (_lvPicker) { _lvPicker.destroy(); _lvPicker = null; }
-    document.getElementById('lv-dates').value = '';
-    document.getElementById('lv-dates-hidden').value = '';
-    document.getElementById('lv-dur').style.display = 'none';
-    initLeavePicker();
+    document.getElementById('lv-half-hint').textContent =
+        _lvIsHalf ? '(One of your selected days counts as a half day.)' : '';
+    refreshLvDerived();          // selected dates are kept — only the math changes
+}
+
+// Multi-day half-day: which end of the selection is the half ('first'/'last').
+function setLvHalfOn(val) {
+    document.getElementById('lv-half-on').value = val;
+    document.querySelectorAll('.lv-halfon-btn').forEach(function(b) {
+        var active = b.dataset.val === val;
+        b.style.background  = active ? '#219688' : '#fff';
+        b.style.color       = active ? '#fff' : '#555';
+        b.style.borderColor = active ? '#219688' : '#b0c4c0';
+    });
+    updateLvBalance();
+}
+
+function lvSelectedCount() {
+    return (document.getElementById('lv-dates-hidden').value || '').split(',').filter(Boolean).length;
+}
+// Half-day = exactly one selected day counts 0.5, so duration is days − 0.5.
+function lvDuration() {
+    var n = lvSelectedCount();
+    return (_lvIsHalf && n) ? n - 0.5 : n;
+}
+// Everything derived from the current selection: total line, the first/last
+// half-day toggle (only for multi-day half requests) and the balance hint.
+function refreshLvDerived() {
+    var n = lvSelectedCount();
+    var box = document.getElementById('lv-dur');
+    if (n) {
+        document.getElementById('lv-dur-val').textContent = trimNum(lvDuration());
+        box.style.display = 'block';
+    } else box.style.display = 'none';
+    var wrap = document.getElementById('lv-half-on-wrap');
+    if (wrap) wrap.style.display = (_lvIsHalf && n > 1) ? 'block' : 'none';
+    updateLvBalance();
+}
+
+// ── Live leave-credit balance (mirrors the server-side guard) ────────────────
+// remaining = credits − (approved + pending durations), per leave type.
+var LV_REMAIN = <?= json_encode($lv_remaining_filing) ?>;
+function updateLvBalance() {
+    var sel  = document.querySelector('#leave-request-form select[name="leave_type_id"]');
+    var hint = document.getElementById('lv-bal-hint');
+    var btn  = document.getElementById('lv-submit');
+    if (!sel || !hint) return;
+    var rem = LV_REMAIN[sel.value];
+    if (rem === undefined) {                    // no leave type picked yet
+        hint.style.display = 'none';
+        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+        return;
+    }
+    var need = lvDuration(), over = need > rem + 0.001;
+    hint.style.display = 'block';
+    hint.style.color = over ? '#c62828' : '#176358';
+    hint.innerHTML = over
+        ? '<i class="ri-error-warning-line"></i> Not enough credits — this needs <b>' + trimNum(need) + '</b> day(s) but you only have <b>' + trimNum(rem) + '</b> left.'
+        : (need > 0
+            ? '<i class="ri-wallet-3-line"></i> Uses <b>' + trimNum(need) + '</b> of your <b>' + trimNum(rem) + '</b> remaining day(s).'
+            : '<i class="ri-wallet-3-line"></i> You have <b>' + trimNum(rem) + '</b> day(s) left for this leave type.');
+    if (btn) { btn.disabled = over; btn.style.opacity = over ? '.55' : ''; }
 }
 
 function initLeavePicker() {
-    var inp = document.getElementById('lv-dates');
-    if (!inp) return;
-    if (_lvPicker) return;
-    _lvPicker = flatpickr(inp, {
-        mode: _lvIsHalf ? 'single' : 'multiple',
-        dateFormat: 'Y-m-d',
-        minDate: 'today',
-        disable: BLOCKED,
-        onChange: function (sel) {
-            document.getElementById('lv-dates-hidden').value = sel.map(function(d){ return flatpickr.formatDate(d,'Y-m-d'); }).join(',');
-            var box = document.getElementById('lv-dur');
-            if (sel.length) {
-                var days = _lvIsHalf ? sel.length * 0.5 : sel.length;
-                document.getElementById('lv-dur-val').textContent = days;
-                box.style.display = 'block';
-            } else box.style.display = 'none';
-        }
+    if (!document.getElementById('lv-dates') || _lvPicker) return;
+    _lvPicker = makeMultiDatePicker('lv-dates', 'lv-dates-hidden', {
+        onCount: function () { refreshLvDerived(); }
     });
 }
 
 function initLwopPicker() {
-    var inp = document.getElementById('lwop-dates');
-    if (!inp || inp._flatpickr) return;
-    flatpickr(inp, {
-        mode: 'multiple',
-        dateFormat: 'Y-m-d',
-        minDate: 'today',
-        disable: BLOCKED,
-        onChange: function (sel) {
-            document.getElementById('lwop-dates-hidden').value = sel.map(function(d){ return flatpickr.formatDate(d,'Y-m-d'); }).join(',');
-        }
+    if (!document.getElementById('lwop-dates') || _lwopPicker) return;
+    _lwopPicker = makeMultiDatePicker('lwop-dates', 'lwop-dates-hidden', {
+        onCount: function () { refreshLwopDerived(); }
     });
 }
 
+// ── LWOP duration / half-day — mirrors the leave modal (red theme) ──────────
+var _lwopIsHalf = false;
+
+function setLwopDuration(val) {
+    _lwopIsHalf = (val !== 'full');
+    document.getElementById('lwop-is-half').value    = _lwopIsHalf ? '1' : '0';
+    document.getElementById('lwop-half-period').value = _lwopIsHalf ? val : '';
+    document.querySelectorAll('.lwop-dur-btn').forEach(function(b) {
+        var active = b.dataset.val === val;
+        b.style.background  = active ? '#c62828' : '#fff';
+        b.style.color       = active ? '#fff' : '#555';
+        b.style.borderColor = active ? '#c62828' : '#b0c4c0';
+    });
+    document.getElementById('lwop-half-hint').textContent =
+        _lwopIsHalf ? '(One of your selected days counts as a half day.)' : '';
+    refreshLwopDerived();
+}
+
+function setLwopHalfOn(val) {
+    document.getElementById('lwop-half-on').value = val;
+    document.querySelectorAll('.lwop-halfon-btn').forEach(function(b) {
+        var active = b.dataset.val === val;
+        b.style.background  = active ? '#c62828' : '#fff';
+        b.style.color       = active ? '#fff' : '#555';
+        b.style.borderColor = active ? '#c62828' : '#b0c4c0';
+    });
+}
+
+function refreshLwopDerived() {
+    var n = (document.getElementById('lwop-dates-hidden').value || '').split(',').filter(Boolean).length;
+    var dur = (_lwopIsHalf && n) ? n - 0.5 : n;
+    var box = document.getElementById('lwop-dur');
+    if (n) {
+        document.getElementById('lwop-dur-val').textContent = trimNum(dur);
+        box.style.display = 'block';
+    } else box.style.display = 'none';
+    var wrap = document.getElementById('lwop-half-on-wrap');
+    if (wrap) wrap.style.display = (_lwopIsHalf && n > 1) ? 'block' : 'none';
+}
+
 // Leave/LWOP "at least one day" validation is handled by Parsley via the
-// required, readonly #lv-dates / #lwop-dates inputs that flatpickr populates.
+// required, readonly #lv-dates / #lwop-dates inputs that the picker populates.
 
 // ── AJAX submit: Leave / LWOP / Attendance requests (no page reload) ─────────
 function ajaxSubmitForm(form, action, onSuccess) {
@@ -2925,6 +3156,14 @@ wireAjaxForm('leave-request-form', 'submit_leave_request', function (res) {
     if (window.jQuery && jQuery.fn.parsley) jQuery(form).parsley().reset();
     if (_lvPicker) { _lvPicker.destroy(); _lvPicker = null; }
     document.getElementById('lv-dur').style.display = 'none';
+    // Keep the live balance in step with the just-filed (now pending) request.
+    if (res.request && res.request.leave_type_id in LV_REMAIN) {
+        LV_REMAIN[res.request.leave_type_id] =
+            Math.max(0, LV_REMAIN[res.request.leave_type_id] - parseFloat(res.request.duration));
+    }
+    setLvDuration('full');
+    setLvHalfOn('first');
+    document.getElementById('lv-bal-hint').style.display = 'none';
     prependLeaveRow(res.request);
     PENDING.leave = res.leave_pending_count;
     setBadge('tabbtn-leave', PENDING.leave);
@@ -2936,6 +3175,9 @@ wireAjaxForm('lwop-request-form', 'submit_leave_request', function (res) {
     var form = document.getElementById('lwop-request-form');
     form.reset();
     if (window.jQuery && jQuery.fn.parsley) jQuery(form).parsley().reset();
+    if (_lwopPicker) _lwopPicker.clear();
+    setLwopDuration('full');
+    setLwopHalfOn('first');
     document.getElementById('lwop-dates-hidden').value = '';
     prependLeaveRow(res.request);
     PENDING.leave = res.leave_pending_count;
@@ -3482,7 +3724,7 @@ document.getElementById('ps-search') && document.getElementById('ps-search').add
 // dedicated infinite-scroll card feed (#att-mlist) hits the same endpoint. ──
 var attToday = moment().format('YYYY-MM-DD');
 var attFrom  = attToday, attTo = attToday;
-var attMobileMQ = window.matchMedia('(max-width:600px)');
+var attMobileMQ = window.matchMedia('(max-width:767.98px), (pointer:coarse) and (max-height:500px)');
 
 // (Re)binds Bootstrap popovers on the log-detail pills just drawn (table or feed).
 function initAttPopovers() {
@@ -3706,7 +3948,7 @@ function clearAttFilter() {
 // ── My Requests (OT / incident) — server-side DataTable on desktop; on mobile a
 // dedicated infinite-scroll card feed (#areq-mlist) hits the same endpoint. This
 // mirrors the Attendance Records tab so a long request history never lags. ──
-var areqMobileMQ = window.matchMedia('(max-width:600px)');
+var areqMobileMQ = window.matchMedia('(max-width:767.98px), (pointer:coarse) and (max-height:500px)');
 var areqM = { start: 0, pageSize: 15, total: null, loading: false, done: false, started: false };
 var AREQ_ENDPOINT = 'attendance-requests-portal-server.php';
 
@@ -3928,12 +4170,13 @@ jQuery(function ($) {
                     <div class="row g-3">
                         <div class="col-12 col-md-6">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Type of Leave <span style="color:red">*</span></label>
-                            <select name="leave_type_id" class="form-control" data-parsley-required-message="Please select a leave type." required>
+                            <select name="leave_type_id" class="form-control" onchange="updateLvBalance()" data-parsley-required-message="Please select a leave type." required>
                                 <option value="">Select leave type…</option>
                                 <?php foreach ($leave_types_list as $t): ?>
                                     <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>
+                            <div id="lv-bal-hint" style="display:none;font-size:11.5px;font-weight:700;margin-top:5px;"></div>
                         </div>
                         <div class="col-12 col-md-6">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Duration <span style="color:red">*</span></label>
@@ -3966,6 +4209,21 @@ jQuery(function ($) {
                         <div class="col-12 col-md-6" id="lv-dur" style="display:none;font-size:12px;color:#176358;font-weight:700;align-self:flex-end;">
                             <i class="ri-time-line"></i> Total: <span id="lv-dur-val">0</span> day(s)
                         </div>
+                        <!-- Multi-day half-day: which end of the selection is the half -->
+                        <div class="col-12" id="lv-half-on-wrap" style="display:none;">
+                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Half Day Falls On <span style="color:red">*</span></label>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="lv-halfon-btn" data-val="first" onclick="setLvHalfOn('first')"
+                                    style="flex:1;padding:7px;border:1.5px solid #219688;background:#219688;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    First Day
+                                </button>
+                                <button type="button" class="lv-halfon-btn" data-val="last" onclick="setLvHalfOn('last')"
+                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    Last Day
+                                </button>
+                            </div>
+                            <input type="hidden" name="half_on" id="lv-half-on" value="first">
+                        </div>
                         <div class="col-12">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason / Purpose <span style="color:red">*</span></label>
                             <textarea name="reason" class="form-control" rows="3" placeholder="State the reason for your leave"
@@ -3975,7 +4233,7 @@ jQuery(function ($) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
+                    <button type="submit" id="lv-submit" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
                         <i class="ri-send-plane-line me-1"></i>Submit Request
                     </button>
                 </div>
@@ -4005,10 +4263,50 @@ jQuery(function ($) {
                     </div>
                     <div class="row g-3">
                         <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Duration <span style="color:red">*</span></label>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="lwop-dur-btn" data-val="full" onclick="setLwopDuration('full')"
+                                    style="flex:1;padding:7px;border:1.5px solid #c62828;background:#c62828;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    Full Day
+                                </button>
+                                <button type="button" class="lwop-dur-btn" data-val="AM" onclick="setLwopDuration('AM')"
+                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    AM Half
+                                </button>
+                                <button type="button" class="lwop-dur-btn" data-val="PM" onclick="setLwopDuration('PM')"
+                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    PM Half
+                                </button>
+                            </div>
+                            <input type="hidden" name="is_half_day" id="lwop-is-half" value="0">
+                            <input type="hidden" name="half_period" id="lwop-half-period" value="">
+                        </div>
+                        <div class="col-12">
                             <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
                             <input type="text" id="lwop-dates" class="form-control" placeholder="Pick one or more days…" readonly
                                 data-parsley-required-message="Please select at least one LWOP day." required>
                             <input type="hidden" name="dates" id="lwop-dates-hidden">
+                            <div style="font-size:10.5px;color:#999;margin-top:3px;">
+                                <i class="ri-information-line"></i> Holidays are disabled. <span id="lwop-half-hint"></span>
+                            </div>
+                        </div>
+                        <div class="col-12" id="lwop-dur" style="display:none;font-size:12px;color:#c62828;font-weight:700;">
+                            <i class="ri-time-line"></i> Total: <span id="lwop-dur-val">0</span> day(s) without pay
+                        </div>
+                        <!-- Multi-day half-day: which end of the selection is the half -->
+                        <div class="col-12" id="lwop-half-on-wrap" style="display:none;">
+                            <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Half Day Falls On <span style="color:red">*</span></label>
+                            <div class="d-flex gap-2">
+                                <button type="button" class="lwop-halfon-btn" data-val="first" onclick="setLwopHalfOn('first')"
+                                    style="flex:1;padding:7px;border:1.5px solid #c62828;background:#c62828;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    First Day
+                                </button>
+                                <button type="button" class="lwop-halfon-btn" data-val="last" onclick="setLwopHalfOn('last')"
+                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    Last Day
+                                </button>
+                            </div>
+                            <input type="hidden" name="half_on" id="lwop-half-on" value="first">
                         </div>
                         <div class="col-12">
                             <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red">*</span></label>
@@ -4155,5 +4453,8 @@ jQuery(function ($) {
     });
 })();
 </script>
+<!-- Native-app interactions: swipe tab navigation, bottom-sheet drag, notification
+     swipe-to-dismiss, per-screen titles. Loads last so it can wrap switchTab & co. -->
+<script src="assets2/js/portal-mobile.js?v=1"></script>
 </body>
 </html>

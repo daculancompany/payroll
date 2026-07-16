@@ -1,12 +1,12 @@
 {
-  "id": "/?app=comc-portal",
-  "name": "COMC Employee Portal",
-  "short_name": "COMC Portal",
-  "description": "Payslips, attendance, leave and loans self-service.",
-  "start_url": "employee-portal.php?src=pwa",
+  "id": "/?app=comc-admin",
+  "name": "COMC Payroll",
+  "short_name": "COMC Payroll",
+  "description": "Payroll, attendance and HR administration.",
+  "start_url": "index.php?page=home",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#176358",
   "theme_color": "#219688",
   "icons": [

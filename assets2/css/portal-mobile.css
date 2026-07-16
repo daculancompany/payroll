@@ -1,0 +1,317 @@
+/* ════════════════════════════════════════════════════════════════════════
+   COMC Employee Portal — mobile-first native-app layer
+   Loaded AFTER the inline portal styles; every rule here is scoped to
+   phones / small tablets (≤767.98px) so desktop keeps its wide layout.
+   Design language: iOS/Material hybrid — full-bleed screens, rounded cards,
+   soft shadows, bottom navigation, bottom sheets, thumb-sized targets.
+   ════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+
+    /* ── Foundation ─────────────────────────────────────────────────── */
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                     'Helvetica Neue', Arial, sans-serif;
+        font-size: 13.5px;
+        background: #f2f4f7;
+        -webkit-tap-highlight-color: transparent;
+    }
+    button, a, .tab-btn, .qa-btn, .na-item, .more-item, .faq-q {
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;      /* kills the 300ms tap delay + double-tap zoom */
+    }
+
+    /* Screen content: full-bleed app canvas with safe-area gutters,
+       generous bottom room for the fixed nav bar */
+    .portal-wrap {
+        padding: 12px max(12px, env(safe-area-inset-left)) calc(94px + env(safe-area-inset-bottom, 0px))
+                 max(12px, env(safe-area-inset-right));
+        padding-right: max(12px, env(safe-area-inset-right));
+    }
+
+    /* ── App header — compact, sticky, frosted ──────────────────────── */
+    .ptop {
+        height: auto;
+        min-height: 52px;
+        padding: env(safe-area-inset-top, 0px) 10px 0 16px;
+        background: rgba(255, 255, 255, .92);
+        -webkit-backdrop-filter: saturate(1.6) blur(14px);
+        backdrop-filter: saturate(1.6) blur(14px);
+        border-bottom: 1px solid rgba(228, 236, 234, .8);
+        box-shadow: none;
+    }
+    .ptop-logo { width: 32px; height: 32px; border-radius: 10px; }
+    .ptop-brand-txt { display: none; }                /* brand → per-screen title */
+    .ptop-screen-title {
+        display: block;
+        font-size: 17px;
+        font-weight: 800;
+        color: #1b2b27;
+        letter-spacing: -.2px;
+        animation: ptopTitle .24s ease;
+    }
+    @keyframes ptopTitle { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    /* Logout collapses to a round icon button (44px touch target) */
+    .ptop-logout {
+        width: 40px; height: 40px; padding: 0;
+        display: flex; align-items: center; justify-content: center;
+        border-radius: 50%; font-size: 18px;
+    }
+    .ptop-logout i { margin-right: 0; }
+    .ptop-logout .ptop-logout-txt { display: none; }
+    .ptop-logout:active { background: #dcece8; transform: scale(.94); }
+
+    /* Pull-to-refresh spinner clears the (possibly taller) safe-area header */
+    #ptr-indicator { top: calc(60px + env(safe-area-inset-top, 0px)); }
+
+    /* ── Bottom navigation bar — frosted, pill highlight, safe-area ─── */
+    .tab-strip {
+        border-radius: 0;
+        background: rgba(255, 255, 255, .95);
+        -webkit-backdrop-filter: saturate(1.6) blur(16px);
+        backdrop-filter: saturate(1.6) blur(16px);
+        border-top: 1px solid rgba(228, 236, 234, .9);
+        box-shadow: 0 -8px 28px rgba(20, 30, 55, .07);
+        padding: 6px max(6px, env(safe-area-inset-left))
+                 calc(6px + env(safe-area-inset-bottom, 0px))
+                 max(6px, env(safe-area-inset-right));
+    }
+    .tab-btn {
+        position: relative;
+        z-index: 0;
+        min-height: 54px;
+        gap: 4px;
+        padding: 8px 2px 6px;
+        border-radius: 14px;
+        transition: color .18s;
+    }
+    .tab-btn i { font-size: 22px; }
+    .tab-btn span.tab-label { font-size: 9.5px; }
+    /* Active: Material-You pill behind the icon instead of a filled block */
+    .tab-btn.active { background: transparent; color: #176358; box-shadow: none; }
+    .tab-btn.active::before {
+        content: '';
+        position: absolute;
+        top: 4px; left: 50%;
+        width: 48px; height: 30px;
+        border-radius: 15px;
+        background: #d8efe9;
+        transform: translateX(-50%);
+        z-index: -1;
+        animation: navPill .28s cubic-bezier(.34, 1.45, .64, 1);
+    }
+    @keyframes navPill { from { transform: translateX(-50%) scaleX(.55); opacity: .3; } to { transform: translateX(-50%) scaleX(1); opacity: 1; } }
+    .tab-btn:active i { transform: scale(.86); }
+    .tab-btn .badge-count { top: 2px; right: 8px; min-width: 15px; height: 15px; line-height: 15px; padding: 0 4px; border-radius: 8px; }
+
+    /* ── Screen transitions — panel slides in the direction of travel ── */
+    .tab-panel.active > * { animation: none; }        /* one panel-level anim beats N child anims */
+    .tab-panel.anim-left  { animation: tpLeft  .26s cubic-bezier(.3, .7, .4, 1); }
+    .tab-panel.anim-right { animation: tpRight .26s cubic-bezier(.3, .7, .4, 1); }
+    @keyframes tpLeft  { from { opacity: 0; transform: translateX(40px);  } to { opacity: 1; transform: none; } }
+    @keyframes tpRight { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+
+    /* ── Cards & sections — softer, rounder, tactile ────────────────── */
+    .emp-hdr, .ps-card, .trend-card, .today-att, .info-section, .empty-state,
+    .psm-card, .attm-card, .areq-card, .mydtr-card, .loan-c, .paper {
+        border-radius: 18px;
+    }
+    .sec { margin: 20px 2px 10px; font-size: 11.5px; }
+    .ytd-box, .ins-box, .con-box, .qa-btn, .help-card { border-radius: 16px; }
+    /* Press feedback replaces desktop hover-lift */
+    .psm-card:active, .attm-card:active, .areq-card:active, .mydtr-card:active,
+    .qa-btn:active, .na-item:active, .help-card:active, .more-item:active,
+    .ins-box:active, .ytd-box:active, .loan-c:active, .faq-q:active {
+        transform: scale(.98);
+        transition: transform .1s;
+    }
+    /* Thumb-sized primary controls */
+    .qa-btn { min-height: 76px; }
+    .na-item { min-height: 52px; padding: 11px 12px; }
+    .mydtr-btn { min-height: 42px; padding: 9px 16px; font-size: 13px; }
+    .more-item { min-height: 84px; }
+    .faq-q { min-height: 50px; }
+    .att-range-picker { min-height: 42px; }
+    .ptop-logout, .emp-bell { min-width: 40px; min-height: 40px; }
+    /* Slightly larger stat values — legible at arm's length */
+    .ytd-val { font-size: 18px; }
+    .est-v { font-size: 17px; }
+    .ins-v { font-size: 17px; }
+
+    /* ── Notification panel → anchored sheet under the header ───────── */
+    .emp-notif-panel {
+        display: block;
+        position: fixed;
+        top: calc(58px + env(safe-area-inset-top, 0px));
+        left: 10px; right: 10px;
+        width: auto; max-width: none;
+        border-radius: 18px;
+        max-height: calc(100dvh - 150px);
+        opacity: 0;
+        transform: translateY(-10px) scale(.98);
+        pointer-events: none;
+        transition: transform .22s cubic-bezier(.3, .7, .4, 1), opacity .22s;
+    }
+    .emp-notif-panel.open { opacity: 1; transform: none; pointer-events: auto; }
+    .emp-notif-list { max-height: calc(100dvh - 230px); -webkit-overflow-scrolling: touch; }
+    .emp-notif-item {
+        padding: 13px 15px;
+        will-change: transform;
+        background: #fff;
+    }
+    .emp-notif-item.unread { background: #f0faf8; }
+
+    /* ── Dialogs → full-width bottom sheets (native modal pattern) ──── */
+    .modal { padding: 0 !important; }
+    .modal.fade .modal-dialog {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        margin: 0;
+        width: 100%; max-width: 100%;
+        height: auto;               /* beat .modal-dialog-scrollable's forced height… */
+        min-height: 0;
+        display: flex;
+        align-items: flex-end;      /* …and pin the sheet to the bottom edge */
+        transform: translateY(100%);
+        transition: transform .32s cubic-bezier(.32, .72, .24, 1);
+    }
+    .modal.show .modal-dialog { transform: translateY(0); }
+    .modal .modal-content {
+        position: relative;
+        width: 100%;
+        border: 0;
+        border-radius: 22px 22px 0 0 !important;
+        max-height: calc(100dvh - 32px - env(safe-area-inset-top, 0px));
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    /* Grab handle */
+    .modal .modal-content::before {
+        content: '';
+        position: absolute;
+        top: 8px; left: 50%;
+        width: 42px; height: 4px;
+        border-radius: 2px;
+        background: rgba(127, 140, 138, .45);
+        transform: translateX(-50%);
+        z-index: 20;
+        pointer-events: none;
+    }
+    .modal .modal-header { padding: 18px 16px 12px; flex-shrink: 0; }
+    .modal .modal-header .btn-close { padding: 12px; margin: -8px -8px -8px auto; }
+    .modal .modal-body {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        padding: 16px;
+    }
+    /* Action bar: sticky, safe-area aware, full-width thumb buttons */
+    .modal .modal-footer {
+        flex-shrink: 0;
+        padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+        box-shadow: 0 -4px 14px rgba(0, 0, 0, .06);
+    }
+    .modal .modal-footer .btn {
+        flex: 1 1 auto;
+        min-height: 48px;
+        border-radius: 14px;
+        font-size: 14.5px;
+        font-weight: 700;
+    }
+    .modal .modal-footer .btn-outline-secondary { max-width: 34%; }
+    /* Payslip preview PDF frame fills the sheet */
+    #payslip-preview-frame { height: calc(100dvh - 200px) !important; }
+
+    /* ── Forms — 16px inputs (no iOS focus-zoom), 48px touch height ─── */
+    .modal .form-control,
+    .modal .form-select,
+    .modal select.form-control,
+    .modal input.form-control,
+    .modal textarea.form-control {
+        font-size: 16px !important;
+        min-height: 48px;
+        padding: 12px 14px;
+        border-radius: 12px !important;
+    }
+    .modal textarea.form-control { min-height: 84px; }
+    .modal label { font-size: 12px !important; margin-bottom: 6px; }
+    .lv-dur-btn { padding: 13px 6px !important; font-size: 13.5px !important; border-radius: 12px !important; }
+    /* date picker (leave / LWOP) gets room for fingers */
+    .bootstrap-datetimepicker-widget { font-size: 15px; }
+    .bootstrap-datetimepicker-widget.dropdown-menu { width: calc(100vw - 56px); max-width: 340px; }
+    .bootstrap-datetimepicker-widget table td.day { height: 42px; line-height: 42px; width: 42px; border-radius: 12px; }
+    .bootstrap-datetimepicker-widget table th { height: 40px; }
+    .bootstrap-datetimepicker-widget a[data-action] { padding: 12px 6px; }
+
+    /* Request-a-Leave + LWOP: full-screen pages, not sheets — they're the
+       portal's biggest forms and the calendar needs the vertical room */
+    #modal-leave-request .modal-dialog,
+    #modal-lwop-request .modal-dialog { align-items: stretch; height: 100dvh; }
+    #modal-leave-request .modal-content,
+    #modal-lwop-request .modal-content {
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0 !important;
+    }
+    #modal-leave-request .modal-header,
+    #modal-lwop-request .modal-header { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+    #modal-leave-request .modal-content::before,
+    #modal-lwop-request .modal-content::before { display: none; }   /* no grab handle on a full page */
+    .bootstrap-select .dropdown-toggle { min-height: 46px; font-size: 15px !important; }
+    .bootstrap-select .dropdown-menu li a { padding: 11px 14px; }
+    .daterangepicker { border-radius: 16px; }
+    .daterangepicker td { min-width: 34px; height: 34px; }
+
+    /* ── SweetAlert2 — match the sheet language ─────────────────────── */
+    .swal2-popup { border-radius: 20px !important; font-size: 14px !important; }
+    .swal2-styled { min-height: 46px; border-radius: 12px !important; padding: 10px 24px !important; }
+
+    /* ── More sheet grid: 4 columns on wider phones ─────────────────── */
+    .more-grid { gap: 8px; }
+    .more-ic { width: 46px; height: 46px; border-radius: 14px; }
+
+    /* ── FCM push-permission banner — keep it clear of the bottom nav ──
+       fcm-client.js injects it with inline bottom:18px/right:18px, which
+       covers (and blocks taps on) the fixed bottom navigation bar. */
+    #fcm-enable-banner {
+        bottom: calc(92px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 12px;
+        right: 12px !important;
+        max-width: none !important;
+        border-radius: 16px !important;
+    }
+    #fcm-enable-banner button { min-height: 42px; }
+
+    /* ── Misc mobile polish ──────────────────────────────────────────── */
+    .portal-foot { margin-top: 22px; padding-bottom: 4px; }
+    .help-hero { border-radius: 20px; }
+    .contact-card { border-radius: 16px; }
+    /* Range-picker trigger stretches to fill the toolbar row */
+    .att-range-picker { width: auto; flex: 1 1 auto; max-width: 240px; }
+}
+
+/* Wider phones / small tablets / landscape: breathe a little more */
+@media (min-width: 480px) and (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+    .more-grid { grid-template-columns: repeat(4, 1fr); }
+    .portal-wrap { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+}
+
+/* Touch devices: neutralize desktop hover-lift effects (they "stick" on tap) */
+@media (hover: none) {
+    .ytd-box:hover, .ins-box:hover, .qa-btn:hover, .help-card:hover,
+    .con-box:hover { transform: none; box-shadow: 0 1px 2px rgba(16, 55, 50, .05), 0 8px 22px -12px rgba(16, 55, 50, .18); }
+    .na-item:hover { transform: none; }
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .tab-panel.anim-left, .tab-panel.anim-right,
+    .tab-btn.active::before, .ptop-screen-title,
+    .more-sheet, .modal.fade .modal-dialog, .emp-notif-panel {
+        animation: none !important;
+        transition: none !important;
+    }
+}

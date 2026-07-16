@@ -320,6 +320,8 @@ switch ($action) {
         $lreason    = trim($_POST['reason'] ?? '');
         $is_half    = intval($_POST['is_half_day'] ?? 0);
         $half_per   = in_array($_POST['half_period'] ?? '', ['AM', 'PM'], true) ? $_POST['half_period'] : null;
+        // Which selected day the half falls on ('first' or 'last' of the range).
+        $half_on    = in_array($_POST['half_on'] ?? '', ['first', 'last'], true) ? $_POST['half_on'] : 'first';
         $dates_raw  = trim($_POST['dates'] ?? '');
 
         $lt_check = $lt_id > 0 ? $conn->query("SELECT is_paid FROM leave_types WHERE id = $lt_id LIMIT 1")->fetch_assoc() : null;
@@ -342,12 +344,39 @@ switch ($action) {
         sort($days);
         $d_from = $days[0];
         $d_to   = end($days);
-        $dur    = $is_half ? count($days) * 0.5 : (float) count($days);
+        // Half-day = exactly ONE of the selected days counts as 0.5 (the first
+        // or last, per $half_on). A single-date half request stays 0.5 (1 − 0.5).
+        $dur       = $is_half ? count($days) - 0.5 : (float) count($days);
+        $half_date = $is_half ? ($half_on === 'last' ? $d_to : $d_from) : null;
         $today  = date('Y-m-d');
         $dates_json = json_encode($days);
 
-        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, is_half_day, half_period, dates, reason, status) VALUES (?,?,?,?,?,?,?,?,?,?,0)");
-        $ins->bind_param('iisssdisss', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $is_half, $half_per, $dates_json, $lreason);
+        // Balance guard (paid leave only — LWOP consumes no credits): remaining
+        // counts approved AND still-pending requests so filings can't stack past
+        // the employee's credits.
+        if (!$is_lwop_req) {
+            $balq = $conn->query("
+                SELECT COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+                FROM leave_types lt
+                LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id
+                LEFT JOIN (
+                    SELECT leave_type_id, SUM(duration) AS used
+                    FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1)
+                    GROUP BY leave_type_id
+                ) u ON u.leave_type_id = lt.id
+                WHERE lt.id = $lt_id");
+            $remaining = $balq ? (float) ($balq->fetch_assoc()['remaining'] ?? 0) : 0.0;
+            if ($dur > $remaining + 0.001) {
+                $fmtd = function ($v) { return rtrim(rtrim(number_format((float) $v, 1), '0'), '.'); };
+                echo json_encode(['result' => false, 'message' =>
+                    'Not enough leave credits — this request needs ' . $fmtd($dur) . ' day(s) but you only have '
+                    . $fmtd(max(0, $remaining)) . ' left for this leave type (pending requests included).']);
+                break;
+            }
+        }
+
+        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, is_half_day, half_period, half_date, dates, reason, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,0)");
+        $ins->bind_param('iisssdissss', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $is_half, $half_per, $half_date, $dates_json, $lreason);
         if (!$ins->execute()) {
             echo json_encode(['result' => false, 'message' => 'Could not submit your request. Please try again.']);
             break;
@@ -358,7 +387,9 @@ switch ($action) {
         $tname   = ($tname_q && $tr = $tname_q->fetch_assoc()) ? $tr['name'] : 'leave';
         $erow    = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
         $ename   = $erow['n'] ?? 'Employee';
-        $durLabel = $is_half ? ($dur . ' day — ' . $half_per . ' half') : $dur . ' day/s';
+        $durLabel = $is_half
+            ? ($dur . ' day/s — ' . $half_per . ' half on ' . date('M j', strtotime($half_date)))
+            : $dur . ' day/s';
         $msg   = $conn->real_escape_string("$ename requested $tname ($durLabel) via portal. Needs HR review.");
         $title = $conn->real_escape_string('New leave request');
         // Notify the same reviewer roles as attendance requests: Admin (1),
@@ -384,6 +415,7 @@ switch ($action) {
             'leave_pending_count' => $leave_pending_count,
             'request' => [
                 'id' => (int) $new_id,
+                'leave_type_id' => $lt_id,
                 'leave_type_name' => $tname,
                 'date_applied' => $today,
                 'date_from' => $d_from,

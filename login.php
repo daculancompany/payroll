@@ -11,6 +11,23 @@
     <!-- App favicon -->
     <link rel="shortcut icon" href="assets/images/favicon.ico">
 
+    <!-- ── PWA: lets the admin app be installed from the login screen too ── -->
+    <link rel="manifest" href="manifest-admin.webmanifest">
+    <meta name="theme-color" content="#219688">
+    <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="COMC Payroll">
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('firebase-messaging-sw.js')
+                    .catch(function (e) { console.warn('[PWA] SW registration failed:', e); });
+            });
+        }
+    </script>
+
     <!-- Layout config Js -->
     <script src="assets/js/layout.js"></script>
     <!-- Bootstrap Css -->

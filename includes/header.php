@@ -11,6 +11,26 @@
     <!-- App favicon -->
     <link rel="shortcut icon" href="assets/images/favicon.ico">
 
+    <!-- ── PWA: installable admin app (separate manifest from the employee portal) ── -->
+    <link rel="manifest" href="manifest-admin.webmanifest">
+    <meta name="theme-color" content="#219688">
+    <!-- iOS ignores the manifest; it reads these tags on "Add to Home Screen" -->
+    <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="COMC Payroll">
+    <script>
+        // Registers the same root-scoped SW the portal uses; its no-op fetch
+        // handler is what makes Chrome offer "Install app". HTTPS/localhost only.
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('firebase-messaging-sw.js')
+                    .catch(function (e) { console.warn('[PWA] SW registration failed:', e); });
+            });
+        }
+    </script>
+
     <!-- Layout config Js -->
     <!-- <script src="assets/js/layout.js"></script> -->
     <!-- Bootstrap Css -->

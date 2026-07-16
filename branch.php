@@ -167,7 +167,7 @@ document.getElementById('form-branch').addEventListener('submit', async function
         bootstrap.Modal.getInstance(document.getElementById('modal-branch'))?.hide();
         location.reload();
     } else {
-        alert(json?.message || 'Failed to save.');
+        Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to save.' });
     }
 });
 

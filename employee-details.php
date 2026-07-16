@@ -221,11 +221,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <?php else: ?>
                                         <span class="badge rounded-pill bg-danger"><i class="ri-close-circle-line me-1"></i>Inactive</span>
                                     <?php endif; ?>
-                                    <?php if ($weekly_payroll == 1): ?>
-                                        <span class="badge bg-primary"><i class="ri-calendar-2-line me-1"></i>Weekly</span>
-                                    <?php else: ?>
-                                        <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Monthly</span>
-                                    <?php endif; ?>
+                                    <?php /* Weekly payroll was removed — everyone is semi-monthly. */ ?>
+                                    <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Semi-Monthly</span>
                                     <?php if ($age !== null): ?>
                                         <span class="badge bg-light text-dark border"><i class="ri-cake-2-line me-1"></i><?= $age ?> yrs old</span>
                                     <?php endif; ?>
@@ -407,11 +404,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <div class="detail-item">
                                             <div class="detail-label">Payroll Type</div>
                                             <div class="detail-value">
-                                                <?php if ($weekly_payroll == 1): ?>
-                                                    <span class="badge bg-primary"><i class="ri-calendar-2-line me-1"></i>Weekly</span>
-                                                <?php else: ?>
-                                                    <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Monthly</span>
-                                                <?php endif; ?>
+                                                <?php /* Weekly payroll was removed — everyone is semi-monthly. */ ?>
+                                                <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Semi-Monthly</span>
                                             </div>
                                         </div>
                                         <div class="detail-item">
@@ -1062,11 +1056,9 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 .then(j => {
                                     btn.disabled = false;
                                     if (j && j.result) {
-                                        if (window.Swal) Swal.fire({ icon: 'success', title: 'Saved', text: j.message, timer: 1000, showConfirmButton: false }).then(() => location.reload());
-                                        else location.reload();
+                                        Swal.fire({ icon: 'success', title: 'Saved', text: j.message, timer: 1000, showConfirmButton: false }).then(() => location.reload());
                                     } else {
-                                        if (window.Swal) Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Failed to save.' });
-                                        else alert((j && j.message) || 'Failed to save.');
+                                        Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Failed to save.' });
                                     }
                                 })
                                 .catch(() => { btn.disabled = false; });
@@ -1149,10 +1141,10 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                     bootstrap.Modal.getInstance(document.getElementById('modal-assign-schedule'))?.hide();
                     location.reload();
                 } else {
-                    alert(json?.message || 'Failed to assign schedule.');
+                    Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to assign schedule.' });
                 }
             } catch (err) {
-                alert('Failed to assign schedule. Please try again.');
+                Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to assign schedule. Please try again.' });
             }
         });
     </script>

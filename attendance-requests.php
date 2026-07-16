@@ -245,7 +245,7 @@ async function decideRequest(id, status) {
     if (json?.result) {
         location.reload();
     } else {
-        alert(json?.message || 'Failed to update request.');
+        Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to update request.' });
     }
 }
 </script>

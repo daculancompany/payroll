@@ -85,23 +85,36 @@ $result = $conn->query($data_sql);
 $data   = [];
 
 while ($row = $result->fetch_assoc()) {
+    $mi = $row['middlename'] ? ' ' . strtoupper(substr($row['middlename'], 0, 1)) . '.' : '';
+
+    // Time Logs column: show only first IN / last OUT; full list opens in a
+    // modal via the View button (mirrors the payroll details View style).
     $logs    = json_decode($row['logs']);
     $logHtml = '';
     if ($logs && count($logs)) {
-        foreach ($logs as $log) {
-            $badge    = $log->type === 'bio'
-                ? '<span class="badge att-log-bio">Bio</span>'
-                : '<span class="badge att-log-manual">Manual</span>';
-            $logHtml .= '<div class="d-flex align-items-center mb-1">' . $badge
-                      . '<small class="ms-1 fw-semibold">'
-                      . date('g:i A', strtotime($log->dateTime))
-                      . '</small></div>';
-        }
+        usort($logs, function ($a, $b) {
+            return strtotime($a->dateTime) - strtotime($b->dateTime);
+        });
+        $first = $logs[0];
+        $last  = count($logs) > 1 ? $logs[count($logs) - 1] : null;
+
+        $logHtml .= '<div class="d-flex align-items-center mb-1">'
+                  . '<span class="att-log-dir att-log-in">IN</span>'
+                  . '<small class="ms-1 fw-semibold">' . date('g:i A', strtotime($first->dateTime)) . '</small>'
+                  . '</div>'
+                  . '<div class="d-flex align-items-center mb-1">'
+                  . '<span class="att-log-dir att-log-out">OUT</span>'
+                  . '<small class="ms-1 fw-semibold">' . ($last ? date('g:i A', strtotime($last->dateTime)) : '&mdash;') . '</small>'
+                  . '</div>'
+                  . '<button type="button" class="btn btn-sm btn-success view_time_logs mt-1"'
+                  . ' data-logs="' . htmlspecialchars(json_encode($logs), ENT_QUOTES) . '"'
+                  . ' data-employee="' . htmlspecialchars($row['lastname'] . ', ' . $row['firstname'] . $mi, ENT_QUOTES) . '"'
+                  . ' data-date="' . date('M j, Y', strtotime($row['date_time'])) . '"'
+                  . ' data-bs-toggle="tooltip" data-bs-placement="top" title="View Time Log Details">'
+                  . '<i class="ri-eye-line me-1"></i>View</button>';
     } else {
         $logHtml = '<span class="text-muted small">No logs</span>';
     }
-
-    $mi = $row['middlename'] ? ' ' . strtoupper(substr($row['middlename'], 0, 1)) . '.' : '';
 
     $data[] = [
         'date'       => '<div class="att-date-main">' . date('M j, Y', strtotime($row['date_time'])) . '</div>'

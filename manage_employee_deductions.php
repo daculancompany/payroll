@@ -102,7 +102,7 @@
 			amount = $('#amount').val(),
 			total_amount = $('#total_amount').val() || 0,
 			edate = $('#edate').val();
-		if (!deduction_id) { alert('Please select a deduction.'); return; }
+		if (!deduction_id) { Swal.fire({ icon: 'warning', title: 'Required', text: 'Please select a deduction.' }); return; }
 		var tr = $('#tr_clone tr').clone()
 		tr.find('[name="deduction_id[]"]').val(deduction_id)
 		tr.find('[name="type[]"]').val(type)

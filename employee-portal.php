@@ -393,6 +393,7 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
 <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <link href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap.min.css" rel="stylesheet">
+<link href="assets2/css/modal-stacking.css" rel="stylesheet">
 <style>
 *{box-sizing:border-box;}
 body{
@@ -1131,6 +1132,7 @@ body{
    the dialog appeared "behind" the page. Pin the modal + backdrop above them. */
 .modal-backdrop { z-index: 1990 !important; }
 .modal          { z-index: 2000 !important; }
+/* .swal2-container is pinned above these in assets2/css/modal-stacking.css. */
 
 /* ── Modal form controls — ensure visible borders and readable text ── */
 .modal .form-control,
@@ -2409,7 +2411,8 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">Payroll Type</div>
-                    <div class="info-val"><?= ((int)$emp['weekly_payroll'] === 1) ? 'Weekly' : 'Semi-Monthly' ?></div>
+                    <?php /* Weekly payroll was removed — everyone is semi-monthly. */ ?>
+                    <div class="info-val">Semi-Monthly</div>
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">Schedule In</div>
@@ -3835,7 +3838,11 @@ jQuery(function ($) {
         <div class="modal-content" style="border-radius:16px;overflow:hidden;">
             <div class="modal-header" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;border:0;">
                 <div>
-                    <h5 class="modal-title mb-0"><i class="ri-file-list-3-line me-1"></i>Review My DTR</h5>
+                    <!-- color is explicit: the theme's global h1-h6 rule sets
+                         --vz-heading-color on headings, which beats the white
+                         inherited from .modal-header and leaves the title dark
+                         on this gradient. -->
+                    <h5 class="modal-title mb-0" style="color:#fff;"><i class="ri-file-list-3-line me-1"></i>Review My DTR</h5>
                     <div id="dtr-review-sub" style="font-size:12px;opacity:.85;"></div>
                 </div>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>

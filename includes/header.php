@@ -4,9 +4,9 @@
 <head>
 
     <meta charset="utf-8" />
-    <title>HRIS System</title>
+    <title>Payroll System</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta content="HRIS System" name="description" />
+    <meta content="Payroll System" name="description" />
     <meta content="Niel Daculan" name="author" />
     <!-- App favicon -->
     <link rel="shortcut icon" href="assets/images/favicon.ico">
@@ -35,6 +35,9 @@
 
     <!-- Shared soft-style report tables -->
     <link rel="stylesheet" href="assets2/css/reports.css">
+
+    <!-- Keeps SweetAlert dialogs above Bootstrap modals -->
+    <link rel="stylesheet" href="assets2/css/modal-stacking.css">
     <style>
         /* Uniform DataTables empty-state (used by table.dataTables_empty cells) */
         td.dataTables_empty {

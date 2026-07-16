@@ -227,7 +227,7 @@ document.getElementById('form-schedule').addEventListener('submit', async functi
         bootstrap.Modal.getInstance(document.getElementById('modal-schedule')).hide();
         location.reload();
     } else {
-        alert(json?.message || 'Failed to save.');
+        Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to save.' });
     }
 });
 
@@ -236,6 +236,6 @@ async function deleteSchedule(id, name) {
     const res  = await fetch('ajax.php?action=delete_work_schedule', { method: 'POST', body: new URLSearchParams({ id }) });
     const json = await res.json();
     if (json?.result) location.reload();
-    else alert(json?.message || 'Failed to delete.');
+    else Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to delete.' });
 }
 </script>

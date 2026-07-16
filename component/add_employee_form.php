@@ -29,7 +29,7 @@
                             <select id="clasification-select" class="form-control select2" name="clasification_id"
                                 data-placeholder="Select classification" data-live-search="true"
                                 data-parsley-required-message="Please select classification." required>
-                                <option value=""></option>
+                                <option value="">Select a classification</option>
                                 <?php
                                 $pos = $conn->query("SELECT * FROM clasification");
                                 while ($row = $pos->fetch_assoc()):
@@ -111,7 +111,7 @@
                             <select id="position-select" class="form-control select2" name="position_id"
                                 data-placeholder="Select position" data-live-search="true"
                                 data-parsley-required-message="Please select position." required>
-                                <option value=""></option>
+                                <option value="">Select a position</option>
                                 <?php
                                 $pos = $conn->query("SELECT * FROM position ORDER BY name ASC");
                                 while ($row = $pos->fetch_assoc()):
@@ -197,28 +197,23 @@
                         <i class="ri-settings-3-line me-1"></i>Payroll Settings
                     </div>
                     <div class="row g-2">
-                        <div class="col-md-4">
-                            <div style="border:1px solid #e8eaf6;border-radius:4px;padding:8px 12px;background:#f9f9ff;">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input" name="weekly_payroll" type="checkbox" role="switch" id="sw_weekly"
-                                        <?= isset($weekly_payroll) && $weekly_payroll == 1 ? 'checked' : '' ?>>
-                                    <label class="form-check-label fw-semibold" for="sw_weekly" style="font-size:12px;">
-                                        <i class="ri-calendar-2-line me-1"></i>Weekly Payroll
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div style="border:1px solid #e8eaf6;border-radius:4px;padding:8px 12px;background:#f9f9ff;">
-                                <div class="form-check form-switch mb-0">
-                                    <input class="form-check-input" name="isAutoDeduct" type="checkbox" role="switch" id="sw_autodeduct"
-                                        <?= isset($isAutoDeduct) && $isAutoDeduct == 1 ? 'checked' : '' ?>>
-                                    <label class="form-check-label fw-semibold" for="sw_autodeduct" style="font-size:12px;">
-                                        <i class="ri-subtract-line me-1"></i>Auto Deductions
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
+                        <?php
+                        /* Weekly Payroll / Auto Deductions toggles are hidden from the form.
+                           Weekly payroll has been removed entirely, so it is no longer
+                           submitted at all — save() forces it to 0.
+
+                           Auto Deductions still has to be SUBMITTED: save() reads it with
+                           isset($_POST['isAutoDeduct']) ? 1 : 0 and writes the column on
+                           every update, so dropping it outright would switch auto
+                           SSS/PhilHealth deductions off for every employee that gets edited.
+
+                           This mirrors checkbox semantics exactly: emitted only when the
+                           stored value is 1 (present = 1, absent = 0). A hidden input with
+                           value="0" would NOT work — isset() would still see it and store 1. */
+                        ?>
+                        <?php if (isset($isAutoDeduct) && $isAutoDeduct == 1): ?>
+                        <input type="hidden" name="isAutoDeduct" value="1">
+                        <?php endif; ?>
                         <div class="col-md-4">
                             <div style="border:1px solid #e8eaf6;border-radius:4px;padding:8px 12px;background:#f9f9ff;">
                                 <div class="form-check form-switch mb-0">
@@ -582,6 +577,16 @@
                     </div>
                     <div class="form-text text-muted mt-1" style="font-size:11px;">
                         <i class="ri-information-line me-1"></i>Accepted formats: .xlsx, .xls, .csv
+                    </div>
+                    <div class="mt-3 p-2" style="border:1px dashed #b2dfdb;border-radius:6px;background:#f1f8f7;">
+                        <div style="font-size:11px;color:#00695c;" class="mb-2">
+                            <i class="ri-lightbulb-line me-1"></i>New to importing? Start from the template — its column order
+                            must be kept, and the <b>Notes</b> sheet explains every field.
+                        </div>
+                        <a href="export-employee-template.php" class="btn btn-sm w-100"
+                           style="background:#fff;border:1px solid #009688;color:#009688;font-weight:600;font-size:11px;">
+                            <i class="ri-download-2-line me-1"></i>Download Import Template (.xlsx)
+                        </a>
                     </div>
                 </div>
                 <div class="modal-footer" style="background:#f8f9fa;">

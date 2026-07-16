@@ -47,7 +47,7 @@ $(document).ready(function () {
             // Ensure at least one item remains
             $(this).closest(".item").remove();
         } else {
-            alert("You must have at least one date and time input field.");
+            Swal.fire({ icon: "warning", title: "Cannot remove", text: "You must have at least one date and time input field." });
         }
     });
 

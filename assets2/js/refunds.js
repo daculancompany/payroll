@@ -27,7 +27,7 @@ $(function () {
                 method:'POST',
                 data:$(this).serialize(),
                 error:err=>{
-                    alert("Something went wrong!");
+                    Swal.fire({ icon: "error", title: "Error", text: "Something went wrong!" });
                   $('.submitbutton').removeAttr('disabled');
 
                 },

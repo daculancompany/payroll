@@ -110,7 +110,7 @@ $(function () {
                 method:'POST',
                 data:$(this).serialize(),
                 error:err=>{
-                    alert("Something went wrong!");
+                    Swal.fire({ icon: "error", title: "Error", text: "Something went wrong!" });
                   $('.submitbutton').removeAttr('disabled');
 
                 },
@@ -236,6 +236,38 @@ if ($('#attendance-table').length) {
         attTable.draw();
     });
 }
+
+// Time Logs "View" — opens the full log list in a modal (payroll-details style)
+$(document).on('click', '.view_time_logs', function () {
+    var logs = [];
+    try { logs = JSON.parse($(this).attr('data-logs')) || []; } catch (e) {}
+
+    $('#tl-employee').text($(this).attr('data-employee') || '');
+    $('#tl-date').text($(this).attr('data-date') || '');
+
+    var rows = logs.map(function (log, i) {
+        var dir = '<span class="text-muted small">&mdash;</span>';
+        if (i === 0) {
+            dir = '<span class="att-log-dir att-log-in">IN</span>';
+        } else if (i === logs.length - 1) {
+            dir = '<span class="att-log-dir att-log-out">OUT</span>';
+        }
+        var src = log.type === 'bio'
+            ? '<span class="badge att-log-bio">Bio</span>'
+            : '<span class="badge att-log-manual">Manual</span>';
+        var d = new Date(String(log.dateTime).replace(' ', 'T'));
+        var timeStr = isNaN(d) ? log.dateTime : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        return '<tr>'
+             + '<td class="text-center text-muted">' + (i + 1) + '</td>'
+             + '<td class="fw-semibold">' + timeStr + '</td>'
+             + '<td class="text-center">' + dir + '</td>'
+             + '<td class="text-center">' + src + '</td>'
+             + '</tr>';
+    }).join('');
+
+    $('#tl-table tbody').html(rows || '<tr><td colspan="4" class="text-center text-muted">No logs</td></tr>');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-time-logs')).show();
+});
 
 
 $('.remove_attendance').click(function(){

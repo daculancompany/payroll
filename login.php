@@ -4,9 +4,9 @@
 <head>
 
     <meta charset="utf-8" />
-    <title>HRIS System - Login</title>
+    <title>Payroll System - Login</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta content="HRIS System" name="description" />
+    <meta content="Payroll System" name="description" />
     <meta content="Niel Daculan" name="author" />
     <!-- App favicon -->
     <link rel="shortcut icon" href="assets/images/favicon.ico">
@@ -95,7 +95,7 @@
                             <div class="card-body p-4">
                                 <div class="text-center mt-2">
                                     <h5 class="text-primary">Welcome Back !</h5>
-                                    <p class="text-muted">Sign in to continue to HRIS System.</p>
+                                    <p class="text-muted">Sign in to continue to Payroll System.</p>
                                     <p class="text-muted small mb-0"><i class="ri-information-line me-1"></i>Employees: use your <strong>Employee No.</strong> as username.</p>
                                 </div>
                                 <div class="p-2 mt-4">

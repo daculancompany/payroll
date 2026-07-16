@@ -182,20 +182,17 @@ $(document).ready(function () {
             .done(function (res) {
                 let j = res; try { if (typeof res === "string") j = JSON.parse(res); } catch (e) {}
                 if (j && j.result) {
-                    if (window.Swal) {
-                        Swal.fire({ icon: "success", title: "Saved", text: j.message, timer: 1400, showConfirmButton: false })
-                            .then(() => location.reload());
-                    } else { location.reload(); }
+                    Swal.fire({ icon: "success", title: "Saved", text: j.message, timer: 1400, showConfirmButton: false })
+                        .then(() => location.reload());
                 } else {
                     if (btn) btn.prop("disabled", false);
                     const m = (j && j.message) || "Failed to save.";
-                    if (window.Swal) Swal.fire({ icon: "error", title: "Error", text: m }); else alert(m);
+                    Swal.fire({ icon: "error", title: "Error", text: m });
                 }
             })
             .fail(function () {
                 if (btn) btn.prop("disabled", false);
-                if (window.Swal) Swal.fire({ icon: "error", title: "Error", text: "Request failed. Please try again." });
-                else alert("Request failed.");
+                Swal.fire({ icon: "error", title: "Error", text: "Request failed. Please try again." });
             });
     }
 
@@ -256,14 +253,12 @@ $(document).ready(function () {
         const shiftLabel = $("#bulk-shift option:selected").text();
         const btn = $(this);
         const doIt = () => postAssign({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes }, btn);
-        if (window.Swal) {
-            Swal.fire({
-                icon: "question", title: "Apply now?",
-                html: "Assign <b>" + esc(shiftLabel) + "</b> to <b>" + v.ids.length +
-                      "</b> employee(s), effective <b>" + v.eff + "</b>. Employees will be notified.",
-                showCancelButton: true, confirmButtonText: "Yes, apply", confirmButtonColor: "#009688",
-            }).then((r) => { if (r.isConfirmed) doIt(); });
-        } else if (confirm("Apply shift to " + v.ids.length + " employee(s)?")) { doIt(); }
+        Swal.fire({
+            icon: "question", title: "Apply now?",
+            html: "Assign <b>" + esc(shiftLabel) + "</b> to <b>" + v.ids.length +
+                  "</b> employee(s), effective <b>" + v.eff + "</b>. Employees will be notified.",
+            showCancelButton: true, confirmButtonText: "Yes, apply", confirmButtonColor: "#009688",
+        }).then((r) => { if (r.isConfirmed) doIt(); });
     });
 
     $("#btn-bulk-plan").on("click", function () {
@@ -283,15 +278,15 @@ $(document).ready(function () {
                 if (j && j.result) {
                     if (closeModal && editModal) editModal.hide();
                     loadPlan(true);
-                    if (window.Swal) Swal.fire({ icon: "success", title: "Added to plan", text: j.message, timer: 1300, showConfirmButton: false });
+                    Swal.fire({ icon: "success", title: "Added to plan", text: j.message, timer: 1300, showConfirmButton: false });
                 } else {
                     const m = (j && j.message) || "Failed to add to plan.";
-                    if (window.Swal) Swal.fire({ icon: "error", title: "Error", text: m }); else alert(m);
+                    Swal.fire({ icon: "error", title: "Error", text: m });
                 }
             })
             .fail(function () {
                 if (btn) btn.prop("disabled", false);
-                if (window.Swal) Swal.fire({ icon: "error", title: "Error", text: "Request failed." }); else alert("Request failed.");
+                Swal.fire({ icon: "error", title: "Error", text: "Request failed." });
             });
     }
 
@@ -339,10 +334,8 @@ $(document).ready(function () {
 
     $("#btn-plan-clear").on("click", function () {
         const go = () => $.post("ajax.php?action=plan_clear").done(function () { loadPlan(false); });
-        if (window.Swal) {
-            Swal.fire({ icon: "warning", title: "Clear all planned changes?", showCancelButton: true, confirmButtonText: "Clear", confirmButtonColor: "#d33" })
-                .then((r) => { if (r.isConfirmed) go(); });
-        } else if (confirm("Clear all planned changes?")) { go(); }
+        Swal.fire({ icon: "warning", title: "Clear all planned changes?", showCancelButton: true, confirmButtonText: "Clear", confirmButtonColor: "#d33" })
+            .then((r) => { if (r.isConfirmed) go(); });
     });
 
     $("#btn-plan-apply").on("click", function () {
@@ -355,29 +348,25 @@ $(document).ready(function () {
                 .done(function (res) {
                     let j = res; try { if (typeof res === "string") j = JSON.parse(res); } catch (e) {}
                     if (j && j.result) {
-                        if (window.Swal) Swal.fire({ icon: "success", title: "Applied", text: j.message, timer: 1600, showConfirmButton: false }).then(() => location.reload());
-                        else location.reload();
+                        Swal.fire({ icon: "success", title: "Applied", text: j.message, timer: 1600, showConfirmButton: false }).then(() => location.reload());
                     } else {
                         btn.prop("disabled", false);
                         const m = (j && j.message) || "Failed to apply.";
-                        if (window.Swal) Swal.fire({ icon: "error", title: "Error", text: m }); else alert(m);
+                        Swal.fire({ icon: "error", title: "Error", text: m });
                     }
                 })
-                .fail(function () { btn.prop("disabled", false); if (window.Swal) Swal.fire({ icon: "error", title: "Error", text: "Request failed." }); });
+                .fail(function () { btn.prop("disabled", false); Swal.fire({ icon: "error", title: "Error", text: "Request failed." }); });
         };
-        if (window.Swal) {
-            Swal.fire({
-                icon: "question", title: "Apply all planned changes?",
-                html: "This will apply <b>" + count + "</b> change(s) and notify the affected employees.",
-                showCancelButton: true, confirmButtonText: "Yes, apply all", confirmButtonColor: "#009688",
-            }).then((r) => { if (r.isConfirmed) go(); });
-        } else if (confirm("Apply all " + count + " planned change(s)?")) { go(); }
+        Swal.fire({
+            icon: "question", title: "Apply all planned changes?",
+            html: "This will apply <b>" + count + "</b> change(s) and notify the affected employees.",
+            showCancelButton: true, confirmButtonText: "Yes, apply all", confirmButtonColor: "#009688",
+        }).then((r) => { if (r.isConfirmed) go(); });
     });
 
     loadPlan(false);
 
     function warn(msg) {
-        if (window.Swal) Swal.fire({ icon: "warning", title: "Hold on", text: msg });
-        else alert(msg);
+        Swal.fire({ icon: "warning", title: "Hold on", text: msg });
     }
 });

@@ -249,12 +249,41 @@ switch ($action) {
         $own = $conn->query("SELECT COUNT(*) AS c FROM payroll_items WHERE payroll_id = $payroll_id AND employee_id = $emp_id")->fetch_assoc();
         if (!$own || (int)$own['c'] === 0) { echo json_encode(['result' => false, 'message' => 'Not authorized for this payroll']); break; }
 
+        // The employee's previous decision, read *before* the upsert overwrites it.
+        // Needed below to tell our own auto-mark apart from an admin's manual one.
+        $prevRow = $conn->query("SELECT status FROM payroll_employee_reviews
+                                 WHERE payroll_id = $payroll_id AND employee_id = $emp_id")->fetch_assoc();
+        $prevDecision = $prevRow ? (int) $prevRow['status'] : 0;
+
         // Upsert the employee's sign-off.
         $st = $conn->prepare("INSERT INTO payroll_employee_reviews (payroll_id, employee_id, status, comment)
                               VALUES (?, ?, ?, ?)
                               ON DUPLICATE KEY UPDATE status = VALUES(status), comment = VALUES(comment), reviewed_at = CURRENT_TIMESTAMP");
         $st->bind_param('iiis', $payroll_id, $emp_id, $decision, $comment);
         if (!$st->execute()) { echo json_encode(['result' => false, 'message' => $st->error]); break; }
+
+        // ── Mirror the sign-off onto the reviewer's row mark ──────────────────
+        // payroll_items.review_status is the admin's per-row colour mark
+        // (0=none, 1=ok/green, 2=issue/orange, 3=reviewing/blue). Employees
+        // confirming their own payslip is the same signal, so write it here and
+        // save the admin marking every row by hand.
+        //
+        // An admin's manual mark always wins: we only touch a row that is still
+        // unmarked (0), or one that still carries the mark *we* set from this
+        // employee's previous decision — otherwise a change of mind would leave
+        // a green row sitting above a listed dispute. Any other value means a
+        // human deliberately set it, so it is left alone.
+        $autoMark = $decision === 1 ? 1 : 2;
+        $claimable = [0];
+        if ($prevDecision === 1 || $prevDecision === 2) {
+            $claimable[] = $prevDecision === 1 ? 1 : 2;
+        }
+        $inList = implode(',', array_unique($claimable));
+        $mk = $conn->prepare("UPDATE payroll_items SET review_status = ?
+                              WHERE payroll_id = ? AND employee_id = ?
+                              AND review_status IN ($inList)");
+        $mk->bind_param('iii', $autoMark, $payroll_id, $emp_id);
+        $mk->execute();
 
         // Notify staff (Admin / Dept Head / HR).
         $emp = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();

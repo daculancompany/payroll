@@ -43,6 +43,11 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
     .att-pill-late { background:#f8d7da; color:#721c24; }
     .att-log-bio   { background:#009688; color:#fff; font-size:10px; }
     .att-log-manual{ background:#dc3545; color:#fff; font-size:10px; }
+    .att-log-dir { font-size:10px; font-weight:700; padding:1px 0; border-radius:3px; min-width:34px; text-align:center; display:inline-block; }
+    .att-log-in  { background:#d4edda; color:#155724; }
+    .att-log-out { background:#f8d7da; color:#721c24; }
+    #modal-time-logs .tl-meta-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.3px; }
+    #modal-time-logs .tl-meta-value { font-size:13px; font-weight:700; color:#009688; }
   
     .att-empty { text-align:center; padding:3.5rem 1rem 3rem; background:#f7f8fc; border-radius:8px; border:2px dashed #c5cde8; }
     .att-empty .att-empty-icon { width:64px; height:64px; border-radius:50%; background:#eef0f8; border:2px solid #d0d7ee; display:flex; align-items:center; justify-content:center; margin:0 auto 14px; }
@@ -170,6 +175,46 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
 </div>
 
 <?php include 'component/add_attendance.php'; ?>
+
+<!-- Time Log Details Modal -->
+<div class="modal fade" id="modal-time-logs" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2" style="background:#009688;">
+                <h6 class="modal-title text-white"><i class="ri-history-line me-2"></i>Time Log Details</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+                    <div>
+                        <div class="tl-meta-label"><i class="ri-user-line me-1"></i>Employee</div>
+                        <div class="tl-meta-value" id="tl-employee"></div>
+                    </div>
+                    <div class="text-end">
+                        <div class="tl-meta-label"><i class="ri-calendar-line me-1"></i>Date</div>
+                        <div class="tl-meta-value" id="tl-date"></div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered align-middle mb-0" id="tl-table">
+                        <thead class="table-dark">
+                            <tr>
+                                <th class="text-center" style="width:40px;">#</th>
+                                <th><i class="ri-time-line me-1"></i>Time</th>
+                                <th class="text-center" style="width:80px;">Direction</th>
+                                <th class="text-center" style="width:80px;">Source</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 // Plain JS only — jQuery not yet available at this point

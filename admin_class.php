@@ -482,7 +482,10 @@ class Action
 
         $status         = isset($_POST['status']) ? 1 : 0;
         $isAutoDeduct   = isset($_POST['isAutoDeduct']) ? 1 : 0;
-        $weekly_payroll = isset($_POST['weekly_payroll']) ? 1 : 0;
+        // Weekly payroll was removed — everyone is semi-monthly. The column is
+        // kept (nothing reads it any more) so existing rows stay loadable; new
+        // and edited employees settle to 0.
+        $weekly_payroll = 0;
 
         // ── Server-side validation ──
         if ($firstname === '' || $lastname === '')          return 'error:First and last name are required.';
@@ -494,9 +497,10 @@ class Action
         if ($basic_pay > 100000000 || $salary > 100000000) return 'error:Pay value is unrealistically large.';
         if ($bday !== '' && strtotime($bday) === false)     return 'error:Birthday is not a valid date.';
 
-        // Calculate deductions
-        $sss = ($weekly_payroll === 1) ? $this->getSSSWeeklyDeduction($basic_pay) : $this->getSSSMonthlyDeduction($basic_pay);
-        $phic = ($weekly_payroll === 1) ? $this->calculatePhilHealthWeekly($basic_pay) : $this->calculatePhilHealth($basic_pay);
+        // Calculate deductions. Weekly payroll was removed — every employee is
+        // semi-monthly, so the monthly SSS/PhilHealth tables always apply.
+        $sss = $this->getSSSMonthlyDeduction($basic_pay);
+        $phic = $this->calculatePhilHealth($basic_pay);
         $hdmf = 0; // Default value
 
         // Start transaction
@@ -2343,7 +2347,9 @@ class Action
         $week = $this->db->real_escape_string($pay['type']);
         $this->db->begin_transaction(); // Start transaction
         $site_ids_string = $pay['site_ids'];
-        $weekly_payroll =  $pay['type'] == 5 ? 0 : 1;
+        // Weekly payroll was removed: runs no longer partition employees by a
+        // weekly/semi-monthly flag, so every employee with approved DTR in the
+        // period and site is included regardless of payroll type.
         $site_ids = json_decode($site_ids_string, true);
         $commaSeparatedSites = implode(',', $site_ids);
         // A freshly created payroll has no settings yet (settings are chosen via
@@ -2373,7 +2379,7 @@ class Action
                 INNER JOIN employee ON  DTR_details.employee_id = employee.id
                 WHERE date(DTR_details.date_time) BETWEEN ? AND ?  AND DTR.status = 2
                 AND DTR_details.status = 1
-                AND DTR.site_id IN ($commaSeparatedSites) AND weekly_payroll=$weekly_payroll $exclude_clause";
+                AND DTR.site_id IN ($commaSeparatedSites) $exclude_clause";
 
             $stmt = $this->db->prepare($sql);
             // Bind the date parameters only
@@ -2469,7 +2475,7 @@ class Action
                             INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id  
                             INNER JOIN employee ON  DTR_details.employee_id = employee.id  
                             WHERE date(DTR_details.date_time) BETWEEN ? AND ?  AND DTR.status = 2  AND DTR_details.status = 1   AND DTR.site_id NOT IN ($commaSeparatedSites)
-                            AND weekly_payroll=$weekly_payroll AND employee_id = $employee_id ORDER BY date_time DESC
+                            AND employee_id = $employee_id ORDER BY date_time DESC
                             ";
                     $stmt2 = $this->db->prepare($sql2);
                     $stmt2->bind_param("ss", $date_from, $date_to);
@@ -6070,15 +6076,40 @@ class Action
 
         $stmtUpdateContrib = $this->db->prepare("UPDATE employee_contributions SET amount=? WHERE employee_id=? AND contribution_id=?");
 
+        // Lookups for the appended template columns (classification / shift / deduction).
+        $stmtCheckClas     = $this->db->prepare("SELECT id FROM clasification WHERE LOWER(clasification) = LOWER(?)");
+        $stmtCheckSchedule = $this->db->prepare("SELECT id FROM work_schedules WHERE LOWER(description) = LOWER(?) AND status = 1");
+        $stmtCheckDeduct   = $this->db->prepare("SELECT id FROM deductions WHERE LOWER(deduction) = LOWER(?)");
+
         try {
             $insertCount = 0;
             $updateCount = 0;
 
             foreach ($data as $row) {
+                // Columns N onward are optional: spreadsheets built against the
+                // old 13-column layout must keep importing, so every new index
+                // is null-coalesced rather than assumed to exist.
+                // Reset per row: a leftover id from the previous iteration would
+                // attach this row's shift/deduction to the wrong employee.
+                $employee_id = 0;
                 $employee_code = mt_rand(100000000000, 999999999999);
                 $status = 1;
                 $e_num = date('Y') . '-' . mt_rand(1, 99999);
+
+                // Classification by name (col N). Unknown/blank falls back to Regular.
                 $clasification_id = 1;
+                $clasification_name = trim((string) ($row[13] ?? ''));
+                if ($clasification_name !== '') {
+                    $stmtCheckClas->bind_param("s", $clasification_name);
+                    $stmtCheckClas->execute();
+                    $stmtCheckClas->store_result();
+                    if ($stmtCheckClas->num_rows > 0) {
+                        $stmtCheckClas->bind_result($found_clas_id);
+                        $stmtCheckClas->fetch();
+                        $clasification_id = (int) $found_clas_id;
+                    }
+                    $stmtCheckClas->free_result();
+                }
 
                 // Parse "LASTNAME, FIRSTNAME[ MIDDLENAME]" from a single cell
                 $raw_name = trim($row[3]);
@@ -6105,12 +6136,14 @@ class Action
                 $ot_rate = floatval(preg_replace('/[^0-9.]/', '', $row[12]));
                 $allowance_rate = floatval(preg_replace('/[^0-9.]/', '', $row[11]));
                 $sss_fund = 0;
-                $weekly_payroll = 0;
+                $weekly_payroll = 0; // weekly payroll removed — always semi-monthly
                 $isAutoDeduct = 0;
-                $sss = 0;
+                // Contribution AMOUNTS come straight from the sheet (cols O/P/Q);
+                // they are deliberately NOT auto-calculated. Blank = 0.
+                $sss  = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[14] ?? '')));
+                $phic = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[15] ?? '')));
+                $hdmf = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[16] ?? '')));
                 $sss_loan = 0;
-                $phic = 0;
-                $hdmf = 0;
                 $hdmf_loan = 0;
                 $bday = "";
                 $ph_no = trim($row[5]);
@@ -6183,7 +6216,9 @@ class Action
                         $updateCount++;
                         $employee_id = $existing_employee_id;
 
-                        // Update contributions
+                        // Update contributions from the sheet. UPDATE alone would
+                        // silently drop the amounts for an employee who has no
+                        // contribution rows yet, so insert when none exists.
                         $contributions = [
                             ['id' => 1, 'amount' => $sss],
                             ['id' => 2, 'amount' => $phic],
@@ -6191,8 +6226,18 @@ class Action
                         ];
 
                         foreach ($contributions as $contribution) {
-                            $stmtUpdateContrib->bind_param("sss", $contribution['amount'], $employee_id, $contribution['id']);
-                            $stmtUpdateContrib->execute();
+                            $exists = $this->db->query("SELECT id FROM employee_contributions
+                                WHERE employee_id = $employee_id AND contribution_id = " . (int) $contribution['id'] . " LIMIT 1");
+                            if ($exists && $exists->num_rows > 0) {
+                                $stmtUpdateContrib->bind_param("sss", $contribution['amount'], $employee_id, $contribution['id']);
+                                $stmtUpdateContrib->execute();
+                            } else {
+                                $ptype = 1;
+                                $insC = $this->db->prepare("INSERT INTO employee_contributions
+                                    (employee_id, contribution_id, amount, payroll_type) VALUES (?, ?, ?, ?)");
+                                $insC->bind_param("ssss", $employee_id, $contribution['id'], $contribution['amount'], $ptype);
+                                $insC->execute();
+                            }
                         }
                     }
                 } else {
@@ -6301,6 +6346,65 @@ class Action
                         throw new Exception("Failed to insert employee: " . $stmtInsert->error);
                     }
                 }
+
+                // ── Appended template columns, shared by insert and update ──
+                if (!empty($employee_id)) {
+                    // Shift / schedule (col R) -> employee_schedules, matched by name.
+                    $shift_name = trim((string) ($row[17] ?? ''));
+                    if ($shift_name !== '') {
+                        $stmtCheckSchedule->bind_param("s", $shift_name);
+                        $stmtCheckSchedule->execute();
+                        $stmtCheckSchedule->store_result();
+                        if ($stmtCheckSchedule->num_rows > 0) {
+                            $stmtCheckSchedule->bind_result($schedule_id);
+                            $stmtCheckSchedule->fetch();
+                            $stmtCheckSchedule->free_result();
+                            // Re-importing must not stack duplicate assignments.
+                            $chk = $this->db->query("SELECT id FROM employee_schedules
+                                WHERE employee_id = $employee_id AND schedule_id = " . (int) $schedule_id . " LIMIT 1");
+                            if (!$chk || $chk->num_rows === 0) {
+                                $eff = date('Y-m-d');
+                                $ins = $this->db->prepare("INSERT INTO employee_schedules
+                                    (employee_id, schedule_id, effective_from, notes) VALUES (?, ?, ?, 'Imported')");
+                                $ins->bind_param("iis", $employee_id, $schedule_id, $eff);
+                                $ins->execute();
+                            }
+                        } else {
+                            $stmtCheckSchedule->free_result();
+                        }
+                    }
+
+                    // Recurring deduction (cols S/T) -> employee_deductions, matched by name.
+                    $ded_name   = trim((string) ($row[18] ?? ''));
+                    $ded_amount = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[19] ?? '')));
+                    if ($ded_name !== '' && $ded_amount > 0) {
+                        $stmtCheckDeduct->bind_param("s", $ded_name);
+                        $stmtCheckDeduct->execute();
+                        $stmtCheckDeduct->store_result();
+                        if ($stmtCheckDeduct->num_rows > 0) {
+                            $stmtCheckDeduct->bind_result($deduction_id);
+                            $stmtCheckDeduct->fetch();
+                            $stmtCheckDeduct->free_result();
+                            // Update in place when already assigned, so a re-import
+                            // corrects the amount instead of adding a second row.
+                            $chk = $this->db->query("SELECT id FROM employee_deductions
+                                WHERE employee_id = $employee_id AND deduction_id = " . (int) $deduction_id . " LIMIT 1");
+                            if ($chk && $chk->num_rows > 0) {
+                                $ex = $chk->fetch_assoc();
+                                $up = $this->db->prepare("UPDATE employee_deductions SET amount = ? WHERE id = ?");
+                                $up->bind_param("di", $ded_amount, $ex['id']);
+                                $up->execute();
+                            } else {
+                                $ins = $this->db->prepare("INSERT INTO employee_deductions
+                                    (employee_id, deduction_id, amount) VALUES (?, ?, ?)");
+                                $ins->bind_param("iid", $employee_id, $deduction_id, $ded_amount);
+                                $ins->execute();
+                            }
+                        } else {
+                            $stmtCheckDeduct->free_result();
+                        }
+                    }
+                }
             }
 
             $this->db->commit();
@@ -6315,5 +6419,8 @@ class Action
         $stmtCheckPosition->close();
         $stmtInsertPosition->close();
         $stmtUpdateContrib->close();
+        $stmtCheckClas->close();
+        $stmtCheckSchedule->close();
+        $stmtCheckDeduct->close();
     }
 }

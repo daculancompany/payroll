@@ -273,14 +273,14 @@ document.getElementById('form-edit-time').addEventListener('submit', async funct
     const res  = await fetch('ajax.php?action=edit_dtr_time', { method: 'POST', body: new URLSearchParams(new FormData(this)) });
     const json = await res.json();
     if (json?.result) { location.reload(); }
-    else alert(json?.message || 'Failed to save.');
+    else Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to save.' });
 });
 
 async function finalizeRecord(id) {
     const res  = await fetch('ajax.php?action=finalize_dtr', { method: 'POST', body: new URLSearchParams({ id }) });
     const json = await res.json();
     if (json?.result) location.reload();
-    else alert(json?.message || 'Failed.');
+    else Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed.' });
 }
 
 async function markAbsent(id) {
@@ -288,6 +288,6 @@ async function markAbsent(id) {
     const res  = await fetch('ajax.php?action=delete_dtr_record', { method: 'POST', body: new URLSearchParams({ id }) });
     const json = await res.json();
     if (json?.result) location.reload();
-    else alert(json?.message || 'Failed.');
+    else Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed.' });
 }
 </script>

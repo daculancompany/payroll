@@ -1,0 +1,16 @@
+/* ── Overlay stacking order ───────────────────────────────────────────────────
+   One place to keep dialogs layered correctly across the app.
+
+   SweetAlert2 ships at z-index 1060, which clears a stock Bootstrap modal
+   (1055) by only 5. Any page that raises .modal above that — the employee
+   portal pins it to 2000 so PWA chrome can't cover it — silently pushes every
+   Swal fired from inside a modal *behind* the modal that spawned it. Blocking
+   confirms are the worst case: the dialog is unreachable and the page reads as
+   frozen.
+
+   Layers, low to high:
+     1990  .modal-backdrop
+     2000  .modal
+     2100  .swal2-container
+*/
+.swal2-container { z-index: 2100 !important; }

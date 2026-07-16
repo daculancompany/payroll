@@ -87,6 +87,10 @@
 						</h4>
 						<div class="flex-shrink-0 d-flex gap-2">
 							<?php if (in_array($login_role, $allowed_values_2)) { ?>
+								<a href="export-employee-template.php" class="btn btn-outline-info add-btn"
+									title="Download the .xlsx template used for importing employees">
+									<i class="ri-download-2-line align-bottom me-1"></i> Template
+								</a>
 								<button type="button" class="btn btn-info add-btn" data-bs-toggle="modal" data-bs-target="#modal-upload">
 									<i class="ri-upload-2-line align-bottom me-1"></i> Import
 								</button>
@@ -104,14 +108,6 @@
 									<option value="">ALL</option>
 									<option value="0">Inactive</option>
 									<option value="1">Active</option>
-								</select>
-							</div>
-							<div class="col-sm-2">
-								<div class="filter-label"><i class="ri-calendar-check-line me-1"></i>Payroll Type</div>
-								<select class="form-control form-control-sm" id="filter-ptype" data-placeholder="All Types">
-									<option value="">ALL</option>
-									<option value="0">Monthly</option>
-									<option value="1">Weekly</option>
 								</select>
 							</div>
 							<div class="col-sm-3">

@@ -237,7 +237,7 @@ function getRole($login_role)
             <div class="jp-loader-ring">
                 <div class="jp-loader-logo">HR</div>
             </div>
-            <div class="jp-loader-brand">HRIS System</div>
+            <div class="jp-loader-brand">Payroll System</div>
             <div class="jp-loader-bar"><span></span></div>
             <div class="jp-loader-text">Loading<b>.</b><b>.</b><b>.</b></div>
         </div>
@@ -256,7 +256,7 @@ function getRole($login_role)
                                     HR
                                 </span>
                                 <span class="logo-lg">
-                                    HRIS System
+                                    Payroll System
                                 </span>
                             </a>
 
@@ -265,7 +265,7 @@ function getRole($login_role)
                                     HR
                                 </span>
                                 <span class="logo-lg">
-                                    HRIS System
+                                    Payroll System
                                 </span>
                             </a>
                         </div>

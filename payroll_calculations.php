@@ -74,38 +74,121 @@ if ($commaSeparatedSites !== '') {
     }
 }
 
-// Renders the attendance-logs view-popover body: every approved day, with every punch
-// shown as an IN/OUT chip (bio vs manual), matching dtr-details.php's log-chip style.
+// Renders the Approved Attendance Logs modal body: every approved day as a
+// table of punches (# / Time / Direction / Source), mirroring the Time Log
+// Details modal on attendance.php.
 function dtr_days_popover_content($days) {
-    if (empty($days)) return '<span class="dpp-empty">No approved attendance found</span>';
-    $html = '<div class="dpp-wrap">';
+    if (empty($days)) {
+        return '<div class="text-center text-muted py-4">'
+             . '<i class="ri-calendar-close-line" style="font-size:28px;opacity:.4;"></i>'
+             . '<div class="mt-1" style="font-size:12px;">No approved attendance found</div></div>';
+    }
+    $html = '';
     foreach ($days as $d) {
         $logs = json_decode($d['logs'], true) ?: [];
-        $html .= '<div class="dpp-day">';
-        $html .= '<div class="dpp-date">'
-               . date('M j, Y (D)', strtotime($d['date_time']))
-               . '<span class="dpp-hrs">' . number_format((float)$d['work_hours'], 2) . ' hrs</span>'
+        $html .= '<div class="al-day">';
+        $html .= '<div class="al-day-head">'
+               . '<span class="al-day-date"><i class="ri-calendar-line me-1"></i>' . date('M j, Y (D)', strtotime($d['date_time'])) . '</span>'
+               . '<span class="al-day-hrs">' . number_format((float)$d['work_hours'], 2) . ' hrs</span>'
                . '</div>';
         if (!empty($logs)) {
             $count = count($logs);
+            $html .= '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0 al-table">'
+                   . '<thead class="table-dark"><tr>'
+                   . '<th class="text-center" style="width:36px;">#</th>'
+                   . '<th><i class="ri-time-line me-1"></i>Time</th>'
+                   . '<th class="text-center" style="width:80px;">Direction</th>'
+                   . '<th class="text-center" style="width:80px;">Source</th>'
+                   . '</tr></thead><tbody>';
             foreach ($logs as $li => $log) {
                 $isBio = ($log['type'] ?? '') === 'bio';
-                $label = $li === 0 ? 'IN' : ($li === $count - 1 ? 'OUT' : '#' . ($li + 1));
-                $icon = $isBio ? 'ri-fingerprint-line' : 'ri-edit-line';
-                $html .= '<div class="dpp-row">'
-                       . '<span class="dpp-lbl">' . $label . '</span>'
-                       . '<span class="dpp-chip ' . ($isBio ? 'bio' : 'manual') . '">'
-                       . '<i class="' . $icon . '"></i>' . date('g:i A', strtotime($log['dateTime'])) . '</span>'
-                       . '</div>';
+                if ($li === 0) {
+                    $dir = '<span class="att-log-dir att-log-in">IN</span>';
+                } elseif ($li === $count - 1) {
+                    $dir = '<span class="att-log-dir att-log-out">OUT</span>';
+                } else {
+                    $dir = '<span class="text-muted small">&mdash;</span>';
+                }
+                $src = $isBio
+                    ? '<span class="badge att-log-bio"><i class="ri-fingerprint-line me-1"></i>Bio</span>'
+                    : '<span class="badge att-log-manual"><i class="ri-edit-line me-1"></i>Manual</span>';
+                $html .= '<tr>'
+                       . '<td class="text-center text-muted">' . ($li + 1) . '</td>'
+                       . '<td class="fw-semibold">' . date('g:i A', strtotime($log['dateTime'])) . '</td>'
+                       . '<td class="text-center">' . $dir . '</td>'
+                       . '<td class="text-center">' . $src . '</td>'
+                       . '</tr>';
             }
+            $html .= '</tbody></table></div>';
         } else {
-            $html .= '<span class="dpp-none">No logs</span>';
+            $html .= '<span class="text-muted small">No logs</span>';
         }
         $html .= '</div>';
     }
-    $html .= '</div>';
     return $html;
 }
+
+// ── Net delta vs previous payroll ───────────────────────────────────────
+// Most recent payroll ending before this one starts; per-employee stored nets
+// let each row show how its net moved since last period (typo'd rates and
+// missed attendance stand out immediately).
+$prevPayroll      = null;
+$prevNetByEmpSite = [];
+$prevNetByEmp     = [];
+$prev_q = $conn->query("SELECT id, date_from, date_to FROM payroll
+    WHERE id != $id AND date_to < '" . $conn->real_escape_string($payroll['date_from']) . "'
+    ORDER BY date_to DESC, id DESC LIMIT 1");
+if ($prev_q && $prev_q->num_rows) {
+    $prevPayroll = $prev_q->fetch_assoc();
+    $pn_q = $conn->query("SELECT employee_id, site_id, SUM(net) AS n FROM payroll_items
+        WHERE payroll_id = " . (int)$prevPayroll['id'] . " GROUP BY employee_id, site_id");
+    if ($pn_q) while ($pn = $pn_q->fetch_assoc()) {
+        $prevNetByEmpSite[$pn['employee_id'] . '-' . $pn['site_id']] = (float)$pn['n'];
+        $prevNetByEmp[$pn['employee_id']] = ($prevNetByEmp[$pn['employee_id']] ?? 0) + (float)$pn['n'];
+    }
+}
+
+// ▲/▼ badge under the Net Pay figure. Empty when there is no previous payroll;
+// "new" when the employee wasn't in it; nd-warn flags moves of ±30% or more.
+function net_delta_badge($emp_id, $site_id, $net) {
+    global $prevPayroll, $prevNetByEmpSite, $prevNetByEmp;
+    if (!$prevPayroll) return '';
+    $prev = $prevNetByEmpSite[$emp_id . '-' . $site_id] ?? $prevNetByEmp[$emp_id] ?? null;
+    $period = date('M j', strtotime($prevPayroll['date_from'])) . '–' . date('M j', strtotime($prevPayroll['date_to']));
+    if ($prev === null) {
+        return '<div><span class="nd-badge nd-new" title="Not in previous payroll (' . $period . ')">new</span></div>';
+    }
+    if ($prev == 0.0) return '';
+    $pct = (($net - $prev) / abs($prev)) * 100;
+    $title = 'Previous (' . $period . '): &#8369;' . number_format($prev, 2);
+    if (abs($pct) < 0.5) {
+        return '<div><span class="nd-badge nd-flat" title="' . $title . '">&#8776; same</span></div>';
+    }
+    $cls  = $pct > 0 ? 'nd-up' : 'nd-down';
+    $cls .= abs($pct) >= 30 ? ' nd-warn' : '';
+    $arrow = $pct > 0 ? '&#9650;' : '&#9660;';
+    return '<div><span class="nd-badge ' . $cls . '" title="' . $title . '">' . $arrow . ' ' . number_format(abs($pct), 1) . '%</span></div>';
+}
+
+// ── Remittance breakdown accumulator ────────────────────────────────────
+// Filled inside both table loops (one call per deduction/refund cell), then
+// rendered as the Remittance modal. Keyed type-id: 1 contribution, 2 deduction,
+// 3 loan, 4 refund.
+$remit = [];
+$remit_add = function ($type, $dd_id, $amount) use (&$remit) {
+    $key = $type . '-' . $dd_id;
+    if (!isset($remit[$key])) $remit[$key] = ['type' => $type, 'id' => $dd_id, 'total' => 0.0, 'employees' => 0];
+    $remit[$key]['total'] += (float)$amount;
+    if ((float)$amount > 0) $remit[$key]['employees']++;
+};
+
+// Departments present in this payroll — feeds the toolbar's department filter.
+$pay_departments = [];
+$dept_q = $conn->query("SELECT DISTINCT d.name FROM payroll_items a
+    INNER JOIN employee e ON a.employee_id = e.id
+    INNER JOIN department d ON e.department_id = d.id
+    WHERE a.payroll_id = $id ORDER BY d.name ASC");
+if ($dept_q) while ($dq = $dept_q->fetch_assoc()) $pay_departments[] = $dq['name'];
 
 $i = 0;
 $query = $conn->query("SELECT  a.*, f.site_code,f.site_name,f.site_address, e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay, d.name as department, p.name as position
@@ -318,21 +401,56 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .ps-chk-cell { width:32px; text-align:center !important; padding:4px 6px !important; }
 .ps-chk { width:15px; height:15px; cursor:pointer; accent-color:#107c41; }
 
-/* Actions column — view attendance logs popover trigger (paired with .xl-btn) */
+/* Actions column — view attendance logs modal trigger (paired with .xl-btn) */
 .dtr-view-days { margin-left:4px; }
 
-/* Attendance-logs popover body (content lives once in #dtr-pop-src, classes keep it small) */
-.dpp-wrap { max-height:260px; overflow-y:auto; min-width:230px; }
-.dpp-day { padding:5px 0; border-bottom:1px solid #eee; }
-.dpp-date { font-size:11px; font-weight:700; color:#323130; margin-bottom:3px; }
-.dpp-hrs { float:right; color:#107c41; font-weight:600; }
-.dpp-row { display:flex; align-items:center; gap:6px; padding:2px 0; }
-.dpp-lbl { font-size:10px; font-weight:700; color:#888; min-width:26px; }
-.dpp-chip { display:inline-flex; align-items:center; gap:3px; padding:1px 5px; border-radius:2px; font-size:10px; font-weight:600; }
-.dpp-chip.bio { background:#e6f5f3; color:#219688; border:1px solid #aad5d0; }
-.dpp-chip.manual { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
-.dpp-none { color:#aaa; font-size:10px; }
-.dpp-empty { color:#aaa; font-size:11px; }
+/* Approved Attendance Logs modal (mirrors attendance.php's Time Log Details modal) */
+.att-log-dir { font-size:10px; font-weight:700; padding:1px 0; border-radius:3px; min-width:34px; text-align:center; display:inline-block; }
+.att-log-in  { background:#d4edda; color:#155724; }
+.att-log-out { background:#f8d7da; color:#721c24; }
+.att-log-bio    { background:#009688; color:#fff; font-size:10px; }
+.att-log-manual { background:#dc3545; color:#fff; font-size:10px; }
+#modal-att-logs .al-meta-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.3px; }
+#modal-att-logs .al-meta-value { font-size:13px; font-weight:700; color:#009688; }
+.al-day { margin-bottom:14px; }
+.al-day:last-child { margin-bottom:0; }
+.al-day-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.al-day-date { font-size:12px; font-weight:700; color:#323130; }
+.al-day-hrs { font-size:11px; font-weight:700; color:#107c41; background:#eafaf0; border:1px solid #b7e4c7; padding:1px 8px; border-radius:10px; }
+.al-table th, .al-table td { font-size:12px; }
+
+/* ── Search / dept filter / anomaly-flags toolbar ── */
+.pay-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.pay-search-box { display:flex; align-items:center; gap:6px; background:#fff; border:1px solid #cfe3e0; border-radius:6px; padding:5px 10px; min-width:240px; }
+.pay-search-box i { color:#219688; font-size:14px; }
+.pay-search-box input { border:none; outline:none; font-size:12px; flex:1; background:transparent; min-width:160px; }
+.pay-search-box button { border:none; background:none; color:#999; cursor:pointer; padding:0 2px; font-size:14px; line-height:1; }
+#pay-dept-filter { border:1px solid #cfe3e0; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; }
+.pay-anomaly-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pay-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; border:1px solid; cursor:pointer; user-select:none; background:#fff; transition:box-shadow .1s; }
+.pay-chip:hover { box-shadow:0 1px 4px rgba(0,0,0,.12); }
+.pay-chip.zero     { color:#856404; border-color:#ffe082; background:#fff8e1; }
+.pay-chip.negative { color:#c62828; border-color:#f5c6cb; background:#fdecea; }
+.pay-chip.noatt    { color:#b02a37; border-color:#f3cdd2; background:#fbe3e6; }
+.pay-chip.bigmove  { color:#7c3aed; border-color:#ddd0f7; background:#f3eefe; }
+.pay-chip.active { outline:2px solid currentColor; outline-offset:1px; }
+.pay-chip.all-clear { color:#107c41; border-color:#b7e4c7; background:#eafaf0; cursor:default; }
+.pay-filter-count { font-size:11px; color:#888; font-weight:600; margin-left:auto; }
+#table-1 tbody tr.pay-row-hit td { background:#fffbe6 !important; }
+
+/* ── Net delta vs previous payroll ── */
+.nd-badge { display:inline-block; font-size:10px; font-weight:700; padding:0 6px; border-radius:8px; margin-top:2px; line-height:16px; }
+.nd-up   { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
+.nd-down { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+.nd-flat { background:#f1f3f4; color:#777; border:1px solid #ddd; }
+.nd-new  { background:#e3f2fd; color:#1565c0; border:1px solid #b7d5f5; }
+.nd-badge.nd-warn { outline:2px solid #ffb300; outline-offset:1px; }
+
+/* ── Remittance breakdown modal ── */
+#modal-remit .rm-section-title { font-size:12px; font-weight:700; color:#107c41; display:flex; align-items:center; gap:6px; margin:12px 0 6px; }
+#modal-remit .rm-section-title:first-child { margin-top:0; }
+#modal-remit table th, #modal-remit table td { font-size:12px; }
+#modal-remit .rm-grand { background:#f4faf5; font-weight:800; }
 
 /* Employee review progress panel (mirrors DTR's, recolored to this page's Excel-green theme) */
 .pr-review-panel { border:1px solid #cdeacb; background:#f4faf5; border-radius:10px; padding:10px 14px; margin-bottom:10px; }
@@ -351,6 +469,25 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .prp-comment { font-size:12px; color:#555; margin-top:1px; }
 .prp-confirmed-names { margin-top:8px; font-size:11px; color:#4a6b4a; }
 .prp-confirmed-lbl { font-weight:700; color:#107c41; margin-right:4px; }
+/* ── Large batches ──────────────────────────────────────────────────────────
+   A 500-employee payroll used to dump every confirmed name into one runaway
+   line and stack disputes unbounded, pushing the payroll table off-screen.
+   Names now collapse behind a count; disputes scroll once there are a few. */
+.prp-names { margin-top:8px; }
+.prp-names > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+    font-size:11px; font-weight:700; color:#107c41; user-select:none; }
+.prp-names > summary::-webkit-details-marker { display:none; }
+.prp-names > summary:hover .prp-names-hint { text-decoration:underline; }
+.prp-count-pill { background:#eef7f0; border:1px solid #cfe9d6; color:#107c41;
+    border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.prp-names-hint { font-weight:500; color:#8a8a8a; }
+.prp-names .lbl-hide, .prp-names[open] .lbl-show { display:none; }
+.prp-names[open] .lbl-hide { display:inline; }
+.prp-chip-wrap { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;
+    max-height:132px; overflow-y:auto; padding:2px; }
+.prp-name-chip { background:#eef7f0; border:1px solid #cfe9d6; color:#2f5d3f;
+    border-radius:10px; padding:1px 7px; font-size:11px; white-space:nowrap; }
+.prp-disputes.is-scroll { max-height:340px; overflow-y:auto; padding-right:4px; }
 .prp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
 .prp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
 .prp-act-btn.export { background:#eef7f0; color:#107c41; border-color:#cfe9d6; }
@@ -443,6 +580,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                 <!-- <button data-toggle="tooltip" title="Summary PDF" onclick="openPdfPreview('pdf-payroll.php?src=employer&id=<?= $id ?>&type=all', 'Payroll Summary PDF')" class="xl-btn"><i class="ri-printer-fill"></i> Summary</button> -->
                                 <button data-toggle="tooltip" title="Summary by Department PDF" onclick="openPdfPreview('pdf-payroll.php?src=dept&id=<?= $id ?>', 'Department Summary PDF')" class="xl-btn"><i class="ri-building-2-line"></i> Dept. Summary</button>
                             <?php } ?>
+                            <button data-toggle="tooltip" title="Totals per contribution, deduction, loan, and refund type" onclick="openRemitModal()" class="xl-btn"><i class="ri-hand-coin-line"></i> Remittance</button>
                             <button id="btn-print-payslips" title="Check rows to select employees, then click to print their payslips" onclick="printSelectedPayslips()" class="xl-btn">
                                 <i class="ri-file-text-line"></i> Payslips <span id="ps-count" style="background:#c8e6e2;color:#176358;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:2px;font-weight:700;">0</span>
                             </button>
@@ -510,6 +648,23 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                             </div>
                         </div>
 
+                        <!-- ── Search / department filter / anomaly flags ── -->
+                        <div class="pay-toolbar">
+                            <div class="pay-search-box">
+                                <i class="ri-search-line"></i>
+                                <input type="text" id="pay-search" placeholder="Search name or employee no.&hellip;" autocomplete="off">
+                                <button type="button" id="pay-search-clear" title="Clear search" style="display:none;"><i class="ri-close-line"></i></button>
+                            </div>
+                            <select id="pay-dept-filter" title="Filter by department">
+                                <option value="">All Departments</option>
+                                <?php foreach ($pay_departments as $pd): ?>
+                                    <option value="<?= htmlspecialchars($pd, ENT_QUOTES) ?>"><?= htmlspecialchars($pd) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <div class="pay-anomaly-chips" id="pay-anomaly-chips"></div>
+                            <span class="pay-filter-count" id="pay-filter-count"></span>
+                        </div>
+
                         <?php if (in_array((int)$status, [2, 3], true)): ?>
                         <!-- ── Employee Review Progress ── -->
                         <div class="pr-review-panel">
@@ -536,7 +691,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                 </div>
                             </div>
                             <?php if ($payrollReviewDisputed > 0): ?>
-                            <div class="prp-disputes">
+                            <div class="prp-disputes<?= $payrollReviewDisputed > 4 ? ' is-scroll' : '' ?>">
                                 <?php foreach ($payrollReviewRows as $prv): if ((int)$prv['status'] !== 2) continue; ?>
                                 <div class="prp-dispute-item">
                                     <i class="ri-error-warning-line"></i>
@@ -558,13 +713,21 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                             </div>
                             <?php endif; ?>
                             <?php if ($payrollReviewConfirmed > 0): ?>
-                            <div class="prp-confirmed-names">
-                                <span class="prp-confirmed-lbl"><i class="ri-checkbox-circle-line"></i> Confirmed by:</span>
-                                <?php $pcn = [];
-                                    foreach ($payrollReviewRows as $prv) if ((int)$prv['status'] === 1) $pcn[] = $prv['name'];
-                                    echo htmlspecialchars(implode('  •  ', $pcn));
-                                ?>
-                            </div>
+                            <?php $pcn = [];
+                                foreach ($payrollReviewRows as $prv) if ((int)$prv['status'] === 1) $pcn[] = $prv['name'];
+                            ?>
+                            <details class="prp-names"<?= count($pcn) <= 12 ? ' open' : '' ?>>
+                                <summary>
+                                    <span class="prp-confirmed-lbl"><i class="ri-checkbox-circle-line"></i> Confirmed by</span>
+                                    <span class="prp-count-pill"><?= count($pcn) ?></span>
+                                    <span class="prp-names-hint"><span class="lbl-show">show names</span><span class="lbl-hide">hide</span></span>
+                                </summary>
+                                <div class="prp-chip-wrap">
+                                    <?php foreach ($pcn as $n): ?>
+                                    <span class="prp-name-chip"><?= htmlspecialchars($n) ?></span>
+                                    <?php endforeach; ?>
+                                </div>
+                            </details>
                             <?php endif; ?>
                         </div>
                         <?php endif; ?>
@@ -784,7 +947,9 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     $rv = (int)($row['review_status'] ?? 0);
                                                     $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
                                                 ?>
-                                                <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>">
+                                                <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>"
+                                                    data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
+                                                    data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>">
                                                     <td class="ps-chk-cell"><input type="checkbox" class="ps-chk ps-row-chk" value="<?= $row['id'] ?>"></td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
                                                     <td style="min-width:220px;">
@@ -1008,6 +1173,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 
                                                             $total_deductions += $deduction_amount;
                                                             $t_contrib[$k['id']] = ($t_contrib[$k['id']] ?? 0) + $deduction_amount;
+                                                            $remit_add($k['type'], $k['id'], $deduction_amount);
 
 
                                                     ?>
@@ -1102,6 +1268,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                             }
                                                             $total_refunds += $refund_amount;
                                                             $t_refund[$kd['id']] = ($t_refund[$kd['id']] ?? 0) + $refund_amount;
+                                                            $remit_add(4, $kd['id'], $refund_amount);
 
 
 
@@ -1137,15 +1304,17 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     ?>
                                                     <td style="min-width: 90px;" class="text-right net-content">
                                                         <b data-computed="net"><?= number_format($net, 2) ?></b>
+                                                        <?= net_delta_badge($row['employee_id'], $row['site_id'], $net) ?>
                                                     </td>
                                                     <td style="min-width: 150px;" class="text-center">
                                                         <a href="view_payslip.php?id=<?= $row['id'] ?>" class="xl-btn" data-toggle="tooltip" title="View Payslip" onclick="openPayslipPreview(<?= $row['id'] ?>); return false;">
                                                             <i class="ri-file-text-line"></i> View
                                                         </a>
                                                         <?php $empDays = $dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []; ?>
-                                                        <span class="xl-btn dtr-view-days" data-bs-toggle="popover" data-bs-trigger="click"
-                                                            data-bs-placement="top" data-bs-html="true"
+                                                        <span class="xl-btn dtr-view-days"
                                                             data-pop-key="<?= (int)$row['employee_id'] ?>-<?= (int)$row['site_id'] ?>"
+                                                            data-emp-name="<?= htmlspecialchars($row['lastname'] . ', ' . $row['firstname'], ENT_QUOTES) ?>"
+                                                            data-days="<?= count($empDays) ?>"
                                                             title="Approved Attendance Logs">
                                                             <i class="ri-time-line"></i> Logs (<?= count($empDays) ?>)
                                                         </span>
@@ -1400,7 +1569,9 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     $rv = (int)($row['review_status'] ?? 0);
                                                     $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
                                                 ?>
-                                                <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>">
+                                                <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>"
+                                                    data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
+                                                    data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>">
                                                     <td class="ps-chk-cell"><input type="checkbox" class="ps-chk ps-row-chk" value="<?= $row['id'] ?>"></td>
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
                                                     <td style="min-width:220px;">
@@ -1539,6 +1710,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 
                                                             $total_deductions += $deduction_amount;
                                                             $t_contrib[$k['id']] = ($t_contrib[$k['id']] ?? 0) + $deduction_amount;
+                                                            $remit_add($k['type'], $k['id'], $deduction_amount);
 
 
                                                     ?>
@@ -1581,6 +1753,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                             }
                                                             $total_refunds += $refund_amount;
                                                             $t_refund[$kd['id']] = ($t_refund[$kd['id']] ?? 0) + $refund_amount;
+                                                            $remit_add(4, $kd['id'], $refund_amount);
 
                                                     ?>
                                                             <td style="min-width: 90px;" class="text-right">
@@ -1601,15 +1774,17 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     ?>
                                                     <td style="min-width: 90px;" class="text-right net-content">
                                                         <b data-computed="net"><?= number_format($net, 2) ?></b>
+                                                        <?= net_delta_badge($row['employee_id'], $row['site_id'], $net) ?>
                                                     </td>
                                                     <td style="min-width: 150px;" class="text-center">
                                                         <a href="view_payslip.php?id=<?= $row['id'] ?>" class="xl-btn" data-toggle="tooltip" title="View Payslip" onclick="openPayslipPreview(<?= $row['id'] ?>); return false;">
                                                             <i class="ri-file-text-line"></i> View
                                                         </a>
                                                         <?php $empDays = $dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []; ?>
-                                                        <span class="xl-btn dtr-view-days" data-bs-toggle="popover" data-bs-trigger="click"
-                                                            data-bs-placement="top" data-bs-html="true"
+                                                        <span class="xl-btn dtr-view-days"
                                                             data-pop-key="<?= (int)$row['employee_id'] ?>-<?= (int)$row['site_id'] ?>"
+                                                            data-emp-name="<?= htmlspecialchars($row['lastname'] . ', ' . $row['firstname'], ENT_QUOTES) ?>"
+                                                            data-days="<?= count($empDays) ?>"
                                                             title="Approved Attendance Logs">
                                                             <i class="ri-time-line"></i> Logs (<?= count($empDays) ?>)
                                                         </span>
@@ -1675,56 +1850,80 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 
 <!-- ── Version History Offcanvas ──────────────────────── -->
 <style>
-#offcanvas-history { width: 420px; }
+#offcanvas-history { width: 460px; max-width: 100vw; }
 .vh-header {
-    background: linear-gradient(135deg, #176358 0%, #219688 100%);
+    background: #d9eedd;
     padding: 16px 18px 0;
-    color: #fff;
+    color: #10453d;
+    position: relative; overflow: hidden;
 }
-.vh-header-top { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; }
-.vh-title { font-size:15px; font-weight:800; letter-spacing:.2px; }
-.vh-subtitle { font-size:11px; color:rgba(255,255,255,.7); margin-top:2px; }
+
+.vh-header-top { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; position:relative; }
+.vh-title { font-size:15px; font-weight:800; letter-spacing:.2px; display:flex; align-items:center; gap:8px; }
+.vh-title-icon {
+    width:26px; height:26px; border-radius:8px;
+    background:rgba(16,69,61,.10); border:1px solid rgba(16,69,61,.16);
+    display:flex; align-items:center; justify-content:center; font-size:14px;
+}
+.vh-subtitle { font-size:11px; color:rgba(16,69,61,.8); margin-top:3px; }
 .vh-count-badge {
-    background:rgba(255,255,255,.2); color:#fff;
+    background:rgba(16,69,61,.12); color:#10453d;
     font-size:11px; font-weight:700;
     border-radius:20px; padding:3px 10px;
-    backdrop-filter:blur(4px);
+    backdrop-filter:blur(4px); white-space:nowrap;
 }
 .vh-tabs {
-    display:flex; gap:0; border-bottom: none; margin-top:4px;
+    display:flex; gap:0; border-bottom: none; margin-top:4px; position:relative;
 }
 .vh-tab {
-    padding:8px 14px; font-size:11px; font-weight:600;
-    color:rgba(255,255,255,.65); cursor:pointer;
+    padding:8px 13px; font-size:11px; font-weight:600;
+    color:rgba(16,69,61,.75); cursor:pointer;
     border-bottom:2px solid transparent;
     transition:all .15s; white-space:nowrap;
+    display:flex; align-items:center; gap:5px;
 }
-.vh-tab.active { color:#fff; border-bottom-color:#fff; }
-.vh-tab:hover:not(.active) { color:rgba(255,255,255,.9); }
+.vh-tab.active { color:#10453d; border-bottom-color:#219688; }
+.vh-tab:hover:not(.active) { color:rgba(16,69,61,.95); }
+.vh-tab-count {
+    font-size:9px; font-weight:800; line-height:1;
+    background:rgba(16,69,61,.12); border-radius:20px; padding:2px 5px;
+}
+.vh-tab.active .vh-tab-count { background:rgba(16,69,61,.2); }
 .vh-search-bar {
     padding:10px 14px; background:#f8fffe;
     border-bottom:1px solid #e1dfdd;
+    display:flex; align-items:center; gap:8px;
 }
+.vh-search-wrap { position:relative; flex:1; }
 .vh-search-input {
     width:100%; border:1px solid #c8e6e2; border-radius:6px;
-    padding:6px 10px 6px 32px; font-size:12px; color:#323130;
+    padding:6px 28px 6px 32px; font-size:12px; color:#323130;
     background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a19f9d' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
-    outline:none;
+    outline:none; transition:border-color .15s, box-shadow .15s;
 }
-.vh-search-input:focus { border-color:#219688; }
+.vh-search-input:focus { border-color:#219688; box-shadow:0 0 0 3px rgba(33,150,136,.12); }
+.vh-search-clear {
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    border:none; background:none; color:#a19f9d; font-size:14px;
+    line-height:1; cursor:pointer; padding:2px; display:none;
+}
+.vh-search-clear:hover { color:#605e5c; }
 .vh-date-group-label {
-    padding:8px 16px 4px;
+    padding:7px 16px;
     font-size:10px; font-weight:800;
-    color:#219688; text-transform:uppercase; letter-spacing:.6px;
-    background:#f4fbfa; border-bottom:1px solid #e6f5f3;
+    color:#176358; text-transform:uppercase; letter-spacing:.6px;
+    background:#f4fbfa; border-top:1px solid #e6f5f3; border-bottom:1px solid #e6f5f3;
+    position:sticky; top:0; z-index:2;
+    display:flex; align-items:center; gap:6px;
 }
+.vh-date-group-label .vh-group-count { margin-left:auto; color:#8aa9a4; font-weight:700; }
 .vh-entry {
-    display:flex; gap:12px; padding:12px 16px;
-    border-bottom:1px solid #f0f0f0;
+    display:flex; gap:12px; padding:13px 16px 13px 14px;
+    border-bottom:1px solid #f4f4f4;
     transition:background .12s; position:relative;
 }
 .vh-entry:hover { background:#f9fffe; }
-.vh-entry.is-latest { background:#f0fdf9; }
+.vh-entry.is-latest { background:#f2fdfa; }
 .vh-entry.is-latest::before {
     content:''; position:absolute; left:0; top:0; bottom:0;
     width:3px; border-radius:0 2px 2px 0;
@@ -1732,41 +1931,62 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 }
 .vh-timeline {
     display:flex; flex-direction:column; align-items:center;
-    padding-top:3px; flex-shrink:0;
+    flex-shrink:0; width:30px;
 }
-.vh-dot {
-    width:11px; height:11px; border-radius:50%; flex-shrink:0;
-    border:2px solid transparent; transition:transform .15s;
-}
-.vh-entry:hover .vh-dot { transform:scale(1.2); }
-.vh-line { width:2px; flex:1; min-height:18px; background:#e8e8e8; margin-top:4px; border-radius:2px; }
-.vh-content { flex:1; min-width:0; }
-.vh-event-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:5px; }
-.vh-event-icon {
-    width:28px; height:28px; border-radius:8px;
+.vh-node {
+    width:30px; height:30px; border-radius:9px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center;
-    flex-shrink:0; font-size:13px;
+    font-size:14px; transition:transform .15s;
 }
-.vh-event-text { font-size:12px; font-weight:600; color:#323130; flex:1; min-width:0; }
+.vh-entry:hover .vh-node { transform:scale(1.08); }
+.vh-line { width:2px; flex:1; min-height:14px; background:#e8ecec; margin-top:6px; border-radius:2px; }
+.vh-content { flex:1; min-width:0; padding-top:2px; }
+.vh-event-row { display:flex; align-items:flex-start; gap:8px; margin-bottom:6px; }
+.vh-event-text {
+    font-size:12.5px; font-weight:600; color:#323130;
+    flex:1; min-width:0; line-height:1.45;
+}
+.vh-event-sub { font-size:11px; font-weight:500; color:#8a8886; margin-top:1px; }
 .vh-latest-badge {
     font-size:9px; font-weight:800; letter-spacing:.3px;
     background:#219688; color:#fff;
     border-radius:20px; padding:2px 7px;
-    flex-shrink:0;
+    flex-shrink:0; margin-top:1px;
 }
-.vh-meta { display:flex; align-items:center; gap:8px; }
+.vh-chips { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px; }
+.vh-chip {
+    display:inline-flex; align-items:center; gap:4px;
+    font-size:10.5px; font-weight:600; line-height:1.6;
+    border-radius:5px; padding:1px 7px;
+    background:#f3f4f6; color:#4b5563; border:1px solid #e5e7eb;
+    max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.vh-chip i { font-size:11px; opacity:.75; }
+.vh-chip-emp { background:#eef4ff; color:#3557b7; border-color:#dbe4fb; }
+.vh-chip-val { background:#ecfdf5; color:#0f766e; border-color:#d3f0e8; font-variant-numeric:tabular-nums; }
+.vh-meta { display:flex; align-items:center; gap:7px; }
 .vh-avatar {
-    width:20px; height:20px; border-radius:50%;
+    width:22px; height:22px; border-radius:50%;
     display:flex; align-items:center; justify-content:center;
-    font-size:8px; font-weight:800; flex-shrink:0;
+    font-size:8.5px; font-weight:800; flex-shrink:0;
 }
-.vh-user { font-size:11px; color:#605e5c; }
+.vh-user { font-size:11px; color:#605e5c; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .vh-time-block { margin-left:auto; text-align:right; flex-shrink:0; }
 .vh-rel-time { font-size:11px; font-weight:600; color:#323130; }
-.vh-abs-time { font-size:10px; color:#a19f9d; }
+.vh-abs-time { font-size:9.5px; color:#a19f9d; }
 .vh-empty { padding:48px 24px; text-align:center; color:#a19f9d; }
 .vh-empty i { font-size:40px; display:block; margin-bottom:10px; opacity:.4; }
 .vh-empty-title { font-size:13px; font-weight:600; color:#605e5c; margin-bottom:4px; }
+.vh-empty div:last-child { font-size:11.5px; }
+.vh-skeleton { padding:14px 16px; display:flex; gap:12px; border-bottom:1px solid #f4f4f4; }
+.vh-sk-node { width:30px; height:30px; border-radius:9px; flex-shrink:0; }
+.vh-sk-lines { flex:1; }
+.vh-sk-bar { height:9px; border-radius:4px; margin-bottom:7px; }
+.vh-skeleton .vh-sk-node, .vh-skeleton .vh-sk-bar {
+    background:linear-gradient(90deg,#eef1f1 25%,#f7f9f9 50%,#eef1f1 75%);
+    background-size:200% 100%; animation:vh-shimmer 1.2s infinite;
+}
+@keyframes vh-shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
 </style>
 
 <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-history">
@@ -1774,36 +1994,38 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
     <div class="vh-header">
         <div class="vh-header-top">
             <div>
-                <div class="vh-title"><i class="ri-history-line me-2"></i>Version History</div>
+                <div class="vh-title"><span class="vh-title-icon"><i class="ri-history-line"></i></span>Version History</div>
                 <div class="vh-subtitle" id="vh-subtitle">Payroll change log</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
                 <span class="vh-count-badge" id="vh-count">—</span>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
             </div>
         </div>
         <!-- Filter tabs -->
         <div class="vh-tabs" id="vh-tabs">
-            <div class="vh-tab active" data-filter="all" onclick="vhFilter('all',this)">All</div>
-            <div class="vh-tab" data-filter="calc"   onclick="vhFilter('calc',this)">Calculate</div>
-            <div class="vh-tab" data-filter="lock"   onclick="vhFilter('lock',this)">Lock</div>
-            <div class="vh-tab" data-filter="update" onclick="vhFilter('update',this)">Updates</div>
+            <div class="vh-tab active" data-filter="all" onclick="vhFilter('all',this)"><i class="ri-stack-line"></i>All<span class="vh-tab-count" data-count="all">0</span></div>
+            <div class="vh-tab" data-filter="calc"   onclick="vhFilter('calc',this)"><i class="ri-calculator-line"></i>Calculate<span class="vh-tab-count" data-count="calc">0</span></div>
+            <div class="vh-tab" data-filter="lock"   onclick="vhFilter('lock',this)"><i class="ri-lock-line"></i>Lock<span class="vh-tab-count" data-count="lock">0</span></div>
+            <div class="vh-tab" data-filter="update" onclick="vhFilter('update',this)"><i class="ri-edit-line"></i>Updates<span class="vh-tab-count" data-count="update">0</span></div>
         </div>
     </div>
 
     <!-- Search -->
     <div class="vh-search-bar">
-        <input class="vh-search-input" id="vh-search" placeholder="Search history…" oninput="vhSearch(this.value)">
+        <div class="vh-search-wrap">
+            <input class="vh-search-input" id="vh-search" placeholder="Search by action, employee or user…" oninput="vhSearch(this.value)">
+            <button type="button" class="vh-search-clear" id="vh-search-clear" title="Clear" onclick="vhClearSearch()"><i class="ri-close-circle-fill"></i></button>
+        </div>
     </div>
 
     <!-- Body -->
     <div class="offcanvas-body p-0" id="offcanvas-history-body" style="overflow-y:auto; background:#fff;"></div>
 </div>
 
-<!-- Attendance-logs popover bodies, rendered ONCE per employee+site. Both payroll
+<!-- Attendance-logs modal bodies, rendered ONCE per employee+site. Both payroll
      tables reference these by data-pop-key instead of duplicating the full punch
-     history into every row's data-bs-content attribute (which made large payrolls
-     multi-MB pages). -->
+     history into every row (which made large payrolls multi-MB pages). -->
 <div id="dtr-pop-src" class="d-none">
     <?php foreach ($dtrLogsByEmpSite as $dppEmp => $dppSites): ?>
         <?php foreach ($dppSites as $dppSite => $dppDays): ?>
@@ -1811,6 +2033,133 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
         <?php endforeach; ?>
     <?php endforeach; ?>
 </div>
+
+<!-- Approved Attendance Logs modal (style mirrors attendance.php's Time Log Details modal) -->
+<div class="modal fade" id="modal-att-logs" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2" style="background:#009688;">
+                <h6 class="modal-title text-white"><i class="ri-history-line me-2"></i>Approved Attendance Logs</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+                    <div>
+                        <div class="al-meta-label"><i class="ri-user-line me-1"></i>Employee</div>
+                        <div class="al-meta-value" id="al-employee"></div>
+                    </div>
+                    <div class="text-end">
+                        <div class="al-meta-label"><i class="ri-calendar-range-line me-1"></i>Payroll Period</div>
+                        <div class="al-meta-value"><?= date('M j, Y', strtotime($payroll['date_from'])) ?> &ndash; <?= date('M j, Y', strtotime($payroll['date_to'])) ?></div>
+                    </div>
+                </div>
+                <div id="al-body"></div>
+            </div>
+            <div class="modal-footer py-2">
+                <span class="text-muted small me-auto" id="al-days-count"></span>
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<?php
+// Resolves a remittance row's display name from its source table.
+function remit_type_name($conn, $type, $dd_id) {
+    $dd_id = (int)$dd_id;
+    $sql = [
+        1 => "SELECT contribution AS n FROM contributions WHERE id = $dd_id",
+        2 => "SELECT deduction AS n FROM deductions WHERE id = $dd_id",
+        3 => "SELECT loan_type AS n FROM contribution_loan_types WHERE clt_id = $dd_id",
+        4 => "SELECT refunds AS n FROM refunds WHERE id = $dd_id",
+    ][$type] ?? null;
+    if (!$sql) return '#' . $dd_id;
+    $r = $conn->query($sql);
+    $row = $r ? $r->fetch_assoc() : null;
+    return $row['n'] ?? ('#' . $dd_id);
+}
+$remit_groups = [
+    1 => ['label' => 'Contributions', 'icon' => 'ri-hand-coin-line'],
+    2 => ['label' => 'Deductions',    'icon' => 'ri-subtract-line'],
+    3 => ['label' => 'Loans',         'icon' => 'ri-bank-card-line'],
+    4 => ['label' => 'Refunds',       'icon' => 'ri-refund-2-line'],
+];
+$remit_deduction_total = 0;
+$remit_refund_total    = 0;
+foreach ($remit as $rm) {
+    if ($rm['type'] == 4) $remit_refund_total += $rm['total'];
+    else                  $remit_deduction_total += $rm['total'];
+}
+?>
+<!-- Remittance breakdown modal — totals per contribution/deduction/loan/refund type -->
+<div class="modal fade" id="modal-remit" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h6 class="modal-title"><i class="ri-hand-coin-line me-2"></i>Remittance Breakdown</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+                    <div>
+                        <div class="al-meta-label"><i class="ri-calendar-range-line me-1"></i>Payroll Period</div>
+                        <div class="al-meta-value" style="color:#107c41;"><?= date('M j, Y', strtotime($payroll['date_from'])) ?> &ndash; <?= date('M j, Y', strtotime($payroll['date_to'])) ?></div>
+                    </div>
+                    <div class="text-end">
+                        <div class="al-meta-label"><i class="ri-group-line me-1"></i>Employees</div>
+                        <div class="al-meta-value" style="color:#107c41;"><?= number_format($summary['emp_count']) ?></div>
+                    </div>
+                </div>
+                <?php foreach ($remit_groups as $rg_type => $rg):
+                    $rows = array_filter($remit, function ($rm) use ($rg_type) { return $rm['type'] == $rg_type; });
+                    if (empty($rows)) continue; ?>
+                    <div class="rm-section-title"><i class="<?= $rg['icon'] ?>"></i><?= $rg['label'] ?></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm table-bordered align-middle mb-0">
+                            <thead class="table-dark"><tr>
+                                <th>Type</th>
+                                <th class="text-center" style="width:100px;">Employees</th>
+                                <th class="text-end" style="width:130px;">Total</th>
+                            </tr></thead>
+                            <tbody>
+                                <?php foreach ($rows as $rm): ?>
+                                <tr>
+                                    <td class="fw-semibold"><?= htmlspecialchars(remit_type_name($conn, $rm['type'], $rm['id'])) ?></td>
+                                    <td class="text-center"><?= number_format($rm['employees']) ?></td>
+                                    <td class="text-end fw-semibold">&#8369; <?= number_format($rm['total'], 2) ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endforeach; ?>
+                <div class="table-responsive mt-3">
+                    <table class="table table-sm table-bordered align-middle mb-0">
+                        <tbody>
+                            <tr class="rm-grand">
+                                <td>Total Deductions (contributions + deductions + loans)</td>
+                                <td class="text-end" style="width:130px;">&#8369; <?= number_format($remit_deduction_total, 2) ?></td>
+                            </tr>
+                            <tr class="rm-grand">
+                                <td>Total Refunds</td>
+                                <td class="text-end">&#8369; <?= number_format($remit_refund_total, 2) ?></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <small class="text-muted" style="font-size:11px;">Amounts reflect this payroll's configured deduction settings as currently displayed.</small>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+function openRemitModal() {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-remit')).show();
+}
+</script>
 
 <script>
 var _vhData = [];
@@ -1823,21 +2172,51 @@ var actionMeta = {
     locked:     { color:'#7c3aed', bg:'#ede9fe', icon:'ri-lock-line',              label:'Locked'     },
     unlocked:   { color:'#059669', bg:'#d1fae5', icon:'ri-lock-unlock-line',       label:'Unlocked'   },
     approved:   { color:'#16a34a', bg:'#dcfce7', icon:'ri-checkbox-circle-line',   label:'Approved'   },
+    review:     { color:'#0891b2', bg:'#cffafe', icon:'ri-send-plane-line',        label:'Sent for Review' },
     updated:    { color:'#d97706', bg:'#fef3c7', icon:'ri-edit-line',              label:'Updated'    },
     printed:    { color:'#db2777', bg:'#fce7f3', icon:'ri-printer-line',           label:'Printed'    },
     def:        { color:'#6b7280', bg:'#f3f4f6', icon:'ri-time-line',             label:'Event'      }
 };
 
+function vhEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+}
+
 function vhGetMeta(d) {
     d = (d || '').toLowerCase();
     if (d.includes('creat'))   return actionMeta.created;
+    if (d.includes('re-calc') || d.includes('recalc')) return actionMeta.calculated;
     if (d.includes('calc'))    return actionMeta.calculated;
     if (d.includes('unlock'))  return actionMeta.unlocked;
     if (d.includes('lock'))    return actionMeta.locked;
+    if (d.includes('review'))  return actionMeta.review;
     if (d.includes('approv'))  return actionMeta.approved;
     if (d.includes('print'))   return actionMeta.printed;
-    if (d.includes('updat') || d.includes('edit') || d.includes('save')) return actionMeta.updated;
+    if (d.includes('field:') || d.includes('updat') || d.includes('edit') || d.includes('save')) return actionMeta.updated;
     return actionMeta.def;
+}
+
+// Logged details for field edits arrive as
+// "Employee: Doe, John & Field: Overtime & Value: 5" — split that into a
+// readable headline plus chips instead of showing the raw string.
+function vhParse(details) {
+    var raw = details || '—';
+    var m = raw.match(/^\s*Employee:\s*(.*?)\s*&\s*Field:\s*(.*?)\s*&\s*Value:\s*(.*?)\s*$/i);
+    if (!m) return { title: raw, sub: null, employee: null, value: null };
+
+    var field = m[2].replace(/\s+/g, ' ').trim();
+    var value = m[3].trim();
+    if (value !== '' && !isNaN(value)) {
+        value = Number(value).toLocaleString('en-US', { maximumFractionDigits: 2 });
+    }
+    return {
+        title: field + ' updated',
+        sub: 'Payroll line item changed',
+        employee: m[1].trim(),
+        value: value === '' ? '—' : value
+    };
 }
 
 function vhRelTime(dateStr) {
@@ -1859,6 +2238,29 @@ function vhDateGroup(dateStr) {
     return d.toLocaleDateString('en-US',{month:'long',year:'numeric'});
 }
 
+function vhMatchFilter(row, filter) {
+    var d = (row.details || '').toLowerCase();
+    if (filter === 'calc')   return d.includes('calc');
+    if (filter === 'lock')   return d.includes('lock');
+    if (filter === 'update') return d.includes('field:') || d.includes('updat') || d.includes('edit') || d.includes('save');
+    return true;
+}
+
+function vhMatchSearch(row) {
+    if (!_vhSearch) return true;
+    return (row.details || '').toLowerCase().includes(_vhSearch)
+        || (row.name || '').toLowerCase().includes(_vhSearch);
+}
+
+function vhUpdateTabCounts() {
+    document.querySelectorAll('.vh-tab-count').forEach(function(el) {
+        var f = el.getAttribute('data-count');
+        el.textContent = _vhData.filter(function(row) {
+            return vhMatchFilter(row, f) && vhMatchSearch(row);
+        }).length;
+    });
+}
+
 function vhFilter(f, el) {
     _vhFilter = f;
     document.querySelectorAll('.vh-tab').forEach(function(t){ t.classList.remove('active'); });
@@ -1868,72 +2270,95 @@ function vhFilter(f, el) {
 
 function vhSearch(q) {
     _vhSearch = q.toLowerCase();
+    var clear = document.getElementById('vh-search-clear');
+    if (clear) clear.style.display = q ? 'block' : 'none';
     vhRender();
+}
+
+function vhClearSearch() {
+    var input = document.getElementById('vh-search');
+    if (input) input.value = '';
+    vhSearch('');
+    if (input) input.focus();
 }
 
 function vhRender() {
     var body = document.getElementById('offcanvas-history-body');
     var data = _vhData.filter(function(row) {
-        var d = (row.details || '').toLowerCase();
-        var matchFilter = true;
-        if (_vhFilter === 'calc')   matchFilter = d.includes('calc');
-        if (_vhFilter === 'lock')   matchFilter = d.includes('lock');
-        if (_vhFilter === 'update') matchFilter = d.includes('updat') || d.includes('edit') || d.includes('save');
-        var matchSearch = !_vhSearch || d.includes(_vhSearch) || (row.name||'').toLowerCase().includes(_vhSearch);
-        return matchFilter && matchSearch;
+        return vhMatchFilter(row, _vhFilter) && vhMatchSearch(row);
     });
 
+    vhUpdateTabCounts();
+
+    var countEl = document.getElementById('vh-count');
+    if (countEl) countEl.textContent = data.length + ' event' + (data.length !== 1 ? 's' : '');
+
     if (data.length === 0) {
-        body.innerHTML = '<div class="vh-empty"><i class="ri-search-line"></i><div class="vh-empty-title">No events found</div><div>Try a different filter or search term</div></div>';
+        body.innerHTML = _vhData.length === 0
+            ? '<div class="vh-empty"><i class="ri-time-line"></i><div class="vh-empty-title">No history yet</div><div>Changes to this payroll will appear here.</div></div>'
+            : '<div class="vh-empty"><i class="ri-search-line"></i><div class="vh-empty-title">No events found</div><div>Try a different filter or search term</div></div>';
         return;
     }
 
+    // Pre-group by day bucket so each header can show its own count.
+    var groups = [];
+    data.forEach(function(row) {
+        var g = vhDateGroup(row.created_at);
+        if (!groups.length || groups[groups.length - 1].label !== g) groups.push({ label: g, rows: [] });
+        groups[groups.length - 1].rows.push(row);
+    });
+
     var html = '';
-    var lastGroup = null;
+    var index = 0;
 
-    data.forEach(function(row, i) {
-        var m = vhGetMeta(row.details);
-        var initials = (row.name || '?').trim().split(' ').map(function(w){return w[0]||'';}).join('').substring(0,2).toUpperCase();
-        var isFirst = (i === 0 && _vhFilter === 'all' && !_vhSearch);
-        var ts = new Date(row.created_at);
-        var timeStr = ts.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-        var absDate = ts.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-        var group = vhDateGroup(row.created_at);
+    groups.forEach(function(group) {
+        html += '<div class="vh-date-group-label"><i class="ri-calendar-line"></i>' + vhEsc(group.label)
+             +  '<span class="vh-group-count">' + group.rows.length + '</span></div>';
 
-        if (group !== lastGroup) {
-            html += '<div class="vh-date-group-label"><i class="ri-calendar-line me-1"></i>' + group + '</div>';
-            lastGroup = group;
-        }
+        group.rows.forEach(function(row) {
+            var m = vhGetMeta(row.details);
+            var p = vhParse(row.details);
+            var isFirst = (index === 0 && _vhFilter === 'all' && !_vhSearch);
+            var isLast = (index === data.length - 1);
+            var initials = (row.name || '?').trim().split(' ').map(function(w){ return w[0] || ''; }).join('').substring(0,2).toUpperCase();
+            var ts = new Date(row.created_at);
+            var timeStr = ts.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+            var absDate = ts.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
-        html += '<div class="vh-entry' + (isFirst ? ' is-latest' : '') + '">';
+            html += '<div class="vh-entry' + (isFirst ? ' is-latest' : '') + '">';
 
-        // Timeline dot
-        html += '<div class="vh-timeline">';
-        html += '<div class="vh-dot" style="background:' + m.color + ';border-color:' + m.color + '44;"></div>';
-        if (i < data.length - 1) html += '<div class="vh-line"></div>';
-        html += '</div>';
+            // Timeline node doubles as the event icon
+            html += '<div class="vh-timeline">';
+            html += '<div class="vh-node" style="background:' + m.bg + ';color:' + m.color + ';"><i class="' + m.icon + '"></i></div>';
+            if (!isLast) html += '<div class="vh-line"></div>';
+            html += '</div>';
 
-        // Content
-        html += '<div class="vh-content">';
+            html += '<div class="vh-content">';
 
-        // Event row
-        html += '<div class="vh-event-row">';
-        html += '<div class="vh-event-icon" style="background:' + m.bg + ';"><i class="' + m.icon + '" style="color:' + m.color + ';"></i></div>';
-        html += '<div class="vh-event-text">' + (row.details || '—') + '</div>';
-        if (isFirst) html += '<span class="vh-latest-badge">LATEST</span>';
-        html += '</div>';
+            html += '<div class="vh-event-row"><div class="vh-event-text">' + vhEsc(p.title);
+            if (p.sub) html += '<div class="vh-event-sub">' + vhEsc(p.sub) + '</div>';
+            html += '</div>';
+            if (isFirst) html += '<span class="vh-latest-badge">LATEST</span>';
+            html += '</div>';
 
-        // Meta: avatar + user + time
-        html += '<div class="vh-meta">';
-        html += '<div class="vh-avatar" style="background:' + m.color + '22;border:1px solid ' + m.color + '44;color:' + m.color + ';">' + initials + '</div>';
-        html += '<span class="vh-user">' + (row.name || '—') + '</span>';
-        html += '<div class="vh-time-block" title="' + absDate + ' ' + timeStr + '">';
-        html += '<div class="vh-rel-time">' + vhRelTime(row.created_at) + '</div>';
-        html += '<div class="vh-abs-time">' + absDate + ' · ' + timeStr + '</div>';
-        html += '</div>';
-        html += '</div>';
+            if (p.employee || p.value !== null) {
+                html += '<div class="vh-chips">';
+                if (p.employee) html += '<span class="vh-chip vh-chip-emp" title="' + vhEsc(p.employee) + '"><i class="ri-user-3-line"></i>' + vhEsc(p.employee) + '</span>';
+                if (p.value !== null) html += '<span class="vh-chip vh-chip-val"><i class="ri-arrow-right-line"></i>' + vhEsc(p.value) + '</span>';
+                html += '</div>';
+            }
 
-        html += '</div></div>';
+            html += '<div class="vh-meta">';
+            html += '<div class="vh-avatar" style="background:' + m.color + '22;border:1px solid ' + m.color + '44;color:' + m.color + ';">' + vhEsc(initials) + '</div>';
+            html += '<span class="vh-user" title="' + vhEsc(row.name || '') + '">' + vhEsc(row.name || '—') + '</span>';
+            html += '<div class="vh-time-block" title="' + vhEsc(absDate + ' ' + timeStr) + '">';
+            html += '<div class="vh-rel-time">' + vhEsc(vhRelTime(row.created_at)) + '</div>';
+            html += '<div class="vh-abs-time">' + vhEsc(absDate + ' · ' + timeStr) + '</div>';
+            html += '</div></div>';
+
+            html += '</div></div>';
+            index++;
+        });
     });
 
     body.innerHTML = html;
@@ -1947,9 +2372,19 @@ function openPayrollHistory(id) {
     if (allTab) allTab.classList.add('active');
     var searchEl = document.getElementById('vh-search');
     if (searchEl) searchEl.value = '';
+    var clearEl = document.getElementById('vh-search-clear');
+    if (clearEl) clearEl.style.display = 'none';
+
+    document.getElementById('vh-count').textContent = '—';
+    document.getElementById('vh-subtitle').textContent = 'Loading change log…';
 
     var body = document.getElementById('offcanvas-history-body');
-    body.innerHTML = '<div class="vh-empty"><i class="ri-loader-4-line" style="animation:spin 1s linear infinite;"></i><div class="vh-empty-title">Loading history…</div></div>';
+    body.innerHTML = [0,1,2,3,4].map(function() {
+        return '<div class="vh-skeleton"><div class="vh-sk-node"></div><div class="vh-sk-lines">'
+             + '<div class="vh-sk-bar" style="width:75%"></div>'
+             + '<div class="vh-sk-bar" style="width:45%"></div>'
+             + '<div class="vh-sk-bar" style="width:60%;height:7px"></div></div></div>';
+    }).join('');
     new bootstrap.Offcanvas(document.getElementById('offcanvas-history')).show();
 
     $.ajax({
@@ -1958,12 +2393,21 @@ function openPayrollHistory(id) {
         dataType: 'JSON',
         data: { id: id },
         success: function(res) {
-            _vhData = res || [];
-            document.getElementById('vh-count').textContent = _vhData.length + ' event' + (_vhData.length !== 1 ? 's' : '');
+            _vhData = (res && res.length) ? res : [];
+            var sub = document.getElementById('vh-subtitle');
+            sub.textContent = _vhData.length
+                ? 'Last activity ' + vhRelTime(_vhData[0].created_at).toLowerCase() + ' by ' + (_vhData[0].name || 'unknown')
+                : 'Payroll change log';
             vhRender();
         },
         error: function() {
-            body.innerHTML = '<div class="vh-empty"><i class="ri-error-warning-line" style="color:#dc2626;"></i><div class="vh-empty-title" style="color:#dc2626;">Failed to load</div><div>Please try again.</div></div>';
+            document.getElementById('vh-count').textContent = '—';
+            document.getElementById('vh-subtitle').textContent = 'Payroll change log';
+            body.innerHTML = '<div class="vh-empty"><i class="ri-error-warning-line" style="color:#dc2626;"></i>'
+                + '<div class="vh-empty-title" style="color:#dc2626;">Failed to load</div>'
+                + '<div class="mb-2">Something went wrong fetching the history.</div>'
+                + '<button class="btn btn-sm" style="background:#219688;color:#fff;font-weight:600;border:none;" onclick="openPayrollHistory(' + Number(id) + ')">'
+                + '<i class="ri-refresh-line me-1"></i>Retry</button></div>';
         }
     });
 }
@@ -2268,31 +2712,111 @@ function printPayslipPreview() {
         if (gross)  document.getElementById('stat-gross').textContent  = '₱ ' + gross.textContent.trim();
         if (deduct) document.getElementById('stat-deduct').textContent = '₱ ' + deduct.textContent.trim();
 
-        // No. of Days — attendance logs popover. Content is looked up lazily from the
+        // Approved Attendance Logs — modal. Content is looked up lazily from the
         // single hidden #dtr-pop-src copy (one per employee+site) instead of being
-        // duplicated into every row's data-bs-content attribute in both tables.
-        document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (el) {
-            new bootstrap.Popover(el, {
-                sanitize: false,
-                html: true,
-                content: function () {
-                    var src = document.getElementById('dtr-pop-' + el.getAttribute('data-pop-key'));
-                    return src ? src.innerHTML : '<span class="dpp-empty">No approved attendance found</span>';
-                }
-            });
-            el.addEventListener('shown.bs.popover', function () {
-                document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (other) {
-                    if (other !== el) bootstrap.Popover.getInstance(other)?.hide();
-                });
-            });
-        });
+        // duplicated into every row in both tables.
         document.addEventListener('click', function (e) {
-            if (!e.target.closest('.dtr-view-days')) {
-                document.querySelectorAll('.dtr-view-days[data-bs-toggle="popover"]').forEach(function (el) {
-                    bootstrap.Popover.getInstance(el)?.hide();
-                });
-            }
+            var btn = e.target.closest('.dtr-view-days');
+            if (!btn) return;
+            var src = document.getElementById('dtr-pop-' + btn.getAttribute('data-pop-key'));
+            document.getElementById('al-body').innerHTML = src ? src.innerHTML
+                : '<div class="text-center text-muted py-4">No approved attendance found</div>';
+            document.getElementById('al-employee').textContent = btn.getAttribute('data-emp-name') || '';
+            var days = parseInt(btn.getAttribute('data-days') || '0', 10);
+            document.getElementById('al-days-count').textContent = days
+                ? days + ' approved day' + (days === 1 ? '' : 's') : '';
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-att-logs')).show();
         });
+
+        // ── Search / department / anomaly-flag filtering ──
+        var payFilter = { q: '', dept: '', chip: '' };
+        var payAnom = {};
+        var CHIP_DEFS = [
+            { key: 'negative', cls: 'negative', icon: 'ri-error-warning-line',  label: 'negative net' },
+            { key: 'zero',     cls: 'zero',     icon: 'ri-forbid-line',         label: 'zero net' },
+            { key: 'noatt',    cls: 'noatt',    icon: 'ri-calendar-close-line', label: 'paid, no attendance' },
+            { key: 'bigmove',  cls: 'bigmove',  icon: 'ri-line-chart-line',     label: 'net moved ≥30%' },
+        ];
+
+        function payRows() {
+            return Array.prototype.slice.call(document.querySelectorAll('#table-1 tbody tr[data-row-id]'));
+        }
+
+        function payClassifyRows() {
+            payAnom = { zero: [], negative: [], noatt: [], bigmove: [] };
+            payRows().forEach(function (tr) {
+                var netEl = tr.querySelector('[data-computed="net"]');
+                var net = netEl ? parseFloat(netEl.textContent.replace(/,/g, '')) : NaN;
+                var days = parseInt(tr.querySelector('.dtr-view-days')?.getAttribute('data-days') || '0', 10);
+                if (!isNaN(net)) {
+                    if (net === 0) payAnom.zero.push(tr);
+                    if (net < 0) payAnom.negative.push(tr);
+                    if (net > 0 && days === 0) payAnom.noatt.push(tr);
+                }
+                if (tr.querySelector('.nd-warn')) payAnom.bigmove.push(tr);
+            });
+        }
+
+        function payRenderChips() {
+            var wrap = document.getElementById('pay-anomaly-chips');
+            if (!wrap) return;
+            var html = '';
+            CHIP_DEFS.forEach(function (c) {
+                var n = payAnom[c.key].length;
+                if (!n) return;
+                html += '<span class="pay-chip ' + c.cls + (payFilter.chip === c.key ? ' active' : '') + '" data-chip="' + c.key + '" title="Click to show only these rows">'
+                      + '<i class="' + c.icon + '"></i>' + n + ' ' + c.label + '</span>';
+            });
+            if (!html) html = '<span class="pay-chip all-clear"><i class="ri-checkbox-circle-line"></i>no anomalies</span>';
+            wrap.innerHTML = html;
+        }
+
+        function payApplyFilter() {
+            var shown = 0, total = 0;
+            payRows().forEach(function (tr) {
+                total++;
+                var okQ = !payFilter.q || (tr.getAttribute('data-name') || '').indexOf(payFilter.q) !== -1;
+                var okD = !payFilter.dept || tr.getAttribute('data-dept') === payFilter.dept;
+                var okC = !payFilter.chip || payAnom[payFilter.chip].indexOf(tr) !== -1;
+                var show = okQ && okD && okC;
+                tr.style.display = show ? '' : 'none';
+                tr.classList.toggle('pay-row-hit', show && !!payFilter.chip);
+                if (show) shown++;
+            });
+            var counter = document.getElementById('pay-filter-count');
+            if (counter) counter.textContent = (payFilter.q || payFilter.dept || payFilter.chip)
+                ? shown + ' of ' + total + ' employees' : '';
+            var clearBtn = document.getElementById('pay-search-clear');
+            if (clearBtn) clearBtn.style.display = payFilter.q ? '' : 'none';
+        }
+
+        var paySearchEl = document.getElementById('pay-search');
+        if (paySearchEl) {
+            paySearchEl.addEventListener('input', function () {
+                payFilter.q = this.value.trim().toLowerCase();
+                payApplyFilter();
+            });
+            document.getElementById('pay-search-clear').addEventListener('click', function () {
+                paySearchEl.value = '';
+                payFilter.q = '';
+                payApplyFilter();
+                paySearchEl.focus();
+            });
+            document.getElementById('pay-dept-filter').addEventListener('change', function () {
+                payFilter.dept = this.value;
+                payApplyFilter();
+            });
+            document.getElementById('pay-anomaly-chips').addEventListener('click', function (e) {
+                var chip = e.target.closest('.pay-chip[data-chip]');
+                if (!chip) return;
+                var key = chip.getAttribute('data-chip');
+                payFilter.chip = (payFilter.chip === key) ? '' : key;
+                payRenderChips();
+                payApplyFilter();
+            });
+            payClassifyRows();
+            payRenderChips();
+        }
     });
     window.addEventListener('resize', () => {
         fitTableToViewport();

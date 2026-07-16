@@ -245,7 +245,7 @@ document.getElementById('form-pay-settings').addEventListener('submit', async fu
         Swal.fire({ icon: 'success', title: 'Saved', text: json.message, timer: 1500, showConfirmButton: false });
         updateSummary();
     } else {
-        alert(json?.message || 'Failed to save.');
+        Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to save.' });
     }
 });
 </script>

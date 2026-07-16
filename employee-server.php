@@ -4,7 +4,6 @@ include 'db_connect.php';
 
 $request = $_REQUEST;
 $status        = isset($request['status'])        && $request['status']        !== '' ? (int)$request['status']        : 2;
-$weekly_payroll = isset($request['weekly_payroll']) && $request['weekly_payroll'] !== '' ? (int)$request['weekly_payroll'] : 2;
 $position_id   = isset($request['position_id'])   && $request['position_id']   !== '' ? (int)$request['position_id']   : null;
 $department_id = isset($request['department_id']) && $request['department_id'] !== '' ? (int)$request['department_id'] : null;
 
@@ -24,10 +23,8 @@ $filter_status = '';
 if ($status === 0 || $status === 1) {
     $filter_status = " AND e.status = $status";
 }
+// Weekly payroll was removed — the payroll-type filter no longer exists.
 $_filter_payroll_type = '';
-if ($weekly_payroll === 0 || $weekly_payroll === 1) {
-    $_filter_payroll_type = " AND e.weekly_payroll = $weekly_payroll";
-}
 $filter_position = '';
 if ($position_id) {
     $filter_position = " AND e.position_id = $position_id";

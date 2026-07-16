@@ -2,11 +2,15 @@
 // Shared option lists for payroll deduction settings. Rendered pre-checked in
 // the Create modal (so a new payroll auto-calculates a complete payslip) and
 // again in the gear "Payroll Settings" modal for editing an existing payroll.
+//
+// Refunds are disabled: with no refunds[] posted, settingsFromInput() records no
+// type-4 entries, so new payrolls carry no refunds and the Refunds columns stay
+// out of the payroll table. Uncomment the row below to bring the section back.
 $payroll_setting_sections = [
     ['title' => 'Contributions', 'icon' => 'ri-hand-coin-line', 'query' => "SELECT id, contribution AS label FROM contributions ORDER BY id ASC", 'prefix' => 'contributions', 'name' => 'contributions[]', 'id_col' => 'id'],
     ['title' => 'Deductions',    'icon' => 'ri-subtract-line',  'query' => "SELECT id, deduction AS label FROM deductions ORDER BY id ASC",       'prefix' => 'deductions',    'name' => 'deductions[]',    'id_col' => 'id'],
     ['title' => 'Loans',         'icon' => 'ri-bank-card-line', 'query' => "SELECT clt_id AS id, loan_type AS label FROM contribution_loan_types ORDER BY clt_id ASC", 'prefix' => 'loan', 'name' => 'loans[]', 'id_col' => 'id'],
-    ['title' => 'Refunds',       'icon' => 'ri-refund-2-line',  'query' => "SELECT id, refunds AS label FROM refunds ORDER BY id ASC",             'prefix' => 'refund',        'name' => 'refunds[]',       'id_col' => 'id'],
+    // ['title' => 'Refunds',       'icon' => 'ri-refund-2-line',  'query' => "SELECT id, refunds AS label FROM refunds ORDER BY id ASC",             'prefix' => 'refund',        'name' => 'refunds[]',       'id_col' => 'id'],
 ];
 ?>
 <!-- ── Create Payroll ─────────────────────────────────────────────── -->

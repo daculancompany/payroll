@@ -30,7 +30,6 @@ $(document).ready(function () {
             type: "POST",
             data: function (d) {
                 d.status = $("#filter-status").val();
-                d.weekly_payroll = $("#filter-ptype").val();
                 d.position_id = $("#filter-position").val();
                 d.department_id = $("#filter-department").val();
             },
@@ -74,14 +73,6 @@ $(document).ready(function () {
     });
 
     $("#filter-status").select2({
-        allowClear: true,
-        width: "resolve",
-        dropdownParent: $("body"),
-    }).on("change", function () {
-        oTable.draw();
-    });
-
-    $("#filter-ptype").select2({
         allowClear: true,
         width: "resolve",
         dropdownParent: $("body"),

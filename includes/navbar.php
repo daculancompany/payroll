@@ -5,11 +5,11 @@
     <div class="navbar-brand-box">
         <a href="home" class="logo logo-dark">
             <span class="logo-sm">HR</span>
-            <span class="logo-lg"><div class="logo">HRIS System</div></span>
+            <span class="logo-lg"><div class="logo">Payroll System</div></span>
         </a>
         <a href="home" class="logo logo-light">
             <span class="logo-sm">HR</span>
-            <span class="logo-lg"><div class="logo">HRIS System</div></span>
+            <span class="logo-lg"><div class="logo">Payroll System</div></span>
         </a>
         <button type="button" class="btn btn-sm p-0 fs-20 header-item float-end btn-vertical-sm-hover" id="vertical-hover">
             <i class="ri-record-circle-line"></i>

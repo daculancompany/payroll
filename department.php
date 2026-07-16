@@ -132,7 +132,7 @@ document.getElementById('form-department').addEventListener('submit', async func
         bootstrap.Modal.getInstance(document.getElementById('modal-department')).hide();
         location.reload();
     } else {
-        alert(json?.message || 'Failed to save.');
+        Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to save.' });
     }
 });
 

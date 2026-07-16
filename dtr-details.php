@@ -284,6 +284,25 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 .drp-comment { font-size:12px; color:#555; margin-top:1px; }
 .drp-confirmed-names { margin-top:8px; font-size:11px; color:#4a6b5f; }
 .drp-confirmed-lbl { font-weight:700; color:#0f9d58; margin-right:4px; }
+/* ── Large batches ──────────────────────────────────────────────────────────
+   Mirrors payroll_calculations.php: with hundreds of employees the confirmed
+   names used to render as one runaway line and disputes stacked unbounded.
+   Names now collapse behind a count; disputes scroll once there are a few. */
+.drp-names { margin-top:8px; }
+.drp-names > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+    font-size:11px; font-weight:700; color:#0f9d58; user-select:none; }
+.drp-names > summary::-webkit-details-marker { display:none; }
+.drp-names > summary:hover .drp-names-hint { text-decoration:underline; }
+.drp-count-pill { background:#e9f7ef; border:1px solid #b7e4c7; color:#0f9d58;
+    border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.drp-names-hint { font-weight:500; color:#8a8a8a; }
+.drp-names .lbl-hide, .drp-names[open] .lbl-show { display:none; }
+.drp-names[open] .lbl-hide { display:inline; }
+.drp-chip-wrap { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;
+    max-height:132px; overflow-y:auto; padding:2px; }
+.drp-name-chip { background:#e9f7ef; border:1px solid #b7e4c7; color:#2f5d4a;
+    border-radius:10px; padding:1px 7px; font-size:11px; white-space:nowrap; }
+.drp-disputes.is-scroll { max-height:340px; overflow-y:auto; padding-right:4px; }
 .drp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
 .drp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
 .drp-act-btn.export { background:#eef2fb; color:#394b7c; border-color:#c3c9e0; }
@@ -1127,7 +1146,7 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                                 </div>
                             </div>
                             <?php if ($reviewDisputed > 0): ?>
-                            <div class="drp-disputes">
+                            <div class="drp-disputes<?= $reviewDisputed > 4 ? ' is-scroll' : '' ?>">
                                 <?php foreach ($reviewRows as $rv): if ((int)$rv['status'] !== 2) continue; ?>
                                 <div class="drp-dispute-item">
                                     <i class="ri-error-warning-line"></i>
@@ -1149,13 +1168,21 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                             </div>
                             <?php endif; ?>
                             <?php if ($reviewConfirmed > 0): ?>
-                            <div class="drp-confirmed-names">
-                                <span class="drp-confirmed-lbl"><i class="ri-checkbox-circle-line"></i> Confirmed by:</span>
-                                <?php $cn = [];
-                                    foreach ($reviewRows as $rv) if ((int)$rv['status'] === 1) $cn[] = $rv['name'];
-                                    echo htmlspecialchars(implode('  •  ', $cn));
-                                ?>
-                            </div>
+                            <?php $cn = [];
+                                foreach ($reviewRows as $rv) if ((int)$rv['status'] === 1) $cn[] = $rv['name'];
+                            ?>
+                            <details class="drp-names"<?= count($cn) <= 12 ? ' open' : '' ?>>
+                                <summary>
+                                    <span class="drp-confirmed-lbl"><i class="ri-checkbox-circle-line"></i> Confirmed by</span>
+                                    <span class="drp-count-pill"><?= count($cn) ?></span>
+                                    <span class="drp-names-hint"><span class="lbl-show">show names</span><span class="lbl-hide">hide</span></span>
+                                </summary>
+                                <div class="drp-chip-wrap">
+                                    <?php foreach ($cn as $n): ?>
+                                    <span class="drp-name-chip"><?= htmlspecialchars($n) ?></span>
+                                    <?php endforeach; ?>
+                                </div>
+                            </details>
                             <?php endif; ?>
                         </div>
                         <?php endif; ?>

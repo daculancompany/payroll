@@ -1,0 +1,542 @@
+<?php
+/**
+ * Biometric Kiosk — mobile app support.
+ *
+ * NEW FILE. Nothing in the existing app is modified: the desktop scanner API
+ * (biometric-api.php / Action) keeps working exactly as before, and this adds
+ * only what the mobile kiosk needs on top:
+ *
+ *   - face profiles (enrol / list)
+ *   - SourceAFIS fingerprint templates, kept apart from the desktop's
+ *     DigitalPersona ones because the two SDKs cannot read each other's data
+ *   - full-frame attendance photos written to a public folder, with only the
+ *     filename stored in the database
+ *
+ * Attendance itself is NOT reimplemented here. Action::save_biometric_attendance()
+ * already handles overnight shifts, double-tap debounce and the DTR_details
+ * log array; this class delegates to it and then attaches the photo.
+ *
+ * Conventions follow the rest of the app: mysqli with prepared statements and
+ * an array response shaped ['result' => bool, 'message' => string, ...].
+ */
+
+// admin_class.php is NOT required here on purpose. Loading it pulls in the
+// Composer autoloader and starts a session, which the face, template and
+// health paths have no use for. It is required lazily inside the one method
+// that delegates to Action.
+
+class BiometricKiosk
+{
+    /** @var mysqli */
+    private $db;
+
+    /** Network that produced a face embedding. */
+    const FACE_MODEL_DEFAULT = 'facenet';
+
+    /** SDK that produced a mobile fingerprint template. */
+    const TEMPLATE_FORMAT_DEFAULT = 'sourceafis';
+
+    /** Upper bound for one attendance photo — a full frame, not a face crop. */
+    const MAX_SELFIE_BYTES = 4194304; // 4 MB
+
+    /** Where photos are written, relative to this file. Public, web-served. */
+    const SELFIE_DIR = 'uploads/attendance';
+
+    public function __construct()
+    {
+        // db_connect.php returns the mysqli handle and defines the app
+        // constants; including it here keeps this file self-contained.
+        $conn = include __DIR__ . '/db_connect.php';
+        $this->db = $conn;
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+     * Health
+     * ──────────────────────────────────────────────────────────────────── */
+
+    /**
+     * Reachability probe for the kiosk's online/offline indicator.
+     *
+     * No auth and no table reads on purpose: the kiosk polls this on a timer,
+     * and requiring a token would make an expired session look like a dead
+     * network — sending punches to the offline queue for no reason.
+     *
+     * Returns the server clock so a kiosk can spot a drifting device clock,
+     * which would otherwise file punches on the wrong day.
+     */
+    public function health()
+    {
+        return [
+            'result'      => true,
+            'message'     => 'ok',
+            'server_time' => date('Y-m-d H:i:s'),
+        ];
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+     * Face profiles
+     * ──────────────────────────────────────────────────────────────────── */
+
+    /**
+     * Store a face profile. One row per (employee, model) — re-enrolling
+     * replaces the vector rather than leaving a stale face to match against.
+     *
+     * Expects POST: employee_id, embedding (JSON array or array), [model]
+     */
+    public function save_face()
+    {
+        $employee_id = intval($_POST['employee_id'] ?? 0);
+        $model       = trim($_POST['model'] ?? '') ?: self::FACE_MODEL_DEFAULT;
+        $raw         = $_POST['embedding'] ?? null;
+
+        if (!$employee_id) {
+            return ['result' => false, 'message' => 'Missing employee_id'];
+        }
+
+        $embedding = $this->normalize_embedding($raw);
+        if ($embedding === null) {
+            return ['result' => false, 'message' => 'Embedding must be an array of finite numbers'];
+        }
+        if (count($embedding) < 16) {
+            return ['result' => false, 'message' => 'Embedding is too short to be a face vector'];
+        }
+
+        if (!$this->employee_exists($employee_id)) {
+            return ['result' => false, 'message' => 'Employee not found or inactive'];
+        }
+
+        $json = json_encode($embedding);
+        $dims = count($embedding);
+
+        $stmt = $this->db->prepare("
+            INSERT INTO biometric_kiosk_faces (employee_id, model, dimensions, embedding)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                embedding  = VALUES(embedding),
+                dimensions = VALUES(dimensions),
+                updated_at = NOW()
+        ");
+        $stmt->bind_param('isis', $employee_id, $model, $dims, $json);
+
+        if (!$stmt->execute()) {
+            return ['result' => false, 'message' => 'Failed to save face: ' . $this->db->error];
+        }
+
+        return [
+            'result'      => true,
+            'message'     => 'Face saved',
+            'employee_id' => $employee_id,
+            'model'       => $model,
+            'dimensions'  => $dims,
+        ];
+    }
+
+    /**
+     * Every enrolled face for one model, so the kiosk can rebuild its local
+     * matcher. Scoped to a single model because vectors from different
+     * networks are not comparable.
+     */
+    public function get_faces()
+    {
+        $model = trim($_POST['model'] ?? $_GET['model'] ?? '') ?: self::FACE_MODEL_DEFAULT;
+
+        $stmt = $this->db->prepare("
+            SELECT f.id, f.employee_id, f.model, f.dimensions, f.embedding,
+                   e.firstname, e.lastname
+            FROM biometric_kiosk_faces f
+            INNER JOIN employee e ON e.id = f.employee_id AND e.status = 1
+            WHERE f.model = ?
+            ORDER BY f.employee_id
+        ");
+        $stmt->bind_param('s', $model);
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        $data = [];
+        while ($row = $res->fetch_assoc()) {
+            $data[] = [
+                'id'            => (int) $row['id'],
+                'employee_id'   => (int) $row['employee_id'],
+                'employee_name' => trim($row['firstname'] . ' ' . $row['lastname']),
+                'model'         => $row['model'],
+                'dimensions'    => (int) $row['dimensions'],
+                'embedding'     => json_decode($row['embedding'], true) ?: [],
+            ];
+        }
+
+        return ['result' => true, 'data' => $data, 'total' => count($data)];
+    }
+
+    /** Remove an employee's face profile(s). */
+    public function delete_face()
+    {
+        $employee_id = intval($_POST['employee_id'] ?? 0);
+        if (!$employee_id) {
+            return ['result' => false, 'message' => 'Missing employee_id'];
+        }
+
+        $stmt = $this->db->prepare("DELETE FROM biometric_kiosk_faces WHERE employee_id = ?");
+        $stmt->bind_param('i', $employee_id);
+        $stmt->execute();
+
+        return [
+            'result'  => true,
+            'message' => 'Face profile removed',
+            'removed' => $stmt->affected_rows,
+        ];
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+     * Mobile fingerprint templates (SourceAFIS)
+     * ──────────────────────────────────────────────────────────────────── */
+
+    /**
+     * Store a template captured by the mobile kiosk.
+     *
+     * Written to biometric_kiosk_templates, NOT employee_fingerprints: the
+     * desktop app's DigitalPersona templates live there and the two formats
+     * are not interchangeable.
+     *
+     * Expects POST: employee_id, finger_index, template (base64), [format]
+     */
+    public function save_template()
+    {
+        $employee_id  = intval($_POST['employee_id'] ?? 0);
+        $finger_index = trim($_POST['finger_index'] ?? '');
+        $template     = trim($_POST['template'] ?? '');
+        $format       = trim($_POST['format'] ?? '') ?: self::TEMPLATE_FORMAT_DEFAULT;
+
+        if (!$employee_id || $finger_index === '' || $template === '') {
+            return ['result' => false, 'message' => 'Missing employee_id, finger_index or template'];
+        }
+
+        if (!in_array($format, ['sourceafis', 'dpfp'], true)) {
+            return ['result' => false, 'message' => 'Unknown template format: ' . $format];
+        }
+
+        // Strip a data: prefix if the client sent one, then verify it really
+        // is base64 — a mangled template would fail silently at match time.
+        $clean = preg_replace('/^data:[^;]+;base64,/', '', $template);
+        if (base64_decode($clean, true) === false) {
+            return ['result' => false, 'message' => 'Template is not valid base64'];
+        }
+
+        if (!$this->employee_exists($employee_id)) {
+            return ['result' => false, 'message' => 'Employee not found or inactive'];
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO biometric_kiosk_templates (employee_id, finger_index, format, template)
+            VALUES (?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE template = VALUES(template), updated_at = NOW()
+        ");
+        $stmt->bind_param('isss', $employee_id, $finger_index, $format, $clean);
+
+        if (!$stmt->execute()) {
+            return ['result' => false, 'message' => 'Failed to save template: ' . $this->db->error];
+        }
+
+        return [
+            'result'       => true,
+            'message'      => 'Template saved',
+            'employee_id'  => $employee_id,
+            'finger_index' => $finger_index,
+            'format'       => $format,
+        ];
+    }
+
+    /**
+     * Templates this kiosk can actually match. Defaults to SourceAFIS —
+     * handing the mobile matcher DigitalPersona templates would only produce
+     * failed scans.
+     */
+    public function get_templates()
+    {
+        $format = trim($_POST['format'] ?? $_GET['format'] ?? '') ?: self::TEMPLATE_FORMAT_DEFAULT;
+
+        $sql = "
+            SELECT t.id, t.employee_id, t.finger_index, t.format, t.template,
+                   e.firstname, e.lastname
+            FROM biometric_kiosk_templates t
+            INNER JOIN employee e ON e.id = t.employee_id AND e.status = 1
+        ";
+
+        if ($format !== 'all') {
+            $sql .= " WHERE t.format = ? ";
+        }
+        $sql .= " ORDER BY t.employee_id, t.finger_index";
+
+        $stmt = $this->db->prepare($sql);
+        if ($format !== 'all') {
+            $stmt->bind_param('s', $format);
+        }
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        $data = [];
+        while ($row = $res->fetch_assoc()) {
+            $data[] = [
+                'id'            => (int) $row['id'],
+                'employee_id'   => (int) $row['employee_id'],
+                'employee_name' => trim($row['firstname'] . ' ' . $row['lastname']),
+                'finger_index'  => $row['finger_index'],
+                'format'        => $row['format'],
+                'template'      => $row['template'],
+            ];
+        }
+
+        return ['result' => true, 'data' => $data, 'total' => count($data)];
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+     * Attendance + full-frame photo
+     * ──────────────────────────────────────────────────────────────────── */
+
+    /**
+     * Record a scan and keep the photo of whoever made it.
+     *
+     * The attendance write is delegated to the existing
+     * Action::save_biometric_attendance(), which already knows about overnight
+     * shifts, the duplicate window and the DTR_details log array. Duplicating
+     * that logic here would guarantee the two drift apart.
+     *
+     * The photo is the FULL camera frame, not the cropped face: the record is
+     * meant to show who was actually standing at the kiosk.
+     *
+     * Expects POST: employee_id, scan_time, site_id, [selfie] (base64 JPEG)
+     */
+    public function save_attendance_with_selfie()
+    {
+        $employee_id = intval($_POST['employee_id'] ?? 0);
+        $scan_time   = trim($_POST['scan_time'] ?? '');
+        $selfie_raw  = (string) ($_POST['selfie'] ?? '');
+
+        // Decode BEFORE touching attendance so a malformed image is a clean
+        // rejection rather than a punch with a broken photo attached.
+        $binary = null;
+        if ($selfie_raw !== '') {
+            $binary = $this->decode_image($selfie_raw);
+            if ($binary === null) {
+                return ['result' => false, 'message' => 'Selfie is not valid base64 image data'];
+            }
+        }
+
+        // Loaded lazily — only this path needs the Action class.
+        require_once __DIR__ . '/admin_class.php';
+
+        $action = new Action();
+        $result = $action->save_biometric_attendance();
+
+        // Attendance failed (unknown employee, bad scan_time, …) — do not
+        // leave an orphan image on disk for a punch that never happened.
+        if (empty($result['result'])) {
+            return $result;
+        }
+
+        $result['selfie']     = null;
+        $result['selfie_url'] = null;
+
+        if ($binary !== null) {
+            $stored = $this->store_selfie($employee_id, $scan_time, $binary);
+            if ($stored) {
+                $result['selfie']     = $stored;
+                $result['selfie_url'] = $this->public_url($stored);
+            } else {
+                // The attendance row is what matters; the photo is supporting
+                // evidence. Report it without failing the punch.
+                $result['selfie_error'] = 'Photo could not be saved';
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Photos for one employee (optionally one date) so the payroll screens can
+     * show who clocked in.
+     */
+    public function get_selfies()
+    {
+        $employee_id = intval($_POST['employee_id'] ?? $_GET['employee_id'] ?? 0);
+        $date        = trim($_POST['date'] ?? $_GET['date'] ?? '');
+
+        if (!$employee_id) {
+            return ['result' => false, 'message' => 'Missing employee_id'];
+        }
+
+        if ($date !== '') {
+            $stmt = $this->db->prepare("
+                SELECT id, employee_id, log_date, log_datetime, filename, source
+                FROM biometric_kiosk_selfies
+                WHERE employee_id = ? AND log_date = ?
+                ORDER BY log_datetime DESC
+            ");
+            $stmt->bind_param('is', $employee_id, $date);
+        } else {
+            $stmt = $this->db->prepare("
+                SELECT id, employee_id, log_date, log_datetime, filename, source
+                FROM biometric_kiosk_selfies
+                WHERE employee_id = ?
+                ORDER BY log_datetime DESC
+                LIMIT 100
+            ");
+            $stmt->bind_param('i', $employee_id);
+        }
+
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        $data = [];
+        while ($row = $res->fetch_assoc()) {
+            $data[] = [
+                'id'           => (int) $row['id'],
+                'employee_id'  => (int) $row['employee_id'],
+                'log_date'     => $row['log_date'],
+                'log_datetime' => $row['log_datetime'],
+                'filename'     => $row['filename'],
+                'url'          => $this->public_url($row['filename']),
+                'source'       => $row['source'],
+            ];
+        }
+
+        return ['result' => true, 'data' => $data, 'total' => count($data)];
+    }
+
+    /* ─────────────────────────────────────────────────────────────────────
+     * Internals
+     * ──────────────────────────────────────────────────────────────────── */
+
+    /**
+     * Write the image under uploads/attendance/YYYY/MM/ and record the path.
+     * Returns the stored relative path, or null when it could not be saved.
+     */
+    private function store_selfie($employee_id, $scan_time, $binary)
+    {
+        $ts = strtotime($scan_time) ?: time();
+
+        $rel_dir = self::SELFIE_DIR . '/' . date('Y', $ts) . '/' . date('m', $ts);
+        $abs_dir = __DIR__ . '/' . $rel_dir;
+
+        if (!is_dir($abs_dir) && !@mkdir($abs_dir, 0775, true) && !is_dir($abs_dir)) {
+            return null;
+        }
+
+        // Employee + timestamp + random: readable when browsing the folder,
+        // and collision-proof when two kiosks punch in the same second.
+        $name = sprintf(
+            'emp%d_%s_%s.jpg',
+            $employee_id,
+            date('Ymd_His', $ts),
+            substr(bin2hex(random_bytes(4)), 0, 6)
+        );
+
+        $rel_path = $rel_dir . '/' . $name;
+        if (@file_put_contents($abs_dir . '/' . $name, $binary) === false) {
+            return null;
+        }
+
+        $log_date = date('Y-m-d', $ts);
+        $log_dt   = date('Y-m-d H:i:s', $ts);
+        $source   = 'face';
+
+        $stmt = $this->db->prepare("
+            INSERT INTO biometric_kiosk_selfies
+                (employee_id, log_date, log_datetime, filename, source)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        $stmt->bind_param('issss', $employee_id, $log_date, $log_dt, $rel_path, $source);
+
+        if (!$stmt->execute()) {
+            // Row failed — remove the file so the folder does not accumulate
+            // images nothing points at.
+            @unlink($abs_dir . '/' . $name);
+            return null;
+        }
+
+        return $rel_path;
+    }
+
+    /**
+     * Decode a base64 image, tolerating a `data:image/jpeg;base64,` prefix.
+     * Returns null when the payload is not actually an image.
+     */
+    private function decode_image($payload)
+    {
+        $clean  = preg_replace('/^data:image\/[a-zA-Z0-9.+-]+;base64,/', '', trim($payload));
+        $binary = base64_decode($clean, true);
+
+        if ($binary === false || strlen($binary) < 128) {
+            return null;
+        }
+        if (strlen($binary) > self::MAX_SELFIE_BYTES) {
+            return null;
+        }
+        // The path is shown back to HR — a text file must not land there.
+        if (@getimagesizefromstring($binary) === false) {
+            return null;
+        }
+
+        return $binary;
+    }
+
+    /** Absolute URL for a stored relative path. */
+    private function public_url($rel_path)
+    {
+        if (!$rel_path) {
+            return null;
+        }
+
+        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+        // Directory this script lives in, so the URL works whether the app is
+        // at the web root or in a subfolder.
+        $base   = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+
+        return $scheme . '://' . $host . $base . '/' . ltrim($rel_path, '/');
+    }
+
+    /**
+     * Coerce an embedding to a list of finite floats.
+     *
+     * Rejects the whole vector if any entry is unusable: PHP casts null and ''
+     * to 0.0, which would silently become a real coordinate and quietly
+     * distort every comparison against it.
+     */
+    private function normalize_embedding($raw)
+    {
+        if (is_string($raw)) {
+            $raw = json_decode($raw, true);
+        }
+        if (!is_array($raw) || $raw === []) {
+            return null;
+        }
+
+        $out = [];
+        foreach ($raw as $value) {
+            if (is_int($value) || is_float($value)) {
+                $number = (float) $value;
+            } elseif (is_string($value) && is_numeric(trim($value))) {
+                $number = (float) trim($value);
+            } else {
+                return null;
+            }
+
+            if (!is_finite($number)) {
+                return null;
+            }
+            $out[] = $number;
+        }
+
+        return $out;
+    }
+
+    /** Active-employee guard, shared by every write path. */
+    private function employee_exists($employee_id)
+    {
+        $stmt = $this->db->prepare("SELECT id FROM employee WHERE id = ? AND status = 1 LIMIT 1");
+        $stmt->bind_param('i', $employee_id);
+        $stmt->execute();
+
+        return (bool) $stmt->get_result()->fetch_assoc();
+    }
+}

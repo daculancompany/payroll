@@ -178,6 +178,14 @@
                                     data-parsley-required-message="Amount is required." required>
                             </div>
                         </div>
+                        <?php
+                        /* SSS Provident Fund is hidden from the form, but the value still has
+                           to be SUBMITTED: save() reads $_POST['sss_fund'] ?? 0 and writes the
+                           column on every update, so dropping the input outright would zero out
+                           the stored amount for every employee that gets edited. */
+                        ?>
+                        <input type="hidden" name="sss_fund" value="<?= isset($sss_fund) ? htmlspecialchars($sss_fund) : '0' ?>">
+                        <!-- SSS Provident Fund field hidden on request
                         <div class="col-md-4">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
                                 SSS Provident Fund <span class="text-danger">*</span>
@@ -185,11 +193,11 @@
                             <div class="input-group">
                                 <span class="input-group-text">&#8369;</span>
                                 <input type="text" class="form-control filterme" name="sss_fund"
-                                    value="<?= isset($sss_fund) ? htmlspecialchars($sss_fund) : '0' ?>"
                                     placeholder="0.00"
                                     data-parsley-required-message="Amount is required." required>
                             </div>
                         </div>
+                        -->
                     </div>
 
                     <!-- Settings -->

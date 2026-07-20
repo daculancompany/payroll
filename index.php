@@ -1278,7 +1278,7 @@ function getRole($login_role)
     <?php } ?>
 
     <?php if ($page == 'employee' || $page == 'employee-details') { ?>
-        <script src="assets2/js/employee.js?v=5"></script>
+        <script src="assets2/js/employee.js?v=6"></script>
     <?php } ?>
     <?php if ($page == 'schedule-roster') { ?>
         <script src="assets2/js/schedule-roster.js?v=1"></script>

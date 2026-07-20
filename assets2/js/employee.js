@@ -182,16 +182,24 @@ $(function () {
     });
 
     $('[name="department_id"]').change(function () {
-        //$( "#position-select" ).val([]);
         var did = $(this).val();
-        $("#position-select").select2("val", "");
-        $('[name="position_id"] .opt').each(function () {
-            if ($(this).attr("data-did") == did) {
-                $(this).attr("disabled", false);
-            } else {
-                $(this).attr("disabled", true);
-            }
+        var $pos = $("#position-select");
+        $pos.val("");
+        $pos.find("option.opt").each(function () {
+            var pdid = $(this).attr("data-did") || "";
+            // Only narrow the list when a department is actually picked, and never
+            // hide positions that aren't tied to any department — they belong to
+            // every one of them.
+            $(this).prop("disabled", !!did && !!pdid && pdid != did);
         });
+        // The dropdown widget renders its menu from the option list, so it has to
+        // be rebuilt after toggling disabled. Without this the user clicks an item
+        // from the stale menu, the widget paints the label, but the underlying
+        // <select> refuses the now-disabled option and keeps an empty value —
+        // which is why Parsley kept failing "Please select position."
+        if ($pos.data("bs-select") && $pos.selectpicker) {
+            $pos.selectpicker("refresh");
+        }
     });
 });
 

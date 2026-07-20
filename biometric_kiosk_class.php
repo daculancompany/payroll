@@ -42,6 +42,9 @@ class BiometricKiosk
     /** Where photos are written, relative to this file. Public, web-served. */
     const SELFIE_DIR = 'uploads/attendance';
 
+    /** Face preview photos captured at enrollment. Public, web-served. */
+    const FACE_DIR = 'uploads/faces';
+
     public function __construct()
     {
         // db_connect.php returns the mysqli handle and defines the app
@@ -81,13 +84,20 @@ class BiometricKiosk
      * Store a face profile. One row per (employee, model) — re-enrolling
      * replaces the vector rather than leaving a stale face to match against.
      *
-     * Expects POST: employee_id, embedding (JSON array or array), [model]
+     * An optional photo (the cropped face the embedding was computed from)
+     * rides along so the admin pages can show a human-checkable preview.
+     * It is best-effort: the embedding is what recognition runs on, so a
+     * photo that fails to store must not fail the enrollment.
+     *
+     * Expects POST: employee_id, embedding (JSON array or array), [model],
+     *               [photo] (base64 JPEG)
      */
     public function save_face()
     {
         $employee_id = intval($_POST['employee_id'] ?? 0);
         $model       = trim($_POST['model'] ?? '') ?: self::FACE_MODEL_DEFAULT;
         $raw         = $_POST['embedding'] ?? null;
+        $photo_raw   = (string) ($_POST['photo'] ?? '');
 
         if (!$employee_id) {
             return ['result' => false, 'message' => 'Missing employee_id'];
@@ -105,18 +115,29 @@ class BiometricKiosk
             return ['result' => false, 'message' => 'Employee not found or inactive'];
         }
 
+        // Fixed filename per (employee, model): re-enrolling overwrites the
+        // previous preview in place, mirroring the embedding upsert below.
+        $photo_path = null;
+        if ($photo_raw !== '') {
+            $binary = $this->decode_image($photo_raw);
+            if ($binary !== null) {
+                $photo_path = $this->store_face_photo($employee_id, $model, $binary);
+            }
+        }
+
         $json = json_encode($embedding);
         $dims = count($embedding);
 
         $stmt = $this->db->prepare("
-            INSERT INTO biometric_kiosk_faces (employee_id, model, dimensions, embedding)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO biometric_kiosk_faces (employee_id, model, dimensions, embedding, photo)
+            VALUES (?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 embedding  = VALUES(embedding),
                 dimensions = VALUES(dimensions),
+                photo      = COALESCE(VALUES(photo), photo),
                 updated_at = NOW()
         ");
-        $stmt->bind_param('isis', $employee_id, $model, $dims, $json);
+        $stmt->bind_param('isiss', $employee_id, $model, $dims, $json, $photo_path);
 
         if (!$stmt->execute()) {
             return ['result' => false, 'message' => 'Failed to save face: ' . $this->db->error];
@@ -128,6 +149,7 @@ class BiometricKiosk
             'employee_id' => $employee_id,
             'model'       => $model,
             'dimensions'  => $dims,
+            'photo_url'   => $this->public_url($photo_path),
         ];
     }
 
@@ -141,7 +163,7 @@ class BiometricKiosk
         $model = trim($_POST['model'] ?? $_GET['model'] ?? '') ?: self::FACE_MODEL_DEFAULT;
 
         $stmt = $this->db->prepare("
-            SELECT f.id, f.employee_id, f.model, f.dimensions, f.embedding,
+            SELECT f.id, f.employee_id, f.model, f.dimensions, f.embedding, f.photo,
                    e.firstname, e.lastname
             FROM biometric_kiosk_faces f
             INNER JOIN employee e ON e.id = f.employee_id AND e.status = 1
@@ -161,18 +183,32 @@ class BiometricKiosk
                 'model'         => $row['model'],
                 'dimensions'    => (int) $row['dimensions'],
                 'embedding'     => json_decode($row['embedding'], true) ?: [],
+                'photo_url'     => $this->public_url($row['photo']),
             ];
         }
 
         return ['result' => true, 'data' => $data, 'total' => count($data)];
     }
 
-    /** Remove an employee's face profile(s). */
+    /** Remove an employee's face profile(s), preview photos included. */
     public function delete_face()
     {
         $employee_id = intval($_POST['employee_id'] ?? 0);
         if (!$employee_id) {
             return ['result' => false, 'message' => 'Missing employee_id'];
+        }
+
+        // Collect photo paths before the rows vanish, so the files go too —
+        // an orphaned preview would keep showing a face that is unenrolled.
+        $sel = $this->db->prepare("SELECT photo FROM biometric_kiosk_faces WHERE employee_id = ? AND photo IS NOT NULL");
+        $sel->bind_param('i', $employee_id);
+        $sel->execute();
+        $photos = $sel->get_result();
+        while ($row = $photos->fetch_assoc()) {
+            $abs = __DIR__ . '/' . ltrim($row['photo'], '/');
+            if (strpos($row['photo'], self::FACE_DIR . '/') === 0 && is_file($abs)) {
+                @unlink($abs);
+            }
         }
 
         $stmt = $this->db->prepare("DELETE FROM biometric_kiosk_faces WHERE employee_id = ?");
@@ -450,6 +486,32 @@ class BiometricKiosk
             // Row failed — remove the file so the folder does not accumulate
             // images nothing points at.
             @unlink($abs_dir . '/' . $name);
+            return null;
+        }
+
+        return $rel_path;
+    }
+
+    /**
+     * Write an enrollment face photo under uploads/faces/.
+     *
+     * Deterministic filename per (employee, model) so re-enrolling replaces
+     * the file in place — the photo always shows the CURRENT registered
+     * face, never a stale one. Returns the stored relative path or null.
+     */
+    private function store_face_photo($employee_id, $model, $binary)
+    {
+        $abs_dir = __DIR__ . '/' . self::FACE_DIR;
+        if (!is_dir($abs_dir) && !@mkdir($abs_dir, 0775, true) && !is_dir($abs_dir)) {
+            return null;
+        }
+
+        // Model in the name keeps a future model migration from overwriting
+        // the old model's preview while both rows exist.
+        $name     = sprintf('emp%d_%s.jpg', $employee_id, preg_replace('/[^a-z0-9_-]/i', '', $model));
+        $rel_path = self::FACE_DIR . '/' . $name;
+
+        if (@file_put_contents($abs_dir . '/' . $name, $binary) === false) {
             return null;
         }
 

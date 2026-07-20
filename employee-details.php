@@ -73,6 +73,29 @@ $deduct_agg = $fetch_agg("SELECT COUNT(*) cnt,
     FROM employee_deductions WHERE employee_id = $emp_id");
 $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pending
     FROM leave_requests WHERE employee_id = $emp_id");
+
+// Kiosk biometrics: the registered face's preview photo (an employee has at
+// most ONE face) and the enrolled fingerprint count. Table checks keep the
+// page alive on an install where the kiosk migration has not run.
+$kiosk_face_photo = null;
+$kiosk_face_registered = false;
+$kiosk_fp_count = 0;
+if (($r = $conn->query("SHOW TABLES LIKE 'biometric_kiosk_faces'")) && $r->num_rows > 0) {
+    $face_row = $conn->query("SELECT photo FROM biometric_kiosk_faces
+        WHERE employee_id = $emp_id ORDER BY updated_at DESC LIMIT 1")->fetch_assoc();
+    if ($face_row) {
+        $kiosk_face_registered = true;
+        $face_file = $face_row['photo'] ? __DIR__ . '/' . ltrim($face_row['photo'], '/') : null;
+        if ($face_file && is_file($face_file)) {
+            // mtime busts the browser cache when a re-enroll replaces the file
+            $kiosk_face_photo = htmlspecialchars($face_row['photo']) . '?v=' . filemtime($face_file);
+        }
+    }
+}
+if (($r = $conn->query("SHOW TABLES LIKE 'biometric_kiosk_templates'")) && $r->num_rows > 0) {
+    $fp_row = $conn->query("SELECT COUNT(*) c FROM biometric_kiosk_templates WHERE employee_id = $emp_id")->fetch_assoc();
+    $kiosk_fp_count = (int) ($fp_row['c'] ?? 0);
+}
 ?>
 <style>
     :root { --emp-brand:#009688; --emp-brand-dark:#00776b; --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
@@ -83,7 +106,9 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     .emp-sidebar-head::before { content:""; position:absolute; top:-40px; right:-40px; width:140px; height:140px; border-radius:50%; background:rgba(255,255,255,.08); }
     .emp-sidebar-head::after { content:""; position:absolute; bottom:-60px; left:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.06); }
     .emp-sidebar-head > * { position:relative; z-index:1; }
-    .emp-side-avatar { width:76px; height:76px; border-radius:50%; background:#fff; color:var(--emp-brand); font-size:27px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.2), 0 0 0 4px rgba(255,255,255,.25); }
+    .emp-side-avatar { width:76px; height:76px; border-radius:50%; background:#fff; color:var(--emp-brand); font-size:27px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.2), 0 0 0 4px rgba(255,255,255,.25); overflow:hidden; }
+    .emp-side-avatar img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+    a.emp-face-link { display:block; width:76px; margin:0 auto; cursor:zoom-in; }
     .emp-side-name { font-size:16px; font-weight:700; line-height:1.25; }
     .emp-side-role { font-size:12px; opacity:.9; margin-top:3px; }
     .emp-side-empno { font-family:monospace; font-size:12px; font-weight:700; letter-spacing:.5px; margin-top:6px; background:rgba(255,255,255,.15); display:inline-block; padding:2px 10px; border-radius:20px; }
@@ -208,7 +233,15 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                         <div class="col-lg-3">
                             <div class="emp-sidebar emp-sidebar-sticky">
                                 <div class="emp-sidebar-head">
-                                    <div class="emp-side-avatar"><?= $initials ?></div>
+                                    <?php if ($kiosk_face_photo): ?>
+                                        <!-- Registered kiosk face as the avatar; click opens the full preview -->
+                                        <a class="emp-face-link" href="<?= $kiosk_face_photo ?>" target="_blank"
+                                            title="Registered face — click to preview">
+                                            <div class="emp-side-avatar"><img src="<?= $kiosk_face_photo ?>" alt="Registered face"></div>
+                                        </a>
+                                    <?php else: ?>
+                                        <div class="emp-side-avatar"><?= $initials ?></div>
+                                    <?php endif; ?>
                                     <div class="emp-side-name"><?= $fullname ?></div>
                                     <div class="emp-side-role">
                                         <i class="ri-briefcase-4-line me-1"></i><?= htmlspecialchars(ucwords($pname)) ?>
@@ -231,6 +264,26 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Semi-Monthly</span>
                                     <?php if ($age !== null): ?>
                                         <span class="badge bg-light text-dark border"><i class="ri-cake-2-line me-1"></i><?= $age ?> yrs old</span>
+                                    <?php endif; ?>
+                                    <?php /* Kiosk biometrics: fp shows the count; face is a plain
+                                             registered/not indicator — there is only ever one face. */ ?>
+                                    <?php if ($kiosk_fp_count > 0): ?>
+                                        <span class="badge bg-success" title="<?= $kiosk_fp_count ?> fingerprint<?= $kiosk_fp_count > 1 ? 's' : '' ?> enrolled">
+                                            <i class="ri-fingerprint-line me-1"></i><?= $kiosk_fp_count ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-muted border" title="No fingerprints enrolled">
+                                            <i class="ri-fingerprint-line"></i>
+                                        </span>
+                                    <?php endif; ?>
+                                    <?php if ($kiosk_face_registered): ?>
+                                        <span class="badge bg-success" title="Face registered">
+                                            <i class="ri-body-scan-line me-1"></i>Face
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="badge bg-light text-muted border" title="No face registered">
+                                            <i class="ri-body-scan-line"></i>
+                                        </span>
                                     <?php endif; ?>
                                 </div>
                                 <div class="emp-side-stats">

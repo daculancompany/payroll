@@ -75,6 +75,17 @@ if ($api_action === 'login') {
     require_once __DIR__ . '/admin_class.php';
     $action = new Action();
     $result = $action->biometric_login();
+
+    // Attach the site's display name: the kiosk shows WHERE it punches to,
+    // and an id alone means nothing to the operator standing at the device.
+    if (!empty($result['result']) && !empty($result['site_id'])) {
+        $site_stmt = $conn->prepare("SELECT site_name FROM sites WHERE id = ? LIMIT 1");
+        $site_stmt->bind_param('i', $result['site_id']);
+        $site_stmt->execute();
+        $site_row = $site_stmt->get_result()->fetch_assoc();
+        $result['site_name'] = $site_row['site_name'] ?? null;
+    }
+
     http_response_code(!empty($result['result']) ? 200 : 401);
     exit(json_encode($result));
 }

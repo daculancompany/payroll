@@ -63,6 +63,31 @@
 		justify-content: center;
 		flex-shrink: 0;
 	}
+
+	/* Kiosk biometric indicators (fingerprint count + face registered) */
+	.emp-bio {
+		display: inline-flex;
+		gap: 5px;
+		align-items: center;
+		margin-left: 7px;
+	}
+
+	.emp-bio-item {
+		display: inline-flex;
+		align-items: center;
+		gap: 1px;
+		font-size: 10px;
+		font-weight: 700;
+		color: #b6bdc9;
+	}
+
+	.emp-bio-item i {
+		font-size: 13px;
+	}
+
+	.emp-bio-item.on {
+		color: #009688;
+	}
 </style>
 <div class="main-content">
 	<div class="page-content">

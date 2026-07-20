@@ -42,7 +42,18 @@ if ($department_id) {
 
 
 
-$sql = "SELECT e.id, e.loan, e.employee_no, e.firstname, e.middlename, e.lastname, e.salary, e.basic_pay, e.ot_rate, e.status, e.weekly_payroll, d.name AS department, p.name AS position, cl.clasification AS clasification FROM employee e
+// Kiosk biometric indicators. Guarded by a table check so the employee list
+// keeps working on an install where the kiosk migration has not run yet.
+$kiosk_bio_ready =
+    ($r = mysqli_query($conn, "SHOW TABLES LIKE 'biometric_kiosk_faces'")) && mysqli_num_rows($r) > 0 &&
+    ($r = mysqli_query($conn, "SHOW TABLES LIKE 'biometric_kiosk_templates'")) && mysqli_num_rows($r) > 0;
+
+$bio_cols = $kiosk_bio_ready
+    ? ", (SELECT COUNT(*) FROM biometric_kiosk_templates t WHERE t.employee_id = e.id) AS fp_count,
+        (SELECT COUNT(*) FROM biometric_kiosk_faces f WHERE f.employee_id = e.id) AS face_count"
+    : ", 0 AS fp_count, 0 AS face_count";
+
+$sql = "SELECT e.id, e.loan, e.employee_no, e.firstname, e.middlename, e.lastname, e.salary, e.basic_pay, e.ot_rate, e.status, e.weekly_payroll, d.name AS department, p.name AS position, cl.clasification AS clasification $bio_cols FROM employee e
         LEFT JOIN department d ON e.department_id = d.id
         LEFT JOIN position p ON e.position_id = p.id
         LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department";
@@ -82,11 +93,26 @@ while ($row = mysqli_fetch_array($query)) {
     $initials = strtoupper(substr($row['firstname'], 0, 1)) . strtoupper(substr($row['lastname'], 0, 1));
     $fullname = htmlspecialchars($row['lastname'] . ', ' . $row['firstname']);
 
-    // Merged Employee column: avatar + name + employee number
+    // Kiosk biometric indicators: fingerprint icon with enrolled-finger
+    // count; face icon is a plain registered/not indicator — an employee
+    // only ever has ONE face, so a number would be noise.
+    $fp_count = (int) ($row['fp_count'] ?? 0);
+    $has_face = (int) ($row['face_count'] ?? 0) > 0;
+    $bio_icons = '<span class="emp-bio">'
+        . '<span class="emp-bio-item ' . ($fp_count ? 'on' : '') . '" title="'
+        . ($fp_count ? $fp_count . ' fingerprint' . ($fp_count > 1 ? 's' : '') . ' enrolled' : 'No fingerprints enrolled') . '">'
+        . '<i class="ri-fingerprint-line"></i>' . ($fp_count ? $fp_count : '') . '</span>'
+        . '<span class="emp-bio-item ' . ($has_face ? 'on' : '') . '" title="'
+        . ($has_face ? 'Face registered' : 'No face registered') . '">'
+        . '<i class="ri-body-scan-line"></i></span>'
+        . '</span>';
+
+    // Merged Employee column: avatar + name + employee number + biometrics
     $subdata[] = '<div class="d-flex align-items-center gap-2">'
         . '<div class="emp-avatar">' . $initials . '</div>'
         . '<div><div class="emp-name">' . $fullname . '</div>'
-        . '<div class="emp-id"><i class="ri-hashtag" style="font-size:10px;opacity:.6;"></i>' . htmlspecialchars($row['employee_no']) . '</div></div>'
+        . '<div class="emp-id"><i class="ri-hashtag" style="font-size:10px;opacity:.6;"></i>' . htmlspecialchars($row['employee_no'])
+        . $bio_icons . '</div></div>'
         . '</div>';
     $subdata[] = '<span class="emp-position">' . htmlspecialchars($row['position'] ?? '—') . '</span>';
     $subdata[] = '<span class="emp-position">' . htmlspecialchars($row['department'] ?? '—') . '</span>';

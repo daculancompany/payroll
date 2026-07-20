@@ -42,6 +42,9 @@ class BiometricKiosk
     /** Where photos are written, relative to this file. Public, web-served. */
     const SELFIE_DIR = 'uploads/attendance';
 
+    /** Where cropped enrollment faces are written. Public, web-served. */
+    const FACE_DIR = 'uploads/faces';
+
     public function __construct()
     {
         // db_connect.php returns the mysqli handle and defines the app
@@ -78,16 +81,29 @@ class BiometricKiosk
      * ──────────────────────────────────────────────────────────────────── */
 
     /**
-     * Store a face profile. One row per (employee, model) — re-enrolling
-     * replaces the vector rather than leaving a stale face to match against.
+     * Store one face shot. An employee holds SEVERAL vectors — one per
+     * `face_index` slot ("face-1"…"face-6") — because a live scan is matched
+     * against every stored vector and a single angle recognises poorly.
      *
-     * Expects POST: employee_id, embedding (JSON array or array), [model]
+     * The slot is what keeps that bounded: re-enrolling "face-2" replaces
+     * that row instead of growing the table on every visit.
+     *
+     * The cropped face image is optional and purely for display (roster
+     * avatars, enrollment review). Recognition never reads it — a failed
+     * image write therefore does not fail the enrollment.
+     *
+     * Expects POST: employee_id, embedding (JSON array or array),
+     *               [model], [face_index], [photo] (base64 JPEG),
+     *               [replace_all] — drop the employee's other slots, so a new
+     *               registration REPLACES their face rather than adding to it
      */
     public function save_face()
     {
         $employee_id = intval($_POST['employee_id'] ?? 0);
         $model       = trim($_POST['model'] ?? '') ?: self::FACE_MODEL_DEFAULT;
+        $face_index  = trim($_POST['face_index'] ?? '') ?: 'face-1';
         $raw         = $_POST['embedding'] ?? null;
+        $photo_raw   = (string) ($_POST['photo'] ?? '');
 
         if (!$employee_id) {
             return ['result' => false, 'message' => 'Missing employee_id'];
@@ -108,18 +124,40 @@ class BiometricKiosk
         $json = json_encode($embedding);
         $dims = count($embedding);
 
+        // Written before the row so a stored path always points at a real
+        // file; an unusable image simply leaves the column untouched.
+        $photo_path = null;
+        if ($photo_raw !== '') {
+            $binary = $this->decode_image($photo_raw);
+            if ($binary !== null) {
+                $photo_path = $this->store_face_photo($employee_id, $model, $face_index, $binary);
+            }
+        }
+
+        // COALESCE on update: re-enrolling without an image must not blank the
+        // photo an earlier shot already stored.
         $stmt = $this->db->prepare("
-            INSERT INTO biometric_kiosk_faces (employee_id, model, dimensions, embedding)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO biometric_kiosk_faces
+                (employee_id, model, face_index, dimensions, embedding, photo)
+            VALUES (?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 embedding  = VALUES(embedding),
                 dimensions = VALUES(dimensions),
+                photo      = COALESCE(VALUES(photo), photo),
                 updated_at = NOW()
         ");
-        $stmt->bind_param('isis', $employee_id, $model, $dims, $json);
+        $stmt->bind_param('ississ', $employee_id, $model, $face_index, $dims, $json, $photo_path);
 
         if (!$stmt->execute()) {
             return ['result' => false, 'message' => 'Failed to save face: ' . $this->db->error];
+        }
+
+        // Re-registering replaces the employee's face rather than adding to
+        // it. The other slots go AFTER the new row is safely in, so a failure
+        // here can never leave the employee with no face at all.
+        $replaced = 0;
+        if (!empty($_POST['replace_all'])) {
+            $replaced = $this->delete_other_face_slots($employee_id, $model, $face_index);
         }
 
         return [
@@ -127,7 +165,11 @@ class BiometricKiosk
             'message'     => 'Face saved',
             'employee_id' => $employee_id,
             'model'       => $model,
+            'face_index'  => $face_index,
             'dimensions'  => $dims,
+            'photo'       => $photo_path,
+            'photo_url'   => $this->public_url($photo_path),
+            'replaced'    => $replaced,
         ];
     }
 
@@ -141,12 +183,12 @@ class BiometricKiosk
         $model = trim($_POST['model'] ?? $_GET['model'] ?? '') ?: self::FACE_MODEL_DEFAULT;
 
         $stmt = $this->db->prepare("
-            SELECT f.id, f.employee_id, f.model, f.dimensions, f.embedding,
-                   e.firstname, e.lastname
+            SELECT f.id, f.employee_id, f.model, f.face_index, f.dimensions,
+                   f.embedding, f.photo, e.firstname, e.lastname
             FROM biometric_kiosk_faces f
             INNER JOIN employee e ON e.id = f.employee_id AND e.status = 1
             WHERE f.model = ?
-            ORDER BY f.employee_id
+            ORDER BY f.employee_id, f.face_index
         ");
         $stmt->bind_param('s', $model);
         $stmt->execute();
@@ -159,8 +201,11 @@ class BiometricKiosk
                 'employee_id'   => (int) $row['employee_id'],
                 'employee_name' => trim($row['firstname'] . ' ' . $row['lastname']),
                 'model'         => $row['model'],
+                'face_index'    => $row['face_index'],
                 'dimensions'    => (int) $row['dimensions'],
                 'embedding'     => json_decode($row['embedding'], true) ?: [],
+                'photo'         => $row['photo'],
+                'photo_url'     => $this->public_url($row['photo']),
             ];
         }
 
@@ -477,6 +522,80 @@ class BiometricKiosk
         }
 
         return $binary;
+    }
+
+    /**
+     * Drop every OTHER face slot an employee holds for this model, and the
+     * images behind them. Returns how many rows went.
+     *
+     * Used when a registration replaces the employee's face instead of adding
+     * another angle to it.
+     */
+    private function delete_other_face_slots($employee_id, $model, $keep_index)
+    {
+        // Collect the photos first — once the rows are gone there is nothing
+        // left pointing at the files, and the folder would keep them forever.
+        $stale = [];
+        $find = $this->db->prepare("
+            SELECT photo FROM biometric_kiosk_faces
+            WHERE employee_id = ? AND model = ? AND face_index <> ? AND photo IS NOT NULL
+        ");
+        $find->bind_param('iss', $employee_id, $model, $keep_index);
+        $find->execute();
+        $res = $find->get_result();
+        while ($row = $res->fetch_assoc()) {
+            $stale[] = $row['photo'];
+        }
+
+        $stmt = $this->db->prepare("
+            DELETE FROM biometric_kiosk_faces
+            WHERE employee_id = ? AND model = ? AND face_index <> ?
+        ");
+        $stmt->bind_param('iss', $employee_id, $model, $keep_index);
+        if (!$stmt->execute()) {
+            return 0;
+        }
+        $removed = $stmt->affected_rows;
+
+        foreach ($stale as $rel_path) {
+            // Never follow a path out of the faces folder, whatever the row says.
+            $abs = realpath(__DIR__ . '/' . $rel_path);
+            $root = realpath(__DIR__ . '/' . self::FACE_DIR);
+            if ($abs && $root && strpos($abs, $root) === 0) {
+                @unlink($abs);
+            }
+        }
+
+        return $removed;
+    }
+
+    /**
+     * Write one cropped enrollment face and return its relative path.
+     *
+     * The name is derived from (employee, model, slot) with no timestamp, so
+     * re-enrolling a slot overwrites its image the same way the row is
+     * replaced — the folder cannot accumulate orphans nothing points at.
+     */
+    private function store_face_photo($employee_id, $model, $face_index, $binary)
+    {
+        $abs_dir = __DIR__ . '/' . self::FACE_DIR;
+
+        if (!is_dir($abs_dir) && !@mkdir($abs_dir, 0775, true) && !is_dir($abs_dir)) {
+            return null;
+        }
+
+        // Slot labels reach the filesystem — keep them to a safe charset.
+        $safe_model = preg_replace('/[^A-Za-z0-9._-]/', '', $model) ?: 'facenet';
+        $safe_index = preg_replace('/[^A-Za-z0-9._-]/', '', $face_index) ?: 'face-1';
+
+        $name     = sprintf('emp%d_%s_%s.jpg', $employee_id, $safe_model, $safe_index);
+        $rel_path = self::FACE_DIR . '/' . $name;
+
+        if (@file_put_contents($abs_dir . '/' . $name, $binary) === false) {
+            return null;
+        }
+
+        return $rel_path;
     }
 
     /** Absolute URL for a stored relative path. */

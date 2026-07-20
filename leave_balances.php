@@ -3,6 +3,9 @@
 $can_edit_credits = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9]);
 $sel_emp = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
 
+// Department Heads only see employees in their own department.
+require_once 'dept-scope.php';
+
 // Resolve selected employee (if any)
 $sel_emp_row = null;
 if ($sel_emp > 0) {
@@ -12,8 +15,9 @@ if ($sel_emp > 0) {
         FROM employee e
         LEFT JOIN department d ON d.id = e.department_id
         LEFT JOIN clasification cl ON cl.id = e.clasification_id
-        WHERE e.id = " . $sel_emp);
+        WHERE e.id = " . $sel_emp . dept_scope_sql('e.department_id'));
     $sel_emp_row = $eq ? $eq->fetch_assoc() : null;
+    if (!$sel_emp_row) $sel_emp = 0;   // outside scope (or missing) — treat as no selection
 }
 // Only Regular / Executive employees are entitled to leave credits.
 $emp_leave_eligible = $sel_emp_row && in_array($sel_emp_row['clasif'], LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
@@ -47,7 +51,7 @@ $emp_leave_eligible = $sel_emp_row && in_array($sel_emp_row['clasif'], LEAVE_ELI
                                     <select name="emp" id="emp-select" class="form-control" data-live-search="true" required>
                                         <option value="">Search employee…</option>
                                         <?php
-                                        $emps = $conn->query("SELECT id, employee_no, firstname, lastname FROM employee WHERE status = 1 ORDER BY lastname ASC");
+                                        $emps = $conn->query("SELECT id, employee_no, firstname, lastname FROM employee WHERE status = 1" . dept_scope_sql('department_id') . " ORDER BY lastname ASC");
                                         if ($emps) while ($e = $emps->fetch_assoc()):
                                         ?>
                                             <option value="<?= $e['id'] ?>" <?= $sel_emp == $e['id'] ? 'selected' : '' ?>>

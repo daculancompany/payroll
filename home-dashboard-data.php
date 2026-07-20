@@ -1,6 +1,7 @@
 <?php
 // Shared dashboard data helpers — used by home.php (initial render) and
 // home-dashboard-ajax.php (dynamic period switching), so both always agree.
+require_once __DIR__ . '/dept-scope.php';
 
 /**
  * Per-department payroll breakdown for one payroll run.
@@ -61,11 +62,18 @@ function dashboard_live_stats(mysqli $conn): array
         $r = $conn->query($sql);
         return ($r && $r !== true) ? (int)$r->fetch_assoc()['c'] : 0;
     };
+    // Same department scoping as home.php, so refreshed counters stay consistent.
+    $dsD   = dept_scope_sql('department_id');
+    $dsSub = dept_scope_emp_sql('employee_id');
     return [
-        'employees'             => $count("SELECT COUNT(*) AS c FROM employee WHERE status=1"),
+        'employees'             => $count("SELECT COUNT(*) AS c FROM employee WHERE status=1 $dsD"),
         'pending_dtr'           => $count("SELECT COUNT(*) AS c FROM DTR WHERE status=1"),
-        'pending_leaves'        => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=0"),
-        'pending_att_req'       => $count("SELECT COUNT(*) AS c FROM attendance_requests WHERE status=0"),
+        'pending_leaves'        => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 $dsSub"),
+        'leave_wait_hr'         => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=0 $dsSub"),
+        'leave_wait_admin'      => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=1 AND admin_status=0 $dsSub"),
+        'leave_new_week'        => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE date_applied >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) $dsSub"),
+        'on_leave_today'        => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=1 AND CURDATE() BETWEEN date_from AND date_to $dsSub"),
+        'pending_att_req'       => $count("SELECT COUNT(*) AS c FROM attendance_requests WHERE status=0 $dsSub"),
         'open_dtr_disputes'     => $count("SELECT COUNT(*) AS c FROM dtr_employee_reviews WHERE status=2 AND resolved_at IS NULL"),
         'open_payroll_disputes' => $count("SELECT COUNT(*) AS c FROM payroll_employee_reviews WHERE status=2 AND resolved_at IS NULL"),
     ];

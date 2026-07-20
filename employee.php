@@ -123,12 +123,13 @@
 							</div>
 							<div class="col-sm-3">
 								<div class="filter-label"><i class="ri-building-3-line me-1"></i>Department</div>
-								<select class="form-control form-control-sm" id="filter-department" data-placeholder="All Departments">
-									<option value="">ALL</option>
+								<?php require_once 'dept-scope.php'; $dept_lock = dept_scope_id(); ?>
+								<select class="form-control form-control-sm" id="filter-department" data-placeholder="All Departments" <?= $dept_lock ? 'disabled' : '' ?>>
+									<?php if (!$dept_lock): ?><option value="">ALL</option><?php endif; ?>
 									<?php
-									$depts = $conn->query("SELECT * FROM department ORDER BY name ASC");
+									$depts = $conn->query("SELECT * FROM department " . ($dept_lock ? "WHERE id = $dept_lock " : "") . "ORDER BY name ASC");
 									if ($depts) while ($row = $depts->fetch_assoc()) : ?>
-										<option value="<?= $row['id'] ?>"><?= htmlspecialchars($row['name']) ?></option>
+										<option value="<?= $row['id'] ?>" <?= $dept_lock == $row['id'] ? 'selected' : '' ?>><?= htmlspecialchars($row['name']) ?></option>
 									<?php endwhile; ?>
 								</select>
 							</div>

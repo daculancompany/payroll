@@ -16,9 +16,14 @@ $can_admin = in_array($my_role, [8], true);   // Department Head only
 // Administrator (role 1) is strictly VIEW-ONLY: no approve, no edit, no delete.
 $is_admin_view = ($my_role === 1);
 
+// Department Heads only see their own department's requests.
+require_once 'dept-scope.php';
+$lv_scope_emp  = dept_scope_emp_sql('employee_id');       // bare leave_requests queries
+$lv_scope_dept = dept_scope_sql('e.department_id');       // queries joining employee e
+
 // Summary counts for the cards
 $counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];
-$cq = $conn->query("SELECT status, COUNT(*) AS c FROM leave_requests GROUP BY status");
+$cq = $conn->query("SELECT status, COUNT(*) AS c FROM leave_requests WHERE 1=1 $lv_scope_emp GROUP BY status");
 if ($cq) while ($r = $cq->fetch_assoc()) {
     $counts['total'] += (int)$r['c'];
     if ($r['status'] == 0) $counts['pending']  = (int)$r['c'];
@@ -32,7 +37,9 @@ $tab_map    = ['all' => null, 'pending' => 0, 'approved' => 1, 'rejected' => 2];
 $active_tab = strtolower(trim($_GET['lstatus'] ?? 'all'));
 if (!array_key_exists($active_tab, $tab_map)) $active_tab = 'all';
 $status_filter = $tab_map[$active_tab];
-$where_sql = ($status_filter === null) ? '' : 'WHERE lr.status = ' . (int) $status_filter;
+$where_sql = 'WHERE 1=1'
+    . ($status_filter === null ? '' : ' AND lr.status = ' . (int) $status_filter)
+    . $lv_scope_dept;
 
 // Render an approval-stage badge with approver + reason tooltip.
 function stageBadge($status, $by_name, $remarks, $at)
@@ -256,7 +263,7 @@ function stageBadge($status, $by_name, $remarks, $at)
                         <select class="form-control" id="leave-employee" name="employee_id" data-live-search="true" required>
                             <option value=""></option>
                             <?php
-                            $emps = $conn->query("SELECT id, employee_no, firstname, lastname FROM employee WHERE status = 1 ORDER BY lastname ASC");
+                            $emps = $conn->query("SELECT id, employee_no, firstname, lastname FROM employee WHERE status = 1" . dept_scope_sql('department_id') . " ORDER BY lastname ASC");
                             if ($emps) while ($e = $emps->fetch_assoc()):
                             ?>
                                 <option value="<?= $e['id'] ?>"><?= htmlspecialchars($e['lastname'] . ', ' . $e['firstname']) ?> (<?= htmlspecialchars($e['employee_no']) ?>)</option>

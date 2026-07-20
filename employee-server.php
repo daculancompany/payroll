@@ -1,11 +1,17 @@
 <?php
 include 'db_connect.php';
+require_once 'dept-scope.php';
 
 
 $request = $_REQUEST;
 $status        = isset($request['status'])        && $request['status']        !== '' ? (int)$request['status']        : 2;
 $position_id   = isset($request['position_id'])   && $request['position_id']   !== '' ? (int)$request['position_id']   : null;
 $department_id = isset($request['department_id']) && $request['department_id'] !== '' ? (int)$request['department_id'] : null;
+
+// Department Heads are locked to their own department regardless of the UI filter.
+if (dept_scope_id() > 0) {
+    $department_id = dept_scope_id();
+}
 
 $col = array(
     0 => 'e.lastname',       // Employee (name + no.)

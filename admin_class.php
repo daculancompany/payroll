@@ -1159,6 +1159,13 @@ class Action
         if (!$req) return ['result' => false, 'message' => 'Request not found'];
         if ($req['status'] != 0) return ['result' => false, 'message' => 'Request already decided'];
 
+        // Scoped Department Heads may only decide their own department's requests.
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int)$req['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        }
+
         $this->db->begin_transaction();
         try {
             $stmt = $this->db->prepare(
@@ -5167,6 +5174,13 @@ class Action
         if ($employee_id <= 0)   return ['result' => false, 'message' => 'Please select an employee.'];
         if ($leave_type_id <= 0) return ['result' => false, 'message' => 'Please select a leave type.'];
 
+        // Scoped Department Heads may only file for their own department's employees.
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = $employee_id" . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This employee belongs to another department.'];
+        }
+
         $days = $this->collectLeaveDates($_POST['dates'] ?? '', $date_from, $date_to);
         if (count($days) === 0) return ['result' => false, 'message' => 'Please select at least one leave date.'];
 
@@ -5222,6 +5236,13 @@ class Action
 
         $row = $this->db->query("SELECT * FROM leave_requests WHERE id = $id")->fetch_assoc();
         if (!$row) return ['result' => false, 'message' => 'Leave request not found.'];
+
+        // Scoped Department Heads may only act on their own department's requests.
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int)$row['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        }
 
         $remarks_sql = $remarks !== '' ? "'" . $this->db->real_escape_string($remarks) . "'" : 'NULL';
         $uid_sql     = $uid ? (int) $uid : 'NULL';

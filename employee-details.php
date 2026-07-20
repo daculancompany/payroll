@@ -30,6 +30,12 @@ if (!$emp) {
     die("Employee not found.");
 }
 
+// Department Heads may only open employees from their own department.
+require_once 'dept-scope.php';
+if (dept_scope_id() > 0 && (int)$emp['department_id'] !== dept_scope_id()) {
+    die("You don't have access to this employee's record.");
+}
+
 // Assign values dynamically using variable variables ($$)
 foreach ($emp as $k => $v) {
     $$k = $v;

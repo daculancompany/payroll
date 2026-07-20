@@ -9,8 +9,16 @@ function db_count($conn, $sql) {
     $r = $conn->query($sql);
     return ($r && $r !== true) ? (int)$r->fetch_assoc()['c'] : 0;
 }
-$total_employees = db_count($conn, "SELECT COUNT(*) AS c FROM employee WHERE status=1");
-$total_inactive  = db_count($conn, "SELECT COUNT(*) AS c FROM employee WHERE status=0");
+
+// Department Heads (role 8) see people-stats scoped to their own department.
+// Payroll/finance analytics stay company-wide. Fragments are '' when unscoped.
+require_once 'dept-scope.php';
+$dsD   = dept_scope_sql('department_id');      // employee table, no alias
+$dsE   = dept_scope_sql('e.department_id');    // queries joining employee e
+$dsSub = dept_scope_emp_sql('employee_id');    // employee_id-only tables (leave_requests, DTR_details, …)
+
+$total_employees = db_count($conn, "SELECT COUNT(*) AS c FROM employee WHERE status=1 $dsD");
+$total_inactive  = db_count($conn, "SELECT COUNT(*) AS c FROM employee WHERE status=0 $dsD");
 $total_clusters  = db_count($conn, "SELECT COUNT(*) AS c FROM department");
 $total_positions = db_count($conn, "SELECT COUNT(*) AS c FROM position");
 $total_users     = db_count($conn, "SELECT COUNT(*) AS c FROM users WHERE role!=1 AND status=1");
@@ -28,6 +36,83 @@ $pay_locked     = db_count($conn, "SELECT COUNT(*) AS c FROM payroll WHERE statu
 $loan_res      = $conn->query("SELECT COUNT(DISTINCT employee_id) AS borrowers, COALESCE(SUM(loan_balance),0) AS total FROM loans WHERE loan_status=0 AND loan_balance>0");
 $loan_data     = $loan_res ? $loan_res->fetch_assoc() : ['borrowers'=>0,'total'=>0];
 
+// ── Role-based sections ─────────────────────────────────────────
+// Role 7 (Auditor) is attendance-only in the navbar, so its dashboard hides
+// payroll finance & leave management. Approval cards go to HR / Dept Head / Admin.
+$can_approve  = in_array($login_role, [1, 8, 9], true);
+$show_finance = $login_role !== 7;
+$show_leave   = $login_role !== 7;
+
+// ── Leave overview stats ────────────────────────────────────────
+$leave_new_today  = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE date_applied = CURDATE() $dsSub");
+$leave_new_week   = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE date_applied >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) $dsSub");
+$leave_wait_hr    = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=0 $dsSub");
+$leave_wait_admin = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=1 AND admin_status=0 $dsSub");
+$leave_appr_month = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=1 AND MONTH(date_from)=MONTH(CURDATE()) AND YEAR(date_from)=YEAR(CURDATE()) $dsSub");
+$leave_rej_month  = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=2 AND MONTH(date_applied)=MONTH(CURDATE()) AND YEAR(date_applied)=YEAR(CURDATE()) $dsSub");
+
+// Employees on approved leave covering today (count + list for the widget)
+$on_leave_today_count = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=1 AND CURDATE() BETWEEN date_from AND date_to $dsSub");
+$on_leave_today = [];
+$olr = $conn->query("
+    SELECT lr.date_from, lr.date_to, lr.duration, COALESCE(lr.is_half_day,0) AS is_half_day,
+           CONCAT(e.firstname,' ',e.lastname) AS emp_name,
+           lt.name AS leave_type, COALESCE(d.name,'—') AS dept
+    FROM leave_requests lr
+    INNER JOIN employee e ON e.id = lr.employee_id
+    INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+    LEFT JOIN department d ON d.id = e.department_id
+    WHERE lr.status = 1 AND CURDATE() BETWEEN lr.date_from AND lr.date_to $dsE
+    ORDER BY lr.date_to ASC LIMIT 10
+");
+if ($olr) while ($r = $olr->fetch_assoc()) { $on_leave_today[] = $r; }
+
+// Upcoming approved leaves (next 14 days)
+$upcoming_leave_count = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=1 AND date_from > CURDATE() AND date_from <= DATE_ADD(CURDATE(), INTERVAL 14 DAY) $dsSub");
+$upcoming_leaves = [];
+$ulr = $conn->query("
+    SELECT lr.date_from, lr.date_to, lr.duration,
+           CONCAT(e.firstname,' ',e.lastname) AS emp_name,
+           lt.name AS leave_type, COALESCE(d.name,'—') AS dept
+    FROM leave_requests lr
+    INNER JOIN employee e ON e.id = lr.employee_id
+    INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+    LEFT JOIN department d ON d.id = e.department_id
+    WHERE lr.status = 1 AND lr.date_from > CURDATE()
+      AND lr.date_from <= DATE_ADD(CURDATE(), INTERVAL 14 DAY) $dsE
+    ORDER BY lr.date_from ASC LIMIT 10
+");
+if ($ulr) while ($r = $ulr->fetch_assoc()) { $upcoming_leaves[] = $r; }
+
+// Approved leave days by type — current year (donut)
+$lvtype_labels = []; $lvtype_data = [];
+$ltr = $conn->query("
+    SELECT lt.name, COALESCE(SUM(lr.duration),0) AS days
+    FROM leave_requests lr
+    INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+    WHERE lr.status = 1 AND YEAR(lr.date_from) = YEAR(CURDATE())" . dept_scope_emp_sql('lr.employee_id') . "
+    GROUP BY lt.id, lt.name ORDER BY days DESC LIMIT 8
+");
+if ($ltr) while ($r = $ltr->fetch_assoc()) { $lvtype_labels[] = $r['name']; $lvtype_data[] = round((float)$r['days'], 1); }
+
+// Leave days taken per month — last 6 months (filed & approved, by leave start date)
+$lv_month_labels = []; $lv_month_days = []; $lv_month_reqs = [];
+$lmr = $conn->query("
+    SELECT DATE_FORMAT(date_from,'%Y-%m') AS ym,
+           COALESCE(SUM(duration),0) AS days, COUNT(*) AS reqs
+    FROM leave_requests
+    WHERE status = 1 AND date_from >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 5 MONTH),'%Y-%m-01') $dsSub
+    GROUP BY DATE_FORMAT(date_from,'%Y-%m')
+");
+$lv_by_month = [];
+if ($lmr) while ($r = $lmr->fetch_assoc()) { $lv_by_month[$r['ym']] = $r; }
+for ($i = 5; $i >= 0; $i--) {
+    $ym = date('Y-m', strtotime("first day of -$i months"));
+    $lv_month_labels[] = date('M Y', strtotime($ym . '-01'));
+    $lv_month_days[]   = isset($lv_by_month[$ym]) ? round((float)$lv_by_month[$ym]['days'], 1) : 0;
+    $lv_month_reqs[]   = isset($lv_by_month[$ym]) ? (int)$lv_by_month[$ym]['reqs'] : 0;
+}
+
 // ── Today's Attendance Highlights — duty in/out, hours, OT for CURDATE() ──
 $today_str = date('Y-m-d');
 $today_rows = [];
@@ -39,7 +124,7 @@ $tar = $conn->query("
     INNER JOIN employee e ON e.id = dd.employee_id
     LEFT JOIN department d ON d.id = e.department_id
     WHERE dd.date_time = '" . $conn->real_escape_string($today_str) . "'
-      AND UPPER(LEFT(COALESCE(dd.attendance_type,'P'),1)) <> 'A'
+      AND UPPER(LEFT(COALESCE(dd.attendance_type,'P'),1)) <> 'A' $dsE
 ");
 $today_late_count = 0; $today_ot_total = 0; $today_on_duty = 0;
 if ($tar) while ($r = $tar->fetch_assoc()) {
@@ -58,7 +143,8 @@ if ($tar) while ($r = $tar->fetch_assoc()) {
     ];
 }
 $today_present_count = count($today_rows);
-$today_absent_count  = max(0, $total_employees - $today_present_count);
+// Absent = active headcount minus present minus those on approved leave today.
+$today_absent_count  = max(0, $total_employees - $today_present_count - $on_leave_today_count);
 // Priority for the highlight list: still on duty first, then late, then biggest OT — cap at 10, rest via "View Full Board".
 usort($today_rows, function ($a, $b) {
     $pa = ($a['in'] && !$a['out']) ? 0 : ($a['late'] > 0 ? 1 : 2);
@@ -70,8 +156,8 @@ $today_rows_shown    = array_slice($today_rows, 0, 10);
 $today_rows_overflow = max(0, count($today_rows) - count($today_rows_shown));
 
 // ── Action needed: pending approvals ────────────────────────────
-$pending_leaves  = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=0");
-$pending_att_req = db_count($conn, "SELECT COUNT(*) AS c FROM attendance_requests WHERE status=0");
+$pending_leaves  = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 $dsSub");
+$pending_att_req = db_count($conn, "SELECT COUNT(*) AS c FROM attendance_requests WHERE status=0 $dsSub");
 
 // ── Action needed: open employee disputes (unresolved) ──────────
 $open_dtr_disputes     = db_count($conn, "SELECT COUNT(*) AS c FROM dtr_employee_reviews WHERE status=2 AND resolved_at IS NULL");
@@ -87,7 +173,7 @@ $plr = $conn->query("
     INNER JOIN employee e ON e.id = lr.employee_id
     INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
     LEFT JOIN department d ON d.id = e.department_id
-    WHERE lr.status = 0
+    WHERE lr.status = 0 $dsE
     ORDER BY lr.date_applied ASC LIMIT 6
 ");
 if ($plr) while ($r = $plr->fetch_assoc()) { $pending_leave_list[] = $r; }
@@ -100,7 +186,7 @@ $adr = $conn->query("
            COALESCE(SUM(overtime),0) AS ot_hrs
     FROM DTR_details
     WHERE date_time >= DATE_SUB(CURDATE(), INTERVAL 13 DAY)
-      AND UPPER(LEFT(COALESCE(attendance_type,'P'),1)) <> 'A'
+      AND UPPER(LEFT(COALESCE(attendance_type,'P'),1)) <> 'A' $dsSub
     GROUP BY DATE(date_time) ORDER BY d ASC
 ");
 $att_by_day = [];
@@ -117,7 +203,7 @@ $class_labels = []; $class_data = [];
 $clr = $conn->query("
     SELECT COALESCE(cl.clasification,'Unassigned') AS cls, COUNT(e.id) AS cnt
     FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id
-    WHERE e.status=1 GROUP BY cl.id, cl.clasification ORDER BY cnt DESC
+    WHERE e.status=1 $dsE GROUP BY cl.id, cl.clasification ORDER BY cnt DESC
 ");
 if ($clr) while ($r = $clr->fetch_assoc()) { $class_labels[] = $r['cls']; $class_data[] = (int)$r['cnt']; }
 
@@ -165,7 +251,7 @@ $dept_labels = []; $dept_data = [];
 $dept_res = $conn->query("
     SELECT COALESCE(d.name,'No Dept') AS dept, COUNT(e.id) AS cnt
     FROM employee e LEFT JOIN department d ON e.department_id = d.id
-    WHERE e.status=1 GROUP BY d.id, d.name ORDER BY cnt DESC LIMIT 10
+    WHERE e.status=1 $dsE GROUP BY d.id, d.name ORDER BY cnt DESC LIMIT 10
 ");
 while ($r = $dept_res->fetch_assoc()) { $dept_labels[] = $r['dept']; $dept_data[] = (int)$r['cnt']; }
 
@@ -174,7 +260,7 @@ $pos_labels = []; $pos_data = [];
 $pos_res = $conn->query("
     SELECT p.name, COUNT(e.id) AS cnt
     FROM employee e LEFT JOIN position p ON e.position_id = p.id
-    WHERE e.status=1 GROUP BY p.id ORDER BY cnt DESC LIMIT 6
+    WHERE e.status=1 $dsE GROUP BY p.id ORDER BY cnt DESC LIMIT 6
 ");
 while ($r = $pos_res->fetch_assoc()) { $pos_labels[] = $r['name'] ?: 'Unassigned'; $pos_data[] = (int)$r['cnt']; }
 
@@ -216,7 +302,7 @@ $deptpay_late   = $deptpay['late'];
 $bday_res = $conn->query("
     SELECT e.firstname, e.lastname, e.bday, COALESCE(d.name,'—') AS dept
     FROM employee e LEFT JOIN department d ON e.department_id = d.id
-    WHERE e.status=1 AND MONTH(e.bday) = MONTH(CURDATE())
+    WHERE e.status=1 AND MONTH(e.bday) = MONTH(CURDATE()) $dsE
     ORDER BY DAY(e.bday) ASC LIMIT 12
 ");
 $bdays = [];
@@ -326,6 +412,7 @@ $recent_dtr = $conn->query("
                         </div>
                     </div>
                 </div>
+                <?php if ($show_finance): ?>
                 <div class="col-xl-2 col-md-4 col-sm-6">
                     <div class="dash-stat" style="border-top-color:#6f42c1;">
                         <div class="ds-icon" style="background:#f2eefb;"><i class="ri-money-dollar-circle-line" style="color:#6f42c1;"></i></div>
@@ -336,6 +423,7 @@ $recent_dtr = $conn->query("
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
                 <div class="col-xl-2 col-md-4 col-sm-6">
                     <div class="dash-stat" style="border-top-color:#fd7e14;">
                         <div class="ds-icon" style="background:#fff4ec;"><i class="ri-time-line" style="color:#fd7e14;"></i></div>
@@ -356,6 +444,7 @@ $recent_dtr = $conn->query("
                         </div>
                     </div>
                 </div>
+                <?php if ($show_finance): ?>
                 <div class="col-xl-2 col-md-4 col-sm-6">
                     <div class="dash-stat" style="border-top-color:#e83e8c;">
                         <div class="ds-icon" style="background:#fdf0f6;"><i class="ri-bank-line" style="color:#e83e8c;"></i></div>
@@ -366,17 +455,39 @@ $recent_dtr = $conn->query("
                         </div>
                     </div>
                 </div>
+                <?php else: ?>
+                <div class="col-xl-2 col-md-4 col-sm-6">
+                    <div class="dash-stat" style="border-top-color:#0891b2;">
+                        <div class="ds-icon" style="background:#e6f7fb;"><i class="ri-calendar-event-line" style="color:#0891b2;"></i></div>
+                        <div>
+                            <div class="ds-val" style="color:#0891b2;" data-stat="on_leave_today"><?= $on_leave_today_count ?></div>
+                            <div class="ds-lbl">On Leave Today</div>
+                            <div class="ds-sub"><?= $today_present_count ?> present</div>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
 
-            <!-- ── ROW 1b: Action needed — pending approvals ── -->
-            <?php if ($pending_leaves || $pending_att_req || $pending_dtr || $pay_review || $open_dtr_disputes || $open_payroll_disputes): ?>
+            <!-- ── ROW 1b: Action needed — pending approvals (approver roles only) ── -->
+            <?php
+            $has_approver_items = $can_approve && ($pending_leaves || $pending_att_req || $pending_dtr);
+            $has_finance_items  = $show_finance && ($pay_review || $open_payroll_disputes);
+            ?>
+            <?php if ($has_approver_items || $has_finance_items || ($can_approve && $open_dtr_disputes)): ?>
             <div class="row g-3 mb-3">
+                <?php if ($can_approve): ?>
                 <div class="col-md-4">
-                    <a href="index.php?page=leaves" class="action-card" style="--ac:#e6a817;">
+                    <a href="index.php?page=leaves&lstatus=pending" class="action-card" style="--ac:#e6a817;">
                         <div class="ac-ic"><i class="ri-calendar-event-line"></i></div>
                         <div>
                             <div class="ac-val" data-stat="pending_leaves"><?= $pending_leaves ?></div>
-                            <div class="ac-lbl">Leave request<?= $pending_leaves == 1 ? '' : 's' ?> awaiting review</div>
+                            <div class="ac-lbl">
+                                Leave request<?= $pending_leaves == 1 ? '' : 's' ?> awaiting review
+                                <?php if ($pending_leaves): ?>
+                                · <?= $leave_wait_hr ?> at HR, <?= $leave_wait_admin ?> at Dept Head
+                                <?php endif; ?>
+                            </div>
                         </div>
                         <i class="ri-arrow-right-line ac-go"></i>
                     </a>
@@ -401,7 +512,8 @@ $recent_dtr = $conn->query("
                         <i class="ri-arrow-right-line ac-go"></i>
                     </a>
                 </div>
-                <?php if ($pay_review): ?>
+                <?php endif; ?>
+                <?php if ($show_finance && $pay_review): ?>
                 <div class="col-md-4">
                     <a href="payroll" class="action-card" style="--ac:#e6a817;">
                         <div class="ac-ic"><i class="ri-eye-line"></i></div>
@@ -413,7 +525,7 @@ $recent_dtr = $conn->query("
                     </a>
                 </div>
                 <?php endif; ?>
-                <?php if ($open_payroll_disputes): ?>
+                <?php if ($show_finance && $open_payroll_disputes): ?>
                 <div class="col-md-4">
                     <a href="index.php?page=payroll" class="action-card" style="--ac:#dc3545;">
                         <div class="ac-ic"><i class="ri-error-warning-line"></i></div>
@@ -425,7 +537,7 @@ $recent_dtr = $conn->query("
                     </a>
                 </div>
                 <?php endif; ?>
-                <?php if ($open_dtr_disputes): ?>
+                <?php if ($can_approve && $open_dtr_disputes): ?>
                 <div class="col-md-4">
                     <a href="dtr" class="action-card" style="--ac:#dc3545;">
                         <div class="ac-ic"><i class="ri-error-warning-line"></i></div>
@@ -453,25 +565,31 @@ $recent_dtr = $conn->query("
                         </div>
                         <div class="card-body pb-2">
                             <div class="row g-2 mb-3">
-                                <div class="col-6 col-md-3">
+                                <div class="col-6 col-md">
                                     <div class="today-att-stat" style="--ac:#009688;">
                                         <div class="tas-v"><?= $today_present_count ?></div>
                                         <div class="tas-l"><i class="ri-checkbox-circle-line me-1"></i>Present</div>
                                     </div>
                                 </div>
-                                <div class="col-6 col-md-3">
+                                <div class="col-6 col-md">
                                     <div class="today-att-stat" style="--ac:#e6a817;">
                                         <div class="tas-v"><?= $today_late_count ?></div>
                                         <div class="tas-l"><i class="ri-alarm-warning-line me-1"></i>Late</div>
                                     </div>
                                 </div>
-                                <div class="col-6 col-md-3">
+                                <div class="col-6 col-md">
                                     <div class="today-att-stat" style="--ac:#dc3545;">
                                         <div class="tas-v"><?= $today_absent_count ?></div>
                                         <div class="tas-l"><i class="ri-close-circle-line me-1"></i>Absent</div>
                                     </div>
                                 </div>
-                                <div class="col-6 col-md-3">
+                                <div class="col-6 col-md">
+                                    <div class="today-att-stat" style="--ac:#0891b2;">
+                                        <div class="tas-v" data-stat="on_leave_today"><?= $on_leave_today_count ?></div>
+                                        <div class="tas-l"><i class="ri-calendar-event-line me-1"></i>On Leave</div>
+                                    </div>
+                                </div>
+                                <div class="col-6 col-md">
                                     <div class="today-att-stat" style="--ac:#4a5bbf;">
                                         <div class="tas-v"><?= rtrim(rtrim(number_format($today_ot_total, 1), '0'), '.') ?>h</div>
                                         <div class="tas-l"><i class="ri-timer-flash-line me-1"></i>OT Hours</div>
@@ -536,6 +654,7 @@ $recent_dtr = $conn->query("
                 </div>
             </div>
 
+            <?php if ($show_finance): ?>
             <!-- ── ROW 2: Monthly Payroll Bar + Status Donuts ── -->
             <div class="row g-3 mb-3">
                 <div class="col-xl-8">
@@ -600,8 +719,11 @@ $recent_dtr = $conn->query("
                 </div>
             </div>
 
+            <?php endif; ?>
+
             <!-- ── ROW 3: Net Pay Trend + Employees by Dept ── -->
             <div class="row g-3 mb-3">
+                <?php if ($show_finance): ?>
                 <div class="col-xl-7">
                     <div class="card h-100" style="border-top:3px solid #219688;">
                         <div class="card-header d-flex align-items-center py-2">
@@ -614,7 +736,8 @@ $recent_dtr = $conn->query("
                         </div>
                     </div>
                 </div>
-                <div class="col-xl-5">
+                <?php endif; ?>
+                <div class="col-xl-<?= $show_finance ? '5' : '12' ?>">
                     <div class="card h-100" style="border-top:3px solid #219688;">
                         <div class="card-header py-2">
                             <h6 class="card-title mb-0">
@@ -655,7 +778,7 @@ $recent_dtr = $conn->query("
             </div>
 
             <!-- ── ROW 3b: Payroll by Department (selectable locked payroll) ── -->
-            <?php if (count($deptpay_labels)): ?>
+            <?php if ($show_finance && count($deptpay_labels)): ?>
             <div class="row g-3 mb-3">
                 <!-- Gross vs Deductions vs Net (stacked) -->
                 <div class="col-12">
@@ -705,7 +828,197 @@ $recent_dtr = $conn->query("
             </div>
             <?php endif; ?>
 
-            <!-- ── ROW 3c: Pending Leave Approvals + Upcoming Events ── -->
+            <?php if ($show_leave): ?>
+            <!-- ── ROW 3c: Leave Management Overview ── -->
+            <div class="row mb-1">
+                <div class="col-12 d-flex align-items-center gap-2">
+                    <h6 class="mb-2" style="font-size:12px;font-weight:800;color:#8a94a6;text-transform:uppercase;letter-spacing:.6px;">
+                        <i class="ri-calendar-event-line me-1" style="color:#e6a817;"></i>Leave Management
+                    </h6>
+                    <div class="flex-grow-1" style="border-top:1px dashed #e3e7ee;margin-bottom:8px;"></div>
+                </div>
+            </div>
+            <div class="row g-3 mb-3">
+                <div class="col-xl-2 col-md-4 col-6">
+                    <div class="dash-stat" style="border-top-color:#009688;">
+                        <div class="ds-icon" style="background:#eef9f8;"><i class="ri-mail-add-line" style="color:#009688;"></i></div>
+                        <div>
+                            <div class="ds-val" data-stat="leave_new_week"><?= $leave_new_week ?></div>
+                            <div class="ds-lbl">New This Week</div>
+                            <div class="ds-sub"><?= $leave_new_today ?> filed today</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-md-4 col-6">
+                    <div class="dash-stat" style="border-top-color:#e6a817;">
+                        <div class="ds-icon" style="background:#fff6e0;"><i class="ri-user-heart-line" style="color:#c98a00;"></i></div>
+                        <div>
+                            <div class="ds-val" style="color:#c98a00;" data-stat="leave_wait_hr"><?= $leave_wait_hr ?></div>
+                            <div class="ds-lbl">Awaiting HR</div>
+                            <div class="ds-sub">1st approval stage</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-md-4 col-6">
+                    <div class="dash-stat" style="border-top-color:#fd7e14;">
+                        <div class="ds-icon" style="background:#fff4ec;"><i class="ri-shield-check-line" style="color:#fd7e14;"></i></div>
+                        <div>
+                            <div class="ds-val" style="color:#fd7e14;" data-stat="leave_wait_admin"><?= $leave_wait_admin ?></div>
+                            <div class="ds-lbl">Awaiting Dept Head</div>
+                            <div class="ds-sub">final approval stage</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-md-4 col-6">
+                    <div class="dash-stat" style="border-top-color:#0891b2;">
+                        <div class="ds-icon" style="background:#e6f7fb;"><i class="ri-walk-line" style="color:#0891b2;"></i></div>
+                        <div>
+                            <div class="ds-val" style="color:#0891b2;" data-stat="on_leave_today"><?= $on_leave_today_count ?></div>
+                            <div class="ds-lbl">On Leave Today</div>
+                            <div class="ds-sub"><?= $upcoming_leave_count ?> upcoming (14d)</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-md-4 col-6">
+                    <div class="dash-stat" style="border-top-color:#28a745;">
+                        <div class="ds-icon" style="background:#e8f8ee;"><i class="ri-checkbox-circle-line" style="color:#28a745;"></i></div>
+                        <div>
+                            <div class="ds-val" style="color:#28a745;"><?= $leave_appr_month ?></div>
+                            <div class="ds-lbl">Approved (<?= date('M') ?>)</div>
+                            <div class="ds-sub">leave starting this month</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-2 col-md-4 col-6">
+                    <div class="dash-stat" style="border-top-color:#dc3545;">
+                        <div class="ds-icon" style="background:#fdecea;"><i class="ri-close-circle-line" style="color:#dc3545;"></i></div>
+                        <div>
+                            <div class="ds-val" style="color:#dc3545;"><?= $leave_rej_month ?></div>
+                            <div class="ds-lbl">Rejected (<?= date('M') ?>)</div>
+                            <div class="ds-sub">filed this month</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <!-- Who's on leave today -->
+                <div class="col-xl-4">
+                    <div class="card h-100" style="border-top:3px solid #0891b2;">
+                        <div class="card-header d-flex align-items-center py-2">
+                            <h6 class="card-title mb-0 flex-grow-1">
+                                <i class="ri-walk-line me-2" style="color:#0891b2;"></i>On Leave Today
+                            </h6>
+                            <span class="badge" style="background:#e6f7fb;color:#0891b2;font-size:11px;font-weight:700;"><?= $on_leave_today_count ?></span>
+                        </div>
+                        <div class="card-body py-2" style="max-height:250px;overflow-y:auto;">
+                            <?php if (count($on_leave_today)): ?>
+                                <?php foreach ($on_leave_today as $ol): ?>
+                                <div class="ev-row">
+                                    <div class="bday-avatar" style="background:linear-gradient(135deg,#0891b2,#0a6e86);">
+                                        <?= strtoupper(substr($ol['emp_name'], 0, 1)) ?>
+                                    </div>
+                                    <div style="min-width:0;">
+                                        <div style="font-size:12px;font-weight:700;line-height:1.2;"><?= htmlspecialchars($ol['emp_name']) ?></div>
+                                        <div style="font-size:11px;color:#aaa;">
+                                            <?= htmlspecialchars($ol['leave_type']) ?><?= $ol['is_half_day'] ? ' · half day' : '' ?> · <?= htmlspecialchars($ol['dept']) ?>
+                                        </div>
+                                    </div>
+                                    <div class="bday-day" style="background:#e6f7fb;color:#0891b2;">
+                                        until <?= date('M d', strtotime($ol['date_to'])) ?>
+                                    </div>
+                                </div>
+                                <?php endforeach; ?>
+                                <?php if ($on_leave_today_count > count($on_leave_today)): ?>
+                                <div class="text-center mt-1" style="font-size:11px;color:#aaa;">
+                                    +<?= $on_leave_today_count - count($on_leave_today) ?> more — <a href="index.php?page=leaves&lstatus=approved" style="color:#0891b2;font-weight:700;text-decoration:none;">view all</a>
+                                </div>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <div class="text-center py-4" style="color:#aaa;">
+                                    <i class="ri-team-line" style="font-size:30px;color:#009688;"></i>
+                                    <div style="font-size:12px;margin-top:6px;">Nobody is on leave today — full crew!</div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <!-- Upcoming approved leaves -->
+                <div class="col-xl-4">
+                    <div class="card h-100" style="border-top:3px solid #28a745;">
+                        <div class="card-header d-flex align-items-center py-2">
+                            <h6 class="card-title mb-0 flex-grow-1">
+                                <i class="ri-calendar-todo-line me-2" style="color:#28a745;"></i>Upcoming Approved Leaves
+                                <span style="font-size:10px;color:#aaa;font-weight:600;">next 14 days</span>
+                            </h6>
+                        </div>
+                        <div class="card-body py-2" style="max-height:250px;overflow-y:auto;">
+                            <?php if (count($upcoming_leaves)): ?>
+                                <?php foreach ($upcoming_leaves as $ul): $st = strtotime($ul['date_from']); ?>
+                                <div class="ev-row">
+                                    <div class="ev-date"><div class="d"><?= date('d', $st) ?></div><div class="m"><?= date('M', $st) ?></div></div>
+                                    <div style="min-width:0;">
+                                        <div style="font-size:12px;font-weight:700;line-height:1.2;"><?= htmlspecialchars($ul['emp_name']) ?></div>
+                                        <div style="font-size:11px;color:#aaa;">
+                                            <?= htmlspecialchars($ul['leave_type']) ?> · <?= rtrim(rtrim(number_format($ul['duration'],1),'0'),'.') ?> day(s) · <?= htmlspecialchars($ul['dept']) ?>
+                                        </div>
+                                    </div>
+                                    <?php if ($ul['date_to'] != $ul['date_from']): ?>
+                                    <div class="bday-day" style="background:#e8f8ee;color:#1c7c3c;">to <?= date('M d', strtotime($ul['date_to'])) ?></div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <div class="text-center py-4" style="color:#aaa;">
+                                    <i class="ri-calendar-todo-line" style="font-size:30px;"></i>
+                                    <div style="font-size:12px;margin-top:6px;">No approved leaves in the next 14 days</div>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <!-- Leave days by type -->
+                <div class="col-xl-4">
+                    <div class="card h-100" style="border-top:3px solid #e6a817;">
+                        <div class="card-header py-2">
+                            <h6 class="card-title mb-0">
+                                <i class="ri-pie-chart-2-line me-2" style="color:#e6a817;"></i>Leave Days by Type
+                                <span style="font-size:10px;color:#aaa;font-weight:600;"><?= date('Y') ?> · approved</span>
+                            </h6>
+                        </div>
+                        <div class="card-body py-2">
+                            <?php if (count($lvtype_data)): ?>
+                            <div id="chart-leave-type" style="min-height:220px;"></div>
+                            <?php else: ?>
+                            <div class="text-center py-4" style="color:#aaa;">
+                                <i class="ri-pie-chart-2-line" style="font-size:30px;"></i>
+                                <div style="font-size:12px;margin-top:6px;">No approved leaves yet this year</div>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-12">
+                    <div class="card" style="border-top:3px solid #e6a817;">
+                        <div class="card-header d-flex align-items-center py-2">
+                            <h6 class="card-title mb-0 flex-grow-1">
+                                <i class="ri-bar-chart-grouped-line me-2" style="color:#e6a817;"></i>Leave Days Taken (Last 6 Months)
+                            </h6>
+                            <a href="index.php?page=leave_balances" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">Leave Balances <i class="ri-arrow-right-line ms-1"></i></a>
+                        </div>
+                        <div class="card-body pb-2">
+                            <div id="chart-leave-trend" style="min-height:220px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
+            <?php if ($show_leave): ?>
+            <!-- ── ROW 3d: Pending Leave Approvals + Upcoming Events ── -->
             <div class="row g-3 mb-3">
                 <div class="col-xl-7">
                     <div class="card h-100" style="border-top:3px solid #e6a817;">
@@ -778,6 +1091,9 @@ $recent_dtr = $conn->query("
                 </div>
             </div>
 
+            <?php endif; ?>
+
+            <?php if ($show_finance): ?>
             <!-- ── ROW 4: Latest Payroll Snapshot + Recent Payrolls ── -->
             <div class="row g-3 mb-3">
 
@@ -875,6 +1191,8 @@ $recent_dtr = $conn->query("
                 </div>
             </div>
 
+            <?php endif; ?>
+
             <!-- ── ROW 5: Recent DTR + Birthdays This Month ── -->
             <div class="row g-3 mb-3">
 
@@ -962,13 +1280,26 @@ $recent_dtr = $conn->query("
                         </div>
                         <div class="card-body py-3">
                             <div class="d-flex flex-wrap gap-2">
+                                <?php if ($login_role !== 7): ?>
                                 <a href="employee" class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-group-line me-1"></i>Employees</a>
+                                <?php endif; ?>
+                                <?php if ($show_finance): ?>
                                 <a href="payroll"  class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-money-dollar-circle-line me-1"></i>Payroll</a>
+                                <?php endif; ?>
                                 <a href="dtr"      class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-time-line me-1"></i>DTR</a>
                                 <a href="attendance" class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-calendar-check-line me-1"></i>Attendance</a>
+                                <?php if ($show_leave): ?>
+                                <a href="index.php?page=leaves" class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-calendar-event-line me-1"></i>Leave Requests</a>
+                                <a href="index.php?page=leave_balances" class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-coins-line me-1"></i>Leave Balances</a>
+                                <a href="index.php?page=calendar" class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-calendar-2-line me-1"></i>Calendar</a>
+                                <?php endif; ?>
+                                <?php if ($login_role !== 7): ?>
                                 <a href="branch"   class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-building-2-line me-1"></i>Branches</a>
                                 <a href="department" class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-building-3-line me-1"></i>Departments</a>
+                                <?php endif; ?>
+                                <?php if (!in_array($login_role, [4, 7], true)): ?>
                                 <a href="users"    class="btn btn-sm" style="background:#eef0f8;color:#009688;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-shield-user-line me-1"></i>Users</a>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -989,6 +1320,7 @@ $recent_dtr = $conn->query("
     var peso2 = function(v){ return '₱'+Number(v).toLocaleString('en-PH',{minimumFractionDigits:2}); };
 
     // ── Monthly Payroll Bar Chart ───────────────────────────────
+    if (document.getElementById('chart-payroll-monthly'))
     new ApexCharts(document.getElementById('chart-payroll-monthly'), {
         chart: { type:'bar', height:240, toolbar:{show:false}, fontFamily:'inherit' },
         colors: [primary],
@@ -1002,6 +1334,7 @@ $recent_dtr = $conn->query("
     }).render();
 
     // ── Net Pay Trend Area Chart ────────────────────────────────
+    if (document.getElementById('chart-netpay-trend'))
     new ApexCharts(document.getElementById('chart-netpay-trend'), {
         chart: { type:'area', height:240, toolbar:{show:false}, fontFamily:'inherit' },
         colors: [primary],
@@ -1126,6 +1459,7 @@ $recent_dtr = $conn->query("
     }
 
     // ── Payroll Status Donut (full lifecycle) ───────────────────
+    if (document.getElementById('chart-payroll-status'))
     new ApexCharts(document.getElementById('chart-payroll-status'), {
         chart: { type:'donut', height:150, toolbar:{show:false}, fontFamily:'inherit' },
         colors: ['#009688', '#4a5bbf', '#e6a817', '#c9366f'],
@@ -1140,6 +1474,43 @@ $recent_dtr = $conn->query("
         } } } },
         stroke: { width:2, colors:['#fff'] },
         tooltip: { y:{ formatter: function(v){ return v+' payroll(s)'; } } },
+    }).render();
+
+    // ── Leave Days by Type Donut (approved, current year) ───────
+    if (document.getElementById('chart-leave-type'))
+    new ApexCharts(document.getElementById('chart-leave-type'), {
+        chart: { type:'donut', height:220, toolbar:{show:false}, fontFamily:'inherit' },
+        colors: ['#e6a817', '#009688', '#4a5bbf', '#c9366f', '#0891b2', '#6f42c1', '#fd7e14', '#28a745'],
+        series: <?= json_encode($lvtype_data) ?>,
+        labels: <?= json_encode($lvtype_labels) ?>,
+        legend: { position:'bottom', fontSize:'11px' },
+        dataLabels: { enabled:false },
+        plotOptions: { pie:{ donut:{ size:'62%', labels:{ show:true,
+            value:{ fontSize:'18px', fontWeight:800, color:'#333', offsetY:2 },
+            total:{ show:true, label:'Days', fontSize:'11px', color:'#999',
+                    formatter:function(w){ return w.globals.seriesTotals.reduce(function(a,b){return a+b;},0).toFixed(1).replace(/\.0$/,''); } }
+        } } } },
+        stroke: { width:2, colors:['#fff'] },
+        tooltip: { y:{ formatter: function(v){ return v+' day(s)'; } } },
+    }).render();
+
+    // ── Leave Days Taken — last 6 months ────────────────────────
+    if (document.getElementById('chart-leave-trend'))
+    new ApexCharts(document.getElementById('chart-leave-trend'), {
+        chart: { type:'bar', height:220, toolbar:{show:false}, fontFamily:'inherit' },
+        colors: ['#e6a817'],
+        series: [{ name:'Leave Days', data: <?= json_encode($lv_month_days) ?> }],
+        xaxis: { categories: <?= json_encode($lv_month_labels) ?>, labels:{style:{fontSize:'11px'}} },
+        yaxis: { labels:{style:{fontSize:'11px'}}, min:0, forceNiceScale:true },
+        plotOptions: { bar:{ borderRadius:4, columnWidth:'45%' } },
+        dataLabels: { enabled:false },
+        grid: GRID,
+        tooltip: {
+            y: { formatter: function(v, opts){
+                var reqs = <?= json_encode($lv_month_reqs) ?>[opts.dataPointIndex] || 0;
+                return v + ' day(s) · ' + reqs + ' request(s)';
+            } }
+        },
     }).render();
 
     // ── Dynamic period selector — refresh dept charts without reload ─

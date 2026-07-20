@@ -2,8 +2,11 @@
 $my_role = (int) ($_SESSION['login_role'] ?? 0);
 $can_decide = in_array($my_role, [1, 8, 9], true); // Admin, Department Head, HR Head
 
+// Department Heads only see their own department's requests.
+require_once 'dept-scope.php';
+
 $counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];
-$cq = $conn->query("SELECT status, COUNT(*) AS c FROM attendance_requests GROUP BY status");
+$cq = $conn->query("SELECT status, COUNT(*) AS c FROM attendance_requests WHERE 1=1" . dept_scope_emp_sql('employee_id') . " GROUP BY status");
 if ($cq) while ($r = $cq->fetch_assoc()) {
     $counts['total'] += (int)$r['c'];
     if ($r['status'] == 0) $counts['pending']  = (int)$r['c'];
@@ -138,6 +141,7 @@ $reasonLabels = [
                                             FROM attendance_requests ar
                                             INNER JOIN employee e ON e.id = ar.employee_id
                                             LEFT JOIN users ru ON ru.id = ar.reviewed_by
+                                            WHERE 1=1 " . dept_scope_sql('e.department_id') . "
                                             ORDER BY ar.created_at DESC
                                         ");
                                         if ($q) while ($row = $q->fetch_assoc()):

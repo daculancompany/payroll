@@ -154,6 +154,26 @@
                                     data-parsley-required-message="Amount is required." required>
                             </div>
                         </div>
+                        <?php $__rate_type = isset($rate_type) && $rate_type === 'monthly' ? 'monthly' : 'daily'; ?>
+                        <div class="col-md-12">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                                Rate Type <span class="text-danger">*</span>
+                            </label>
+                            <div class="d-flex gap-4 mt-1">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="rate_type" id="rt_daily" value="daily" <?= $__rate_type === 'daily' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="rt_daily">
+                                        <b>Daily</b> — pay = days present × daily rate
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="rate_type" id="rt_monthly" value="monthly" <?= $__rate_type === 'monthly' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="rt_monthly">
+                                        <b>Monthly</b> — pay = salary share − unpaid absences
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
                                 Overtime Rate <span class="text-danger">*</span>

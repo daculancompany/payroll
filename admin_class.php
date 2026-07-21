@@ -478,6 +478,7 @@ class Action
         $allowance_rate   = (float)($_POST['allowance_rate'] ?? 0);
         $bday             = trim($_POST['bday'] ?? '');
         $employee_code    = trim($_POST['employee_code'] ?? '');
+        $rate_type        = (($_POST['rate_type'] ?? 'daily') === 'monthly') ? 'monthly' : 'daily';
         $payroll_type     = 1;
 
         $status         = isset($_POST['status']) ? 1 : 0;
@@ -525,10 +526,10 @@ class Action
                 // Insert new employee
                 $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : null;
                 $query = "INSERT INTO employee
-                (employee_no, employee_code, firstname, middlename, lastname, position_id, department_id, salary, basic_pay, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, bday, ext)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                (employee_no, employee_code, firstname, middlename, lastname, position_id, department_id, salary, basic_pay, rate_type, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, bday, ext)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $this->db->prepare($query);
-                $stmt->bind_param("ssssssssssssssssss", $e_num, $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext);
+                $stmt->bind_param("sssssssssssssssssss", $e_num, $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext);
                 $stmt->execute();
 
                 if ($stmt->affected_rows > 0) {
@@ -563,10 +564,10 @@ class Action
                 // Update existing employee
                 $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : null;
                 $query = "UPDATE employee SET
-                employee_code=COALESCE(NULLIF(?, ''), employee_code), firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, salary=?, basic_pay=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?
+                employee_code=COALESCE(NULLIF(?, ''), employee_code), firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, salary=?, basic_pay=?, rate_type=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?
                 WHERE id=?";
                 $stmt = $this->db->prepare($query);
-                $stmt->bind_param("ssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $id);
+                $stmt->bind_param("sssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $id);
                 $stmt->execute();
 
                 $this->db->commit();
@@ -744,6 +745,7 @@ class Action
         $schedule_id    = intval($_POST['schedule_id'] ?? 0);
         $effective_from = trim($_POST['effective_from'] ?? date('Y-m-d'));
         $notes          = trim($_POST['notes'] ?? '');
+        $rest_days      = $this->normalizeRestDays($_POST['rest_days'] ?? '0');
         $changed_by     = $_SESSION['login_id'] ?? null;
 
         if (!$employee_id || !$schedule_id) {
@@ -777,10 +779,10 @@ class Action
 
             // Insert new assignment
             $stmt2 = $this->db->prepare(
-                "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, changed_by)
-                 VALUES (?,?,?,?,?)"
+                "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, rest_days, changed_by)
+                 VALUES (?,?,?,?,?,?)"
             );
-            $stmt2->bind_param('iissi', $employee_id, $schedule_id, $effective_from, $notes, $changed_by);
+            $stmt2->bind_param('iisssi', $employee_id, $schedule_id, $effective_from, $notes, $rest_days, $changed_by);
             $stmt2->execute();
 
             $this->db->commit();
@@ -791,15 +793,56 @@ class Action
         }
     }
 
+    // Normalize a rest-days value into a canonical CSV of weekday numbers 0..6 (0=Sun … 6=Sat),
+    // sorted, de-duped, out-of-range values dropped. Accepts a CSV string or an array.
+    // Returns '' when nothing valid was given (i.e. no rest day).
+    private function normalizeRestDays($raw)
+    {
+        if ($raw === null) return '';
+        $parts = is_array($raw) ? $raw : explode(',', (string)$raw);
+        $days = [];
+        foreach ($parts as $p) {
+            if ($p === '' || !is_numeric($p)) continue;
+            $d = (int)$p;
+            if ($d >= 0 && $d <= 6) $days[$d] = true;
+        }
+        $days = array_keys($days);
+        sort($days);
+        return implode(',', $days);
+    }
+
+    // Given an employee's schedule periods (each: effective_from, effective_to, rest_days),
+    // return the rest_days CSV in effect on $ymd, or '' if none matches.
+    private function restDaysForDate($periods, $ymd)
+    {
+        if (empty($periods)) return '';
+        foreach ($periods as $p) {
+            if ($p['effective_from'] <= $ymd && ($p['effective_to'] === null || $p['effective_to'] >= $ymd)) {
+                return (string)$p['rest_days'];
+            }
+        }
+        return '';
+    }
+
+    // True if $ymd (a Y-m-d date) falls on one of the employee's rest days per $periods.
+    private function isRestDay($periods, $ymd)
+    {
+        $rd = $this->restDaysForDate($periods, $ymd);
+        if ($rd === '') return false;
+        $w = (int)date('w', strtotime($ymd)); // 0=Sun … 6=Sat
+        return in_array($w, array_map('intval', explode(',', $rd)), true);
+    }
+
     // Core shift-assignment for ONE employee. Closes the open period / opens a new one
     // (with same-day correction). Caller owns the transaction. Returns 'updated' | 'unchanged' | 'skipped'.
-    private function applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by)
+    private function applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by, $rest_days = '0')
     {
         $emp = (int) $emp;
         $schedule_id = (int) $schedule_id;
+        $rest_days = $this->normalizeRestDays($rest_days);
 
         $openStmt = $this->db->prepare(
-            "SELECT id, schedule_id, effective_from FROM employee_schedules
+            "SELECT id, schedule_id, effective_from, rest_days FROM employee_schedules
              WHERE employee_id=? AND effective_to IS NULL LIMIT 1"
         );
         $openStmt->bind_param('i', $emp);
@@ -807,14 +850,14 @@ class Action
         $open = $openStmt->get_result()->fetch_assoc();
 
         if ($open) {
-            if ((int)$open['schedule_id'] === $schedule_id) return 'unchanged';
+            if ((int)$open['schedule_id'] === $schedule_id && (string)$open['rest_days'] === $rest_days) return 'unchanged';
 
             if ($open['effective_from'] === $effective_from) {
                 // Same-day correction: overwrite the open row instead of stacking periods
                 $u = $this->db->prepare(
-                    "UPDATE employee_schedules SET schedule_id=?, notes=?, changed_by=? WHERE id=?"
+                    "UPDATE employee_schedules SET schedule_id=?, notes=?, rest_days=?, changed_by=? WHERE id=?"
                 );
-                $u->bind_param('isii', $schedule_id, $notes, $changed_by, $open['id']);
+                $u->bind_param('issii', $schedule_id, $notes, $rest_days, $changed_by, $open['id']);
                 $u->execute();
                 return 'updated';
             }
@@ -825,10 +868,10 @@ class Action
                 $c->bind_param('si', $prev_date, $open['id']);
                 $c->execute();
                 $ins = $this->db->prepare(
-                    "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, changed_by)
-                     VALUES (?,?,?,?,?)"
+                    "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, rest_days, changed_by)
+                     VALUES (?,?,?,?,?,?)"
                 );
-                $ins->bind_param('iissi', $emp, $schedule_id, $effective_from, $notes, $changed_by);
+                $ins->bind_param('iisssi', $emp, $schedule_id, $effective_from, $notes, $rest_days, $changed_by);
                 $ins->execute();
                 return 'updated';
             }
@@ -838,10 +881,10 @@ class Action
 
         // No schedule yet — just insert
         $ins = $this->db->prepare(
-            "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, changed_by)
-             VALUES (?,?,?,?,?)"
+            "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, rest_days, changed_by)
+             VALUES (?,?,?,?,?,?)"
         );
-        $ins->bind_param('iissi', $emp, $schedule_id, $effective_from, $notes, $changed_by);
+        $ins->bind_param('iisssi', $emp, $schedule_id, $effective_from, $notes, $rest_days, $changed_by);
         $ins->execute();
         return 'updated';
     }
@@ -867,6 +910,8 @@ class Action
         $schedule_id    = intval($_POST['schedule_id'] ?? 0);
         $effective_from = trim($_POST['effective_from'] ?? date('Y-m-d'));
         $notes          = trim($_POST['notes'] ?? '');
+        // Default '0' (Sunday) keeps prior behavior if a caller omits rest_days.
+        $rest_days      = $_POST['rest_days'] ?? '0';
         $changed_by     = $_SESSION['login_id'] ?? null;
 
         // Normalize to a list of employee ids
@@ -899,7 +944,7 @@ class Action
         $this->db->begin_transaction();
         try {
             foreach ($ids as $emp) {
-                $r = $this->applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by);
+                $r = $this->applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by, $rest_days);
                 if ($r === 'updated') {
                     $updated++;
                     $notify[] = $emp;
@@ -928,6 +973,91 @@ class Action
         ];
     }
 
+    // Roster page: bulk-update ONLY the rest days for the selected employees, on their
+    // current active schedule period (effective_to IS NULL) — no shift change, no new period.
+    // Employees with no active schedule are skipped.
+    function roster_update_rest_days()
+    {
+        $rest_days  = $this->normalizeRestDays($_POST['rest_days'] ?? '');
+        $changed_by = $_SESSION['login_id'] ?? null;
+
+        $ids = [];
+        if (isset($_POST['employee_ids'])) {
+            $raw = $_POST['employee_ids'];
+            if (!is_array($raw)) $raw = explode(',', $raw);
+            foreach ($raw as $v) {
+                $v = intval($v);
+                if ($v) $ids[] = $v;
+            }
+        } elseif (isset($_POST['employee_id'])) {
+            $v = intval($_POST['employee_id']);
+            if ($v) $ids[] = $v;
+        }
+        $ids = array_values(array_unique($ids));
+
+        if (empty($ids)) {
+            return ['result' => false, 'message' => 'Please select at least one employee.'];
+        }
+
+        $updated = 0;
+        $unchanged = 0;
+        $skipped = 0;
+        $notify = [];
+
+        $this->db->begin_transaction();
+        try {
+            $sel = $this->db->prepare(
+                "SELECT id, rest_days FROM employee_schedules WHERE employee_id=? AND effective_to IS NULL LIMIT 1"
+            );
+            $upd = $this->db->prepare(
+                "UPDATE employee_schedules SET rest_days=?, changed_by=? WHERE id=?"
+            );
+            foreach ($ids as $emp) {
+                $sel->bind_param('i', $emp);
+                $sel->execute();
+                $open = $sel->get_result()->fetch_assoc();
+                if (!$open) { $skipped++; continue; }              // no active schedule to attach rest days to
+                if ((string)$open['rest_days'] === $rest_days) { $unchanged++; continue; }
+                $upd->bind_param('sii', $rest_days, $changed_by, $open['id']);
+                $upd->execute();
+                $updated++;
+                $notify[] = $emp;
+            }
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+
+        // Notify affected employees of their new rest days (after commit).
+        $label = $this->restDaysLabel($rest_days);
+        foreach ($notify as $emp) {
+            $this->notifyEmployee($emp, 'Your rest days changed',
+                'Your rest days are now: ' . $label . '.', 'ri-moon-line', 'info', 'employee-portal.php?tab=info');
+        }
+
+        $parts = [];
+        if ($updated)   $parts[] = "$updated updated";
+        if ($unchanged) $parts[] = "$unchanged already set";
+        if ($skipped)   $parts[] = "$skipped skipped (no active schedule)";
+        return [
+            'result'    => true,
+            'updated'   => $updated,
+            'unchanged' => $unchanged,
+            'skipped'   => $skipped,
+            'message'   => ($parts ? implode(', ', $parts) . '.' : 'No changes made.')
+        ];
+    }
+
+    // Human-readable label for a rest_days CSV, e.g. "0,6" -> "Sun, Sat"; '' -> "None".
+    private function restDaysLabel($csv)
+    {
+        $names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        $days = array_filter(array_map('intval', $csv === '' ? [] : explode(',', $csv)), function ($d) { return $d >= 0 && $d <= 6; });
+        if (empty($days)) return 'None';
+        return implode(', ', array_map(function ($d) use ($names) { return $names[$d]; }, $days));
+    }
+
     // ---- Schedule Planner (staging area) -------------------------------------
     // Drafts sit in schedule_plan and are invisible to employees until applied.
 
@@ -937,6 +1067,7 @@ class Action
         $schedule_id    = intval($_POST['schedule_id'] ?? 0);
         $effective_from = trim($_POST['effective_from'] ?? '');
         $notes          = trim($_POST['notes'] ?? '');
+        $rest_days      = $this->normalizeRestDays($_POST['rest_days'] ?? '0');
         $created_by     = $_SESSION['login_id'] ?? null;
 
         $ids = [];
@@ -970,10 +1101,10 @@ class Action
                 $del->execute();
 
                 $ins = $this->db->prepare(
-                    "INSERT INTO schedule_plan (employee_id, schedule_id, effective_from, notes, status, created_by)
-                     VALUES (?,?,?,?,0,?)"
+                    "INSERT INTO schedule_plan (employee_id, schedule_id, effective_from, notes, rest_days, status, created_by)
+                     VALUES (?,?,?,?,?,0,?)"
                 );
-                $ins->bind_param('iissi', $emp, $schedule_id, $effective_from, $notes, $created_by);
+                $ins->bind_param('iisssi', $emp, $schedule_id, $effective_from, $notes, $rest_days, $created_by);
                 $ins->execute();
                 $added++;
             }
@@ -991,7 +1122,7 @@ class Action
     {
         $rows = [];
         $q = $this->db->query("
-            SELECT sp.id, sp.employee_id, sp.schedule_id, sp.effective_from, sp.notes,
+            SELECT sp.id, sp.employee_id, sp.schedule_id, sp.effective_from, sp.notes, sp.rest_days,
                    CONCAT(e.lastname, ', ', e.firstname) AS emp_name, e.employee_no,
                    ws.description AS shift_desc, ws.start_time, ws.end_time,
                    cur_ws.description AS cur_shift_desc
@@ -1031,7 +1162,7 @@ class Action
         $changed_by = $_SESSION['login_id'] ?? null;
 
         $drafts = [];
-        $q = $this->db->query("SELECT id, employee_id, schedule_id, effective_from, notes
+        $q = $this->db->query("SELECT id, employee_id, schedule_id, effective_from, notes, rest_days
                                FROM schedule_plan WHERE status=0 ORDER BY effective_from ASC, id ASC");
         if ($q) while ($row = $q->fetch_assoc()) $drafts[] = $row;
 
@@ -1047,7 +1178,7 @@ class Action
         $this->db->begin_transaction();
         try {
             foreach ($drafts as $d) {
-                $r = $this->applyScheduleChange($d['employee_id'], $d['schedule_id'], $d['effective_from'], $d['notes'], $changed_by);
+                $r = $this->applyScheduleChange($d['employee_id'], $d['schedule_id'], $d['effective_from'], $d['notes'], $changed_by, $d['rest_days'] ?? '0');
                 if ($r === 'updated') {
                     $applied++;
                     $notify[] = $d;
@@ -2380,7 +2511,7 @@ class Action
             $exclude_clause = " AND employee.clasification_id NOT IN (SELECT id FROM clasification WHERE UPPER(clasification) IN ($excluded_clasif)) ";
 
             // Construct the SQL query with the site IDs directly included
-            $sql = "SELECT DTR_details.*, employee.salary, employee.allowance_rate, employee.sss_fund, employee.basic_pay, employee.ot_rate,employee.isAutoDeduct, employee.loan_id, employee.loan_deduction, employee.loan, DTR.site_id
+            $sql = "SELECT DTR_details.*, employee.salary, employee.allowance_rate, employee.sss_fund, employee.basic_pay, employee.rate_type, employee.ot_rate,employee.isAutoDeduct, employee.loan_id, employee.loan_deduction, employee.loan, DTR.site_id
                 FROM DTR_details
                 INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
                 INNER JOIN employee ON  DTR_details.employee_id = employee.id
@@ -2399,6 +2530,24 @@ class Action
                 $grouped_data = [];
                 $ipresent = 0;
                 $employeeCount = [];
+
+                // Preload each employee's rest-day schedule periods overlapping this payroll
+                // period, so we can auto-count rest-day duty from the DTR (replacing the old
+                // hardcoded "Sunday" assumption). Keyed by employee_id.
+                $restMap = [];
+                $rq = $this->db->prepare(
+                    "SELECT employee_id, effective_from, effective_to, rest_days
+                     FROM employee_schedules
+                     WHERE effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)
+                     ORDER BY effective_from DESC"
+                );
+                $rq->bind_param('ss', $date_to, $date_from);
+                $rq->execute();
+                $rres = $rq->get_result();
+                while ($rrow = $rres->fetch_assoc()) {
+                    $restMap[$rrow['employee_id']][] = $rrow;
+                }
+
                 foreach ($result as $row) {
                     $employee_id = $row["employee_id"];
                     $isAutoDeduct = $row["isAutoDeduct"];
@@ -2443,8 +2592,17 @@ class Action
                             "late_in_minutes" => 0,
                             "undertime" => 0,
                             "under_time" => 0,
+                            "rest_duty" => 0,
                         ];
                         $ipresent++;
+                    }
+
+                    // Rest-day duty: if this DTR day is one of the employee's rest days
+                    // (effective on that date), the worked fraction counts toward the
+                    // rest-day premium instead of being assumed to be Sunday.
+                    $ymd = date('Y-m-d', strtotime($row['date_time']));
+                    if ($this->isRestDay($restMap[$employee_id] ?? [], $ymd)) {
+                        $grouped_data[$employee_id]["rest_duty"] += $days;
                     }
 
                     $under_time = 0; // 8 - $work_hours
@@ -2473,6 +2631,7 @@ class Action
                     $grouped_data[$employee_id]["site_id"]  = $site_id;
                     $grouped_data[$employee_id]["sss_fund"]  = $sss_fund;
                     $grouped_data[$employee_id]["allowance_amount"]  = $allowance_rate;
+                    $grouped_data[$employee_id]["rate_type"]  = (($row['rate_type'] ?? 'daily') === 'monthly') ? 'monthly' : 'daily';
                     $grouped_data[$employee_id]["date_time"]  = $row['date_time'];
                 }
                 foreach ($grouped_data as $employee_id => $data) {
@@ -2514,6 +2673,11 @@ class Action
                                 $data['undertime'] += $data__detail['undertime'];
                                 $data['late_in_minutes'] += $data__detail['late'];
                                 $data['present'] += $data__detail['work_hours'] / 8;
+                                // Count rest-day duty from cross-cluster attendance too.
+                                $d2ymd = date('Y-m-d', strtotime($data__detail['date_time']));
+                                if ($this->isRestDay($restMap[$employee_id] ?? [], $d2ymd)) {
+                                    $data['rest_duty'] = ($data['rest_duty'] ?? 0) + $data__detail['work_hours'] / 8;
+                                }
                             }
                         } else {
                             continue;
@@ -2638,12 +2802,31 @@ class Action
                     $basic_pay = $data['basic_pay'];
                     $ot = $data['overtime'];
                     $allowance_amount = $data['allowance_amount'];
+                    // Rest-day duty days worked, auto-counted from the DTR above. Stored in the
+                    // sunday_duty column (int) — rounded to whole days, matching the prior
+                    // manual whole-day entry. Admin can still adjust it afterward.
+                    $rest_duty = (int) round($data['rest_duty'] ?? 0);
+                    // Pay basis for this employee, frozen onto the payroll item so a later
+                    // rate-type change doesn't retro-alter this run.
+                    $rate_type = (($data['rate_type'] ?? 'daily') === 'monthly') ? 'monthly' : 'daily';
+                    // Absences are only meaningful for MONTHLY-rate employees (their pay is
+                    // salary − absences). Expected working days = period days that are NOT the
+                    // employee's rest days; absent = expected − days present (floored, whole days).
+                    // Daily-rate employees keep absent = 0 (they're paid per day present).
+                    $absent = 0;
+                    if ($rate_type === 'monthly') {
+                        $expected_days = 0;
+                        for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
+                            if (!$this->isRestDay($restMap[$employee_id] ?? [], date('Y-m-d', $d))) $expected_days++;
+                        }
+                        $absent = max(0, (int) round($expected_days - $present));
+                    }
 
-                    $sql2 = "INSERT INTO payroll_items 
-                    (payroll_id, employee_id, salary, allowance_amount, contribute_amount, 
-                     deduction_amount, deductions, contributions, total_hours, 
-                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                    $sql2 = "INSERT INTO payroll_items
+                    (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
+                     deduction_amount, deductions, contributions, total_hours,
+                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,rate_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     $stmt2 = $this->db->prepare($sql2);
                     if (!$stmt2) {
@@ -2651,7 +2834,7 @@ class Action
                     }
 
                     $stmt2->bind_param(
-                        'sssssssssssssssssssss',
+                        'ssssssssssssssssssssssss',
                         $payroll_id,
                         $employee_id,
                         $salary,
@@ -2672,7 +2855,10 @@ class Action
                         $loans,
                         $basic_pay,
                         $sss_fund,
-                        $refunds
+                        $refunds,
+                        $rest_duty,
+                        $absent,
+                        $rate_type
                     );
 
                     try {
@@ -4378,14 +4564,17 @@ class Action
             $sunday_amount    = $row['sunday_duty'] * $row['per_day'];
             $special_amount   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
 
-            if ($payroll_type == 5) {
-                // Monthly view: Total Basic Rate is the fixed monthly basic pay,
-                // and gross folds in holiday pay (matches table-1 in the page).
+            // Pay basis is now per-employee (rate_type), frozen on the payroll item at calc.
+            // payroll_type == 5 (whole-run monthly) is kept as a legacy override.
+            $is_monthly = (($row['rate_type'] ?? 'daily') === 'monthly') || ($payroll_type == 5);
+            if ($is_monthly) {
+                // Monthly rate: basic is the fixed monthly salary share (semi-monthly ÷2),
+                // and unpaid absences are deducted at the daily rate. Gross folds in premiums.
                 $total_basic_rate = $row['basic_pay'];
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
                 $gross            = $total_amount + $overtime_amount + $legal_amount + $sunday_amount + $special_amount - $late_amount;
             } else {
-                // Daily/weekly view: Total Basic Rate = days present × rate per day,
+                // Daily rate: Total Basic Rate = days present × rate per day,
                 // gross = basic + overtime + allowance − late (matches table-2 in the page).
                 $total_basic_rate = $row['present'] * $row['per_day'];
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
@@ -4429,6 +4618,7 @@ class Action
                 'total_deductions'     => $total_ded,
                 'absent'               => $row['absent'],
                 'late'                 => $row['late'],
+                'rate_type'            => $row['rate_type'] ?? 'daily',
             ];
         }
 
@@ -4935,7 +5125,7 @@ class Action
             $stmt->execute();
             $result = $stmt->get_result();
             $emp = $result->fetch_assoc();
-            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Sunday Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys"];
+            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Rest Day Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys"];
             $details = "Employee: " . $emp['lastname'] . ", " . $emp['firstname'] . " & Field: {$files_types[$field]} & Value: $value";
         }
 

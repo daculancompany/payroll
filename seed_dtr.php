@@ -54,7 +54,13 @@ $conn->query("DELETE FROM DTR WHERE note = 'SEED'");
 
 // ── Active employees ──────────────────────────────────────────────────────────
 $emps = [];
-$er = $conn->query("SELECT id, time_in, time_out FROM employee WHERE status = 1 ORDER BY id ASC");
+// Pull each employee's active rest_days (CSV of 0=Sun … 6=Sat) so the seed skips
+// their real rest days instead of assuming Sunday. Falls back to '0' (Sunday).
+$er = $conn->query("SELECT e.id, e.time_in, e.time_out,
+                           COALESCE(es.rest_days, '0') AS rest_days
+                    FROM employee e
+                    LEFT JOIN employee_schedules es ON es.employee_id = e.id AND es.effective_to IS NULL
+                    WHERE e.status = 1 ORDER BY e.id ASC");
 while ($e = $er->fetch_assoc()) $emps[] = $e;
 if (!$emps) exit("No active employees — cannot seed.\n");
 
@@ -91,13 +97,15 @@ foreach ($periods as $p) {
     foreach ($emps as $emp) {
         $schedIn  = $emp['time_in']  ?: '08:00:00';
         $schedOut = $emp['time_out'] ?: '17:00:00';
+        // Rest days for this employee, as weekday numbers 0=Sun … 6=Sat.
+        $restDays = array_map('intval', array_filter(explode(',', $emp['rest_days']), fn($x) => $x !== ''));
 
         foreach ($days as $dts) {
             $ymd = date('Y-m-d', $dts);
-            $dow = (int)date('N', $dts);
+            $dow = (int)date('w', $dts); // 0=Sun … 6=Sat, matches rest_days
 
-            // Sunday = rest day; ~8% random absences on other days
-            if ($dow === 7) continue;
+            // Skip the employee's rest days; ~8% random absences on other days
+            if (in_array($dow, $restDays, true)) continue;
             if (mt_rand(1, 100) <= 8) continue;
 
             $schedInTs  = strtotime("$ymd $schedIn");

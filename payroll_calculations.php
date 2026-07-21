@@ -791,7 +791,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                 <!-- Holidays & Extra Duties -->
                                                 <th class="text-center info-header">Legal Holiday</th>
                                                 <th class="text-center info-header">Amount</th>
-                                                <th class="text-center info-header">Sunday Duty</th>
+                                                <th class="text-center info-header">Rest Day Duty</th>
                                                 <th class="text-center info-header">Amount</th>
                                                 <th class="text-center info-header">Special Holiday</th>
                                                 <th class="text-center info-header">Amount</th>

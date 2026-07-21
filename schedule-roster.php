@@ -13,7 +13,7 @@ while ($sq && $s = $sq->fetch_assoc()) {
 $emp_q = $conn->query("
     SELECT e.id, e.firstname, e.lastname, e.middlename, e.employee_no, e.status,
            p.name AS pname, d.name AS dept_name, c.clasification,
-           es.schedule_id AS cur_schedule_id, es.effective_from AS cur_from,
+           es.schedule_id AS cur_schedule_id, es.effective_from AS cur_from, es.rest_days AS cur_rest_days,
            ws.description AS cur_desc
     FROM employee e
     INNER JOIN position p ON e.position_id = p.id
@@ -45,6 +45,25 @@ while ($dq && $dr = $dq->fetch_assoc()) $dept_list[] = $dr['name'];
 $class_list = [];
 $cq = $conn->query("SELECT DISTINCT clasification FROM clasification ORDER BY clasification ASC");
 while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
+
+// Rest days are stored as a CSV of weekday numbers (0=Sun … 6=Sat), matching PHP date('w').
+$RD_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+$RD_NAMES  = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Render a compact read-only set of day pills for a rest_days CSV (used in the list/grid).
+if (!function_exists('rest_days_pills')) {
+    function rest_days_pills($csv, $labels)
+    {
+        $set = array_filter(array_map('intval', $csv === '' || $csv === null ? [] : explode(',', $csv)), function ($d) { return $d >= 0 && $d <= 6; });
+        if (empty($set)) return '<span class="text-muted" style="font-size:11px;">—</span>';
+        $out = '<span class="rd-view">';
+        foreach ($labels as $i => $lb) {
+            $on = in_array($i, $set, true);
+            $out .= '<span class="rd-view-day' . ($on ? ' on' : '') . '">' . $lb . '</span>';
+        }
+        return $out . '</span>';
+    }
+}
 ?>
 <style>
     .roster-avatar { width:30px; height:30px; border-radius:50%; background:#009688; color:#fff; font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
@@ -98,6 +117,16 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
     #plan-table td { vertical-align:middle; }
     .plan-shift-badge { background:#e6fffb; border:1px solid #87e8de; color:#006d75; border-radius:4px; padding:1px 7px; font-size:11px; font-weight:600; }
     .plan-cur-old { color:#999; text-decoration:line-through; font-size:11px; }
+
+    /* ---- Rest-day picker (editable) ---- */
+    .rd-picker { display:inline-flex; gap:3px; }
+    .rd-day { width:26px; height:26px; padding:0; border:1px solid #cfe3e0; border-radius:50%; background:#fff; color:#888; font-size:11px; font-weight:700; line-height:1; cursor:pointer; transition:all .12s; }
+    .rd-day:hover { border-color:#009688; }
+    .rd-day.active { background:#009688; border-color:#00796b; color:#fff; }
+    /* ---- Rest-day pills (read-only, in list/grid/plan) ---- */
+    .rd-view { display:inline-flex; gap:2px; }
+    .rd-view-day { width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; line-height:16px; text-align:center; background:#eef1f5; color:#c2c8d0; }
+    .rd-view-day.on { background:#009688; color:#fff; }
 </style>
 
 <div class="main-content">
@@ -151,6 +180,7 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
                                             <th>Current</th>
                                             <th>Planned Shift</th>
                                             <th>Effective</th>
+                                            <th>Rest Days</th>
                                             <th>Notes</th>
                                             <th style="width:40px;"></th>
                                         </tr>
@@ -188,7 +218,19 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
                                     <div class="form-label"><i class="ri-sticky-note-line me-1"></i>Notes</div>
                                     <input type="text" class="form-control form-control-sm" id="bulk-notes" placeholder="Optional reason for change">
                                 </div>
+                                <div class="col-auto">
+                                    <div class="form-label"><i class="ri-moon-line me-1"></i>Rest days</div>
+                                    <div class="rd-picker" id="bulk-rest">
+                                        <?php foreach ($RD_LABELS as $i => $lb): ?>
+                                            <button type="button" class="rd-day<?= $i === 0 ? ' active' : '' ?>" data-day="<?= $i ?>" title="<?= $RD_NAMES[$i] ?>"><?= $lb ?></button>
+                                        <?php endforeach; ?>
+                                    </div>
+                                    <input type="hidden" id="bulk-rest-val" value="0">
+                                </div>
                                 <div class="col-auto d-flex gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-bulk-rest" title="Update only the rest days of selected employees — no shift change">
+                                        <i class="ri-moon-line me-1"></i>Rest days only
+                                    </button>
                                     <button type="button" class="btn btn-sm btn-outline-warning text-dark" id="btn-bulk-plan" title="Queue for later — hidden from employees until applied">
                                         <i class="ri-add-line me-1"></i>Add to Plan
                                     </button>
@@ -250,6 +292,7 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
                                         <th class="text-center"><i class="ri-calendar-2-line me-1"></i>Since</th>
                                         <th class="d-none">shift</th>
                                         <th class="d-none">status</th>
+                                        <th class="text-center"><i class="ri-moon-line me-1"></i>Rest Days</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -278,7 +321,7 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
                                             <div class="d-flex align-items-center justify-content-between gap-2">
                                                 <span><?= $cur_shift_txt !== 'None' ? htmlspecialchars($cur_shift_txt) : '<span class="text-muted">— None —</span>' ?></span>
                                                 <button type="button" class="btn btn-sm btn-outline-primary roster-edit-btn"
-                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>"
+                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['cur_rest_days'] ?? '') ?>"
                                                         title="Change shift"><i class="ri-edit-line"></i></button>
                                             </div>
                                         </td>
@@ -287,6 +330,7 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
                                         </td>
                                         <td class="d-none"><?= htmlspecialchars($cur_shift_txt) ?></td>
                                         <td class="d-none"><?= $status_txt ?></td>
+                                        <td class="text-center"><?= rest_days_pills($r['cur_rest_days'] ?? '', $RD_LABELS) ?></td>
                                     </tr>
                                     <?php endforeach; ?>
                                 </tbody>
@@ -337,9 +381,10 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
                                             <div class="roster-card-select">
                                                 <span class="roster-card-shift-text"><?= $cur_shift_txt !== 'None' ? htmlspecialchars($cur_shift_txt) : '—' ?></span>
                                                 <button type="button" class="btn btn-sm btn-outline-primary roster-edit-btn"
-                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>"
+                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['cur_rest_days'] ?? '') ?>"
                                                         title="Change shift"><i class="ri-edit-line"></i></button>
                                             </div>
+                                            <div class="roster-card-rest mt-1"><?= rest_days_pills($r['cur_rest_days'] ?? '', $RD_LABELS) ?></div>
                                         </div>
                                     </div>
                                     <?php endforeach; ?>
@@ -387,6 +432,15 @@ while ($cq && $cr = $cq->fetch_assoc()) $class_list[] = $cr['clasification'];
                                 <span id="redit-effective-label">Select date…</span>
                             </div>
                             <input type="hidden" id="redit-effective" name="effective_from">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold"><i class="ri-moon-line me-1 text-success"></i>Rest Days</label>
+                            <div class="rd-picker" id="redit-rest">
+                                <?php foreach ($RD_LABELS as $i => $lb): ?>
+                                    <button type="button" class="rd-day" data-day="<?= $i ?>" title="<?= $RD_NAMES[$i] ?>"><?= $lb ?></button>
+                                <?php endforeach; ?>
+                            </div>
+                            <input type="hidden" id="redit-rest-val" name="rest_days" value="">
                         </div>
                         <div class="mb-3">
                             <label class="form-label fw-semibold">Notes</label>

@@ -601,7 +601,7 @@ body.has-toolbar { padding-top: 50px; }
     <?php if ($payroll['legal_holiday'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $payroll['legal_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($legal_holiday_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['sunday_duty'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Sunday Duty (<?= $payroll['sunday_duty'] ?> day)</td><td class="sub-amt">₱ <?= number_format($sunday_duty_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Rest Day Duty (<?= $payroll['sunday_duty'] ?> day)</td><td class="sub-amt">₱ <?= number_format($sunday_duty_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['special_holiday'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $payroll['special_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($special_holiday_amt, 2) ?></td></tr></table>
     <?php endif; endif; ?>

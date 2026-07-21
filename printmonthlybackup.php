@@ -195,7 +195,7 @@ $payroll_type = $payroll['type'];
                                 <th rowspan="2" class="text-center  success-header">Total Amount</th>
                                 <th rowspan="2" class="text-center  primary-header">Legal Holiday</th>
                                 <th rowspan="2" class="text-center  primary-header">Amount</th>
-                                <th rowspan="2" class="text-center  primary-header">Sunday Duty</th>
+                                <th rowspan="2" class="text-center  primary-header">Rest Day Duty</th>
                                 <th rowspan="2" class="text-center  primary-header">Amount</th>
                                 <th rowspan="2" class="text-center  primary-header">Special Holiday</th>
                                 <th rowspan="2" class="text-center  primary-header">Amount</th>

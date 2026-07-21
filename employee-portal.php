@@ -124,7 +124,7 @@ $emp = $s->get_result()->fetch_assoc();
 // Only payroll batches that are Ready for Review (3) or Locked (2) are visible here —
 // employees shouldn't see draft/unfinished numbers before HR sends them for review.
 $s2 = $conn->prepare("
-    SELECT pi.id AS item_id, pi.net, pi.basic_pay, pi.present, pi.per_day,
+    SELECT pi.id AS item_id, pi.net, pi.basic_pay, pi.present, pi.per_day, pi.rate_type,
            pi.allowance_amount, pi.allowance_days, pi.absent, pi.late, pi.ot, pi.ot_rate,
            pi.deduction_amount, pi.other_deduction, pi.tax,
            pi.jei_advances, pi.jcc_advances, pi.sss_fund, pi.under_time,
@@ -142,6 +142,31 @@ $s2 = $conn->prepare("
 $s2->bind_param('ii', $emp_id, $emp_id); $s2->execute();
 $payslips = $s2->get_result()->fetch_all(MYSQLI_ASSOC);
 $latest   = $payslips[0] ?? null;
+
+// Rate-aware pay math for a payslip row — mirrors admin get_payroll_rows_data so the
+// portal's gross matches the payroll view for BOTH pay bases:
+//   monthly → (basic_pay + allowance − absent×per_day)/2 + OT + holiday/rest premiums − late
+//   daily   → days present × daily rate + OT + allowance − late
+// Returns ['sub' => basic earnings, 'gross' => full gross].
+if (!function_exists('pp_pay')) {
+    function pp_pay($r)
+    {
+        $pm = $r['per_day'] / 480;
+        $at = $r['allowance_amount'] * $r['allowance_days'];
+        $ot = $r['ot'] * $r['ot_rate'];
+        $la = $r['late'] * $pm;
+        if (($r['rate_type'] ?? 'daily') === 'monthly') {
+            $ab  = $r['absent'] * $r['per_day'];
+            $lgl = $r['legal_holiday'] * $r['per_day'];
+            $sun = $r['sunday_duty'] * $r['per_day'];
+            $spc = ($r['per_day'] / 8 * 2.4) * $r['special_holiday'];
+            $sub = ($r['basic_pay'] + $at - $ab) / 2;
+            return ['sub' => $sub, 'gross' => $sub + $ot + $lgl + $sun + $spc - $la];
+        }
+        $sub = $r['present'] * $r['per_day'];
+        return ['sub' => $sub, 'gross' => $sub + $ot + $at - $la];
+    }
+}
 
 // Payslips awaiting this employee's review (status 3) and not yet signed off.
 $payroll_review_pending_count = 0;
@@ -170,8 +195,9 @@ foreach ($payslips as $ps) {
         $_lgl  = $ps['legal_holiday'] * $ps['per_day'];
         $_sun  = $ps['sunday_duty']   * $ps['per_day'];
         $_spc  = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
-        $_sub  = ($ps['basic_pay'] + $_at - $_ab) / 2;
-        $_gr   = $_sub + $_ot + $_lgl + $_sun + $_spc - $_la;
+        $_p    = pp_pay($ps);
+        $_sub  = $_p['sub'];
+        $_gr   = $_p['gross'];
         $_dd   = $ps['deduction_amount'] + $ps['other_deduction'] + $ps['tax'] + $ps['jei_advances'] + $ps['jcc_advances'] + $ps['sss_fund'];
         $ytd_gross += $_gr;
         $ytd_ded   += $_dd;
@@ -197,8 +223,9 @@ foreach ($chart_src as $cp) {
     $c_lgl = $cp['legal_holiday'] * $cp['per_day'];
     $c_sun = $cp['sunday_duty'] * $cp['per_day'];
     $c_spc = ($cp['per_day']/8*2.4) * $cp['special_holiday'];
-    $c_sub = ($cp['basic_pay'] + $c_at - $c_ab) / 2;
-    $c_gr  = $c_sub + $c_ot + $c_lgl + $c_sun + $c_spc - $c_la;
+    $c_p   = pp_pay($cp);
+    $c_sub = $c_p['sub'];
+    $c_gr  = $c_p['gross'];
     $chart['labels'][]  = date('M d', strtotime($cp['date_to']));
     $chart['net'][]     = round($cp['net'], 2);
     $chart['gross'][]   = round($c_gr, 2);
@@ -220,9 +247,10 @@ foreach ($payslips as $cp) {
     $lgl = $cp['legal_holiday'] * $cp['per_day'];
     $sun = $cp['sunday_duty'] * $cp['per_day'];
     $spc = ($cp['per_day']/8*2.4) * $cp['special_holiday'];
-    $sub = ($cp['basic_pay'] + $att - $abv) / 2;
-    // Gross mirrors the admin semi-monthly (type 5) formula — no undertime term.
-    $grs = $sub + $otv + $lgl + $sun + $spc - $lav;
+    $pp  = pp_pay($cp);
+    $sub = $pp['sub'];
+    // Gross mirrors the admin payroll view, honoring the employee's rate basis.
+    $grs = $pp['gross'];
     $ded = $cp['deduction_amount'] + $cp['other_deduction'] + $cp['tax']
          + $cp['jei_advances'] + $cp['jcc_advances'] + $cp['sss_fund'];
     $cmp_data[] = [
@@ -354,9 +382,10 @@ if ($latest) {
     $lgl_amt  = $latest['legal_holiday'] * $latest['per_day'];
     $sun_amt  = $latest['sunday_duty']   * $latest['per_day'];
     $spc_amt  = ($latest['per_day'] / 8 * 2.4) * $latest['special_holiday'];
-    $sub_tot  = ($latest['basic_pay'] + $all_tot - $abs_amt) / 2;
-    // Gross mirrors the admin semi-monthly (type 5) formula — no undertime term.
-    $gross    = $sub_tot + $ot_amt + $lgl_amt + $sun_amt + $spc_amt - $late_amt;
+    $_pp      = pp_pay($latest);
+    $sub_tot  = $_pp['sub'];
+    // Gross mirrors the admin payroll view, honoring the employee's rate basis.
+    $gross    = $_pp['gross'];
     $tot_ded  = $latest['deduction_amount'] + $latest['other_deduction']
               + $latest['tax'] + $latest['jei_advances'] + $latest['jcc_advances'] + $latest['sss_fund'];
 }
@@ -1523,12 +1552,27 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <!-- My Work Schedule (current + upcoming) -->
         <?php
         $sched_cur = null; $sched_upcoming = [];
-        $scq = $conn->query("SELECT ws.description, ws.start_time, ws.end_time, ws.total_hours, ws.is_graveyard, es.effective_from
+        $scq = $conn->query("SELECT ws.description, ws.start_time, ws.end_time, ws.total_hours, ws.is_graveyard, es.effective_from, es.rest_days
             FROM employee_schedules es INNER JOIN work_schedules ws ON ws.id = es.schedule_id
             WHERE es.employee_id = $emp_id AND es.effective_from <= CURDATE()
               AND (es.effective_to IS NULL OR es.effective_to >= CURDATE())
             ORDER BY es.effective_from DESC LIMIT 1");
         if ($scq) $sched_cur = $scq->fetch_assoc();
+
+        // Day-off (rest days) renderer for the schedule card — 0=Sun … 6=Sat.
+        $portal_day_off = function ($csv) {
+            $labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+            $names  = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            $set = array_filter(array_map('intval', $csv === '' || $csv === null ? [] : explode(',', $csv)), fn($d) => $d >= 0 && $d <= 6);
+            $pills = '';
+            foreach ($labels as $i => $lb) {
+                $on = in_array($i, $set, true);
+                $pills .= '<span style="display:inline-block;width:19px;height:19px;line-height:19px;text-align:center;border-radius:50%;font-size:9.5px;font-weight:700;margin-right:2px;'
+                    . ($on ? 'background:#009688;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+            }
+            $text = empty($set) ? 'None' : implode(', ', array_map(fn($d) => $names[$d], $set));
+            return [$pills, $text];
+        };
         $suq = $conn->query("SELECT ws.description, ws.start_time, ws.end_time, es.effective_from
             FROM employee_schedules es INNER JOIN work_schedules ws ON ws.id = es.schedule_id
             WHERE es.employee_id = $emp_id AND es.effective_from > CURDATE()
@@ -1550,6 +1594,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div style="font-size:12px;color:#5c6b66;">
                         <?= date('h:i A', strtotime($sched_cur['start_time'])) ?> – <?= date('h:i A', strtotime($sched_cur['end_time'])) ?>
                         &nbsp;·&nbsp; <?= rtrim(rtrim($sched_cur['total_hours'], '0'), '.') ?> hrs
+                    </div>
+                    <?php list($__do_pills, $__do_text) = $portal_day_off($sched_cur['rest_days'] ?? ''); ?>
+                    <div style="font-size:12px;color:#5c6b66;margin-top:6px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+                        <span style="font-weight:600;color:#8a9a95;"><i class="ri-moon-line me-1"></i>Day Off:</span>
+                        <span><?= $__do_pills ?></span>
+                        <span style="color:#1b2b27;font-weight:600;"><?= htmlspecialchars($__do_text) ?></span>
                     </div>
                 </div>
             </div>
@@ -1772,7 +1822,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="ps-row"><span class="ps-lbl">Legal Holiday (<?= $latest['legal_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($lgl_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($sun_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Sunday Duty (<?= $latest['sunday_duty'] ?>)</span><span class="ps-val earn">₱<?= n2($sun_amt) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl">Rest Day Duty (<?= $latest['sunday_duty'] ?>)</span><span class="ps-val earn">₱<?= n2($sun_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($spc_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Special Holiday (<?= $latest['special_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($spc_amt) ?></span></div>
@@ -1872,9 +1922,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     $sun2   = $ps['sunday_duty']   * $ps['per_day'];
                     $spc2   = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
                     $ut2    = $ps['under_time'] * $pm2;   // shown as info only; not part of gross
-                    $sub2   = ($ps['basic_pay'] + $at2 - $ab2) / 2;
-                    // Gross mirrors the admin semi-monthly (type 5) formula — no undertime term.
-                    $gr2    = $sub2 + $ot2 + $lgl2 + $sun2 + $spc2 - $la2;
+                    $_pp2   = pp_pay($ps);
+                    $sub2   = $_pp2['sub'];
+                    // Gross mirrors the admin payroll view, honoring the employee's rate basis.
+                    $gr2    = $_pp2['gross'];
                     $ded2   = $ps['deduction_amount'] + $ps['other_deduction'] + $ps['tax'] + $ps['jei_advances'] + $ps['jcc_advances'] + $ps['sss_fund'];
                     $t_net+=$ps['net']; $t_gross+=$gr2; $t_ded+=$ded2;
                     $psStatus = (int) $ps['payroll_status'];
@@ -2544,7 +2595,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <div class="gloss"><span class="gloss-t">Allowance</span><span class="gloss-d">Extra pay such as daily allowance × number of days.</span></div>
                 <div class="gloss"><span class="gloss-t">Overtime (OT)</span><span class="gloss-d">Hours worked beyond your schedule × your OT rate.</span></div>
                 <div class="gloss"><span class="gloss-t">Legal / Special Holiday</span><span class="gloss-d">Premium pay for working on a declared holiday.</span></div>
-                <div class="gloss"><span class="gloss-t">Sunday Duty</span><span class="gloss-d">Premium for rendering duty on a Sunday.</span></div>
+                <div class="gloss"><span class="gloss-t">Rest Day Duty</span><span class="gloss-d">Premium for rendering duty on a rest day.</span></div>
             </div>
         </div>
         <div class="info-section">
@@ -3461,7 +3512,7 @@ function buildPayrollReviewBreakdown(d) {
         + '<span class="ps-val earn" style="font-weight:800;">₱' + d.subtotal + '</span></div>'
         + (pos(d.ot_amt) ? eRow('Overtime (' + d.ot_hrs + ' hrs × ₱' + d.ot_rate + ')', d.ot_amt) : '')
         + (pos(d.lgl_amt) ? eRow('Legal Holiday (' + d.lgl_days + ')', d.lgl_amt) : '')
-        + (pos(d.sun_amt) ? eRow('Sunday Duty (' + d.sun_days + ')', d.sun_amt) : '')
+        + (pos(d.sun_amt) ? eRow('Rest Day Duty (' + d.sun_days + ')', d.sun_amt) : '')
         + (pos(d.spc_amt) ? eRow('Special Holiday (' + d.spc_days + ')', d.spc_amt) : '')
         + (pos(d.late_amt) ? eRow('Late (' + d.late_min + ' min)', d.late_amt, true) : '')
         + '<div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#219688;">Gross Pay</span>'

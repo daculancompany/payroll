@@ -136,7 +136,7 @@ thead { display: table-header-group; }
         <th>Total Amt</th>
         <th>Overtime</th>
         <th>Legal Hol.</th>
-        <th>Sun. Duty</th>
+        <th>Rest Duty</th>
         <th>Sp. Hol.</th>
         <th>Late</th>
         <th>Gross</th>

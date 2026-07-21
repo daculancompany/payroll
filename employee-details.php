@@ -44,6 +44,35 @@ foreach ($emp as $k => $v) {
 // Close statement
 $stmt->close();
 
+// Current rest days (day off) for this employee, from the active schedule period.
+$cur_rest_days = '';
+$__rdq = $conn->query("SELECT rest_days FROM employee_schedules
+                       WHERE employee_id = $emp_id AND effective_to IS NULL
+                       ORDER BY effective_from DESC LIMIT 1");
+if ($__rdq && ($__rdr = $__rdq->fetch_assoc())) $cur_rest_days = $__rdr['rest_days'];
+
+// Rest-day (day off) pills renderer — used by the profile panel, schedule card, and modal.
+if (!function_exists('ed_rest_pills')) {
+    function ed_rest_pills($csv)
+    {
+        $labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+        $set = array_filter(array_map('intval', $csv === '' || $csv === null ? [] : explode(',', $csv)), fn($d) => $d >= 0 && $d <= 6);
+        if (empty($set)) return '<span class="text-muted" style="font-size:12px;">None</span>';
+        $out = '';
+        foreach ($labels as $i => $lb) {
+            $on = in_array($i, $set, true);
+            $out .= '<span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;font-size:10px;font-weight:700;margin-right:2px;'
+                . ($on ? 'background:#009688;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+        }
+        return $out;
+    }
+}
+
+// Human day-off label, e.g. "Sun, Sat" (for the profile stat).
+$__day_names = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+$__day_off_set = array_filter(array_map('intval', $cur_rest_days === '' ? [] : explode(',', $cur_rest_days)), fn($d) => $d >= 0 && $d <= 6);
+$day_off_label = empty($__day_off_set) ? 'None' : implode(', ', array_map(fn($d) => $__day_names[$d], $__day_off_set));
+
 $initials = strtoupper(substr($firstname, 0, 1)) . strtoupper(substr($lastname, 0, 1));
 $fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' ' . substr($middlename, 0, 1) . '.' : ''));
 
@@ -250,6 +279,16 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <span class="emp-side-stat-lbl">Allowance</span>
                                         <span class="emp-side-stat-val">&#8369;<?= number_format($allowance_rate, 2) ?></span>
                                     </div>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl"><i class="ri-moon-line me-1"></i>Day Off</span>
+                                        <span class="emp-side-stat-val d-flex align-items-center gap-2">
+                                            <?= ed_rest_pills($cur_rest_days) ?>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:11px;"
+                                                    data-bs-toggle="modal" data-bs-target="#modal-day-off" title="Update day off">
+                                                <i class="ri-edit-line"></i>
+                                            </button>
+                                        </span>
+                                    </div>
                                     <?php if ($loan_agg['bal'] > 0): ?>
                                     <div class="emp-side-stat">
                                         <span class="emp-side-stat-lbl">Loan Balance</span>
@@ -408,10 +447,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <div class="detail-section-title"><i class="ri-settings-3-line"></i>Payroll Settings</div>
                                     <div class="detail-row">
                                         <div class="detail-item">
-                                            <div class="detail-label">Payroll Type</div>
+                                            <div class="detail-label">Rate Type</div>
                                             <div class="detail-value">
-                                                <?php /* Weekly payroll was removed — everyone is semi-monthly. */ ?>
-                                                <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Semi-Monthly</span>
+                                                <?php $__rt = (isset($rate_type) && $rate_type === 'monthly') ? 'monthly' : 'daily'; ?>
+                                                <span class="badge <?= $__rt === 'monthly' ? 'bg-info' : 'bg-secondary' ?>">
+                                                    <i class="ri-money-dollar-circle-line me-1"></i><?= $__rt === 'monthly' ? 'Monthly (salary − absences)' : 'Daily (per day present)' ?>
+                                                </span>
                                             </div>
                                         </div>
                                         <div class="detail-item">
@@ -754,7 +795,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                             <div class="tab-pane" id="arrow-schedule" role="tabpanel">
                                 <?php
                                 $cur_sched_q = $conn->query("
-                                    SELECT es.effective_from,
+                                    SELECT es.effective_from, es.rest_days,
                                            ws.description, ws.start_time, ws.end_time,
                                            ws.total_hours, ws.break_minutes,
                                            ws.is_graveyard, ws.has_nsd, ws.nsd_rate
@@ -767,6 +808,23 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     LIMIT 1
                                 ");
                                 $cur_sched = $cur_sched_q ? $cur_sched_q->fetch_assoc() : null;
+
+                                // Rest-day pills (0=Sun … 6=Sat). Reused for the card and, below, the modal.
+                                if (!function_exists('ed_rest_pills')) {
+                                    function ed_rest_pills($csv)
+                                    {
+                                        $labels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+                                        $set = array_filter(array_map('intval', $csv === '' || $csv === null ? [] : explode(',', $csv)), fn($d) => $d >= 0 && $d <= 6);
+                                        if (empty($set)) return '<span class="text-muted" style="font-size:12px;">None</span>';
+                                        $out = '';
+                                        foreach ($labels as $i => $lb) {
+                                            $on = in_array($i, $set, true);
+                                            $out .= '<span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;font-size:10px;font-weight:700;margin-right:2px;'
+                                                . ($on ? 'background:#009688;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+                                        }
+                                        return $out;
+                                    }
+                                }
                                 ?>
 
                                 <!-- Current Schedule Card -->
@@ -794,6 +852,9 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             <?php endif; ?>
                                         </div>
                                         <div style="font-size:12px;color:#666;">Effective: <?= date('F d, Y', strtotime($cur_sched['effective_from'])) ?></div>
+                                        <div class="mt-1" style="font-size:12px;color:#666;">
+                                            <i class="ri-moon-line me-1"></i>Rest days: <?= ed_rest_pills($cur_sched['rest_days'] ?? '') ?>
+                                        </div>
                                     </div>
                                 </div>
                                 <?php else: ?>
@@ -1123,6 +1184,24 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                    value="<?= date('Y-m-d') ?>" required>
                         </div>
                         <div class="mb-3">
+                            <label class="form-label fw-semibold"><i class="ri-moon-line me-1 text-success"></i>Rest Days</label>
+                            <?php
+                            $__cur_rest = ($cur_sched['rest_days'] ?? '0');
+                            $__cur_set  = array_map('intval', array_filter(explode(',', $__cur_rest), fn($x) => $x !== ''));
+                            $__rd_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                            $__rd_lbl   = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+                            ?>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <?php foreach ($__rd_lbl as $i => $lb): ?>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="rest_days[]" value="<?= $i ?>"
+                                               id="asch_rd_<?= $i ?>" <?= in_array($i, $__cur_set, true) ? 'checked' : '' ?>>
+                                        <label class="form-check-label" for="asch_rd_<?= $i ?>" title="<?= $__rd_names[$i] ?>"><?= $lb ?></label>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <div class="mb-3">
                             <label class="form-label fw-semibold">Notes</label>
                             <input type="text" class="form-control" name="notes" placeholder="Optional reason for change">
                         </div>
@@ -1130,6 +1209,42 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                     <div class="modal-footer">
                         <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                         <button type="submit" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Save</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Update Day Off (rest days only — no shift change) -->
+    <div class="modal fade" id="modal-day-off" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <form id="form-day-off">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h6 class="modal-title"><i class="ri-moon-line me-2 text-success"></i>Update Day Off</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="employee_id" value="<?= $emp_id ?>">
+                        <p class="text-muted" style="font-size:12px;">Tick the day(s) this employee is off. This updates their current schedule only — the shift stays the same.</p>
+                        <?php
+                        $__do_set = array_map('intval', array_filter(explode(',', $cur_rest_days), fn($x) => $x !== ''));
+                        $__do_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                        $__do_lbl   = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+                        ?>
+                        <div class="d-flex gap-2 flex-wrap">
+                            <?php foreach ($__do_lbl as $i => $lb): ?>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="rest_days[]" value="<?= $i ?>"
+                                           id="do_rd_<?= $i ?>" <?= in_array($i, $__do_set, true) ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="do_rd_<?= $i ?>" title="<?= $__do_names[$i] ?>"><?= $lb ?></label>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Save Day Off</button>
                     </div>
                 </div>
             </form>
@@ -1151,6 +1266,24 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                 }
             } catch (err) {
                 Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to assign schedule. Please try again.' });
+            }
+        });
+
+        // Update Day Off — rest days only, no shift change (roster_update_rest_days).
+        document.getElementById('form-day-off').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const data = new FormData(this);
+            try {
+                const res  = await fetch('ajax.php?action=roster_update_rest_days', { method: 'POST', body: new URLSearchParams(data) });
+                const json = await res.json();
+                if (json?.result) {
+                    bootstrap.Modal.getInstance(document.getElementById('modal-day-off'))?.hide();
+                    location.reload();
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to update day off.' });
+                }
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to update day off. Please try again.' });
             }
         });
     </script>

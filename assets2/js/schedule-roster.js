@@ -67,6 +67,41 @@ $(document).ready(function () {
     initDatePill("eff-from-pill", "eff-from", "eff-from-label", $("#eff-from").val());
     initDatePill("redit-effective-pill", "redit-effective", "redit-effective-label", null);
 
+    // ---- Rest-day picker ----------------------------------------------------
+    // Each picker is a .rd-picker with 7 .rd-day buttons (data-day 0..6) plus a
+    // sibling hidden input holding the CSV (e.g. "0,6"). Clicking toggles a day.
+    function readRest($picker) {
+        const days = [];
+        $picker.find(".rd-day.active").each(function () { days.push($(this).data("day")); });
+        days.sort((a, b) => a - b);
+        return days.join(",");
+    }
+    function setRest(pickerId, hiddenId, csv) {
+        const set = (csv == null ? "" : String(csv)).split(",").filter((s) => s !== "").map(Number);
+        $("#" + pickerId + " .rd-day").each(function () {
+            $(this).toggleClass("active", set.indexOf($(this).data("day")) !== -1);
+        });
+        $("#" + hiddenId).val(readRest($("#" + pickerId)));
+    }
+    // Delegated toggle — keeps the sibling hidden input in sync on every click.
+    $(document).on("click", ".rd-picker .rd-day", function () {
+        $(this).toggleClass("active");
+        const $picker = $(this).closest(".rd-picker");
+        $picker.siblings('input[type="hidden"]').val(readRest($picker));
+    });
+
+    const RD_LABELS = ["S", "M", "T", "W", "T", "F", "S"];
+    // Read-only pills for the plan table (mirrors PHP rest_days_pills()).
+    function restPills(csv) {
+        const set = (csv == null ? "" : String(csv)).split(",").filter((s) => s !== "").map(Number);
+        if (!set.length) return '<span class="text-muted" style="font-size:11px;">—</span>';
+        let out = '<span class="rd-view">';
+        RD_LABELS.forEach((lb, i) => {
+            out += '<span class="rd-view-day' + (set.indexOf(i) !== -1 ? " on" : "") + '">' + lb + "</span>";
+        });
+        return out + "</span>";
+    }
+
     // ---- Helpers -----------------------------------------------------------
     function exact(col, val) {
         // anchored, non-regex-escaped exact match; empty clears the filter
@@ -206,6 +241,7 @@ $(document).ready(function () {
         $("#redit-title").html('<i class="ri-time-line me-2 text-success"></i>Change Shift — ' + $("<div>").text(btn.data("name")).html());
         $("#redit-shift").val(btn.data("current") ? String(btn.data("current")) : "");
         setDatePill("redit-effective-pill", "redit-effective", "redit-effective-label", moment().format("YYYY-MM-DD"));
+        setRest("redit-rest", "redit-rest-val", btn.attr("data-rest") || "");
         $("#redit-notes").val("");
         if (editModal) editModal.show();
     });
@@ -216,6 +252,7 @@ $(document).ready(function () {
             shift: $("#redit-shift").val(),
             eff: $("#redit-effective").val(),
             notes: $("#redit-notes").val(),
+            rest: readRest($("#redit-rest")),
         };
     }
 
@@ -225,7 +262,7 @@ $(document).ready(function () {
         const p = editModalPayload();
         if (!p.shift) { warn("Please choose a shift."); return; }
         if (!p.eff) { warn("Please set an 'Effective From' date."); return; }
-        postAssign({ employee_id: p.emp, schedule_id: p.shift, effective_from: p.eff, notes: p.notes },
+        postAssign({ employee_id: p.emp, schedule_id: p.shift, effective_from: p.eff, notes: p.notes, rest_days: p.rest },
             $(this).find('button[type="submit"]'));
     });
 
@@ -234,7 +271,7 @@ $(document).ready(function () {
         const p = editModalPayload();
         if (!p.shift) { warn("Please choose a shift."); return; }
         if (!p.eff) { warn("Please set an 'Effective From' date."); return; }
-        addToPlan({ employee_id: p.emp, schedule_id: p.shift, effective_from: p.eff, notes: p.notes }, $(this), true);
+        addToPlan({ employee_id: p.emp, schedule_id: p.shift, effective_from: p.eff, notes: p.notes, rest_days: p.rest }, $(this), true);
     });
 
     // ---- Bulk apply / plan ---------------------------------------------------
@@ -245,14 +282,14 @@ $(document).ready(function () {
         if (!ids.length) { warn("Select at least one employee (tick the checkboxes)."); return null; }
         if (!shift) { warn("Choose a shift first."); return null; }
         if (!eff) { warn("Set an 'Effective from' date."); return null; }
-        return { ids: ids, shift: shift, eff: eff, notes: $("#bulk-notes").val() };
+        return { ids: ids, shift: shift, eff: eff, notes: $("#bulk-notes").val(), rest: readRest($("#bulk-rest")) };
     }
 
     $("#btn-bulk-apply").on("click", function () {
         const v = bulkValidate(); if (!v) return;
         const shiftLabel = $("#bulk-shift option:selected").text();
         const btn = $(this);
-        const doIt = () => postAssign({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes }, btn);
+        const doIt = () => postAssign({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes, rest_days: v.rest }, btn);
         Swal.fire({
             icon: "question", title: "Apply now?",
             html: "Assign <b>" + esc(shiftLabel) + "</b> to <b>" + v.ids.length +
@@ -263,8 +300,43 @@ $(document).ready(function () {
 
     $("#btn-bulk-plan").on("click", function () {
         const v = bulkValidate(); if (!v) return;
-        addToPlan({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes }, $(this), false);
+        addToPlan({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes, rest_days: v.rest }, $(this), false);
     });
+
+    // Rest days only — update just the rest days of selected employees (no shift/date needed).
+    $("#btn-bulk-rest").on("click", function () {
+        const ids = Array.from(selected);
+        if (!ids.length) { warn("Select at least one employee (tick the checkboxes)."); return; }
+        const rest = readRest($("#bulk-rest"));
+        const btn = $(this);
+        const doIt = () => {
+            btn.prop("disabled", true);
+            $.post("ajax.php?action=roster_update_rest_days", { employee_ids: ids, rest_days: rest })
+                .done(function (res) {
+                    let j = res; try { if (typeof res === "string") j = JSON.parse(res); } catch (e) {}
+                    if (j && j.result) {
+                        Swal.fire({ icon: "success", title: "Saved", text: j.message, timer: 1400, showConfirmButton: false })
+                            .then(() => location.reload());
+                    } else {
+                        btn.prop("disabled", false);
+                        Swal.fire({ icon: "error", title: "Error", text: (j && j.message) || "Failed to save." });
+                    }
+                })
+                .fail(function () { btn.prop("disabled", false); Swal.fire({ icon: "error", title: "Error", text: "Request failed." }); });
+        };
+        Swal.fire({
+            icon: "question", title: "Update rest days?",
+            html: "Set rest days to <b>" + (restPillsText(rest) || "None") + "</b> for <b>" + ids.length +
+                  "</b> employee(s). Their shift stays the same.",
+            showCancelButton: true, confirmButtonText: "Yes, update", confirmButtonColor: "#009688",
+        }).then((r) => { if (r.isConfirmed) doIt(); });
+    });
+
+    // Plain-text list of rest days for confirm dialogs, e.g. "Sun, Sat".
+    function restPillsText(csv) {
+        const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        return (csv == null ? "" : String(csv)).split(",").filter((s) => s !== "").map((d) => names[+d]).join(", ");
+    }
 
     // ---- Planner (staging) ---------------------------------------------------
     function esc(s) { return $("<div>").text(s == null ? "" : s).html(); }
@@ -315,6 +387,7 @@ $(document).ready(function () {
                         "<td>" + cur + "</td>" +
                         '<td><span class="plan-shift-badge">' + esc(r.shift_desc) + "</span></td>" +
                         "<td>" + fmtDate(r.effective_from) + "</td>" +
+                        "<td>" + restPills(r.rest_days) + "</td>" +
                         "<td class='text-muted' style='font-size:11px;'>" + esc(r.notes || "") + "</td>" +
                         '<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger plan-remove-btn" data-id="' +
                         r.id + '" title="Remove"><i class="ri-close-line"></i></button></td>' +

@@ -265,7 +265,7 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <?php if ($p['legal_holiday'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $p['legal_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($legal_amt, 2) ?></td></tr></table>
     <?php endif; if ($p['sunday_duty'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Sunday Duty (<?= $p['sunday_duty'] ?> day)</td><td class="sub-amt">₱ <?= number_format($sunday_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Rest Day Duty (<?= $p['sunday_duty'] ?> day)</td><td class="sub-amt">₱ <?= number_format($sunday_amt, 2) ?></td></tr></table>
     <?php endif; if ($p['special_holiday'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $p['special_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($special_amt, 2) ?></td></tr></table>
     <?php endif; endif; ?>

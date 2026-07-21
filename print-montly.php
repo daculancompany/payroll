@@ -242,7 +242,7 @@ $payroll_type = $payroll['type'];
                                 </th>
                                 <th rowspan="2" class="text-center  primary-header">Amount</th>
                                 <th rowspan="2" class="text-center   flip-text">
-                                    <div class="flip-text">Sunday</div>
+                                    <div class="flip-text">Rest Day</div>
                                     <div class="flip-text">Duty</div>
                                 </th>
                                 <th rowspan="2" class="text-center  primary-header">Amount</th>

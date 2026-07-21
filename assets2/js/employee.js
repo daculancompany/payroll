@@ -40,6 +40,7 @@ $(document).ready(function () {
             { data: "2", createdCell: (td) => td.setAttribute("data-label", "Department") },       // Department
             { data: "3", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Basic Pay") },      // Basic Pay
             { data: "4", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Daily Rate") },     // Daily Rate
+            { data: "10", className: "text-center", orderable: false, createdCell: (td) => td.setAttribute("data-label", "Rate Type") }, // Rate Type (chip)
             { data: "5", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "OT Rate") },        // OT Rate
             { data: "7", className: "text-center", createdCell: (td) => td.setAttribute("data-label", "Classification") }, // Classification (6 = loan, hidden)
             { data: "8", className: "text-center", createdCell: (td) => td.setAttribute("data-label", "Status") },      // Status

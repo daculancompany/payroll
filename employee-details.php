@@ -256,8 +256,6 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <?php else: ?>
                                         <span class="badge rounded-pill bg-danger"><i class="ri-close-circle-line me-1"></i>Inactive</span>
                                     <?php endif; ?>
-                                    <?php /* Weekly payroll was removed — everyone is semi-monthly. */ ?>
-                                    <span class="badge bg-dark"><i class="ri-calendar-check-line me-1"></i>Semi-Monthly</span>
                                     <?php if ($age !== null): ?>
                                         <span class="badge bg-light text-dark border"><i class="ri-cake-2-line me-1"></i><?= $age ?> yrs old</span>
                                     <?php endif; ?>

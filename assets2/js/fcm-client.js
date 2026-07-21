@@ -6,7 +6,7 @@
 // Permission is requested from a CLICK on a small banner when still undecided —
 // Chrome's quieter UI and Safari both ignore requests made without a user gesture.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js';
-import { getMessaging, getToken, onMessage, isSupported } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-messaging.js';
+import { getMessaging, getToken, deleteToken, onMessage, isSupported } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-messaging.js';
 
 const firebaseConfig = {
     apiKey: "AIzaSyC9P9TRB30NkwSR_8rxrdKy3ELbrFP9h_c",
@@ -127,8 +127,24 @@ async function registerAndSync() {
     try {
         token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     } catch (e) {
-        console.error('[FCM] ❌ getToken failed (check VAPID key / Firebase config):', e);
-        throw e;
+        // "AbortError: … could not retrieve the public key" (and similar) almost
+        // always means this browser holds a PushManager subscription created with a
+        // DIFFERENT applicationServerKey (e.g. the VAPID key changed, or an old
+        // Firebase config). The push service then refuses a token until the stale
+        // subscription is dropped. Clear it + Firebase's cached token, then retry once.
+        console.warn('[FCM] getToken failed (' + e.name + ') — clearing stale push subscription and retrying:', e.message);
+        try {
+            const sub = await reg.pushManager.getSubscription();
+            if (sub) await sub.unsubscribe();
+            try { await deleteToken(messaging); } catch (_) { /* no cached token — fine */ }
+            token = await getToken(messaging, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+            console.log('[FCM] ✅ recovered after clearing stale subscription');
+        } catch (e2) {
+            console.error('[FCM] ❌ getToken still failing after clearing subscription. ' +
+                'Verify VAPID_KEY matches Firebase Console → Project settings → Cloud Messaging → ' +
+                'Web Push certificates (Key pair):', e2);
+            throw e2;
+        }
     }
     if (!token) {
         console.error('[FCM] ❌ no token returned — permission granted but FCM gave nothing back');
@@ -159,6 +175,9 @@ async function registerAndSync() {
         console.log('[FCM] 📩 push received (foreground):', payload);
         const d = payload.data || {};
         showInAppNotification(d.title || 'COMC Payroll', d.body || '', d.link || 'index.php');
+        // Let the host page react (e.g. the employee portal pull-to-refreshes to
+        // pull in the new content). No-op on pages without a listener.
+        try { window.dispatchEvent(new CustomEvent('fcm:foreground-message', { detail: payload })); } catch (e) { /* noop */ }
     });
 }
 

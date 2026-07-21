@@ -42,7 +42,7 @@ if ($department_id) {
 
 
 
-$sql = "SELECT e.id, e.loan, e.employee_no, e.firstname, e.middlename, e.lastname, e.salary, e.basic_pay, e.ot_rate, e.status, e.weekly_payroll, d.name AS department, p.name AS position, cl.clasification AS clasification FROM employee e
+$sql = "SELECT e.id, e.loan, e.employee_no, e.firstname, e.middlename, e.lastname, e.salary, e.basic_pay, e.ot_rate, e.status, e.rate_type, d.name AS department, p.name AS position, cl.clasification AS clasification FROM employee e
         LEFT JOIN department d ON e.department_id = d.id
         LEFT JOIN position p ON e.position_id = p.id
         LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department";
@@ -104,6 +104,16 @@ while ($row = mysqli_fetch_array($query)) {
         . '<a href="index.php?page=employee-details&id=' . $row['id'] . '" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" data-bs-placement="top" title="View Employee Details">'
         . '<i class="ri-eye-line me-1"></i>View</a>'
         . '</div>';
+    // Rate Type chip (index 10) — Daily / Monthly / Fixed pay basis.
+    $rt = in_array($row['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $row['rate_type'] : 'daily';
+    $rtMeta = [
+        'daily'   => ['#eef1f5', '#475569', 'Daily'],
+        'monthly' => ['#dbeafe', '#1d4ed8', 'Monthly'],
+        'fixed'   => ['#ede9fe', '#6d28d9', 'Fixed'],
+    ][$rt];
+    $subdata[] = '<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;background:'
+        . $rtMeta[0] . ';color:' . $rtMeta[1] . ';" title="' . ($rt === 'fixed' ? 'Full salary, no attendance' : ($rt === 'monthly' ? 'Salary minus absences' : 'Paid per day present')) . '">'
+        . $rtMeta[2] . '</span>';
     $data[] = $subdata;
 }
 

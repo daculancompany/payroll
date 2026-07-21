@@ -144,6 +144,7 @@
 										<th><i class="ri-building-3-line me-1"></i>Department</th>
 										<th><i class="ri-money-dollar-circle-line me-1"></i>Basic Pay</th>
 										<th><i class="ri-calendar-2-line me-1"></i>Daily Rate</th>
+										<th><i class="ri-money-dollar-circle-line me-1"></i>Rate Type</th>
 										<th><i class="ri-time-line me-1"></i>OT Rate</th>
 										<th><i class="ri-shield-check-line me-1"></i>Classification</th>
 										<th><i class="ri-pulse-line me-1"></i>Status</th>

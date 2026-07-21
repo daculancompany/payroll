@@ -127,6 +127,30 @@ if (!function_exists('rest_days_pills')) {
     .rd-view { display:inline-flex; gap:2px; }
     .rd-view-day { width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; line-height:16px; text-align:center; background:#eef1f5; color:#c2c8d0; }
     .rd-view-day.on { background:#009688; color:#fff; }
+
+    /* ---- Selection action bar (slides up only when employees are selected) ---- */
+    .page-content { padding-bottom: 130px; }              /* keep last rows above the floating bar */
+    #roster-table tbody tr, #roster-grid .roster-card { cursor:pointer; }  /* whole row/card is tappable to select */
+    .roster-actionbar {
+        position:fixed; left:50%; bottom:18px; transform:translate(-50%,170%);
+        width:min(920px,calc(100% - 40px)); background:#fff; border:1px solid #e2e8e6;
+        border-radius:16px; box-shadow:0 14px 40px -12px rgba(15,40,36,.30); z-index:1030;
+        transition:transform .28s cubic-bezier(.2,.9,.3,1.2);
+    }
+    .roster-actionbar.show { transform:translate(-50%,0); }
+    .rab-top { display:flex; align-items:center; gap:10px; padding:10px 14px; flex-wrap:wrap; }
+    .rab-count { font-weight:700; font-size:14px; display:flex; align-items:center; gap:8px; color:#132520; }
+    .rab-n { background:#009688; color:#fff; border-radius:8px; min-width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; padding:0 6px; }
+    .rab-tabs { display:inline-flex; background:#f2f6f5; border:1px solid #e2e8e6; border-radius:11px; padding:3px; }
+    .rab-tabs button { border:0; background:transparent; color:#5a6b67; font-weight:700; font-size:13px; padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; gap:6px; align-items:center; }
+    .rab-tabs button.on { background:#fff; color:#009688; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+    .rab-clear { margin-left:auto; background:transparent; border:0; color:#93a29d; font-weight:600; font-size:13px; cursor:pointer; }
+    .rab-panel { display:none; border-top:1px solid #eef1f0; background:#f7faf9; padding:12px 14px; border-radius:0 0 16px 16px; }
+    .rab-panel.on { display:block; }
+    .rab-row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
+    .rab-field { display:flex; flex-direction:column; }
+    .rab-hint { font-size:11.5px; color:#93a29d; margin-top:8px; }
+    @media (max-width:640px){ .rab-clear{ margin-left:0; } }
 </style>
 
 <div class="main-content">
@@ -190,61 +214,48 @@ if (!function_exists('rest_days_pills')) {
                             </div>
                         </div>
 
-                        <!-- Bulk toolbar -->
-                        <div class="roster-toolbar mb-3">
-                            <div class="row g-2 align-items-end">
-                                <div class="col-auto">
-                                    <div class="form-label"><i class="ri-checkbox-multiple-line me-1"></i>Selected</div>
-                                    <span class="badge bg-success sel-count-badge" id="sel-count">0</span> employee(s)
+                        <!-- Tip shown above the roster -->
+                        <div class="text-muted mb-2" style="font-size:12.5px;">
+                            <i class="ri-cursor-line me-1 text-success"></i>Tap a row to select employees, then choose an action at the bottom.
+                        </div>
+
+                        <!-- Selection action bar — slides up only when employees are selected.
+                             All the same controls/IDs the old toolbar used, so nothing behind them changed. -->
+                        <div class="roster-actionbar" id="roster-actionbar">
+                            <div class="rab-top">
+                                <div class="rab-count"><span class="rab-n" id="sel-count">0</span> selected</div>
+                                <div class="rab-tabs" id="rab-tabs">
+                                    <button type="button" class="on" data-tab="shift"><i class="ri-time-line"></i> Assign shift</button>
+                                    <button type="button" data-tab="rest"><i class="ri-moon-line"></i> Rest days</button>
+                                    <button type="button" data-tab="rate"><i class="ri-money-dollar-circle-line"></i> Rate type</button>
                                 </div>
-                                <div class="col-sm-4 col-md-3">
-                                    <div class="form-label"><i class="ri-time-line me-1"></i>Shift</div>
-                                    <select class="form-select form-select-sm" id="bulk-shift">
-                                        <option value="">— Select shift —</option>
-                                        <?php foreach ($shift_rows as $s): ?>
-                                            <option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['label']) ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-sm-3 col-md-2">
-                                    <div class="form-label"><i class="ri-calendar-2-line me-1"></i>Effective from</div>
-                                    <div class="rp-date-pill" id="eff-from-pill">
-                                        <i class="ri-calendar-2-line"></i>
-                                        <span id="eff-from-label"><?= date('M j, Y') ?></span>
-                                    </div>
-                                    <input type="hidden" id="eff-from" value="<?= date('Y-m-d') ?>">
-                                </div>
-                                <div class="col-sm-4 col-md-3">
-                                    <div class="form-label"><i class="ri-sticky-note-line me-1"></i>Notes</div>
-                                    <input type="text" class="form-control form-control-sm" id="bulk-notes" placeholder="Optional reason for change">
-                                </div>
-                                <div class="col-auto">
-                                    <div class="form-label"><i class="ri-moon-line me-1"></i>Rest days</div>
-                                    <div class="rd-picker" id="bulk-rest">
-                                        <?php foreach ($RD_LABELS as $i => $lb): ?>
-                                            <button type="button" class="rd-day<?= $i === 0 ? ' active' : '' ?>" data-day="<?= $i ?>" title="<?= $RD_NAMES[$i] ?>"><?= $lb ?></button>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <input type="hidden" id="bulk-rest-val" value="0">
-                                </div>
-                                <div class="col-auto">
-                                    <div class="form-label"><i class="ri-money-dollar-circle-line me-1"></i>Rate type</div>
-                                    <div class="input-group input-group-sm">
-                                        <select class="form-select form-select-sm" id="bulk-rate-type" style="max-width:130px;">
-                                            <option value="">— Rate —</option>
-                                            <option value="daily">Daily</option>
-                                            <option value="monthly">Monthly</option>
-                                            <option value="fixed">Fixed</option>
+                                <button type="button" class="rab-clear" id="btn-sel-clear"><i class="ri-close-line me-1"></i>Clear</button>
+                            </div>
+
+                            <!-- Assign shift -->
+                            <div class="rab-panel on" data-panel="shift">
+                                <div class="rab-row">
+                                    <div class="rab-field" style="flex:1;min-width:190px;">
+                                        <div class="form-label"><i class="ri-time-line me-1"></i>Shift</div>
+                                        <select class="form-select form-select-sm" id="bulk-shift">
+                                            <option value="">— Select shift —</option>
+                                            <?php foreach ($shift_rows as $s): ?>
+                                                <option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['label']) ?></option>
+                                            <?php endforeach; ?>
                                         </select>
-                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-bulk-rate-type" title="Set the pay rate type for selected employees (payroll setting — not a schedule change)">
-                                            <i class="ri-check-line"></i> Set
-                                        </button>
                                     </div>
-                                </div>
-                                <div class="col-auto d-flex gap-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-bulk-rest" title="Update only the rest days of selected employees — no shift change">
-                                        <i class="ri-moon-line me-1"></i>Rest days only
-                                    </button>
+                                    <div class="rab-field" style="min-width:150px;">
+                                        <div class="form-label"><i class="ri-calendar-2-line me-1"></i>Effective from</div>
+                                        <div class="rp-date-pill" id="eff-from-pill">
+                                            <i class="ri-calendar-2-line"></i>
+                                            <span id="eff-from-label"><?= date('M j, Y') ?></span>
+                                        </div>
+                                        <input type="hidden" id="eff-from" value="<?= date('Y-m-d') ?>">
+                                    </div>
+                                    <div class="rab-field" style="flex:1;min-width:170px;">
+                                        <div class="form-label"><i class="ri-sticky-note-line me-1"></i>Notes</div>
+                                        <input type="text" class="form-control form-control-sm" id="bulk-notes" placeholder="Optional reason for change">
+                                    </div>
                                     <button type="button" class="btn btn-sm btn-outline-warning text-dark" id="btn-bulk-plan" title="Queue for later — hidden from employees until applied">
                                         <i class="ri-add-line me-1"></i>Add to Plan
                                     </button>
@@ -252,6 +263,47 @@ if (!function_exists('rest_days_pills')) {
                                         <i class="ri-check-double-line me-1"></i>Apply now
                                     </button>
                                 </div>
+                                <div class="rab-hint">Apply now updates immediately and notifies employees. Add to Plan stages it, hidden until you apply.</div>
+                            </div>
+
+                            <!-- Rest days -->
+                            <div class="rab-panel" data-panel="rest">
+                                <div class="rab-row">
+                                    <div class="rab-field">
+                                        <div class="form-label"><i class="ri-moon-line me-1"></i>Days off</div>
+                                        <div class="rd-picker" id="bulk-rest">
+                                            <?php foreach ($RD_LABELS as $i => $lb): ?>
+                                                <button type="button" class="rd-day<?= $i === 0 ? ' active' : '' ?>" data-day="<?= $i ?>" title="<?= $RD_NAMES[$i] ?>"><?= $lb ?></button>
+                                            <?php endforeach; ?>
+                                        </div>
+                                        <input type="hidden" id="bulk-rest-val" value="0">
+                                    </div>
+                                    <div class="flex-grow-1"></div>
+                                    <button type="button" class="btn btn-sm btn-success" id="btn-bulk-rest" title="Update only the rest days of selected employees — no shift change">
+                                        <i class="ri-check-line me-1"></i>Save rest days
+                                    </button>
+                                </div>
+                                <div class="rab-hint">Updates only the day-off for selected employees — the shift stays the same.</div>
+                            </div>
+
+                            <!-- Rate type -->
+                            <div class="rab-panel" data-panel="rate">
+                                <div class="rab-row">
+                                    <div class="rab-field" style="min-width:250px;">
+                                        <div class="form-label"><i class="ri-money-dollar-circle-line me-1"></i>Pay rate type</div>
+                                        <select class="form-select form-select-sm" id="bulk-rate-type">
+                                            <option value="">— Choose rate —</option>
+                                            <option value="daily">Daily — per day present</option>
+                                            <option value="monthly">Monthly — salary minus absences</option>
+                                            <option value="fixed">Fixed — full salary, no attendance</option>
+                                        </select>
+                                    </div>
+                                    <div class="flex-grow-1"></div>
+                                    <button type="button" class="btn btn-sm btn-success" id="btn-bulk-rate-type" title="Set the pay rate type for selected employees (payroll setting — not a schedule change)">
+                                        <i class="ri-check-line me-1"></i>Set rate type
+                                    </button>
+                                </div>
+                                <div class="rab-hint">A payroll setting — affects the next payroll calculation, not the schedule.</div>
                             </div>
                         </div>
 

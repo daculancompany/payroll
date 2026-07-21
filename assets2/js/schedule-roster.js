@@ -38,7 +38,7 @@ $(document).ready(function () {
 
     // ---- Date picker pills (same bootstrap-style single-date picker as Daily Board) ------
     // Wires a pill + hidden input to a daterangepicker instance in singleDatePicker mode.
-    function initDatePill(pillId, inputId, labelId, initialYmd) {
+    function initDatePill(pillId, inputId, labelId, initialYmd, dropUp) {
         const $pill = $("#" + pillId);
         if (!$pill.length || !$.fn.daterangepicker) return null;
         const start = initialYmd ? moment(initialYmd, "YYYY-MM-DD") : moment();
@@ -46,6 +46,9 @@ $(document).ready(function () {
             singleDatePicker: true,
             autoUpdateInput: false,
             opens: "center",
+            // The bulk "Effective from" pill sits in the bottom action bar, so its
+            // calendar must open UPWARD or it falls off the bottom of the screen.
+            drops: dropUp ? "up" : "down",
             startDate: start.isValid() ? start : moment(),
             locale: { format: "YYYY-MM-DD" },
         });
@@ -64,7 +67,7 @@ $(document).ready(function () {
         $("#" + labelId).text(m.isValid() ? m.format("MMM D, YYYY") : "Select date…");
     }
 
-    initDatePill("eff-from-pill", "eff-from", "eff-from-label", $("#eff-from").val());
+    initDatePill("eff-from-pill", "eff-from", "eff-from-label", $("#eff-from").val(), true); // action bar → open upward
     initDatePill("redit-effective-pill", "redit-effective", "redit-effective-label", null);
 
     // ---- Rest-day picker ----------------------------------------------------
@@ -109,7 +112,33 @@ $(document).ready(function () {
     }
     function updateCount() {
         $("#sel-count").text(selected.size);
+        // Slide the action bar in only while there's a selection to act on.
+        $("#roster-actionbar").toggleClass("show", selected.size > 0);
     }
+
+    // Action-bar tabs (Assign shift / Rest days / Rate type) — one panel at a time.
+    $("#rab-tabs").on("click", "button", function () {
+        const tab = $(this).data("tab");
+        $("#rab-tabs button").removeClass("on");
+        $(this).addClass("on");
+        $(".rab-panel").removeClass("on");
+        $('.rab-panel[data-panel="' + tab + '"]').addClass("on");
+    });
+
+    // Clear the whole selection from the action bar.
+    $("#btn-sel-clear").on("click", function () {
+        selected.clear();
+        updateCount();
+        syncChecks();
+    });
+
+    // Whole-row tap toggles selection (both list rows and grid cards), except when
+    // tapping something interactive (the employee link, the edit button, the checkbox).
+    $(document).on("click", "#roster-table tbody tr, #roster-grid .roster-card", function (e) {
+        if ($(e.target).closest("a, button, input, label, .roster-edit-btn").length) return;
+        const chk = $(this).find(".row-chk")[0];
+        if (chk) { chk.checked = !chk.checked; $(chk).trigger("change"); }
+    });
     function syncChecks() {
         // reflect the selected Set onto every checkbox currently in the DOM (both views)
         $(".row-chk").each(function () {

@@ -37,10 +37,6 @@
         var el = document.getElementById('ptop-screen-title');
         if (!el) return;
         el.textContent = TAB_TITLES[id] || 'My Portal';
-        /* restart the fade-in */
-        el.style.animation = 'none';
-        void el.offsetWidth;
-        el.style.animation = '';
     }
     function buzz(ms) {
         if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) { /* noop */ } }

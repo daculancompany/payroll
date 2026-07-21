@@ -468,7 +468,8 @@ body{
 /* Top bar */
 .ptop{background:#fff;padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:200;border-bottom:1px solid #e4ecea;box-shadow:0 1px 3px rgba(16,55,50,.06);}
 .ptop-brand{color:#176358;font-size:14px;font-weight:800;display:flex;align-items:center;gap:9px;letter-spacing:.2px;}
-.ptop-logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#219688,#176358);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;box-shadow:0 3px 8px rgba(33,150,136,.28);}
+.ptop-logo{width:30px;height:30px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;box-shadow:0 3px 8px rgba(33,150,136,.28);overflow:hidden;}
+.ptop-logo img{width:100%;height:100%;object-fit:cover;}
 .ptop-logout{background:#f0f7f5;color:#176358;border:1px solid #d5e8e4;border-radius:9px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;}
 .ptop-logout:hover{background:#e0f0ec;color:#176358;border-color:#bfe0d9;}
 .ptop-logout i{margin-right:5px;}
@@ -1293,7 +1294,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 
 <div class="ptop">
     <div class="ptop-brand">
-        <div class="ptop-logo">CP</div>
+        <div class="ptop-logo"><img src="assets2/images/logo.jpeg" alt="COMC"></div>
         <span class="ptop-brand-txt">COMC Employee Portal</span>
         <span class="ptop-screen-title" id="ptop-screen-title">Home</span>
     </div>
@@ -2537,11 +2538,6 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <div class="info-item">
                     <div class="info-lbl">SSS Provident Fund</div>
                     <div class="info-val">₱<?= n2($emp['sss_fund']) ?></div>
-                </div>
-                <div class="info-item">
-                    <div class="info-lbl">Payroll Type</div>
-                    <?php /* Weekly payroll was removed — everyone is semi-monthly. */ ?>
-                    <div class="info-val">Semi-Monthly</div>
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">Rate Type</div>
@@ -4475,7 +4471,6 @@ jQuery(function ($) {
 // Reloads the page and lands back on the same tab via the existing ?tab= deep-link
 // mechanism (see the whitelisted $valid_portal_tabs handler near the top of this file).
 (function () {
-    if (!('ontouchstart' in window)) return; // touch devices only
     var THRESHOLD = 70, MAX_PULL = 110;
     var startY = null, pulling = false, refreshing = false;
 
@@ -4483,6 +4478,31 @@ jQuery(function ($) {
     indicator.id = 'ptr-indicator';
     indicator.innerHTML = '<i class="ri-refresh-line"></i>';
     document.body.appendChild(indicator);
+
+    function currentTabId() {
+        var activePanel = document.querySelector('.tab-panel.active');
+        return activePanel ? activePanel.id.replace(/^tab-/, '') : 'overview';
+    }
+
+    // Spin the indicator and reload back onto the same tab (via the ?tab= deep-link).
+    // Shared by the manual pull gesture and the FCM auto-refresh below.
+    function triggerRefresh() {
+        if (refreshing) return;
+        refreshing = true;
+        indicator.classList.add('spin');
+        indicator.style.transform = 'translateY(16px)';
+        setTimeout(function () { location.href = 'employee-portal.php?tab=' + encodeURIComponent(currentTabId()); }, 2000);
+    }
+    window.portalRefresh = triggerRefresh;
+
+    // A new FCM push arrived while the portal is open → refresh to pull in the new
+    // content, unless the user is mid-task in a sheet/modal/notification panel.
+    window.addEventListener('fcm:foreground-message', function () {
+        if (document.querySelector('.more-sheet.open, .modal.show, .emp-notif-panel.open')) return;
+        triggerRefresh();
+    });
+
+    if (!('ontouchstart' in window)) return; // manual pull gesture: touch devices only
 
     function blocked(target) {
         return !!(target.closest && (target.closest('.more-sheet.open') || target.closest('.modal.show') || target.closest('.emp-notif-panel.open')));
@@ -4508,12 +4528,7 @@ jQuery(function ($) {
         pulling = false;
         var pulled = indicator.classList.contains('ready');
         if (pulled) {
-            refreshing = true;
-            indicator.classList.add('spin');
-            indicator.style.transform = 'translateY(16px)';
-            var activePanel = document.querySelector('.tab-panel.active');
-            var tabId = activePanel ? activePanel.id.replace(/^tab-/, '') : 'overview';
-            setTimeout(function () { location.href = 'employee-portal.php?tab=' + encodeURIComponent(tabId); }, 2000);
+            triggerRefresh();
         } else {
             indicator.style.transform = 'translateY(-100px)';
             indicator.classList.remove('ready');

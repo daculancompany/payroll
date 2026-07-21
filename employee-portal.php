@@ -155,7 +155,8 @@ if (!function_exists('pp_pay')) {
         $at = $r['allowance_amount'] * $r['allowance_days'];
         $ot = $r['ot'] * $r['ot_rate'];
         $la = $r['late'] * $pm;
-        if (($r['rate_type'] ?? 'daily') === 'monthly') {
+        $__rt = $r['rate_type'] ?? 'daily';
+        if ($__rt === 'monthly' || $__rt === 'fixed') {
             $ab  = $r['absent'] * $r['per_day'];
             $lgl = $r['legal_holiday'] * $r['per_day'];
             $sun = $r['sunday_duty'] * $r['per_day'];
@@ -1625,6 +1626,15 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <?php endif; ?>
         </div>
 
+        <!-- My Fingerprints (two-hand status) -->
+        <div class="sec"><i class="ri-fingerprint-line"></i>My Fingerprints</div>
+        <div style="margin-bottom:14px;">
+            <?php
+            require_once __DIR__ . '/component/finger_hands.php';
+            echo render_finger_hands($conn, $emp_id, ['title' => 'Enrolled Fingerprints']);
+            ?>
+        </div>
+
         <!-- This-month attendance summary -->
         <div class="sec"><i class="ri-calendar-check-line"></i><?= date('F Y') ?> Attendance</div>
         <div class="ytd-strip">
@@ -2532,6 +2542,14 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="info-lbl">Payroll Type</div>
                     <?php /* Weekly payroll was removed — everyone is semi-monthly. */ ?>
                     <div class="info-val">Semi-Monthly</div>
+                </div>
+                <div class="info-item">
+                    <div class="info-lbl">Rate Type</div>
+                    <?php
+                    $__prt = (isset($emp['rate_type']) && in_array($emp['rate_type'], ['daily', 'monthly', 'fixed'], true)) ? $emp['rate_type'] : 'daily';
+                    $__prt_txt = ['daily' => 'Daily (per day present)', 'monthly' => 'Monthly (salary − absences)', 'fixed' => 'Fixed (full salary)'][$__prt];
+                    ?>
+                    <div class="info-val"><?= $__prt_txt ?></div>
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">Schedule In</div>

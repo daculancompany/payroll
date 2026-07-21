@@ -489,6 +489,9 @@ if ($action == 'roster_assign_schedule') {
 if ($action == 'roster_update_rest_days') {
     echo json_encode($crud->roster_update_rest_days());
 }
+if ($action == 'roster_update_rate_type') {
+    echo json_encode($crud->roster_update_rate_type());
+}
 if ($action == 'plan_add_schedule') {
     echo json_encode($crud->plan_add_schedule());
 }

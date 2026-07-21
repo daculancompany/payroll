@@ -227,6 +227,20 @@ if (!function_exists('rest_days_pills')) {
                                     </div>
                                     <input type="hidden" id="bulk-rest-val" value="0">
                                 </div>
+                                <div class="col-auto">
+                                    <div class="form-label"><i class="ri-money-dollar-circle-line me-1"></i>Rate type</div>
+                                    <div class="input-group input-group-sm">
+                                        <select class="form-select form-select-sm" id="bulk-rate-type" style="max-width:130px;">
+                                            <option value="">— Rate —</option>
+                                            <option value="daily">Daily</option>
+                                            <option value="monthly">Monthly</option>
+                                            <option value="fixed">Fixed</option>
+                                        </select>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-bulk-rate-type" title="Set the pay rate type for selected employees (payroll setting — not a schedule change)">
+                                            <i class="ri-check-line"></i> Set
+                                        </button>
+                                    </div>
+                                </div>
                                 <div class="col-auto d-flex gap-2">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-bulk-rest" title="Update only the rest days of selected employees — no shift change">
                                         <i class="ri-moon-line me-1"></i>Rest days only

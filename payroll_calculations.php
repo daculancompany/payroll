@@ -948,6 +948,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
                                                 ?>
                                                 <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>"
+                                                    data-rate-type="<?= htmlspecialchars($row['rate_type'] ?? 'daily', ENT_QUOTES) ?>"
                                                     data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
                                                     data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>">
                                                     <td class="ps-chk-cell"><input type="checkbox" class="ps-chk ps-row-chk" value="<?= $row['id'] ?>"></td>
@@ -1570,6 +1571,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
                                                 ?>
                                                 <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>"
+                                                    data-rate-type="<?= htmlspecialchars($row['rate_type'] ?? 'daily', ENT_QUOTES) ?>"
                                                     data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
                                                     data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>">
                                                     <td class="ps-chk-cell"><input type="checkbox" class="ps-chk ps-row-chk" value="<?= $row['id'] ?>"></td>
@@ -2751,7 +2753,9 @@ function printPayslipPreview() {
                 if (!isNaN(net)) {
                     if (net === 0) payAnom.zero.push(tr);
                     if (net < 0) payAnom.negative.push(tr);
-                    if (net > 0 && days === 0) payAnom.noatt.push(tr);
+                    // Fixed-rate (salaried, no attendance) employees are paid with 0 days
+                    // by design — don't flag them as an anomaly.
+                    if (net > 0 && days === 0 && tr.getAttribute('data-rate-type') !== 'fixed') payAnom.noatt.push(tr);
                 }
                 if (tr.querySelector('.nd-warn')) payAnom.bigmove.push(tr);
             });

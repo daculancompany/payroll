@@ -449,9 +449,16 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <div class="detail-item">
                                             <div class="detail-label">Rate Type</div>
                                             <div class="detail-value">
-                                                <?php $__rt = (isset($rate_type) && $rate_type === 'monthly') ? 'monthly' : 'daily'; ?>
-                                                <span class="badge <?= $__rt === 'monthly' ? 'bg-info' : 'bg-secondary' ?>">
-                                                    <i class="ri-money-dollar-circle-line me-1"></i><?= $__rt === 'monthly' ? 'Monthly (salary − absences)' : 'Daily (per day present)' ?>
+                                                <?php
+                                                $__rt = (isset($rate_type) && in_array($rate_type, ['daily', 'monthly', 'fixed'], true)) ? $rate_type : 'daily';
+                                                $__rt_meta = [
+                                                    'daily'   => ['bg-secondary', 'Daily (per day present)'],
+                                                    'monthly' => ['bg-info', 'Monthly (salary − absences)'],
+                                                    'fixed'   => ['bg-primary', 'Fixed (full salary, no attendance)'],
+                                                ][$__rt];
+                                                ?>
+                                                <span class="badge <?= $__rt_meta[0] ?>">
+                                                    <i class="ri-money-dollar-circle-line me-1"></i><?= $__rt_meta[1] ?>
                                                 </span>
                                             </div>
                                         </div>
@@ -916,6 +923,14 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             <?php endwhile; ?>
                                         </tbody>
                                     </table>
+                                </div>
+
+                                <!-- Registered Fingerprints (two-hand status) -->
+                                <div class="mt-4">
+                                    <?php
+                                    require_once __DIR__ . '/component/finger_hands.php';
+                                    echo render_finger_hands($conn, $emp_id);
+                                    ?>
                                 </div>
                             </div>
 

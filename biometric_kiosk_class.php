@@ -36,6 +36,18 @@ class BiometricKiosk
     /** SDK that produced a mobile fingerprint template. */
     const TEMPLATE_FORMAT_DEFAULT = 'sourceafis';
 
+    /**
+     * The 10 canonical finger positions, in NIST order (1..10). Enrollment
+     * labels a template with one of these codes so the app can show which
+     * finger sits where on the two-hand diagram. finger_index is still a free
+     * varchar server-side (older rows may hold "finger-1"); these are just the
+     * values the mobile app now sends and what get_finger_status() reports on.
+     */
+    const FINGERS = [
+        'RIGHT_THUMB', 'RIGHT_INDEX', 'RIGHT_MIDDLE', 'RIGHT_RING', 'RIGHT_PINKY',
+        'LEFT_THUMB',  'LEFT_INDEX',  'LEFT_MIDDLE',  'LEFT_RING',  'LEFT_PINKY',
+    ];
+
     /** Upper bound for one attendance photo — a full frame, not a face crop. */
     const MAX_SELFIE_BYTES = 4194304; // 4 MB
 
@@ -236,6 +248,38 @@ class BiometricKiosk
      * ──────────────────────────────────────────────────────────────────── */
 
     /**
+     * Remove ONE enrolled finger for an employee, so it can be re-registered
+     * from scratch or dropped entirely.
+     *
+     * Expects POST: employee_id, finger_index, [format].
+     */
+    public function delete_template()
+    {
+        $employee_id  = intval($_POST['employee_id'] ?? 0);
+        $finger_index = trim($_POST['finger_index'] ?? '');
+        $format       = trim($_POST['format'] ?? '') ?: self::TEMPLATE_FORMAT_DEFAULT;
+
+        if (!$employee_id || $finger_index === '') {
+            return ['result' => false, 'message' => 'Missing employee_id or finger_index'];
+        }
+
+        $stmt = $this->db->prepare("
+            DELETE FROM biometric_kiosk_templates
+            WHERE employee_id = ? AND finger_index = ? AND format = ?
+        ");
+        $stmt->bind_param('iss', $employee_id, $finger_index, $format);
+        $stmt->execute();
+
+        return [
+            'result'       => true,
+            'message'      => $stmt->affected_rows ? 'Fingerprint removed' : 'No matching fingerprint',
+            'employee_id'  => $employee_id,
+            'finger_index' => $finger_index,
+            'removed'      => $stmt->affected_rows,
+        ];
+    }
+
+    /**
      * Store a template captured by the mobile kiosk.
      *
      * Written to biometric_kiosk_templates, NOT employee_fingerprints: the
@@ -250,6 +294,10 @@ class BiometricKiosk
         $finger_index = trim($_POST['finger_index'] ?? '');
         $template     = trim($_POST['template'] ?? '');
         $format       = trim($_POST['format'] ?? '') ?: self::TEMPLATE_FORMAT_DEFAULT;
+        // Optional capture quality (0..100). NULL when the client doesn't report it.
+        $quality      = isset($_POST['quality']) && $_POST['quality'] !== ''
+            ? max(0, min(100, (int) $_POST['quality']))
+            : null;
 
         if (!$employee_id || $finger_index === '' || $template === '') {
             return ['result' => false, 'message' => 'Missing employee_id, finger_index or template'];
@@ -271,11 +319,11 @@ class BiometricKiosk
         }
 
         $stmt = $this->db->prepare("
-            INSERT INTO biometric_kiosk_templates (employee_id, finger_index, format, template)
-            VALUES (?, ?, ?, ?)
-            ON DUPLICATE KEY UPDATE template = VALUES(template), updated_at = NOW()
+            INSERT INTO biometric_kiosk_templates (employee_id, finger_index, format, template, quality)
+            VALUES (?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE template = VALUES(template), quality = VALUES(quality), updated_at = NOW()
         ");
-        $stmt->bind_param('isss', $employee_id, $finger_index, $format, $clean);
+        $stmt->bind_param('isssi', $employee_id, $finger_index, $format, $clean, $quality);
 
         if (!$stmt->execute()) {
             return ['result' => false, 'message' => 'Failed to save template: ' . $this->db->error];
@@ -287,6 +335,83 @@ class BiometricKiosk
             'employee_id'  => $employee_id,
             'finger_index' => $finger_index,
             'format'       => $format,
+            'quality'      => $quality,
+        ];
+    }
+
+    /**
+     * Per-finger enrollment status for ONE employee — the data the two-hand
+     * enrollment screen renders. Returns all 10 canonical fingers, each marked
+     * registered or not, with quality and last-updated when present. Any
+     * non-canonical rows this employee has (e.g. legacy "finger-1") are
+     * returned separately under `other` so nothing is silently hidden.
+     *
+     * Body: employee_id, [format]. Answers:
+     *   { result, employee_id, registered_count, fingers: [
+     *       {finger_index, label, hand, position, registered, quality, updated_at}
+     *     ], other: [...] }
+     */
+    public function get_finger_status()
+    {
+        $employee_id = intval($_POST['employee_id'] ?? $_GET['employee_id'] ?? 0);
+        $format      = trim($_POST['format'] ?? $_GET['format'] ?? '') ?: self::TEMPLATE_FORMAT_DEFAULT;
+
+        if (!$employee_id) {
+            return ['result' => false, 'message' => 'Missing employee_id'];
+        }
+
+        // Pull every stored finger for this employee/format, keyed by finger_index.
+        $stmt = $this->db->prepare("
+            SELECT finger_index, quality, updated_at
+            FROM biometric_kiosk_templates
+            WHERE employee_id = ? AND format = ?
+        ");
+        $stmt->bind_param('is', $employee_id, $format);
+        $stmt->execute();
+        $res = $stmt->get_result();
+
+        $stored = [];
+        while ($row = $res->fetch_assoc()) {
+            $stored[$row['finger_index']] = $row;
+        }
+
+        // Build the canonical 10-finger list in NIST order.
+        $fingers = [];
+        $registered = 0;
+        foreach (self::FINGERS as $pos => $code) {
+            $has = isset($stored[$code]);
+            if ($has) $registered++;
+            [$hand, $name] = explode('_', $code, 2);
+            $fingers[] = [
+                'finger_index' => $code,
+                'label'        => ucfirst(strtolower($hand)) . ' ' . ucfirst(strtolower($name)),
+                'hand'         => strtolower($hand),                 // 'left' | 'right'
+                'position'     => $pos + 1,                          // 1..10 (NIST)
+                'registered'   => $has,
+                'quality'      => $has && $stored[$code]['quality'] !== null ? (int) $stored[$code]['quality'] : null,
+                'updated_at'   => $has ? $stored[$code]['updated_at'] : null,
+            ];
+            unset($stored[$code]);
+        }
+
+        // Anything left is non-canonical (legacy labels) — surface it, don't hide it.
+        $other = [];
+        foreach ($stored as $code => $row) {
+            $other[] = [
+                'finger_index' => $code,
+                'registered'   => true,
+                'quality'      => $row['quality'] !== null ? (int) $row['quality'] : null,
+                'updated_at'   => $row['updated_at'],
+            ];
+        }
+
+        return [
+            'result'           => true,
+            'employee_id'      => $employee_id,
+            'format'           => $format,
+            'registered_count' => $registered,
+            'fingers'          => $fingers,
+            'other'            => $other,
         ];
     }
 
@@ -300,7 +425,7 @@ class BiometricKiosk
         $format = trim($_POST['format'] ?? $_GET['format'] ?? '') ?: self::TEMPLATE_FORMAT_DEFAULT;
 
         $sql = "
-            SELECT t.id, t.employee_id, t.finger_index, t.format, t.template,
+            SELECT t.id, t.employee_id, t.finger_index, t.format, t.template, t.quality,
                    e.firstname, e.lastname
             FROM biometric_kiosk_templates t
             INNER JOIN employee e ON e.id = t.employee_id AND e.status = 1
@@ -327,6 +452,7 @@ class BiometricKiosk
                 'finger_index'  => $row['finger_index'],
                 'format'        => $row['format'],
                 'template'      => $row['template'],
+                'quality'       => $row['quality'] !== null ? (int) $row['quality'] : null,
             ];
         }
 

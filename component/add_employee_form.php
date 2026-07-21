@@ -154,12 +154,12 @@
                                     data-parsley-required-message="Amount is required." required>
                             </div>
                         </div>
-                        <?php $__rate_type = isset($rate_type) && $rate_type === 'monthly' ? 'monthly' : 'daily'; ?>
+                        <?php $__rate_type = isset($rate_type) && in_array($rate_type, ['daily', 'monthly', 'fixed'], true) ? $rate_type : 'daily'; ?>
                         <div class="col-md-12">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
                                 Rate Type <span class="text-danger">*</span>
                             </label>
-                            <div class="d-flex gap-4 mt-1">
+                            <div class="d-flex flex-wrap gap-4 mt-1">
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="rate_type" id="rt_daily" value="daily" <?= $__rate_type === 'daily' ? 'checked' : '' ?>>
                                     <label class="form-check-label" for="rt_daily">
@@ -170,6 +170,12 @@
                                     <input class="form-check-input" type="radio" name="rate_type" id="rt_monthly" value="monthly" <?= $__rate_type === 'monthly' ? 'checked' : '' ?>>
                                     <label class="form-check-label" for="rt_monthly">
                                         <b>Monthly</b> — pay = salary share − unpaid absences
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="rate_type" id="rt_fixed" value="fixed" <?= $__rate_type === 'fixed' ? 'checked' : '' ?>>
+                                    <label class="form-check-label" for="rt_fixed">
+                                        <b>Fixed</b> — full salary, no attendance needed
                                     </label>
                                 </div>
                             </div>

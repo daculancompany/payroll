@@ -332,6 +332,37 @@ $(document).ready(function () {
         }).then((r) => { if (r.isConfirmed) doIt(); });
     });
 
+    // Bulk set pay Rate Type (daily/monthly/fixed) for selected employees.
+    $("#btn-bulk-rate-type").on("click", function () {
+        const ids = Array.from(selected);
+        if (!ids.length) { warn("Select at least one employee (tick the checkboxes)."); return; }
+        const rate = $("#bulk-rate-type").val();
+        if (!rate) { warn("Choose a rate type (Daily, Monthly, or Fixed)."); return; }
+        const labels = { daily: "Daily", monthly: "Monthly", fixed: "Fixed (no attendance)" };
+        const btn = $(this);
+        const doIt = () => {
+            btn.prop("disabled", true);
+            $.post("ajax.php?action=roster_update_rate_type", { employee_ids: ids, rate_type: rate })
+                .done(function (res) {
+                    let j = res; try { if (typeof res === "string") j = JSON.parse(res); } catch (e) {}
+                    if (j && j.result) {
+                        Swal.fire({ icon: "success", title: "Saved", text: j.message, timer: 1500, showConfirmButton: false })
+                            .then(() => location.reload());
+                    } else {
+                        btn.prop("disabled", false);
+                        Swal.fire({ icon: "error", title: "Error", text: (j && j.message) || "Failed to save." });
+                    }
+                })
+                .fail(function () { btn.prop("disabled", false); Swal.fire({ icon: "error", title: "Error", text: "Request failed." }); });
+        };
+        Swal.fire({
+            icon: "question", title: "Set rate type?",
+            html: "Set <b>" + esc(labels[rate]) + "</b> rate for <b>" + ids.length +
+                  "</b> employee(s). This is a payroll setting and affects the next calculation.",
+            showCancelButton: true, confirmButtonText: "Yes, set", confirmButtonColor: "#009688",
+        }).then((r) => { if (r.isConfirmed) doIt(); });
+    });
+
     // Plain-text list of rest days for confirm dialogs, e.g. "Sun, Sat".
     function restPillsText(csv) {
         const names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];

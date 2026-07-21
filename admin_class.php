@@ -98,9 +98,12 @@ class Action
             }
         }
 
-        // ── 2) EMPLOYEE (employee_portal_accounts) — username = employee_no ──
+        // ── 2) EMPLOYEE (employee_portal_accounts) — sign in with employee_no OR account email ──
         $acct_join = $has_acct ? "LEFT JOIN employee_portal_accounts a ON a.employee_id = e.id" : "";
         $acct_cols = $has_acct ? "a.password AS acct_pass, a.is_active AS acct_active" : "NULL AS acct_pass, 1 AS acct_active";
+        // Employees may sign in with their employee_no OR the email stored as
+        // the portal account username. Fall back gracefully with no acct table.
+        $id_where  = $has_acct ? "(e.employee_no = ? OR a.username = ?)" : "e.employee_no = ?";
         $estmt = $this->db->prepare("
             SELECT e.*, COALESCE(d.name,'—') AS dept_name, COALESCE(p.name,'—') AS position_name,
                    $acct_cols
@@ -108,11 +111,12 @@ class Action
             LEFT JOIN department d ON e.department_id = d.id
             LEFT JOIN position   p ON e.position_id  = p.id
             $acct_join
-            WHERE e.employee_no = ? AND e.status = 1 LIMIT 1
+            WHERE $id_where AND e.status = 1 LIMIT 1
         ");
         $emp = false;
         if ($estmt) {
-            $estmt->bind_param('s', $username);
+            if ($has_acct) $estmt->bind_param('ss', $username, $username);
+            else           $estmt->bind_param('s', $username);
             $estmt->execute();
             $emp = $estmt->get_result()->fetch_assoc();
         }
@@ -187,6 +191,19 @@ class Action
         $stmt = $this->db->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?");
         if (!$stmt) return false;
         $stmt->bind_param('s', $table);
+        $stmt->execute();
+        $stmt->bind_result($count);
+        $stmt->fetch();
+        $stmt->close();
+        return $count > 0;
+    }
+
+    // Returns true if the given column exists on the given table.
+    private function columnExists($table, $column)
+    {
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?");
+        if (!$stmt) return false;
+        $stmt->bind_param('ss', $table, $column);
         $stmt->execute();
         $stmt->bind_result($count);
         $stmt->fetch();
@@ -478,7 +495,7 @@ class Action
         $allowance_rate   = (float)($_POST['allowance_rate'] ?? 0);
         $bday             = trim($_POST['bday'] ?? '');
         $employee_code    = trim($_POST['employee_code'] ?? '');
-        $rate_type        = (($_POST['rate_type'] ?? 'daily') === 'monthly') ? 'monthly' : 'daily';
+        $rate_type        = in_array($_POST['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $_POST['rate_type'] : 'daily';
         $payroll_type     = 1;
 
         $status         = isset($_POST['status']) ? 1 : 0;
@@ -1056,6 +1073,49 @@ class Action
         $days = array_filter(array_map('intval', $csv === '' ? [] : explode(',', $csv)), function ($d) { return $d >= 0 && $d <= 6; });
         if (empty($days)) return 'None';
         return implode(', ', array_map(function ($d) use ($names) { return $names[$d]; }, $days));
+    }
+
+    // Roster page: bulk-set the pay Rate Type (daily | monthly | fixed) for the
+    // selected employees. This is a compensation setting on the employee record,
+    // not a schedule change — it affects how the NEXT payroll calc pays them.
+    function roster_update_rate_type()
+    {
+        $rate_type = $_POST['rate_type'] ?? '';
+        if (!in_array($rate_type, ['daily', 'monthly', 'fixed'], true)) {
+            return ['result' => false, 'message' => 'Please choose a valid rate type (Daily, Monthly, or Fixed).'];
+        }
+
+        $ids = [];
+        if (isset($_POST['employee_ids'])) {
+            $raw = $_POST['employee_ids'];
+            if (!is_array($raw)) $raw = explode(',', $raw);
+            foreach ($raw as $v) {
+                $v = intval($v);
+                if ($v) $ids[] = $v;
+            }
+        } elseif (isset($_POST['employee_id'])) {
+            $v = intval($_POST['employee_id']);
+            if ($v) $ids[] = $v;
+        }
+        $ids = array_values(array_unique($ids));
+
+        if (empty($ids)) {
+            return ['result' => false, 'message' => 'Please select at least one employee.'];
+        }
+
+        $in = implode(',', array_map('intval', $ids));
+        $stmt = $this->db->prepare("UPDATE employee SET rate_type = ? WHERE id IN ($in)");
+        $stmt->bind_param('s', $rate_type);
+        if (!$stmt->execute()) {
+            return ['result' => false, 'message' => 'Failed to update: ' . $this->db->error];
+        }
+
+        $label = ['daily' => 'Daily', 'monthly' => 'Monthly', 'fixed' => 'Fixed'][$rate_type];
+        return [
+            'result'  => true,
+            'updated' => $stmt->affected_rows,
+            'message' => count($ids) . ' employee(s) set to ' . $label . ' rate.',
+        ];
     }
 
     // ---- Schedule Planner (staging area) -------------------------------------
@@ -2631,7 +2691,7 @@ class Action
                     $grouped_data[$employee_id]["site_id"]  = $site_id;
                     $grouped_data[$employee_id]["sss_fund"]  = $sss_fund;
                     $grouped_data[$employee_id]["allowance_amount"]  = $allowance_rate;
-                    $grouped_data[$employee_id]["rate_type"]  = (($row['rate_type'] ?? 'daily') === 'monthly') ? 'monthly' : 'daily';
+                    $grouped_data[$employee_id]["rate_type"]  = in_array($row['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $row['rate_type'] : 'daily';
                     $grouped_data[$employee_id]["date_time"]  = $row['date_time'];
                 }
                 foreach ($grouped_data as $employee_id => $data) {
@@ -2808,7 +2868,7 @@ class Action
                     $rest_duty = (int) round($data['rest_duty'] ?? 0);
                     // Pay basis for this employee, frozen onto the payroll item so a later
                     // rate-type change doesn't retro-alter this run.
-                    $rate_type = (($data['rate_type'] ?? 'daily') === 'monthly') ? 'monthly' : 'daily';
+                    $rate_type = in_array($data['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $data['rate_type'] : 'daily';
                     // Absences are only meaningful for MONTHLY-rate employees (their pay is
                     // salary − absences). Expected working days = period days that are NOT the
                     // employee's rest days; absent = expected − days present (floored, whole days).
@@ -2886,15 +2946,166 @@ class Action
                         throw new Exception('Failed to update data: ' . $e->getMessage());
                     }
                 }
+            }
+
+            // Fixed-salary employees are paid regardless of attendance, so they
+            // won't appear in the DTR-driven set above. Add them here (present=0,
+            // absent=0 → full salary share), skipping anyone already inserted this
+            // run or already paid in an overlapping-period payroll.
+            $fixedCount = $this->insertFixedEmployees($id, $date_from, $date_to, $settings, $excluded_clasif, $site_ids);
+
+            if ($result->num_rows > 0 || $fixedCount > 0) {
+                // Mark the payroll as calculated (status 1).
+                $upd = $this->db->prepare("UPDATE payroll SET status = 1 WHERE id = ?");
+                $upd->bind_param("i", $id);
+                $upd->execute();
                 $this->db->commit();
                 return ['result' => true, 'message' => 'save'];
-            } else {
-                return ['result' => false, 'message' => 'Calculation failed: No DTR records found.'];
             }
+
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Calculation failed: no DTR records and no fixed-salary employees for this period.'];
         } catch (mysqli_sql_exception $e) {
             return ['result' => false, 'message' => $e->getMessage()];
         }
         return ['result' => false, 'message' => 'save'];
+    }
+
+    /**
+     * Insert payroll items for FIXED-rate (salaried) employees who need no
+     * attendance. They are paid the full salary share for the period
+     * (present=0, absent=0 → the monthly/fixed formula pays basic_pay in full),
+     * minus their standard contributions/deductions/loans.
+     *
+     * Site-independent (fixed staff aren't tied to a site), so to avoid paying
+     * one twice across site-scoped runs, an employee already holding an item in
+     * ANY overlapping-period payroll is skipped. Returns the number inserted.
+     */
+    private function insertFixedEmployees($payroll_id, $date_from, $date_to, $settings, $excluded_clasif, $site_ids)
+    {
+        $payroll_id = (int) $payroll_id;
+        $first_site = (int) (is_array($site_ids) && !empty($site_ids) ? $site_ids[0] : 0);
+
+        $emps = $this->db->query("
+            SELECT id, salary, allowance_rate, sss_fund, basic_pay, ot_rate
+            FROM employee
+            WHERE status = 1 AND rate_type = 'fixed'
+              AND clasification_id NOT IN (SELECT id FROM clasification WHERE UPPER(clasification) IN ($excluded_clasif))
+        ");
+        if (!$emps) return 0;
+
+        $inserted = 0;
+        while ($emp = $emps->fetch_assoc()) {
+            $employee_id = (int) $emp['id'];
+
+            // Already inserted this run (e.g. a fixed employee who also had DTR)?
+            $chk = $this->db->query("SELECT 1 FROM payroll_items WHERE payroll_id = $payroll_id AND employee_id = $employee_id LIMIT 1");
+            if ($chk && $chk->num_rows) continue;
+
+            // Already paid in another payroll whose period overlaps this one? Skip
+            // to prevent double-paying a site-independent salaried employee.
+            $dup = $this->db->prepare("
+                SELECT 1 FROM payroll_items pi
+                INNER JOIN payroll p ON p.id = pi.payroll_id
+                WHERE pi.employee_id = ? AND p.id <> ? AND p.date_from <= ? AND p.date_to >= ? LIMIT 1
+            ");
+            $dup->bind_param('iiss', $employee_id, $payroll_id, $date_to, $date_from);
+            $dup->execute();
+            if ($dup->get_result()->num_rows) continue;
+
+            // Standard contributions / deductions / loans / refunds (same rules as
+            // the DTR path — a salaried employee still carries these).
+            $contribute_amount = 0;
+            $deduction_amount = 0;
+            $deductions = [];
+            $contributions = [];
+            $loans = [];
+            $refunds = [];
+            foreach ($settings as $setting) {
+                if ($setting['type'] == 1) {
+                    $cid = $setting['id'];
+                    $s = $this->db->prepare("SELECT * FROM employee_contributions WHERE employee_id = ? AND contribution_id = ?");
+                    $s->bind_param('is', $employee_id, $cid);
+                    $s->execute();
+                    $r = $s->get_result();
+                    while ($row = $r->fetch_assoc()) {
+                        $contribute_amount += $row['amount'];
+                        $contributions[] = ["amount" => $row['amount'], "contribution_id" => (int) $row['contribution_id']];
+                    }
+                } elseif ($setting['type'] == 2) {
+                    $did = $setting['id'];
+                    $s = $this->db->prepare("SELECT * FROM employee_deductions WHERE employee_id = ? AND deduction_id = ?");
+                    $s->bind_param('is', $employee_id, $did);
+                    $s->execute();
+                    $r = $s->get_result();
+                    while ($row = $r->fetch_assoc()) {
+                        if (!empty($row['effective_date']) && date('Y-m-d', strtotime($row['effective_date'])) > $date_to) continue;
+                        $total = (float) $row['total_amount'];
+                        if ($total > 0) {
+                            if ((int) $row['status'] === 1) continue;
+                            $balance = (float) $row['balance'];
+                            if ($balance <= 0) continue;
+                            $ded = (float) $row['amount'];
+                            if ($balance < $ded) $ded = $balance;
+                            $deduction_amount += $ded;
+                            $deductions[] = ["amount" => $ded, "deduction_id" => (int) $row['deduction_id'], "type" => 1, "ded_row_id" => (int) $row['id'], "amortizing" => 1];
+                        } else {
+                            $deduction_amount += $row['amount'];
+                            $deductions[] = ["amount" => $row['amount'], "deduction_id" => (int) $row['deduction_id'], "type" => 1];
+                        }
+                    }
+                } elseif ($setting['type'] == 3) {
+                    $clt = (int) $setting['id'];
+                    $s = $this->db->prepare("SELECT * FROM loans WHERE employee_id = ? AND loan_type = ?");
+                    $s->bind_param('is', $employee_id, $clt);
+                    $s->execute();
+                    $r = $s->get_result();
+                    while ($row = $r->fetch_assoc()) {
+                        if (!empty($row['loan_date']) && date('Y-m-d', strtotime($row['loan_date'])) > $date_to) continue;
+                        if ((int) $row['loan_status'] === 1) continue;
+                        $balance = (float) $row['loan_balance'];
+                        if ($balance <= 0) continue;
+                        $damount = (float) $row['damount'];
+                        if ($balance < $damount) $damount = $balance;
+                        $loans[] = ["amount" => $damount, "deduction_id" => $row['loan_type'], "type" => 2];
+                    }
+                } elseif ($setting['type'] == 4) {
+                    $refunds[] = ["amount" => 0, "refund_id" => (int) $setting['id']];
+                }
+            }
+
+            $contributions_j = json_encode($contributions);
+            $deductions_j = json_encode($deductions);
+            $loans_j = json_encode($loans);
+            $refunds_j = json_encode($refunds);
+
+            // No attendance: hours/present/OT/late all zero; per_day is the daily rate.
+            $salary = (float) $emp['salary'];
+            $per_day = $salary;
+            $per_minute = number_format($salary / 1440, 2);
+            $basic_pay = (float) $emp['basic_pay'];
+            $ot_rate = (float) $emp['ot_rate'];
+            $sss_fund = (float) $emp['sss_fund'];
+            $allowance_amount = (float) $emp['allowance_rate'];
+            $zero = 0;
+            $rate_type = 'fixed';
+
+            $ins = $this->db->prepare("INSERT INTO payroll_items
+                (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
+                 deduction_amount, deductions, contributions, total_hours,
+                 per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans, basic_pay, sss_fund, refunds, sunday_duty, absent, rate_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            if (!$ins) continue;
+            $ins->bind_param(
+                'ssssssssssssssssssssssss',
+                $payroll_id, $employee_id, $salary, $allowance_amount, $contribute_amount,
+                $deduction_amount, $deductions_j, $contributions_j, $zero,
+                $per_day, $zero, $zero, $zero, $ot_rate, $per_minute, $zero, $first_site, $loans_j, $basic_pay, $sss_fund, $refunds_j, $zero, $zero, $rate_type
+            );
+            $ins->execute();
+            $inserted++;
+        }
+        return $inserted;
     }
 
     function update_status_user()
@@ -4565,11 +4776,13 @@ class Action
             $special_amount   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
 
             // Pay basis is now per-employee (rate_type), frozen on the payroll item at calc.
-            // payroll_type == 5 (whole-run monthly) is kept as a legacy override.
-            $is_monthly = (($row['rate_type'] ?? 'daily') === 'monthly') || ($payroll_type == 5);
+            // 'fixed' shares the salary-based formula but always has absent=0 (full pay,
+            // no attendance). payroll_type == 5 (whole-run monthly) is a legacy override.
+            $rt = $row['rate_type'] ?? 'daily';
+            $is_monthly = $rt === 'monthly' || $rt === 'fixed' || ($payroll_type == 5);
             if ($is_monthly) {
-                // Monthly rate: basic is the fixed monthly salary share (semi-monthly ÷2),
-                // and unpaid absences are deducted at the daily rate. Gross folds in premiums.
+                // Monthly/fixed rate: basic is the fixed monthly salary share (semi-monthly ÷2),
+                // and unpaid absences are deducted at the daily rate (0 for fixed). Gross folds in premiums.
                 $total_basic_rate = $row['basic_pay'];
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
                 $gross            = $total_amount + $overtime_amount + $legal_amount + $sunday_amount + $special_amount - $late_amount;

@@ -17,8 +17,10 @@
  *   save-face         employee_id, embedding[], [model]
  *   get-faces         [model]                     → enrolled face vectors
  *   delete-face       employee_id
- *   save-template     employee_id, finger_index, template (base64), [format]
+ *   save-template     employee_id, finger_index, template (base64), [format], [quality]
  *   get-templates     [format]                    → mobile fingerprint templates
+ *   get-finger-status employee_id, [format]       → per-finger enroll status (10-finger hands UI)
+ *   delete-template   employee_id, finger_index, [format]  → remove one enrolled finger
  *   save-attendance   employee_id, scan_time, site_id, [selfie base64 JPEG]
  *   get-selfies       employee_id, [date]         → attendance photos
  *
@@ -123,6 +125,14 @@ switch ($api_action) {
 
     case 'get-templates':
         $result = $kiosk->get_templates();
+        break;
+
+    case 'get-finger-status':
+        $result = $kiosk->get_finger_status();
+        break;
+
+    case 'delete-template':
+        $result = $kiosk->delete_template();
         break;
 
     case 'save-attendance':

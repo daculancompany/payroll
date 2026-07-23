@@ -327,8 +327,8 @@ switch ($action) {
         $lt_check = $lt_id > 0 ? $conn->query("SELECT is_paid FROM leave_types WHERE id = $lt_id LIMIT 1")->fetch_assoc() : null;
         $is_lwop_req = $lt_check && $lt_check['is_paid'] == 0;
 
-        $elig = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = $emp_id")->fetch_assoc();
-        $eligible = $elig && in_array($elig['c'], LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
+        $elig = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c, e.leave_override FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = $emp_id")->fetch_assoc();
+        $eligible = $elig && leave_eligibility_from($elig['c'], $elig['leave_override']);
 
         if (!$eligible && !$is_lwop_req) {
             echo json_encode(['result' => false, 'message' => 'Only Regular and Executive employees are entitled to leave.']);
@@ -351,17 +351,36 @@ switch ($action) {
         $today  = date('Y-m-d');
         $dates_json = json_encode($days);
 
+        // Duplicate-date guard: block days already covered by another of this
+        // employee's PENDING or APPROVED requests. Rejected requests don't block.
+        $taken = [];
+        $dupq  = $conn->query("SELECT dates, date_from, date_to FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1)");
+        if ($dupq) while ($dx = $dupq->fetch_assoc()) {
+            $dd = [];
+            if (!empty($dx['dates'])) { $j = json_decode($dx['dates'], true); if (is_array($j)) $dd = $j; }
+            if (!$dd) { for ($t = strtotime($dx['date_from']); $t <= strtotime($dx['date_to']); $t = strtotime('+1 day', $t)) $dd[] = date('Y-m-d', $t); }
+            foreach ($dd as $d1) $taken[date('Y-m-d', strtotime($d1))] = true;
+        }
+        $dup_hit = array_values(array_filter($days, function ($d1) use ($taken) { return isset($taken[date('Y-m-d', strtotime($d1))]); }));
+        if ($dup_hit) {
+            $nice = array_map(function ($d1) { return date('M d', strtotime($d1)); }, array_slice($dup_hit, 0, 5));
+            echo json_encode(['result' => false, 'message' => 'You already have a pending or approved leave on: '
+                . implode(', ', $nice) . (count($dup_hit) > 5 ? '…' : '') . '. Please pick different day(s).']);
+            break;
+        }
+
         // Balance guard (paid leave only — LWOP consumes no credits): remaining
         // counts approved AND still-pending requests so filings can't stack past
         // the employee's credits.
         if (!$is_lwop_req) {
+            $ly = leave_current_year();
             $balq = $conn->query("
                 SELECT COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
                 FROM leave_types lt
-                LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id
+                LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id AND c.year = $ly
                 LEFT JOIN (
                     SELECT leave_type_id, SUM(duration) AS used
-                    FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1)
+                    FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1) AND YEAR(date_from) = $ly
                     GROUP BY leave_type_id
                 ) u ON u.leave_type_id = lt.id
                 WHERE lt.id = $lt_id");
@@ -390,12 +409,23 @@ switch ($action) {
         $durLabel = $is_half
             ? ($dur . ' day/s — ' . $half_per . ' half on ' . date('M j', strtotime($half_date)))
             : $dur . ' day/s';
-        $msg   = $conn->real_escape_string("$ename requested $tname ($durLabel) via portal. Needs HR review.");
+        // First approver in the configured chain (currently the Supervisor).
+        $stages     = leave_stages();
+        $firstCfg   = $stages[array_key_first($stages)];
+        $firstRole  = (int) $firstCfg['role'];
+        $firstLabel = $firstCfg['label'];
+        $edept      = (int) ($conn->query("SELECT department_id FROM employee WHERE id = $emp_id")->fetch_assoc()['department_id'] ?? 0);
+
+        $msg   = $conn->real_escape_string("$ename requested $tname ($durLabel) via portal. Needs {$firstLabel} approval.");
         $title = $conn->real_escape_string('New leave request');
-        // Notify the same reviewer roles as attendance requests: Admin (1),
-        // Admin Dept Head (8) and HR Head (9) — not HR alone, so it shows in
-        // the admin notification bell too.
-        $hrs = $conn->query("SELECT id FROM users WHERE role IN (1,8,9) AND status = 1");
+        // Notify the FIRST approver (scoped to the employee's department) plus the
+        // Administrator (role 1) as an observer, so it also shows in the admin bell.
+        $hrs = $conn->query(
+            "SELECT id FROM users WHERE status = 1 AND (
+                 role = 1
+                 OR (role = $firstRole AND (department_id = $edept OR department_id IS NULL OR department_id = 0))
+             )"
+        );
         if ($hrs) while ($hu = $hrs->fetch_assoc()) {
             $uid = (int) $hu['id'];
             $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES ($uid,'user','$title','$msg','ri-calendar-event-line','warning','index.php?page=leaves')");
@@ -403,7 +433,7 @@ switch ($action) {
         // Mirror to reviewer staff browsers as a push (best-effort, never fatal).
         try {
             require_once __DIR__ . '/fcm.php';
-            fcm_push_role($conn, [1, 8, 9], 'New leave request',
+            fcm_push_role($conn, [1, $firstRole], 'New leave request',
                 "$ename requested $tname ($durLabel) via portal.", 'index.php?page=leaves');
         } catch (\Throwable $e) { /* ignore */ }
 
@@ -411,7 +441,7 @@ switch ($action) {
 
         echo json_encode([
             'result'  => true,
-            'message' => 'Leave request submitted! HR will review it shortly.',
+            'message' => "Leave request submitted! Your {$firstLabel} will review it shortly.",
             'leave_pending_count' => $leave_pending_count,
             'request' => [
                 'id' => (int) $new_id,
@@ -421,7 +451,8 @@ switch ($action) {
                 'date_from' => $d_from,
                 'date_to' => $d_to,
                 'duration' => $dur,
-                'status' => 0, 'hr_status' => 0, 'admin_status' => 0,
+                'reason' => $lreason,
+                'status' => 0, 'sup_status' => 0, 'hr_status' => 0, 'admin_status' => 0,
             ],
         ]);
         break;

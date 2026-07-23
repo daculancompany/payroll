@@ -41,13 +41,50 @@
                     </div>
 
                     <div class="card-body">
+                        <?php
+                        // Roles offered in this list (Administrator role 1 is excluded from the table).
+                        $usr_roles = [10, 8, 9];
+                        $usr_depts = $conn->query("SELECT id, name FROM department ORDER BY name ASC");
+                        ?>
+                        <!-- Filter / sort controls -->
+                        <div class="row g-2 mb-3 align-items-end">
+                            <div class="col-6 col-md-3">
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-shield-check-line me-1"></i>Role</label>
+                                <select id="filter-role" class="form-select form-select-sm">
+                                    <option value="">All roles</option>
+                                    <?php foreach ($usr_roles as $r): ?>
+                                        <option value="<?= $r ?>"><?= htmlspecialchars(getRole($r)) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-community-line me-1"></i>Department</label>
+                                <select id="filter-dept" class="form-select form-select-sm">
+                                    <option value="">All departments</option>
+                                    <?php if ($usr_depts) while ($d = $usr_depts->fetch_assoc()): ?>
+                                        <option value="<?= (int)$d['id'] ?>"><?= htmlspecialchars($d['name']) ?></option>
+                                    <?php endwhile; ?>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-pulse-line me-1"></i>Status</label>
+                                <select id="filter-status" class="form-select form-select-sm">
+                                    <option value="">All statuses</option>
+                                    <option value="1">Active</option>
+                                    <option value="2">Inactive</option>
+                                </select>
+                            </div>
+                            <div class="col-6 col-md-3">
+                                <button type="button" id="filter-reset" class="btn btn-sm btn-outline-secondary w-100"><i class="ri-refresh-line me-1"></i>Reset</button>
+                            </div>
+                        </div>
                         <div class="table-responsive mt-2 mb-1">
                             <table id="data-table" class="table table-hover table-bordered dt-responsive nowrap align-middle">
                                 <thead>
                                     <tr>
                                         <th><i class="ri-user-3-line me-1"></i>User</th>
                                         <th><i class="ri-shield-check-line me-1"></i>Role</th>
-                                        <th><i class="ri-building-2-line me-1"></i>Employer</th>
+                                        <th><i class="ri-community-line me-1"></i>Department</th>
                                         <th class="text-center" style="width:90px;"><i class="ri-pulse-line me-1"></i>Status</th>
                                         <th class="text-center" style="width:160px;"><i class="ri-settings-3-line me-1"></i>Action</th>
                                     </tr>
@@ -71,7 +108,7 @@
                                         $initials = strtoupper(substr($row['name'], 0, 1))
                                                   . strtoupper(substr(strstr($row['name'], ' ') ?: $row['name'], 1, 1));
                                     ?>
-                                        <tr>
+                                        <tr data-role="<?= (int)$row['role'] ?>" data-dept="<?= (int)($row['department_id'] ?? 0) ?>" data-status="<?= (int)$row['status'] ?>">
                                             <td>
                                                 <div class="d-flex align-items-center gap-2">
                                                     <div class="usr-avatar"><?= $initials ?></div>
@@ -98,18 +135,22 @@
                                                     </div>
                                                 <?php elseif ($row['role'] == 5): ?>
                                                     <div class="text-muted" style="font-size:11px;margin-top:3px;"><i class="ri-information-line me-1"></i>No site assigned</div>
-                                                <?php elseif ($row['role'] == 8 && !empty($row['department_name'])): ?>
+                                                <?php elseif (in_array((int)$row['role'], [8, 10], true) && !empty($row['department_name'])): ?>
                                                     <div class="mt-1">
                                                         <div class="usr-site-item">
                                                             <span class="usr-site-name"><i class="ri-community-line me-1"></i><?= htmlspecialchars($row['department_name']) ?></span>
                                                         </div>
                                                     </div>
-                                                <?php elseif ($row['role'] == 8): ?>
+                                                <?php elseif (in_array((int)$row['role'], [8, 10], true)): ?>
                                                     <div class="text-muted" style="font-size:11px;margin-top:3px;"><i class="ri-information-line me-1"></i>No department assigned</div>
                                                 <?php endif; ?>
                                             </td>
-                                            <td>
-                                                <span class="usr-employer"><i class="ri-building-2-line me-1 text-muted"></i><?= htmlspecialchars($row['employer_name'] ?? '—') ?></span>
+                                            <td data-order="<?= htmlspecialchars($row['department_name'] ?? '') ?>">
+                                                <?php if (!empty($row['department_name'])): ?>
+                                                    <span class="usr-site-name"><i class="ri-community-line me-1 text-muted"></i><?= htmlspecialchars($row['department_name']) ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">—</span>
+                                                <?php endif; ?>
                                             </td>
                                             <td class="text-center">
                                                 <?php if ($row['status'] == 1): ?>
@@ -166,5 +207,36 @@ document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
         new bootstrap.Tooltip(el, { trigger: 'hover' });
     });
+
+    // Filter the user list by Role / Department / Status. The DataTable is created
+    // in assets2/js/user.js; wait for it before wiring the custom search.
+    var tries = 0;
+    (function wireUserFilters() {
+        if (!(window.jQuery && jQuery.fn.DataTable && jQuery.fn.DataTable.isDataTable('#data-table'))) {
+            if (tries++ < 60) { setTimeout(wireUserFilters, 50); }
+            return;
+        }
+        var $ = window.jQuery;
+        var table = $('#data-table').DataTable();
+        var val = function (id) { return (document.getElementById(id) || {}).value || ''; };
+
+        // Scoped custom search (only affects #data-table) reading the row's data-* attrs.
+        $.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
+            if (settings.nTable.id !== 'data-table') return true;
+            var row = table.row(dataIndex).node();
+            if (!row) return true;
+            var fRole = val('filter-role'), fDept = val('filter-dept'), fStatus = val('filter-status');
+            if (fRole && row.getAttribute('data-role') !== fRole) return false;
+            if (fDept && row.getAttribute('data-dept') !== fDept) return false;
+            if (fStatus && row.getAttribute('data-status') !== fStatus) return false;
+            return true;
+        });
+
+        $('#filter-role, #filter-dept, #filter-status').on('change', function () { table.draw(); });
+        $('#filter-reset').on('click', function () {
+            $('#filter-role, #filter-dept, #filter-status').val('');
+            table.draw();
+        });
+    })();
 });
 </script>

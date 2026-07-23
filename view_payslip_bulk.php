@@ -25,19 +25,30 @@ function buildPayslip($conn, $id) {
     if (!$p) return null;
 
     $settings = json_decode($p['settings'], true) ?: [];
-    $perMinute        = $p['per_minute'];
+    // Per-minute = daily rate / (8h × 60m) — matches the payroll page and
+    // view_payslip.php (NOT the stored per_minute column, which is /1440).
+    $perMinute        = $p['per_day'] / (8 * 60);
     $overtime_amount  = $p['ot'] * $p['ot_rate'];
-    $undertime_amount = $p['under_time'] * $perMinute;
+    $undertime_amount = $p['under_time'] * $perMinute;   // informational only
     $late_amount      = $p['late'] * $perMinute;
     $absent_amount    = $p['absent'] * $p['per_day'];
     $allowance_amount = $p['allowance_amount'] * $p['allowance_days'];
-    $total_basic_rate = $p['present'] * $p['per_day'];
     $legal_amt   = $p['legal_holiday'] * $p['per_day'];
     $sunday_amt  = $p['sunday_duty'] * $p['per_day'];
     $special_amt = (($p['per_day'] / 8) * 2.4) * $p['special_holiday'];
-    $gross = ($total_basic_rate + $allowance_amount - $absent_amount)
-           + $overtime_amount + $legal_amt + $sunday_amt + $special_amt
-           - $late_amount - $undertime_amount;
+    // Gross per pay basis — mirrors get_payroll_rows_data() / the details page.
+    $rate_type  = $p['rate_type'] ?? 'daily';
+    $is_monthly = in_array($rate_type, ['monthly', 'fixed'], true);
+    if ($is_monthly) {
+        $total_basic_rate = $p['basic_pay'];
+        $gross = (($total_basic_rate + $allowance_amount - $absent_amount) / 2)
+               + $overtime_amount + $legal_amt + $sunday_amt + $special_amt
+               - $late_amount;
+    } else {
+        $total_basic_rate = ($p['present'] + (float)($p['paid_leave'] ?? 0)) * $p['per_day'];
+        $gross = $total_basic_rate + $overtime_amount + $allowance_amount
+               - $late_amount;
+    }
 
     $contributions_list = []; $deductions_list = []; $loans_list = [];
     $total_cont = 0; $total_ded = 0; $total_loan = 0;
@@ -74,13 +85,17 @@ function buildPayslip($conn, $id) {
     $jcc    = floatval($p['jcc_advances']);
     $sss    = floatval($p['sss_fund']);
     $total_all_ded = $total_cont + $total_ded + $total_loan + $other + $tax + $jei + $jcc + $sss;
+    // Manual signed adjustment (+ addition / − recovery), applied to net pay.
+    $adjustment  = floatval($p['adjustment'] ?? 0);
+    $adj_remarks = trim((string) ($p['adjustment_remarks'] ?? ''));
 
     return compact('p','gross','allowance_amount','total_basic_rate','absent_amount',
                    'overtime_amount','late_amount','undertime_amount',
                    'legal_amt','sunday_amt','special_amt',
                    'contributions_list','deductions_list','loans_list',
                    'total_cont','total_ded','total_loan',
-                   'other','tax','jei','jcc','sss','total_all_ded');
+                   'other','tax','jei','jcc','sss','total_all_ded',
+                   'adjustment','adj_remarks');
 }
 
 $payslips = [];
@@ -209,6 +224,8 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     $jei    = $ps['jei'];
     $jcc    = $ps['jcc'];
     $sss    = $ps['sss'];
+    $adjustment  = $ps['adjustment'];
+    $adj_remarks = $ps['adj_remarks'];
     $net_pay = $p['net'];
 ?>
 
@@ -315,6 +332,9 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
 <table class="ps-totals" cellspacing="0" cellpadding="0"><tr>
     <td><div class="tot-lbl">Gross Pay</div><div class="tot-val">₱ <?= number_format($gross, 2) ?></div></td>
     <td><div class="tot-lbl">Total Deductions</div><div class="tot-val">₱ <?= number_format($total_all_ded, 2) ?></div></td>
+    <?php if ($adjustment != 0): ?>
+    <td><div class="tot-lbl">Adjustment<?= $adj_remarks !== '' ? ' — ' . htmlspecialchars($adj_remarks) : '' ?></div><div class="tot-val"><?= $adjustment < 0 ? '−' : '+' ?> ₱ <?= number_format(abs($adjustment), 2) ?></div></td>
+    <?php endif; ?>
     <td><div class="tot-lbl">Net Pay</div><div class="tot-val">₱ <?= number_format($net_pay, 2) ?></div></td>
 </tr></table>
 

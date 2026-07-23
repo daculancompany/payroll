@@ -2,7 +2,6 @@
     .action-buttons { display:flex; gap:4px; align-items:center; flex-wrap:nowrap; }
     .action-buttons .btn-sm { padding:3px 9px; font-size:11px; white-space:nowrap; }
     .payroll-ref { font-weight:700; color:#1976d2; font-family:'Segoe UI',monospace; letter-spacing:.3px; }
-    .payroll-employer { font-weight:600; }
     .payroll-period { font-size:12px; color:#444; white-space:nowrap; }
     .type-badge { font-size:11px; }
 </style>
@@ -43,7 +42,6 @@
 									<tr>
 										<th style="width:34px;" class="text-center"><input type="checkbox" id="pay-check-all" title="Select reviewable on this page"></th>
 										<th><i class="ri-hashtag me-1"></i>Payroll ID</th>
-										<th><i class="ri-building-2-line me-1"></i>Employer</th>
 										<th><i class="ri-calendar-range-line me-1"></i>Period</th>
 										<th><i class="ri-pulse-line me-1"></i>Status</th>
 										<th class="text-center"><i class="ri-settings-3-line me-1"></i>Action</th>

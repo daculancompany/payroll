@@ -31,6 +31,7 @@
                                         <th>Leave Type</th>
                                         <th class="text-center" style="width:120px;">Days Allowed</th>
                                         <th class="text-center" style="width:100px;">Paid?</th>
+                                        <th class="text-center" style="width:150px;">Year-End</th>
                                         <th>Description</th>
                                         <th class="text-center" style="width:110px;">Status</th>
                                         <th class="text-center" style="width:120px;">Action</th>
@@ -55,6 +56,15 @@
                                                 <span class="badge bg-success rounded-pill"><i class="ri-money-dollar-circle-line me-1"></i>Paid</span>
                                             <?php else: ?>
                                                 <span class="badge bg-danger rounded-pill"><i class="ri-close-circle-line me-1"></i>Unpaid</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td class="text-center">
+                                            <?php if ($row['is_paid'] == 0): ?>
+                                                <span class="text-muted" style="font-size:11px;">—</span>
+                                            <?php elseif ((int)($row['carryover'] ?? 0) === 1): ?>
+                                                <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="ri-loop-right-line me-1"></i>Carry-over<?= $row['carryover_cap'] !== null ? ' · max ' . rtrim(rtrim(number_format($row['carryover_cap'], 1), '0'), '.') : '' ?></span>
+                                            <?php else: ?>
+                                                <span class="badge bg-secondary-subtle text-secondary border"><i class="ri-refresh-line me-1"></i>Reset</span>
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-muted"><?= htmlspecialchars($row['description'] ?? '') ?></td>
@@ -121,6 +131,18 @@
                         <input type="number" min="0" step="1" class="form-control" id="ltype-days" name="days_allowed" placeholder="e.g. 15">
                         <small class="text-muted">Set 0 for unlimited</small>
                     </div>
+                    <div class="mb-3" id="ltype-rollover-group">
+                        <label class="form-label"><i class="ri-calendar-todo-line me-1"></i>Year-End Policy</label>
+                        <select class="form-select" id="ltype-carryover" name="carryover" onchange="toggleCap()">
+                            <option value="0">Reset to allowance each year</option>
+                            <option value="1">Carry over unused credits</option>
+                        </select>
+                        <div class="mt-2" id="ltype-cap-group" style="display:none;">
+                            <label class="form-label">Carry-over cap (days)</label>
+                            <input type="number" min="0" step="0.5" class="form-control" id="ltype-cap" name="carryover_cap" placeholder="Leave blank for no cap">
+                            <small class="text-muted">Max days carried into next year. Blank = no cap.</small>
+                        </div>
+                    </div>
                     <div class="mb-3">
                         <label class="form-label">Description</label>
                         <textarea class="form-control" id="ltype-desc" name="description" rows="2" placeholder="Optional notes"></textarea>
@@ -145,14 +167,21 @@ document.addEventListener('DOMContentLoaded', function () {
         jQuery('#ltype-table').DataTable({
             order: [[0, 'asc']],
             pageLength: 10,
-            columnDefs: [{ orderable: false, targets: 4 }],
+            columnDefs: [{ orderable: false, targets: 6 }],
             language: { search: '', searchPlaceholder: 'Search leave type…' }
         });
     }
 });
 
 function toggleDaysAllowed(isPaid) {
+    // Days-allowed and the year-end policy only apply to PAID leave types.
     document.getElementById('ltype-days-group').style.display = isPaid ? '' : 'none';
+    document.getElementById('ltype-rollover-group').style.display = isPaid ? '' : 'none';
+}
+
+function toggleCap() {
+    const carry = document.getElementById('ltype-carryover').value === '1';
+    document.getElementById('ltype-cap-group').style.display = carry ? '' : 'none';
 }
 
 function resetLeaveTypeModal() {
@@ -160,7 +189,9 @@ function resetLeaveTypeModal() {
     document.getElementById('form-leave-type').reset();
     document.getElementById('ltype-status').checked = true;
     document.getElementById('ltype-paid-yes').checked = true;
+    document.getElementById('ltype-carryover').value = '0';
     toggleDaysAllowed(1);
+    toggleCap();
     document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Add Leave Type';
 }
 
@@ -170,9 +201,12 @@ function editLeaveType(row) {
     document.getElementById('ltype-days').value  = row.days_allowed;
     document.getElementById('ltype-desc').value  = row.description || '';
     document.getElementById('ltype-status').checked = (row.status == 1);
+    document.getElementById('ltype-carryover').value = String(parseInt(row.carryover ?? 0));
+    document.getElementById('ltype-cap').value = (row.carryover_cap === null || row.carryover_cap === undefined) ? '' : row.carryover_cap;
     const isPaid = parseInt(row.is_paid ?? 1);
     document.querySelector('input[name="is_paid"][value="' + isPaid + '"]').checked = true;
     toggleDaysAllowed(isPaid);
+    toggleCap();
     document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Edit Leave Type';
     new bootstrap.Modal(document.getElementById('modal-leave-type')).show();
 }

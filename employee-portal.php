@@ -8,14 +8,15 @@ if (!isset($_SESSION['emp_is_login']) || !$_SESSION['emp_is_login']) {
     header('location:login.php'); exit;
 }
 include 'db_connect.php';
+require_once __DIR__ . '/includes/leave_timeline.php';
 
 $emp_id = (int)$_SESSION['emp_id'];
 if (isset($_GET['logout'])) { session_destroy(); header('location:login.php'); exit; }
 
 // Leave eligibility: only Regular / Executive employees may request / hold credits.
-$elig_q = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = " . $emp_id);
+$elig_q = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c, e.leave_override FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = " . $emp_id);
 $elig_r = $elig_q ? $elig_q->fetch_assoc() : null;
-$portal_leave_eligible = $elig_r && in_array($elig_r['c'], LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
+$portal_leave_eligible = $elig_r && leave_eligibility_from($elig_r['c'], $elig_r['leave_override']);
 
 // Leave, LWOP, and attendance/OT requests are submitted via AJAX (emp-portal-ajax.php:
 // submit_leave_request / submit_attendance_request) so the page never reloads on save.
@@ -60,18 +61,19 @@ if ($ltq) while ($r = $ltq->fetch_assoc()) {
     else $leave_types_list[] = $r;
 }
 
+$leave_year = leave_current_year();   // credits are tracked per calendar year
 $leave_balance = [];
 $lbq = $conn->query("
     SELECT lt.id, lt.name,
         COALESCE(c.credits, lt.days_allowed) AS credits,
         COALESCE(u.used, 0) AS used
     FROM leave_types lt
-    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id
+    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id AND c.year = $leave_year
     LEFT JOIN (
         SELECT leave_type_id, SUM(duration) AS used
-        FROM leave_requests WHERE employee_id = $emp_id AND status = 1 GROUP BY leave_type_id
+        FROM leave_requests WHERE employee_id = $emp_id AND status = 1 AND YEAR(date_from) = $leave_year GROUP BY leave_type_id
     ) u ON u.leave_type_id = lt.id
-    WHERE lt.status = 1
+    WHERE lt.status = 1 AND lt.is_paid = 1
     ORDER BY lt.name ASC
 ");
 if ($lbq) while ($r = $lbq->fetch_assoc()) $leave_balance[] = $r;
@@ -83,10 +85,10 @@ $lv_remaining_filing = [];
 $lrf = $conn->query("
     SELECT lt.id, COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
     FROM leave_types lt
-    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id
+    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id AND c.year = $leave_year
     LEFT JOIN (
         SELECT leave_type_id, SUM(duration) AS used
-        FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1)
+        FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1) AND YEAR(date_from) = $leave_year
         GROUP BY leave_type_id
     ) u ON u.leave_type_id = lt.id
     WHERE lt.status = 1 AND lt.is_paid = 1
@@ -94,9 +96,10 @@ $lrf = $conn->query("
 if ($lrf) while ($r = $lrf->fetch_assoc()) $lv_remaining_filing[(int)$r['id']] = round(max(0, (float)$r['remaining']), 1);
 
 $mlq = $conn->prepare("
-    SELECT lr.*, lt.name AS leave_type_name, hu.name AS hr_name, au.name AS admin_name
+    SELECT lr.*, lt.name AS leave_type_name, su.name AS sup_name, hu.name AS hr_name, au.name AS admin_name
     FROM leave_requests lr
     INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+    LEFT JOIN users su ON su.id = lr.sup_by
     LEFT JOIN users hu ON hu.id = lr.hr_by
     LEFT JOIN users au ON au.id = lr.admin_by
     WHERE lr.employee_id = ?
@@ -312,8 +315,9 @@ $ytd_contrib_total  = $ytd_contrib + $ytd_sssfund + $ytd_tax;
 $life_contrib_total = $life_contrib + $life_sssfund + $life_tax;
 
 // ── Attendance (DTR_details) — rows are loaded via the server-side DataTable
-// (attendance-portal-server.php); we only need a total count here for the tab badge.
-$s3 = $conn->prepare("SELECT COUNT(*) AS c FROM DTR_details WHERE employee_id = ?");
+// (attendance-portal-server.php). The tab badge shows TODAY's records only
+// (matches the list's default "Today" range); hidden when zero.
+$s3 = $conn->prepare("SELECT COUNT(*) AS c FROM DTR_details WHERE employee_id = ? AND DATE(date_time) = CURDATE()");
 $s3->bind_param('i', $emp_id); $s3->execute();
 $attendance_count = (int)($s3->get_result()->fetch_assoc()['c'] ?? 0);
 
@@ -769,18 +773,19 @@ body{
         padding:8px 0;border-top:1px solid #eef3f2;text-align:right;font-size:12px !important;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Period"]::before{
         content:"Period";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
-    #leave-list-wrap .ps-hist-table tbody td[data-label="Days"],
-    #leave-list-wrap .ps-hist-table tbody td[data-label="HR"],
-    #leave-list-wrap .ps-hist-table tbody td[data-label="Final"]{
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Days"]{
         order:4;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
         padding:9px 4px;border-top:1px solid #eef3f2;text-align:center;font-size:14px;}
-    #leave-list-wrap .ps-hist-table tbody td[data-label="Days"]::before,
-    #leave-list-wrap .ps-hist-table tbody td[data-label="HR"]::before,
-    #leave-list-wrap .ps-hist-table tbody td[data-label="Final"]::before{
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Days"]::before{
         content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#8a9794;
         text-transform:uppercase;letter-spacing:.3px;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Progress"]{
+        order:5;flex:0 0 100%;display:block;padding:8px 0 2px;border-top:1px solid #eef3f2;}
+    #leave-list-wrap .ps-hist-table tbody td[data-label="Progress"]::before{
+        content:"Progress";display:block;font-size:9px;font-weight:800;color:#8a9794;
+        text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]{
-        order:5;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
+        order:6;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
         padding:9px 0;border-top:1px solid #eef3f2;text-align:right;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]::before{
         content:"Status";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
@@ -912,6 +917,13 @@ body{
 .bootstrap-datetimepicker-widget a[data-action="clear"] span::after{content:"Clear";}
 .bootstrap-datetimepicker-widget a[data-action="close"]{background:linear-gradient(135deg,#219688,#176358);color:#fff;box-shadow:0 3px 10px rgba(33,150,136,.3);}
 .bootstrap-datetimepicker-widget a[data-action="close"] span::after{content:"Done";}
+/* Leave-day picker: enlarged, roomy full-height calendar. The Clear / Done
+   footer actions stay visible (styled as pill buttons above). */
+.bootstrap-datetimepicker-widget{min-width:340px;padding:14px;}
+.bootstrap-datetimepicker-widget .table-condensed{width:100%;}
+.bootstrap-datetimepicker-widget table td.day{height:46px;line-height:46px;width:46px;}
+.bootstrap-datetimepicker-widget table th{height:40px;}
+.bootstrap-datetimepicker-widget table th.dow{height:30px;}
 
 /* daterangepicker theme override → brand teal */
 .daterangepicker td.active,.daterangepicker td.active:hover{background-color:#219688 !important;}
@@ -1317,7 +1329,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </button>
         <button class="tab-btn tab-primary" onclick="switchTab('attendance',this)">
             <i class="ri-calendar-check-line"></i><span class="tab-label">Attendance</span>
-            <span class="badge-count"><?= $attendance_count ?></span>
+            <?php if ($attendance_count): ?><span class="badge-count"><?= $attendance_count ?></span><?php endif; ?>
         </button>
         <button class="tab-btn tab-primary" id="tabbtn-leave" onclick="switchTab('leave',this)">
             <i class="ri-calendar-event-line"></i><span class="tab-label">Leave</span>
@@ -2393,6 +2405,19 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <?php endif; ?>
 
         <!-- My leave history -->
+        <?php leave_timeline_css(); ?>
+        <style>
+        /* Attendance Details modal shows the full log list inline — the
+           "view details" popover pill would be redundant there. */
+        #att-detail-body .dtr-logs-pill{display:none;}
+        .lv-chips{display:inline-flex;gap:8px;font-size:16px;align-items:center;}
+        .lv-chip i{vertical-align:middle;}
+        .lv-tl-details{margin-top:6px;}
+        .lv-tl-details>summary{cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:#219688;
+            display:inline-flex;align-items:center;gap:4px;padding:2px 0;}
+        .lv-tl-details>summary::-webkit-details-marker{display:none;}
+        .lv-tl-details[open]>summary{margin-bottom:2px;}
+        </style>
         <div class="sec"><i class="ri-history-line"></i>My Leave Requests</div>
         <div id="leave-list-wrap">
         <?php if (count($my_leaves)): ?>
@@ -2405,30 +2430,52 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         <th>Type</th>
                         <th>Period</th>
                         <th class="r">Days</th>
-                        <th>HR</th>
-                        <th>Final</th>
+                        <th>Progress</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
                 <?php
                 $stMap = [0 => ['Pending','#fd7e14','#fff8e8'], 1 => ['Approved','#176358','#e8f7f5'], 2 => ['Rejected','#dc3545','#fff0f0']];
-                $stageChip = function ($s) {
-                    if ($s == 1) return '<span style="color:#176358;" title="Approved"><i class="ri-checkbox-circle-fill"></i></span>';
-                    if ($s == 2) return '<span style="color:#dc3545;" title="Rejected"><i class="ri-close-circle-fill"></i></span>';
-                    return '<span style="color:#fd7e14;" title="Pending"><i class="ri-time-fill"></i></span>';
+                // Compact per-stage chip (icon coloured by status), labelled by tooltip.
+                $stageChip = function ($s, $label) {
+                    if ($s == 1) return '<span class="lv-chip" style="color:#176358;" title="' . htmlspecialchars($label) . ': Approved"><i class="ri-checkbox-circle-fill"></i></span>';
+                    if ($s == 2) return '<span class="lv-chip" style="color:#dc3545;" title="' . htmlspecialchars($label) . ': Rejected"><i class="ri-close-circle-fill"></i></span>';
+                    return '<span class="lv-chip" style="color:#fd7e14;" title="' . htmlspecialchars($label) . ': Pending"><i class="ri-time-fill"></i></span>';
                 };
+                $lv_details = [];   // per-request payload for the click-to-open details modal
                 foreach ($my_leaves as $ml):
                     [$slabel, $scol, $sbg] = $stMap[$ml['status']] ?? ['Unknown','#888','#eee'];
-                    $rej = $ml['admin_remarks'] ?: $ml['hr_remarks'];
+                    // Most relevant rejection remark (last stage that rejected).
+                    $rej = '';
+                    foreach (array_reverse(leave_stages(), true) as $rk => $rd) {
+                        if ((int)$ml[$rk . '_status'] === 2 && !empty($ml[$rk . '_remarks'])) { $rej = $ml[$rk . '_remarks']; break; }
+                    }
+                    $lv_details[$ml['id']] = [
+                        'type'     => $ml['leave_type_name'],
+                        'applied'  => date('M d, Y', strtotime($ml['date_applied'])),
+                        'period'   => date('M d', strtotime($ml['date_from'])) . ' – ' . date('M d, Y', strtotime($ml['date_to'])),
+                        'days'     => rtrim(rtrim(number_format($ml['duration'], 1), '0'), '.'),
+                        'half'     => $ml['is_half_day'] ? ($ml['half_period'] . ' half' . (!empty($ml['half_date']) ? ' · ' . date('M j', strtotime($ml['half_date'])) : '')) : '',
+                        'reason'   => (string)($ml['reason'] ?? ''),
+                        'status'   => (int)$ml['status'],
+                        'rej'      => $rej,
+                        'timeline' => leave_timeline_html($ml),
+                    ];
                 ?>
-                <tr>
+                <tr onclick="openLeaveDetail(<?= (int)$ml['id'] ?>)" style="cursor:pointer;" title="Tap to view details">
                     <td data-label="Date Applied"><?= date('M d, Y', strtotime($ml['date_applied'])) ?></td>
                     <td data-label="Type"><span style="font-weight:700;color:#176358;"><?= htmlspecialchars($ml['leave_type_name']) ?></span></td>
                     <td data-label="Period" style="font-size:11px;"><?= date('M d', strtotime($ml['date_from'])) ?> – <?= date('M d, Y', strtotime($ml['date_to'])) ?></td>
                     <td class="r" data-label="Days"><b><?= rtrim(rtrim(number_format($ml['duration'], 1), '0'), '.') ?></b></td>
-                    <td data-label="HR"><?= $stageChip($ml['hr_status']) ?></td>
-                    <td data-label="Final"><?= $stageChip($ml['admin_status']) ?></td>
+                    <td data-label="Progress">
+                        <div class="lv-chips">
+                            <?php foreach (leave_stages() as $ck => $cd): ?>
+                                <?= $stageChip($ml[$ck . '_status'], $cd['label']) ?>
+                            <?php endforeach; ?>
+                            <span style="font-size:10px;color:#219688;font-weight:700;margin-left:4px;"><i class="ri-eye-line"></i> Details</span>
+                        </div>
+                    </td>
                     <td data-label="Status">
                         <span style="background:<?= $sbg ?>;color:<?= $scol ?>;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;"><?= $slabel ?></span>
                         <?php if ($ml['status'] == 2 && $rej): ?>
@@ -2898,24 +2945,90 @@ function prependAttRequestRow(req) {
     if (window.areqReload) window.areqReload();
 }
 
+// Approval-stage labels in workflow order (from LEAVE_APPROVAL_STAGES) so a
+// just-filed request's row can be built client-side with NO page reload.
+var LEAVE_STAGES = <?= json_encode(array_map(fn($s) => $s['label'], array_values(leave_stages()))) ?>;
+
+// Per-request payload for the click-to-open details modal (built server-side in
+// the list loop; client-side prepends register themselves here too).
+var LEAVE_DETAILS = <?= json_encode($lv_details ?? [], JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+
+function openLeaveDetail(id) {
+    var d = LEAVE_DETAILS[id];
+    if (!d) return;
+    var stMap = { 0: ['Pending', '#fd7e14', '#fff8e8'], 1: ['Approved', '#176358', '#e8f7f5'], 2: ['Rejected', '#dc3545', '#fff0f0'] };
+    var st = stMap[d.status] || ['Unknown', '#888', '#eee'];
+    var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
+        + '<span style="font-weight:800;color:#176358;font-size:16px;">' + escapeHtml(d.type) + '</span>'
+        + '<span style="background:' + st[2] + ';color:' + st[1] + ';border-radius:10px;padding:3px 12px;font-size:11px;font-weight:700;">' + st[0] + '</span>'
+        + '</div>'
+        + '<div class="row g-2 mb-2" style="font-size:12.5px;">'
+        + '<div class="col-6"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Filed</div>' + escapeHtml(d.applied) + '</div>'
+        + '<div class="col-6"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Days</div><b>' + escapeHtml(String(d.days)) + '</b>'
+        + (d.half ? ' <span style="background:#fff8e8;color:#fd7e14;border-radius:8px;padding:1px 7px;font-size:10px;font-weight:700;">' + escapeHtml(d.half) + '</span>' : '') + '</div>'
+        + '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Period</div>' + escapeHtml(d.period) + '</div>'
+        + (d.reason ? '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Reason</div>' + escapeHtml(d.reason) + '</div>' : '')
+        + '</div>'
+        + (d.rej ? '<div style="background:#fff0f0;color:#dc3545;border-radius:10px;padding:8px 12px;font-size:12px;margin-bottom:10px;"><i class="ri-information-line me-1"></i><b>Rejected:</b> ' + escapeHtml(d.rej) + '</div>' : '')
+        + '<div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">Approval Timeline</div>'
+        + d.timeline;
+    document.getElementById('leave-detail-body').innerHTML = h;
+    new bootstrap.Modal(document.getElementById('modal-leave-detail')).show();
+}
+
 function prependLeaveRow(req) {
+    // Build the new request's row (all stages pending) and prepend it — no page
+    // reload, so the SweetAlert success message from ajaxSubmitForm stays visible.
     var wrap = document.getElementById('leave-list-wrap');
     if (!wrap) return;
     var tbody = wrap.querySelector('table.ps-hist-table tbody');
-    if (!tbody) {
+    if (!tbody) {   // list was empty — build the table shell first
         wrap.innerHTML = '<div class="paper" style="border-radius:14px;overflow:hidden;"><div class="table-responsive">'
             + '<table class="ps-hist-table"><thead><tr><th>Date Applied</th><th>Type</th><th>Period</th>'
-            + '<th class="r">Days</th><th>HR</th><th>Final</th><th>Status</th></tr></thead><tbody></tbody></table></div></div>';
+            + '<th class="r">Days</th><th>Progress</th><th>Status</th></tr></thead><tbody></tbody></table></div></div>';
         tbody = wrap.querySelector('tbody');
     }
-    var pendingChip = '<span style="color:#fd7e14;" title="Pending"><i class="ri-time-fill"></i></span>';
-    var row = '<tr>'
+    // Stage chips — a fresh request is pending at every stage.
+    var chips = LEAVE_STAGES.map(function (lbl) {
+        return '<span class="lv-chip" style="color:#fd7e14;" title="' + escapeHtml(lbl) + ': Pending"><i class="ri-time-fill"></i></span>';
+    }).join('');
+    // Timeline — Filed (now) → first stage awaiting → later stages pending.
+    var now = new Date();
+    var filedAt = now.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
+        + ' · ' + now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    var tl = '<ul class="lvtl">'
+        + '<li><span class="lvtl-dot filed"><i class="ri-flag-line"></i></span>'
+        + '<span class="lvtl-stage">Filed</span><div class="lvtl-meta">' + filedAt + '</div></li>';
+    LEAVE_STAGES.forEach(function (lbl, i) {
+        if (i === 0) {
+            tl += '<li><span class="lvtl-dot wait"><i class="ri-time-line"></i></span>'
+                + '<span class="lvtl-stage">' + escapeHtml(lbl) + '</span><span class="lvtl-badge">Awaiting</span></li>';
+        } else {
+            tl += '<li><span class="lvtl-dot"><i class="ri-more-line"></i></span>'
+                + '<span class="lvtl-stage" style="color:#9aa3b2;">' + escapeHtml(lbl) + '</span>'
+                + '<div class="lvtl-meta">Pending earlier approval</div></li>';
+        }
+    });
+    tl += '</ul>';
+    // Register the new request for the click-to-open details modal.
+    LEAVE_DETAILS[req.id] = {
+        type: req.leave_type_name,
+        applied: fmtMDY(req.date_applied),
+        period: fmtMD(req.date_from) + ' – ' + fmtMDY(req.date_to),
+        days: trimNum(req.duration),
+        half: '',
+        reason: req.reason || '',
+        status: 0,
+        rej: '',
+        timeline: tl
+    };
+    var row = '<tr onclick="openLeaveDetail(' + parseInt(req.id, 10) + ')" style="cursor:pointer;" title="Tap to view details">'
         + '<td data-label="Date Applied">' + fmtMDY(req.date_applied) + '</td>'
         + '<td data-label="Type"><span style="font-weight:700;color:#176358;">' + escapeHtml(req.leave_type_name) + '</span></td>'
         + '<td data-label="Period" style="font-size:11px;">' + fmtMD(req.date_from) + ' – ' + fmtMDY(req.date_to) + '</td>'
         + '<td class="r" data-label="Days"><b>' + trimNum(req.duration) + '</b></td>'
-        + '<td data-label="HR">' + pendingChip + '</td>'
-        + '<td data-label="Final">' + pendingChip + '</td>'
+        + '<td data-label="Progress"><div class="lv-chips">' + chips
+        + '<span style="font-size:10px;color:#219688;font-weight:700;margin-left:4px;"><i class="ri-eye-line"></i> Details</span></div></td>'
         + '<td data-label="Status"><span style="background:#fff8e8;color:#fd7e14;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;">Pending</span></td>'
         + '</tr>';
     tbody.insertAdjacentHTML('afterbegin', row);
@@ -3625,8 +3738,8 @@ function printSelectedMyPayslips() {
     window.open('print-my-payslips.php?ids=' + ids.join(','), '_blank', 'width=960,height=760,scrollbars=yes');
 }
 
-// ── Payslip preview: render the payslip as a dompdf PDF inside the modal, same
-// flow as the payroll prints — preview inline, download from the modal. ──
+// ── Payslip preview: dompdf PDF inside the modal. A server-side PDF cache
+// makes repeat views instant; only the first view after a data change renders. ──
 function openPayslipPreview(itemId) {
     var frame = document.getElementById('payslip-preview-frame');
     if (!frame) return;
@@ -3792,14 +3905,15 @@ var attFrom  = attToday, attTo = attToday;
 var attMobileMQ = window.matchMedia('(max-width:767.98px), (pointer:coarse) and (max-height:500px)');
 
 // (Re)binds Bootstrap popovers on the log-detail pills just drawn (table or feed).
+var ATT_POPOVER_SCOPES = '#att-tbl [data-bs-toggle="popover"], #att-mlist [data-bs-toggle="popover"], #att-detail-body [data-bs-toggle="popover"]';
 function initAttPopovers() {
-    document.querySelectorAll('#att-tbl [data-bs-toggle="popover"], #att-mlist [data-bs-toggle="popover"]').forEach(function (el) {
+    document.querySelectorAll(ATT_POPOVER_SCOPES).forEach(function (el) {
         var existing = bootstrap.Popover.getInstance(el);
         if (existing) existing.dispose();
         // 'left' (from the server markup) falls off-screen on phones — pin to top there.
         new bootstrap.Popover(el, { sanitize: false, placement: attMobileMQ.matches ? 'top' : 'left' });
         el.addEventListener('shown.bs.popover', function () {
-            document.querySelectorAll('#att-tbl [data-bs-toggle="popover"], #att-mlist [data-bs-toggle="popover"]').forEach(function (other) {
+            document.querySelectorAll(ATT_POPOVER_SCOPES).forEach(function (other) {
                 if (other !== el) bootstrap.Popover.getInstance(other) && bootstrap.Popover.getInstance(other).hide();
             });
         });
@@ -3808,7 +3922,7 @@ function initAttPopovers() {
 // Click outside closes any open popover
 document.addEventListener('click', function (e) {
     if (!e.target.closest('[data-bs-toggle="popover"]') && !e.target.closest('.popover')) {
-        document.querySelectorAll('#att-tbl [data-bs-toggle="popover"], #att-mlist [data-bs-toggle="popover"]').forEach(function (el) {
+        document.querySelectorAll(ATT_POPOVER_SCOPES).forEach(function (el) {
             var inst = bootstrap.Popover.getInstance(el);
             if (inst) inst.hide();
         });
@@ -3817,6 +3931,29 @@ document.addEventListener('click', function (e) {
 
 // ── Mobile infinite-scroll feed ──────────────────────────────────
 var attM = { start: 0, pageSize: 15, total: null, loading: false, done: false, started: false };
+
+// Click-to-open details modal for one attendance record (table row or card).
+function openAttDetail(r) {
+    if (!r) return;
+    var lbl = function (t) { return '<div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">' + t + '</div>'; };
+    var noteText = (r.notes || '').replace(/<[^>]*>/g, '').trim();
+    var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
+        + '<div style="font-weight:800;color:#176358;font-size:15px;line-height:1.3;">' + (r.date || '') + '</div>'
+        + '<div>' + (r.type || '') + '</div>'
+        + '</div>'
+        + '<div class="row g-2" style="font-size:13px;">'
+        + '<div class="col-6" style="background:#f7fbfa;border-radius:10px;padding:10px 12px;">' + lbl('Work Hours') + '<b>' + (r.work_hours || '—') + '</b></div>'
+        + '<div class="col-6" style="background:#f7fbfa;border-radius:10px;padding:10px 12px;">' + lbl('OT Hours') + '<b>' + (r.ot_hours || '—') + '</b></div>'
+        + '<div class="col-12" style="margin-top:10px;">' + lbl('Time In / Out') + (r.time_io || '—') + '</div>'
+        + '<div class="col-12" style="margin-top:6px;">'
+        + lbl('All Logs' + (r.logs_count ? ' (' + r.logs_count + ')' : ''))
+        + '<div style="background:#f7fbfa;border:1px solid #e4ecea;border-radius:10px;padding:8px 12px;margin-top:3px;">'
+        + (r.logs_all || '<span style="color:#aaa;font-size:11px;">No logs</span>') + '</div></div>'
+        + ((noteText && noteText !== '—') ? '<div class="col-12" style="margin-top:6px;">' + lbl('Notes') + r.notes + '</div>' : '')
+        + '</div>';
+    document.getElementById('att-detail-body').innerHTML = h;
+    new bootstrap.Modal(document.getElementById('modal-att-detail')).show();
+}
 
 function attMCard(r) {
     // Server cells arrive as HTML fragments; recompose them into an app-style card.
@@ -3836,6 +3973,13 @@ function attMCard(r) {
     var dd = card.querySelectorAll('.attm-head > div');
     if (dd[0]) dd[0].className = 'attm-d1';
     if (dd[1]) dd[1].className = 'attm-d2';
+    card.style.cursor = 'pointer';
+    card.title = 'Tap to view details';
+    card.addEventListener('click', function (e) {
+        // Taps on the log-detail popover pills keep their own behavior.
+        if (e.target.closest('[data-bs-toggle="popover"]') || e.target.closest('.popover')) return;
+        openAttDetail(r);
+    });
     return card;
 }
 
@@ -3927,6 +4071,15 @@ function attInitTable($) {
             emptyTable: 'No attendance records found for this range.',
             processing: 'Loading…',
         },
+        // Whole row opens the details modal; taps on the log popover pills keep their own behavior.
+        createdRow: function (row, data) {
+            row.style.cursor = 'pointer';
+            row.title = 'Tap to view details';
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('[data-bs-toggle="popover"]') || e.target.closest('.popover')) return;
+                openAttDetail(data);
+            });
+        },
         drawCallback: function (settings) {
             var json = settings.json;
             var c = document.getElementById('att-count');
@@ -4017,6 +4170,28 @@ var areqMobileMQ = window.matchMedia('(max-width:767.98px), (pointer:coarse) and
 var areqM = { start: 0, pageSize: 15, total: null, loading: false, done: false, started: false };
 var AREQ_ENDPOINT = 'attendance-requests-portal-server.php';
 
+// Click-to-open details modal for a request row/card (shares one modal).
+function openAreqDetail(r) {
+    if (!r) return;
+    var typeIcon = r.type_key === 'incident' ? 'ri-error-warning-line' : 'ri-timer-flash-line';
+    var lbl = function (t) { return '<div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">' + t + '</div>'; };
+    var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
+        + '<span style="font-weight:800;color:#176358;font-size:16px;"><i class="' + typeIcon + ' me-1"></i>' + (r.type_label || 'Request') + '</span>'
+        + '<span style="background:' + (r.status_color || '#888') + ';color:#fff;border-radius:10px;padding:3px 12px;font-size:11px;font-weight:800;">' + (r.status_label || '') + '</span>'
+        + '</div>'
+        + '<div class="row g-2" style="font-size:12.5px;">'
+        + '<div class="col-6">' + lbl('Request Date') + (r.date_plain || '—') + '</div>'
+        + '<div class="col-6">' + lbl('Filed') + (r.filed || '—') + '</div>'
+        + '<div class="col-12">' + lbl('Reason') + (r.reason_plain || '—') + '</div>'
+        + '<div class="col-12">' + lbl('Details') + (r.details_html || '—') + '</div>'
+        + '</div>'
+        + (r.reviewer_html
+            ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e4ecea;font-size:12px;color:#555;">' + lbl('Reviewer Notes') + r.reviewer_html + '</div>'
+            : '');
+    document.getElementById('areq-detail-body').innerHTML = h;
+    new bootstrap.Modal(document.getElementById('modal-areq-detail')).show();
+}
+
 function areqCard(r) {
     var card = document.createElement('div');
     card.className = 'areq-card st-' + (r.status_slug || 'pending');
@@ -4034,6 +4209,9 @@ function areqCard(r) {
         html += '<div class="areq-rev"><i class="ri-chat-1-line"></i><span>' + r.reviewer_html + '</span></div>';
     }
     card.innerHTML = html;
+    card.style.cursor = 'pointer';
+    card.title = 'Tap to view details';
+    card.addEventListener('click', function () { openAreqDetail(r); });
     return card;
 }
 
@@ -4115,6 +4293,12 @@ function areqInitTable($) {
         language: {
             emptyTable: 'No requests filed yet.',
             processing: 'Loading…',
+        },
+        // Whole row opens the details modal (same data object the mobile cards use).
+        createdRow: function (row, data) {
+            row.style.cursor = 'pointer';
+            row.title = 'Tap to view details';
+            row.addEventListener('click', function () { openAreqDetail(data); });
         },
         drawCallback: function (settings) {
             var json = settings.json;
@@ -4221,6 +4405,60 @@ jQuery(function ($) {
 </div>
 
 <!-- Modal: Request a Leave -->
+<!-- Leave Details Modal (opened by tapping a row in My Leave Requests) -->
+<div class="modal fade" id="modal-leave-detail" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                    <i class="ri-calendar-event-line me-2"></i>Leave Details
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="leave-detail-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Attendance Record Details Modal (opened by tapping a row/card in Attendance Records) -->
+<div class="modal fade" id="modal-att-detail" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                    <i class="ri-fingerprint-line me-2"></i>Attendance Details
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="att-detail-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Request Details Modal (opened by tapping a row/card in My Requests) -->
+<div class="modal fade" id="modal-areq-detail" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                    <i class="ri-timer-flash-line me-2"></i>Request Details
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="areq-detail-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="modal-leave-request" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <form id="leave-request-form" data-parsley-validate novalidate>

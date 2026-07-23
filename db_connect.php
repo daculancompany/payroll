@@ -27,6 +27,108 @@ if (!defined('PAYROLL_EXCLUDED_CLASSIFICATIONS')) {
     define('PAYROLL_EXCLUDED_CLASSIFICATIONS', ['INTERM', 'INTERN']);
 }
 
+// ── Leave eligibility resolver (GLOBAL) ─────────────────────────────────
+// Single source of truth for "can this employee file leave / hold credits".
+// Honors the per-employee override first, then falls back to classification.
+//   $override: employee.leave_override — NULL/'' = auto, 1 = force allow, 0 = force block.
+//   $classification: the employee's classification NAME (any case).
+// The operative leave year — leave credits are tracked per calendar year.
+if (!function_exists('leave_current_year')) {
+    function leave_current_year(): int
+    {
+        return (int) date('Y');
+    }
+}
+
+if (!function_exists('leave_eligibility_from')) {
+    function leave_eligibility_from($classification, $override): bool
+    {
+        if ($override !== null && $override !== '') {
+            return ((int) $override === 1);
+        }
+        return in_array(strtoupper(trim((string) $classification)), LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
+    }
+}
+
+// ── Leave approval workflow (GLOBAL) ────────────────────────────────────
+// The ORDERED chain a leave request must pass through. Edit THIS ONE array to
+// reorder, add, or remove approval stages — the leaves page, employee portal,
+// decision handler, notifications, and timeline all follow it automatically.
+//
+// Each stage's key is also its column prefix on `leave_requests`:
+//     {key}_status  (0 pending · 1 approved · 2 rejected)
+//     {key}_by      (users.id of the approver)
+//     {key}_remarks (reason, mainly on reject)
+//     {key}_at      (decision timestamp)
+// `role` is the users.role allowed to act on that stage.
+// Current flow:  Employee → Supervisor → Department Head → HR (final).
+if (!defined('LEAVE_APPROVAL_STAGES')) {
+    define('LEAVE_APPROVAL_STAGES', [
+        'sup'   => ['label' => 'Supervisor',      'role' => 10, 'icon' => 'ri-user-star-line'],
+        'admin' => ['label' => 'Department Head', 'role' => 8,  'icon' => 'ri-shield-check-line'],
+        'hr'    => ['label' => 'HR',              'role' => 9,  'icon' => 'ri-user-settings-line'],
+    ]);
+}
+
+if (!function_exists('leave_stages')) {
+    /** The ordered leave-approval stages (key => [label, role, icon]). */
+    function leave_stages(): array
+    {
+        return LEAVE_APPROVAL_STAGES;
+    }
+
+    /** Stage key a given user role may act on, or null if that role never approves leave. */
+    function leave_stage_for_role($role): ?string
+    {
+        foreach (LEAVE_APPROVAL_STAGES as $key => $s) {
+            if ((int) $s['role'] === (int) $role) return $key;
+        }
+        return null;
+    }
+
+    /**
+     * The stage currently awaiting action: the first stage not yet approved.
+     * Returns null when the chain is fully approved OR already rejected (no
+     * further action is possible in either case).
+     */
+    function leave_current_stage($row): ?string
+    {
+        foreach (LEAVE_APPROVAL_STAGES as $key => $s) {
+            $st = (int) ($row[$key . '_status'] ?? 0);
+            if ($st === 2) return null;   // a rejection halts the chain
+            if ($st !== 1) return $key;   // first stage still pending
+        }
+        return null;                      // every stage approved
+    }
+
+    /** Overall status derived from the per-stage statuses: 2 rejected, 1 all-approved, else 0. */
+    function leave_overall_status($row): int
+    {
+        $all_approved = true;
+        foreach (LEAVE_APPROVAL_STAGES as $key => $s) {
+            $st = (int) ($row[$key . '_status'] ?? 0);
+            if ($st === 2) return 2;
+            if ($st !== 1) $all_approved = false;
+        }
+        return $all_approved ? 1 : 0;
+    }
+
+    /**
+     * SQL WHERE predicate (no leading AND) matching leave requests currently
+     * awaiting action at the given stage: overall pending, every earlier stage
+     * approved, and this stage not yet decided. Returns '0' for an unknown key.
+     */
+    function leave_stage_pending_predicate(string $stageKey): string
+    {
+        $keys = array_keys(LEAVE_APPROVAL_STAGES);
+        $idx  = array_search($stageKey, $keys, true);
+        if ($idx === false) return '0';
+        $conds = ['status=0', "{$stageKey}_status=0"];
+        for ($j = 0; $j < $idx; $j++) $conds[] = $keys[$j] . '_status=1';
+        return implode(' AND ', $conds);
+    }
+}
+
 // ── Classification badge colors (GLOBAL) ────────────────────────────────
 // One source of truth for classification badge colors across all pages.
 // Returns an inline style string. Edit the map to recolor app-wide.

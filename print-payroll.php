@@ -287,11 +287,12 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th colspan="3" class="text-center info-header">Overtime</th>
                         <th colspan="3" class="text-center info-header">Late</th>
                         <th rowspan="2" class="text-center success-header">GROSS SALARY</th>
-                        <th colspan="<?= count($contributions_settings) ?>" class="text-center danger-header">Deduction</th>
+                        <th colspan="<?= count($contributions_settings) + 5 ?>" class="text-center danger-header">Deduction</th>
                         <th rowspan="2" class="text-center danger-header">Total Deduction</th>
                         <?php if (count($refunds_settings) > 0) { ?>
                             <th colspan="<?= count($refunds_settings) ?>" class="text-center primary-header">Refunds</th>
                         <?php } ?>
+                        <th rowspan="2" class="text-center info-header">Adjustment</th>
                         <th rowspan="2" class="text-center success-header">Net Pay</th>
                         <th rowspan="2" class="text-center  primary-header" style="width: 130px;">Signature</th>
                         <th rowspan="2" class="text-center  primary-header">No.</th>
@@ -343,9 +344,11 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <?php } ?>
                         <?php } else { ?>
                         <?php } ?>
-                        <!-- <th class="text-center  danger-header">SSS PROVIDENT FUND </th>
-                        <th class="text-center  danger-header">JEI ADVANCE</th>
-                        <th class="text-center  danger-header">JCC ADVANCES</th> -->
+                        <th class="text-center  danger-header">SSS Provident Fund</th>
+                        <th class="text-center  danger-header">JEI Advance</th>
+                        <th class="text-center  danger-header">JCC Advances</th>
+                        <th class="text-center  danger-header">Tax</th>
+                        <th class="text-center  danger-header">Other Deduction</th>
                         <?php if (count($refunds_settings) > 0) {
                             foreach ($refunds_settings as $k) {
                                 $query_con = "SELECT * FROM refunds   WHERE id = ?";
@@ -521,8 +524,22 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <?php  } else { ?>
 
                             <?php } ?>
-                            <?php $total_deductions = $total_deductions;
-                            $t_deduction += $total_deductions;  ?>
+                            <!-- Fixed deductions + Other Deduction — mirror payroll_calculations.php -->
+                            <?php
+                            $other_deduction = (float) ($row['other_deduction'] ?? 0);
+                            $total_deductions += $sss_fund + $jei_advances + $jcc_advances + $tax + $other_deduction;
+                            $t_sss_fund = ($t_sss_fund ?? 0) + $sss_fund;
+                            $t_jei = ($t_jei ?? 0) + $jei_advances;
+                            $t_jcc = ($t_jcc ?? 0) + $jcc_advances;
+                            $t_tax = ($t_tax ?? 0) + $tax;
+                            $t_other_ded = ($t_other_ded ?? 0) + $other_deduction;
+                            ?>
+                            <td class="text-right"><?= number_format($sss_fund, 2) ?></td>
+                            <td class="text-right"><?= number_format($jei_advances, 2) ?></td>
+                            <td class="text-right"><?= number_format($jcc_advances, 2) ?></td>
+                            <td class="text-right"><?= number_format($tax, 2) ?></td>
+                            <td class="text-right"><?= number_format($other_deduction, 2) ?></td>
+                            <?php $t_deduction += $total_deductions;  ?>
                             <td class="text-right">
                                 <?= number_format($total_deductions, 2) ?>
                             </td>
@@ -544,9 +561,19 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <?php
                                 }
                             } ?>
+                            <!-- Adjustment — signed manual correction added to net -->
+                            <?php
+                            $adjustment  = (float) ($row['adjustment'] ?? 0);
+                            $adj_remarks = trim((string) ($row['adjustment_remarks'] ?? ''));
+                            $t_adjust = ($t_adjust ?? 0) + $adjustment;
+                            ?>
+                            <td class="text-right">
+                                <?= number_format($adjustment, 2) ?>
+                                <?php if ($adj_remarks !== ''): ?><div style="font-size:6px;color:#666;"><?= htmlspecialchars($adj_remarks) ?></div><?php endif; ?>
+                            </td>
                             <?php
 
-                            $net = $gross_salary -  $total_deductions + $total_refunds;
+                            $net = $gross_salary -  $total_deductions + $total_refunds + $adjustment;
                             $t_net += $net;
                             ?>
                             <td class="text-right net-content">
@@ -579,8 +606,14 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th></th>
                         <th class="text-right"><?= number_format($t_gross, 2) ?></th>
                         <th colspan="<?= count($contributions_settings) ?>"></th>
+                        <th class="text-right"><?= number_format($t_sss_fund ?? 0, 2) ?></th>
+                        <th class="text-right"><?= number_format($t_jei ?? 0, 2) ?></th>
+                        <th class="text-right"><?= number_format($t_jcc ?? 0, 2) ?></th>
+                        <th class="text-right"><?= number_format($t_tax ?? 0, 2) ?></th>
+                        <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
                         <th class="text-right"><?= number_format($t_deduction, 2) ?></th>
                         <th colspan="<?= count($refunds_settings) ?>"></th>
+                        <th class="text-right"><?= number_format($t_adjust ?? 0, 2) ?></th>
                         <th class="text-right"><?= number_format($t_net, 2) ?></th>
                         <th></th>
                         <th></th>

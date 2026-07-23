@@ -36,6 +36,7 @@ $stmt2 = $conn->prepare("
         SUM(COALESCE(pi.jei_advances, 0))                             AS total_jei,
         SUM(COALESCE(pi.jcc_advances, 0))                             AS total_jcc,
         SUM(COALESCE(pi.sss_fund, 0))                                 AS total_sss,
+        SUM(COALESCE(pi.adjustment, 0))                               AS total_adjustment,
         SUM(pi.net)                                                   AS total_net
     FROM payroll_items pi
     INNER JOIN employee e ON pi.employee_id = e.id
@@ -48,7 +49,7 @@ $stmt2->bind_param("i", $id);
 $stmt2->execute();
 $dept_rows = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$g = ['emp'=>0,'basic'=>0,'allow'=>0,'absent'=>0,'amount'=>0,'ot'=>0,'legal'=>0,'sunday'=>0,'special'=>0,'late'=>0,'gross'=>0,'contribs'=>0,'other_ded'=>0,'tax'=>0,'jei'=>0,'jcc'=>0,'sss'=>0,'net'=>0];
+$g = ['emp'=>0,'basic'=>0,'allow'=>0,'absent'=>0,'amount'=>0,'ot'=>0,'legal'=>0,'sunday'=>0,'special'=>0,'late'=>0,'gross'=>0,'contribs'=>0,'other_ded'=>0,'tax'=>0,'jei'=>0,'jcc'=>0,'sss'=>0,'adjustment'=>0,'net'=>0];
 foreach ($dept_rows as $r) {
     $g['emp']      += $r['emp_count'];
     $g['basic']    += $r['total_basic'];
@@ -67,6 +68,7 @@ foreach ($dept_rows as $r) {
     $g['jei']      += $r['total_jei'];
     $g['jcc']      += $r['total_jcc'];
     $g['sss']      += $r['total_sss'];
+    $g['adjustment'] += $r['total_adjustment'];
     $g['net']      += $r['total_net'];
 }
 function n2($v){ return number_format((float)$v, 2); }
@@ -126,7 +128,8 @@ thead { display: table-header-group; }
         <th rowspan="2" style="text-align:left;">Department</th>
         <th rowspan="2">Emp.</th>
         <th colspan="9">Earnings</th>
-        <th colspan="6">Deductions</th>
+        <th colspan="7">Deductions</th>
+        <th rowspan="2">Adjustment</th>
         <th rowspan="2">Net Pay</th>
       </tr>
       <tr>
@@ -145,6 +148,7 @@ thead { display: table-header-group; }
         <th>Tax</th>
         <th>JEI Adv.</th>
         <th>JCC Adv.</th>
+        <th>Other Ded.</th>
       </tr>
     </thead>
     <tbody>
@@ -167,6 +171,8 @@ thead { display: table-header-group; }
         <td class="r"><?= n2($r['total_tax']) ?></td>
         <td class="r"><?= n2($r['total_jei']) ?></td>
         <td class="r"><?= n2($r['total_jcc']) ?></td>
+        <td class="r"><?= n2($r['total_other_ded']) ?></td>
+        <td class="r"><?= n2($r['total_adjustment']) ?></td>
         <td class="r"><b><?= n2($r['total_net']) ?></b></td>
       </tr>
       <?php endforeach; ?>
@@ -190,6 +196,8 @@ thead { display: table-header-group; }
         <th><?= n2($g['tax']) ?></th>
         <th><?= n2($g['jei']) ?></th>
         <th><?= n2($g['jcc']) ?></th>
+        <th><?= n2($g['other_ded']) ?></th>
+        <th><?= n2($g['adjustment']) ?></th>
         <th><?= n2($g['net']) ?></th>
       </tr>
     </tfoot>

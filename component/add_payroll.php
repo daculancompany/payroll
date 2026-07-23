@@ -29,9 +29,6 @@ $payroll_setting_sections = [
                 <div class="modal-body">
                     <div class="row g-3">
 
-                        <!-- Employer fixed to default (1) — selection removed -->
-                        <input type="hidden" id="employer-select" name="employer_id" value="1">
-
                         <div class="col-md-12">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
                                 <i class="ri-calendar-range-line me-1"></i>Payroll Period <span class="text-danger">*</span>
@@ -184,29 +181,4 @@ $payroll_setting_sections = [
     </div>
 </div>
 
-<!-- ── Select Sites ──────────────────────────────────────────────── -->
-<div class="modal fade" id="modal-sites" tabindex="-1" role="dialog">
-    <form id="form-add" novalidate>
-        <div class="modal-dialog modal-xl" role="document">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h6 class="modal-title title mb-0">
-                        <i class="ri-map-pin-2-line me-2" style="color:#009688;"></i>Select Sites
-                    </h6>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div class="row" id="show-sites"></div>
-                </div>
-                <div class="modal-footer" style="background:#f8f9fa;">
-                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
-                        <i class="ri-close-line me-1"></i>Cancel
-                    </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
-                        <i class="ri-save-line me-1"></i>Create Payroll
-                    </button>
-                </div>
-            </div>
-        </div>
-    </form>
-</div>
+<!-- Select Sites modal removed — payroll always covers all active sites. -->

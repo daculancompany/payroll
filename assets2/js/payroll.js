@@ -49,7 +49,7 @@ $(document).ready(function () {
     $("#table").DataTable({
         processing: true,
         serverSide: true,
-        order: [[3, "desc"]], // Default sort: Period (date) newest first (col 0 = select)
+        order: [[2, "desc"]], // Default sort: Period (date) newest first (col 0 = select)
         ajax: {
             url: "payroll-server.php",
             type: "POST",
@@ -60,7 +60,6 @@ $(document).ready(function () {
         columns: [
             { data: "select", orderable: false, className: "text-center" },
             { data: "ref_no" },
-            { data: "employer_name" },
             { data: "period" },
             { data: "status" },
             { data: "action", orderable: false },
@@ -256,41 +255,20 @@ function remove_payroll(id) {
     });
 }
 
-let form_data = "";
 $("#form-submit").on("submit", function (e) {
     e.preventDefault();
     var form = $(this);
     form.parsley().validate();
     if (!form.parsley().isValid()) return;
 
-    // Dates + chosen deductions are serialized together and carried to save_payroll.
-    form_data = $(this).serialize();
+    // Site selection removed — save_payroll defaults to ALL active sites when
+    // no site_ids are posted, so create the payroll in one step.
     $(".submitbutton").attr("disabled", true);
-    $.ajax({
-        url: "ajax.php?action=get_sites",
-        method: "POST",
-        data: form_data,
-        error: (xhr, status, error) => {
-            handleError(error || "");
-            $(".submitbutton").removeAttr("disabled");
-        },
-        success: function (res) {
-            $("#modal").modal("hide");
-            // Load the sites, auto-select them all, and create immediately.
-            $("#show-sites").html(res);
-            $("#show-sites").find("input[type='checkbox']").prop("checked", true);
-            $("#form-add").trigger("submit");
-        },
-    });
-});
-
-$("#form-add").on("submit", function (e) {
-    e.preventDefault();
     $.ajax({
         url: "ajax.php?action=save_payroll",
         method: "POST",
         dataType: "JSON",
-        data: { site_ids: $(this).serialize(), form_data },
+        data: { site_ids: "", form_data: form.serialize() },
         error: (xhr, status, error) => {
             handleError(error || "");
             $(".submitbutton").removeAttr("disabled");
@@ -298,7 +276,7 @@ $("#form-add").on("submit", function (e) {
         success: function (res) {
             $(".submitbutton").removeAttr("disabled");
             if (res?.result) {
-                $("#modal-sites").modal("hide");
+                $("#modal").modal("hide");
                 showToast("Payroll created and calculated.", "success");
                 reloadPayrollTable();
             } else {

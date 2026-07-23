@@ -30,13 +30,17 @@
                                     <tr>
                                         <th>Department Name</th>
                                         <th class="text-center">Employees</th>
+                                        <th><i class="ri-shield-check-line me-1"></i>Head</th>
+                                        <th><i class="ri-user-star-line me-1"></i>Supervisor</th>
                                         <th class="text-center" style="width:110px;">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php
                                     $q = $conn->query("
-                                        SELECT d.*, COUNT(e.id) AS emp_count
+                                        SELECT d.*, COUNT(e.id) AS emp_count,
+                                            (SELECT GROUP_CONCAT(u.name SEPARATOR ', ') FROM users u WHERE u.department_id = d.id AND u.role = 8  AND u.status = 1) AS heads,
+                                            (SELECT GROUP_CONCAT(u.name SEPARATOR ', ') FROM users u WHERE u.department_id = d.id AND u.role = 10 AND u.status = 1) AS supervisors
                                         FROM department d
                                         LEFT JOIN employee e ON e.department_id = d.id AND e.status = 1
                                         GROUP BY d.id ORDER BY d.name ASC
@@ -47,6 +51,20 @@
                                         <td><?= htmlspecialchars($row['name']) ?></td>
                                         <td class="text-center">
                                             <span class="badge bg-success rounded-pill"><?= $row['emp_count'] ?></span>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($row['heads'])): ?>
+                                                <span class="fw-semibold"><i class="ri-shield-check-line me-1 text-success"></i><?= htmlspecialchars($row['heads']) ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted" style="font-size:12px;"><i class="ri-user-unfollow-line me-1"></i>Not assigned</span>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td>
+                                            <?php if (!empty($row['supervisors'])): ?>
+                                                <span class="fw-semibold"><i class="ri-user-star-line me-1 text-success"></i><?= htmlspecialchars($row['supervisors']) ?></span>
+                                            <?php else: ?>
+                                                <span class="text-muted" style="font-size:12px;"><i class="ri-user-unfollow-line me-1"></i>Not assigned</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td class="text-center">
                                             <button class="btn btn-sm btn-outline-primary"
@@ -104,7 +122,7 @@ document.addEventListener('DOMContentLoaded', function () {
         jQuery('#dept-table').DataTable({
             order: [[0, 'asc']],
             pageLength: 10,
-            columnDefs: [{ orderable: false, targets: 2 }],
+            columnDefs: [{ orderable: false, targets: 4 }],
             language: { search: '', searchPlaceholder: 'Search department…' }
         });
     }

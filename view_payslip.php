@@ -56,13 +56,24 @@ $legal_holiday_amt   = $payroll['legal_holiday']   * $payroll['per_day'];
 $sunday_duty_amt     = $payroll['sunday_duty']      * $payroll['per_day'];
 $special_holiday_amt = (($payroll['per_day'] / 8) * 2.4) * $payroll['special_holiday'];
 
-// Semi-monthly (type 5) computation — mirrors payroll_calculations.php Table-1 /
-// admin_class.php: semi_monthly = (monthly basic + allowance − absent) / 2, then
-// add OT + holiday premiums, less late. Undertime is NOT deducted.
+// Gross per the employee's pay basis — MUST mirror get_payroll_rows_data() /
+// the payroll details table, or the payslip's Gross − Deductions ≠ Net.
+//   monthly/fixed: (monthly basic + allowance − absent) / 2, + OT + holiday
+//                  premiums, − late. Undertime is NOT deducted.
+//   daily:         (days present + paid leave) × daily rate, + OT + allowance,
+//                  − late. (No absent line: daily staff are paid per day worked.)
+$rate_type  = $payroll['rate_type'] ?? 'daily';
+$is_monthly = in_array($rate_type, ['monthly', 'fixed'], true);
 $semi_monthly_amount = ($monthly_basic + $allowance_amount - $absent_amount) / 2;
-$gross_salary = $semi_monthly_amount
-              + $overtime_amount + $legal_holiday_amt + $sunday_duty_amt + $special_holiday_amt
-              - $late_amount;
+$daily_basic_amount  = ($payroll['present'] + (float)($payroll['paid_leave'] ?? 0)) * $payroll['per_day'];
+if ($is_monthly) {
+    $gross_salary = $semi_monthly_amount
+                  + $overtime_amount + $legal_holiday_amt + $sunday_duty_amt + $special_holiday_amt
+                  - $late_amount;
+} else {
+    $gross_salary = $daily_basic_amount + $overtime_amount + $allowance_amount
+                  - $late_amount;
+}
 
 // Build deductions breakdown
 $contributions_list = [];
@@ -100,6 +111,9 @@ foreach ($contributions_settings as $k) {
 }
 
 $other_deduction = floatval($payroll['other_deduction']);
+// Manual signed adjustment (+ addition / − recovery), applied to net pay.
+$adjustment      = floatval($payroll['adjustment'] ?? 0);
+$adj_remarks     = trim((string) ($payroll['adjustment_remarks'] ?? ''));
 $tax             = floatval($payroll['tax']);
 $jei_advances    = floatval($payroll['jei_advances']);
 $jcc_advances    = floatval($payroll['jcc_advances']);
@@ -585,6 +599,7 @@ body.has-toolbar { padding-top: 50px; }
 <td>
     <div class="col-title">Earnings</div>
 
+    <?php if ($is_monthly): ?>
     <div class="grp-lbl">Basic Pay (Semi-Monthly)</div>
     <table class="item"><tr><td class="sub-lbl">Days Present</td><td class="sub-amt"><?= number_format($payroll['present'], 1) ?> days</td></tr></table>
     <table class="item"><tr><td class="sub-lbl">Daily Rate</td><td class="sub-amt">₱ <?= number_format($payroll['per_day'], 2) ?></td></tr></table>
@@ -595,8 +610,21 @@ body.has-toolbar { padding-top: 50px; }
     <table class="item"><tr><td class="sub-lbl">Less: Absences (<?= $payroll['absent'] ?> day)</td><td class="sub-amt red">– ₱ <?= number_format($absent_amount, 2) ?></td></tr></table>
     <?php endif; ?>
     <table class="item bold"><tr><td>Semi-Monthly Amount (÷2)</td><td class="amt">₱ <?= number_format($semi_monthly_amount, 2) ?></td></tr></table>
+    <?php else: ?>
+    <div class="grp-lbl">Basic Pay (Daily Rate)</div>
+    <table class="item"><tr><td class="sub-lbl">Days Present</td><td class="sub-amt"><?= number_format($payroll['present'], 1) ?> days</td></tr></table>
+    <?php if ((float)($payroll['paid_leave'] ?? 0) > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Paid Leave</td><td class="sub-amt"><?= number_format($payroll['paid_leave'], 1) ?> days</td></tr></table>
+    <?php endif; ?>
+    <table class="item"><tr><td class="sub-lbl">Daily Rate</td><td class="sub-amt">₱ <?= number_format($payroll['per_day'], 2) ?></td></tr></table>
+    <table class="item bold"><tr><td>Basic Pay (days × rate)</td><td class="amt">₱ <?= number_format($daily_basic_amount, 2) ?></td></tr></table>
+    <?php if ($allowance_amount > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Allowance (<?= $payroll['allowance_days'] ?>d × ₱<?= number_format($payroll['allowance_amount'],2) ?>)</td><td class="sub-amt">₱ <?= number_format($allowance_amount, 2) ?></td></tr></table>
+    <?php endif; ?>
+    <?php endif; ?>
 
-    <?php if ($payroll['legal_holiday'] > 0 || $payroll['sunday_duty'] > 0 || $payroll['special_holiday'] > 0): ?>
+    <?php // Holiday premiums are part of gross only on the monthly/fixed formula.
+    if ($is_monthly && ($payroll['legal_holiday'] > 0 || $payroll['sunday_duty'] > 0 || $payroll['special_holiday'] > 0)): ?>
     <div class="grp-lbl">Holidays &amp; Extra</div>
     <?php if ($payroll['legal_holiday'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $payroll['legal_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($legal_holiday_amt, 2) ?></td></tr></table>
@@ -675,6 +703,12 @@ body.has-toolbar { padding-top: 50px; }
         <div class="tot-lbl">Total Deductions</div>
         <div class="tot-val red">₱ <?= number_format($total_all_deductions, 2) ?></div>
     </td>
+    <?php if ($adjustment != 0): ?>
+    <td>
+        <div class="tot-lbl">Adjustment<?= $adj_remarks !== '' ? ' — ' . htmlspecialchars($adj_remarks) : '' ?></div>
+        <div class="tot-val <?= $adjustment < 0 ? 'red' : '' ?>"><?= $adjustment < 0 ? '−' : '+' ?> ₱ <?= number_format(abs($adjustment), 2) ?></div>
+    </td>
+    <?php endif; ?>
     <td>
         <div class="tot-lbl">Net Pay</div>
         <div class="tot-val">₱ <?= number_format($net_pay, 2) ?></div>

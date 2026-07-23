@@ -109,8 +109,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     /* ---- Left profile sidebar ---- */
     .emp-sidebar { border:1px solid #d0d7ee; border-radius:10px; overflow:hidden; background:#fff; box-shadow:0 2px 10px rgba(20,30,60,.05); }
     .emp-sidebar-head { position:relative; background:linear-gradient(145deg, var(--emp-brand) 0%, var(--emp-brand-dark) 100%); color:#fff; text-align:center; padding:20px 14px 16px; overflow:hidden; }
-    .emp-sidebar-head::before { content:""; position:absolute; top:-40px; right:-40px; width:140px; height:140px; border-radius:50%; background:rgba(255,255,255,.08); }
-    .emp-sidebar-head::after { content:""; position:absolute; bottom:-60px; left:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.06); }
+    /* .emp-sidebar-head::before { content:""; position:absolute; top:-40px; right:-40px; width:140px; height:140px; border-radius:50%; background:rgba(255,255,255,.08); } */
+    /* .emp-sidebar-head::after { content:""; position:absolute; bottom:-60px; left:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.06); } */
     .emp-sidebar-head > * { position:relative; z-index:1; }
     .emp-side-avatar { width:76px; height:76px; border-radius:50%; background:#fff; color:var(--emp-brand); font-size:27px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.2), 0 0 0 4px rgba(255,255,255,.25); }
     .emp-side-name { font-size:16px; font-weight:700; line-height:1.25; }
@@ -937,8 +937,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
 
                                 <?php
                                 $can_edit_credits = in_array($login_role, [1, 8, 9]);
-                                $elig_row = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = " . $emp_id)->fetch_assoc();
-                                $emp_leave_eligible = $elig_row && in_array($elig_row['c'], LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
+                                $elig_row = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c, e.leave_override FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = " . $emp_id)->fetch_assoc();
+                                $emp_leave_eligible = $elig_row && leave_eligibility_from($elig_row['c'], $elig_row['leave_override']);
                                 ?>
                                 <?php if (!$emp_leave_eligible): ?>
                                 <div class="alert alert-warning d-flex align-items-center py-2" role="alert">
@@ -946,6 +946,26 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <div style="font-size:12px;">Only <b>Regular</b> and <b>Executive</b> employees are entitled to leave credits.</div>
                                 </div>
                                 <?php endif; ?>
+
+                                <?php if ($can_edit_credits): ?>
+                                <!-- Leave eligibility override -->
+                                <div class="card border mb-3">
+                                    <div class="card-body d-flex flex-wrap align-items-center gap-2 py-2">
+                                        <div class="flex-grow-1" style="font-size:13px;">
+                                            <b><i class="ri-shield-user-line me-1 text-success"></i>Leave Eligibility</b>
+                                            <span class="text-muted">· <?= $emp_leave_eligible ? 'Eligible' : 'Not eligible' ?><?= $elig_row['leave_override'] !== null ? ' · overridden' : '' ?></span>
+                                        </div>
+                                        <?php $ov = $elig_row['leave_override']; ?>
+                                        <select id="leave-override" class="form-select form-select-sm" style="max-width:220px;">
+                                            <option value=""  <?= ($ov === null) ? 'selected' : '' ?>>Auto (by classification)</option>
+                                            <option value="1" <?= ($ov !== null && (int)$ov === 1) ? 'selected' : '' ?>>Always allowed (override)</option>
+                                            <option value="0" <?= ($ov !== null && (int)$ov === 0) ? 'selected' : '' ?>>Always blocked (override)</option>
+                                        </select>
+                                        <button id="leave-override-save" class="btn btn-sm btn-success" data-employee="<?= $emp_id ?>"><i class="ri-save-line me-1"></i>Apply</button>
+                                    </div>
+                                </div>
+                                <?php endif; ?>
+
                                 <!-- Leave Credits (HR / Admin can set available leaves) -->
                                 <div class="card border mb-3">
                                     <div class="card-header bg-light d-flex align-items-center py-2">
@@ -966,19 +986,20 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             </thead>
                                             <tbody>
                                                 <?php
+                                                $leave_year = leave_current_year();
                                                 $cr = $conn->query("
                                                     SELECT lt.id, lt.name, lt.days_allowed,
                                                         COALESCE(c.credits, lt.days_allowed) AS credits,
                                                         COALESCE(u.used, 0) AS used
                                                     FROM leave_types lt
-                                                    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = " . $emp_id . "
+                                                    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = " . $emp_id . " AND c.year = " . $leave_year . "
                                                     LEFT JOIN (
                                                         SELECT leave_type_id, SUM(duration) AS used
                                                         FROM leave_requests
-                                                        WHERE employee_id = " . $emp_id . " AND status = 1
+                                                        WHERE employee_id = " . $emp_id . " AND status = 1 AND YEAR(date_from) = " . $leave_year . "
                                                         GROUP BY leave_type_id
                                                     ) u ON u.leave_type_id = lt.id
-                                                    WHERE lt.status = 1
+                                                    WHERE lt.status = 1 AND lt.is_paid = 1
                                                     ORDER BY lt.name ASC
                                                 ");
                                                 if ($cr) while ($c = $cr->fetch_assoc()):
@@ -990,11 +1011,15 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     <td><b><i class="ri-calendar-event-line me-1 text-success"></i><?= htmlspecialchars($c['name']) ?></b></td>
                                                     <td class="text-center">
                                                         <?php if ($can_edit_credits && $emp_leave_eligible): ?>
-                                                            <div class="input-group input-group-sm" style="max-width:140px;margin:0 auto;">
+                                                            <div class="input-group input-group-sm" style="max-width:220px;margin:0 auto;">
                                                                 <input type="number" min="0" step="0.5" class="form-control text-center leave-credit-input"
                                                                     value="<?= rtrim(rtrim(number_format($avail, 1), '0'), '.') ?>"
                                                                     data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>">
-                                                                <button class="btn btn-success leave-credit-save" type="button" title="Save"><i class="ri-save-line"></i></button>
+                                                                <button class="btn btn-success leave-credit-save" type="button" title="Set balance"><i class="ri-save-line"></i></button>
+                                                                <button class="btn btn-outline-success leave-credit-adjust" type="button" data-mode="add"
+                                                                    data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>" data-type-name="<?= htmlspecialchars($c['name']) ?>" title="Add credits"><i class="ri-add-line"></i></button>
+                                                                <button class="btn btn-outline-danger leave-credit-adjust" type="button" data-mode="deduct"
+                                                                    data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>" data-type-name="<?= htmlspecialchars($c['name']) ?>" title="Deduct credits"><i class="ri-subtract-line"></i></button>
                                                             </div>
                                                         <?php else: ?>
                                                             <?= $emp_leave_eligible ? rtrim(rtrim(number_format($avail, 1), '0'), '.') : '<span class="text-muted">—</span>' ?>
@@ -1034,14 +1059,24 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <table class="table table-sm table-hover mb-0" style="font-size:12px;">
                                             <thead class="table-light"><tr><th>When</th><th>Type</th><th class="text-center">Change</th><th>By</th></tr></thead>
                                             <tbody>
-                                            <?php if ($bh && $bh->num_rows): while ($h = $bh->fetch_assoc()):
+                                            <?php
+                                            $ctMap = ['set' => ['Set', 'bg-secondary-subtle text-secondary'], 'add' => ['Add', 'bg-success-subtle text-success'], 'deduct' => ['Deduct', 'bg-danger-subtle text-danger']];
+                                            if ($bh && $bh->num_rows): while ($h = $bh->fetch_assoc()):
                                                 $f = function ($n) { return rtrim(rtrim(number_format($n, 1), '0'), '.'); };
                                                 $up = (float)$h['new_credits'] >= (float)$h['old_credits'];
+                                                $ct = $h['change_type'] ?? 'set';
+                                                [$ctLabel, $ctClass] = $ctMap[$ct] ?? $ctMap['set'];
+                                                $delta = (float)$h['new_credits'] - (float)$h['old_credits'];
                                             ?>
                                                 <tr>
                                                     <td><?= date('M d, Y g:i A', strtotime($h['created_at'])) ?></td>
-                                                    <td><?= htmlspecialchars($h['type_name']) ?></td>
-                                                    <td class="text-center"><span class="text-muted"><?= $f($h['old_credits']) ?></span> <i class="ri-arrow-right-line <?= $up ? 'text-success' : 'text-danger' ?>"></i> <b class="<?= $up ? 'text-success' : 'text-danger' ?>"><?= $f($h['new_credits']) ?></b></td>
+                                                    <td><?= htmlspecialchars($h['type_name']) ?>
+                                                        <?php if (!empty($h['reason'])): ?><div class="text-muted" style="font-size:10px;" title="<?= htmlspecialchars($h['reason']) ?>"><i class="ri-chat-1-line"></i> <?= htmlspecialchars(mb_strimwidth($h['reason'], 0, 36, '…')) ?></div><?php endif; ?>
+                                                    </td>
+                                                    <td class="text-center">
+                                                        <span class="badge <?= $ctClass ?>" style="font-size:9px;"><?= $ctLabel ?><?= $ct !== 'set' ? ' ' . ($delta >= 0 ? '+' : '') . $f($delta) : '' ?></span>
+                                                        <div><span class="text-muted"><?= $f($h['old_credits']) ?></span> <i class="ri-arrow-right-line <?= $up ? 'text-success' : 'text-danger' ?>"></i> <b class="<?= $up ? 'text-success' : 'text-danger' ?>"><?= $f($h['new_credits']) ?></b></div>
+                                                    </td>
                                                     <td><?= htmlspecialchars($h['changed_name'] ?? 'System') ?></td>
                                                 </tr>
                                             <?php endwhile; else: ?>
@@ -1066,8 +1101,9 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <th><i class="ri-bookmark-line me-1"></i>Type</th>
                                                 <th class="text-center"><i class="ri-time-line me-1"></i>Duration</th>
                                                 <th><i class="ri-chat-1-line me-1"></i>Reason</th>
-                                                <th class="text-center">HR</th>
-                                                <th class="text-center">Final</th>
+                                                <?php foreach (leave_stages() as $sdef): ?>
+                                                <th class="text-center"><?= htmlspecialchars($sdef['label']) ?></th>
+                                                <?php endforeach; ?>
                                                 <th class="text-center"><i class="ri-pulse-line me-1"></i>Status</th>
                                             </tr>
                                         </thead>
@@ -1075,9 +1111,10 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             <?php
                                             $lv = $conn->query("
                                                 SELECT lr.*, lt.name AS leave_type_name,
-                                                    hu.name AS hr_name, au.name AS admin_name
+                                                    su.name AS sup_name, hu.name AS hr_name, au.name AS admin_name
                                                 FROM leave_requests lr
                                                 INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                                                LEFT JOIN users su ON su.id = lr.sup_by
                                                 LEFT JOIN users hu ON hu.id = lr.hr_by
                                                 LEFT JOIN users au ON au.id = lr.admin_by
                                                 WHERE lr.employee_id = " . $emp_id . "
@@ -1100,12 +1137,19 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                         <div class="text-muted" style="font-size:11px;"><?= date('M d', strtotime($row['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($row['date_to'])) ?></div>
                                                     </td>
                                                     <td style="max-width:220px;"><span class="text-muted"><?= nl2br(htmlspecialchars($row['reason'] ?? '')) ?></span>
-                                                        <?php if ($row['status'] == 2 && ($row['hr_remarks'] || $row['admin_remarks'])): ?>
-                                                            <div class="text-danger" style="font-size:11px;"><i class="ri-information-line"></i> <?= htmlspecialchars($row['admin_remarks'] ?: $row['hr_remarks']) ?></div>
+                                                        <?php
+                                                        $rej_remark = '';
+                                                        foreach (array_reverse(leave_stages(), true) as $rk => $rd) {
+                                                            if ((int)$row[$rk . '_status'] === 2 && !empty($row[$rk . '_remarks'])) { $rej_remark = $row[$rk . '_remarks']; break; }
+                                                        }
+                                                        ?>
+                                                        <?php if ($row['status'] == 2 && $rej_remark): ?>
+                                                            <div class="text-danger" style="font-size:11px;"><i class="ri-information-line"></i> <?= htmlspecialchars($rej_remark) ?></div>
                                                         <?php endif; ?>
                                                     </td>
-                                                    <td class="text-center"><?= $lv_stage($row['hr_status'], $row['hr_name'], $row['hr_remarks']) ?></td>
-                                                    <td class="text-center"><?= $lv_stage($row['admin_status'], $row['admin_name'], $row['admin_remarks']) ?></td>
+                                                    <?php foreach (leave_stages() as $skey => $sdef): ?>
+                                                    <td class="text-center"><?= $lv_stage($row[$skey . '_status'], $row[$skey . '_name'] ?? '', $row[$skey . '_remarks']) ?></td>
+                                                    <?php endforeach; ?>
                                                     <td class="text-center"><span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span></td>
                                                 </tr>
                                             <?php endwhile; ?>
@@ -1117,6 +1161,36 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                         </div><!-- end tab-content -->
                         </div><!-- end col-lg-9 -->
                         </div><!-- end row -->
+
+                        <!-- Add / Deduct Credit Modal -->
+                        <div class="modal fade" id="modal-adjust-credit" tabindex="-1">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <form id="form-adjust-credit" class="modal-content">
+                                    <div class="modal-header">
+                                        <h6 class="modal-title" id="adjust-title"><i class="ri-coins-line me-2" style="color:#009688;"></i>Adjust Credits</h6>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <input type="hidden" id="adj-employee">
+                                        <input type="hidden" id="adj-type">
+                                        <input type="hidden" id="adj-mode">
+                                        <p class="mb-3 text-muted" id="adj-desc" style="font-size:13px;"></p>
+                                        <div class="mb-3">
+                                            <label class="form-label">Amount (days) <span class="text-danger">*</span></label>
+                                            <input type="number" min="0.5" step="0.5" class="form-control" id="adj-amount" placeholder="e.g. 2" required>
+                                        </div>
+                                        <div class="mb-1">
+                                            <label class="form-label">Reason <span class="text-danger">*</span></label>
+                                            <textarea class="form-control" id="adj-reason" rows="2" placeholder="Why this adjustment? (e.g. carry-over, correction)" required></textarea>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                                        <button type="submit" class="btn btn-sm btn-success" id="adj-submit"><i class="ri-check-line me-1"></i>Apply</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
 
                         <script>
                         // Save per-employee leave credits (delegated → works before jQuery loads).
@@ -1142,6 +1216,69 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     }
                                 })
                                 .catch(() => { btn.disabled = false; });
+                        });
+
+                        // Save the per-employee leave eligibility override.
+                        document.getElementById('leave-override-save')?.addEventListener('click', function () {
+                            const btn = this;
+                            const body = new URLSearchParams({
+                                employee_id: btn.dataset.employee,
+                                override: document.getElementById('leave-override').value
+                            });
+                            btn.disabled = true;
+                            fetch('ajax.php?action=save_leave_override', { method: 'POST', body: body })
+                                .then(r => r.json())
+                                .then(j => {
+                                    btn.disabled = false;
+                                    if (j && j.result) {
+                                        Swal.fire({ icon: 'success', title: 'Saved', text: j.message, timer: 1200, showConfirmButton: false }).then(() => location.reload());
+                                    } else {
+                                        Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Failed to save.' });
+                                    }
+                                })
+                                .catch(() => { btn.disabled = false; });
+                        });
+
+                        // Open the Add/Deduct modal prefilled for the chosen row + mode.
+                        document.addEventListener('click', function (e) {
+                            const b = e.target.closest('.leave-credit-adjust');
+                            if (!b) return;
+                            const mode = b.dataset.mode, isAdd = mode === 'add';
+                            document.getElementById('adj-employee').value = b.dataset.employee;
+                            document.getElementById('adj-type').value = b.dataset.type;
+                            document.getElementById('adj-mode').value = mode;
+                            document.getElementById('adj-amount').value = '';
+                            document.getElementById('adj-reason').value = '';
+                            document.getElementById('adjust-title').innerHTML = '<i class="ri-coins-line me-2" style="color:#009688;"></i>' + (isAdd ? 'Add' : 'Deduct') + ' Credits';
+                            document.getElementById('adj-desc').innerHTML = (isAdd ? 'Add days to' : 'Deduct days from') + ' <b>' + b.dataset.typeName + '</b> balance.';
+                            document.getElementById('adj-submit').className = 'btn btn-sm ' + (isAdd ? 'btn-success' : 'btn-danger');
+                            new bootstrap.Modal(document.getElementById('modal-adjust-credit')).show();
+                        });
+
+                        // Submit an Add/Deduct adjustment.
+                        document.getElementById('form-adjust-credit').addEventListener('submit', function (e) {
+                            e.preventDefault();
+                            const submit = document.getElementById('adj-submit');
+                            const body = new URLSearchParams({
+                                employee_id: document.getElementById('adj-employee').value,
+                                leave_type_id: document.getElementById('adj-type').value,
+                                mode: document.getElementById('adj-mode').value,
+                                amount: document.getElementById('adj-amount').value,
+                                reason: document.getElementById('adj-reason').value
+                            });
+                            submit.disabled = true;
+                            fetch('ajax.php?action=save_leave_credit', { method: 'POST', body: body })
+                                .then(r => r.json())
+                                .then(j => {
+                                    submit.disabled = false;
+                                    if (j && j.result) {
+                                        bootstrap.Modal.getInstance(document.getElementById('modal-adjust-credit')).hide();
+                                        Swal.fire({ icon: 'success', title: 'Done', text: j.message, timer: 1200, showConfirmButton: false }).then(() => location.reload());
+                                    } else {
+                                        Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Failed to apply.' });
+                                    }
+                                })
+                                .catch(() => { submit.disabled = false; });
                         });
                         </script>
                     </div><!-- end card-body -->

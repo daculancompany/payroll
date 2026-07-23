@@ -37,15 +37,14 @@
                             <select class="form-control select2" id="role" name="role"
                                 data-placeholder="Select a role"
                                 data-parsley-required-message="Please select role." required>
-                                <option value="4">Payroll Clerk</option>
-                                <option value="5">Timekeeper</option>
-                                <option value="7">Auditor</option>
+                                <option value="10">Supervisor</option>
                                 <option value="8">Department Head</option>
                                 <option value="9">HR</option>
                             </select>
                         </div>
 
-                        <!-- Department — only required for a Department Head (approves that dept's leave requests) -->
+                        <!-- Department — required for a Department Head (role 8) and a Supervisor
+                             (role 10); both approve their own department's leave requests. -->
                         <div class="col-md-12 d-none" id="department-wrapper">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
                                 <i class="ri-community-line me-1"></i>Department <span class="text-danger">*</span>

@@ -62,6 +62,9 @@ function getRole($login_role)
         case 9:
             return "HR";
             break;
+        case 10:
+            return "Supervisor";
+            break;
         default:
             return "Access denied. Unknown role.";
             break;

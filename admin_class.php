@@ -174,6 +174,7 @@ class Action
             7 => 'index.php?page=reports',     // Auditor
             8 => 'index.php?page=leaves',      // Department Head
             9 => 'index.php?page=leaves',      // HR
+            10 => 'index.php?page=leaves',     // Supervisor
         ];
         return $map[(int)$role] ?? 'index.php?page=home';
     }
@@ -1961,10 +1962,24 @@ class Action
             $employer_id = mysqli_real_escape_string($this->db, $employer_id);
             $id          = mysqli_real_escape_string($this->db, $id);
 
-            // A Department Head must be tied to a department (used later to
-            // approve that department's leave requests).
-            if ($role == '8' && $department_id === '') {
-                return ['result' => false, 'message' => 'Please select a department for the Department Head.'];
+            // A Department Head (8) and a Supervisor (10) must each be tied to a
+            // department (used later to approve that department's leave requests).
+            if (in_array((int)$role, [8, 10], true) && $department_id === '') {
+                $label = ((int)$role === 10) ? 'Supervisor' : 'Department Head';
+                return ['result' => false, 'message' => "Please select a department for the $label."];
+            }
+
+            // Only ONE active Supervisor is allowed per department. Block creating
+            // (or switching a user into) a second Supervisor for the same dept.
+            if ((int)$role === 10 && $department_id !== '') {
+                $self = $id !== '' ? " AND id <> '$id'" : '';
+                $dupe = $this->db->query(
+                    "SELECT id FROM users WHERE role = 10 AND status = 1
+                     AND department_id = '$department_id'$self LIMIT 1"
+                );
+                if ($dupe && $dupe->num_rows > 0) {
+                    return ['result' => false, 'message' => 'This department already has a Supervisor. Only one Supervisor per department is allowed.'];
+                }
             }
 
             // Handle password hashing and query part
@@ -2006,8 +2021,9 @@ class Action
                 $data .= ", site_id = '$site_id'";
             }
 
-            // Store the department for a Department Head; clear it for any other role.
-            $data .= ", department_id = " . ($role == '8' && $department_id !== '' ? "'$department_id'" : "NULL");
+            // Store the department for a Department Head (8) or Supervisor (10);
+            // clear it for any other role.
+            $data .= ", department_id = " . (in_array((int)$role, [8, 10], true) && $department_id !== '' ? "'$department_id'" : "NULL");
 
             // Insert or update user
             if (empty($id)) {
@@ -2586,7 +2602,11 @@ class Action
             $stmt->bind_param("ss", $date_from, $date_to);
             $stmt->execute();
             $result = $stmt->get_result();
-            if ($result->num_rows > 0) {
+            // Snapshot the DTR row count NOW — the per-employee settings loop
+            // below reuses $result for contribution/deduction/loan lookups, so
+            // by the final success check $result no longer holds the DTR set.
+            $dtr_count = $result->num_rows;
+            if ($dtr_count > 0) {
                 $grouped_data = [];
                 $ipresent = 0;
                 $employeeCount = [];
@@ -2606,6 +2626,43 @@ class Action
                 $rres = $rq->get_result();
                 while ($rrow = $rres->fetch_assoc()) {
                     $restMap[$rrow['employee_id']][] = $rrow;
+                }
+
+                // Preload approved PAID leave days per employee overlapping this period.
+                // Paid leave (leave_types.is_paid = 1) is treated as paid-present: it does
+                // NOT count as an absence (monthly) and IS paid (daily). Unpaid (LWOP) leave
+                // needs no handling — with no DTR row it already falls into the absent tally.
+                // Keyed [employee_id][Y-m-d] => day fraction (0.5 for the half-day date).
+                $leaveMap = [];
+                $lvq = $this->db->prepare(
+                    "SELECT lr.employee_id, lr.dates, lr.date_from, lr.date_to, lr.is_half_day, lr.half_date
+                     FROM leave_requests lr
+                     INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                     WHERE lr.status = 1 AND lt.is_paid = 1 AND lr.date_from <= ? AND lr.date_to >= ?"
+                );
+                $lvq->bind_param('ss', $date_to, $date_from);
+                $lvq->execute();
+                $lvres = $lvq->get_result();
+                while ($lv = $lvres->fetch_assoc()) {
+                    $eid  = $lv['employee_id'];
+                    $days = [];
+                    if (!empty($lv['dates'])) {
+                        $decoded = json_decode($lv['dates'], true);
+                        if (is_array($decoded)) $days = $decoded;
+                    }
+                    if (!$days) {   // fall back to the inclusive from..to range
+                        for ($d = strtotime($lv['date_from']); $d <= strtotime($lv['date_to']); $d = strtotime('+1 day', $d)) {
+                            $days[] = date('Y-m-d', $d);
+                        }
+                    }
+                    foreach ($days as $dy) {
+                        $ymd  = date('Y-m-d', strtotime($dy));
+                        $frac = ((int) $lv['is_half_day'] === 1 && !empty($lv['half_date'])
+                                 && date('Y-m-d', strtotime($lv['half_date'])) === $ymd) ? 0.5 : 1.0;
+                        if (!isset($leaveMap[$eid][$ymd]) || $leaveMap[$eid][$ymd] < $frac) {
+                            $leaveMap[$eid][$ymd] = $frac;   // overlapping leaves → keep larger fraction
+                        }
+                    }
                 }
 
                 foreach ($result as $row) {
@@ -2874,19 +2931,32 @@ class Action
                     // employee's rest days; absent = expected − days present (floored, whole days).
                     // Daily-rate employees keep absent = 0 (they're paid per day present).
                     $absent = 0;
+                    // Approved PAID-leave day fractions on this employee's non-rest (expected)
+                    // days in the period — counted as paid-present (own payslip line, and NOT
+                    // an absence). Computed for all rate types; used below.
+                    $paid_leave = 0;
+                    if (!empty($leaveMap[$employee_id])) {
+                        for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
+                            $ymd = date('Y-m-d', $d);
+                            if (isset($leaveMap[$employee_id][$ymd]) && !$this->isRestDay($restMap[$employee_id] ?? [], $ymd)) {
+                                $paid_leave += (float) $leaveMap[$employee_id][$ymd];
+                            }
+                        }
+                    }
                     if ($rate_type === 'monthly') {
                         $expected_days = 0;
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
                             if (!$this->isRestDay($restMap[$employee_id] ?? [], date('Y-m-d', $d))) $expected_days++;
                         }
-                        $absent = max(0, (int) round($expected_days - $present));
+                        // Paid leave is not an absence.
+                        $absent = max(0, (int) round($expected_days - $present - $paid_leave));
                     }
 
                     $sql2 = "INSERT INTO payroll_items
                     (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
                      deduction_amount, deductions, contributions, total_hours,
-                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,rate_type)
-                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     $stmt2 = $this->db->prepare($sql2);
                     if (!$stmt2) {
@@ -2894,7 +2964,7 @@ class Action
                     }
 
                     $stmt2->bind_param(
-                        'ssssssssssssssssssssssss',
+                        'sssssssssssssssssssssssss',
                         $payroll_id,
                         $employee_id,
                         $salary,
@@ -2918,6 +2988,7 @@ class Action
                         $refunds,
                         $rest_duty,
                         $absent,
+                        $paid_leave,
                         $rate_type
                     );
 
@@ -2954,7 +3025,7 @@ class Action
             // run or already paid in an overlapping-period payroll.
             $fixedCount = $this->insertFixedEmployees($id, $date_from, $date_to, $settings, $excluded_clasif, $site_ids);
 
-            if ($result->num_rows > 0 || $fixedCount > 0) {
+            if ($dtr_count > 0 || $fixedCount > 0) {
                 // Mark the payroll as calculated (status 1).
                 $upd = $this->db->prepare("UPDATE payroll SET status = 1 WHERE id = ?");
                 $upd->bind_param("i", $id);
@@ -3455,8 +3526,10 @@ class Action
         $date_from = $resultArray2["date_from"];
         $date_to = $resultArray2["date_to"];
         $type = $resultArray2["type"];
-        $employer_id = $resultArray2["employer_id"];
-        $category = $resultArray2["category_id"];
+        // Employer selection removed from the form — every payroll uses the
+        // default employer (1). The column stays for legacy rows/reports.
+        $employer_id = (int) ($resultArray2["employer_id"] ?? 1);
+        $category = $resultArray2["category_id"] ?? 1;
 
         $site_ids = $_POST['site_ids'] ?? '';
         $decodedQueryString = urldecode($site_ids);
@@ -4633,8 +4706,11 @@ class Action
 
             foreach ($items as $item) {
                 $id = $item['id'];              // payroll_item ID
-                $value = (float) $item['value'];
                 $field = $item['type'];
+                // adjustment_remarks is free text — everything else is numeric.
+                $value = ($field === 'adjustment_remarks')
+                    ? trim((string) $item['value'])
+                    : (float) $item['value'];
                 $dd_id = isset($item['dd_id']) ? (int) $item['dd_id'] : 0;
 
                 // Save the payroll item
@@ -4787,9 +4863,10 @@ class Action
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
                 $gross            = $total_amount + $overtime_amount + $legal_amount + $sunday_amount + $special_amount - $late_amount;
             } else {
-                // Daily rate: Total Basic Rate = days present × rate per day,
-                // gross = basic + overtime + allowance − late (matches table-2 in the page).
-                $total_basic_rate = $row['present'] * $row['per_day'];
+                // Daily rate: Total Basic Rate = (days present + approved paid-leave days) ×
+                // rate per day — daily staff are paid for approved paid leave. gross = basic +
+                // overtime + allowance − late (matches table-2 in the page).
+                $total_basic_rate = ($row['present'] + ($row['paid_leave'] ?? 0)) * $row['per_day'];
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
                 $gross            = ($total_basic_rate + $overtime_amount + $allowance_total) - $late_amount;
             }
@@ -4805,7 +4882,9 @@ class Action
             foreach ($loans         as $c) $total_ded += floatval($c['amount'] ?? 0);
             $total_ded += floatval($row['sss_fund']) + floatval($row['jei_advances']) + floatval($row['jcc_advances']) + floatval($row['tax']) + floatval($row['other_deduction']);
             foreach ($refunds_data as $r) $total_ref += floatval($r['amount'] ?? 0);
-            $net = $gross - $total_ded + $total_ref;
+            // Manual signed adjustment (+ addition / − recovery) applied to net.
+            $adjustment = floatval($row['adjustment'] ?? 0);
+            $net = $gross - $total_ded + $total_ref + $adjustment;
 
             $t_gross      += $gross;
             $t_net        += $net;
@@ -4829,7 +4908,11 @@ class Action
                 'gross'                => $gross,
                 'net'                  => $net,
                 'total_deductions'     => $total_ded,
+                'other_deduction'      => floatval($row['other_deduction'] ?? 0),
+                'adjustment'           => $adjustment,
                 'absent'               => $row['absent'],
+                'paid_leave'           => $row['paid_leave'] ?? 0,
+                'paid_leave_amount'    => ($row['paid_leave'] ?? 0) * $row['per_day'],
                 'late'                 => $row['late'],
                 'rate_type'            => $row['rate_type'] ?? 'daily',
             ];
@@ -4850,6 +4933,18 @@ class Action
 
     function save_new_payroll_item($id, $value, $field, $dd_id)
     {
+        // Whitelist — $field lands in the UPDATE statement below, so only known
+        // payroll_items columns / JSON pseudo-fields may pass.
+        static $allowed_fields = [
+            'present', 'per_day', 'allowance_days', 'allowance_amount', 'ot', 'ot_rate',
+            'late', 'under_time', 'absent', 'legal_holiday', 'sunday_duty', 'special_holiday',
+            'sss_fund', 'jei_advances', 'jcc_advances', 'tax', 'other_deduction',
+            'adjustment', 'adjustment_remarks', 'net',
+            'contribution', 'deduction', 'loan', 'refund',
+        ];
+        if (!in_array($field, $allowed_fields, true)) {
+            throw new Exception('Unknown payroll item field: ' . $field);
+        }
         $this->db->begin_transaction();
         $query = "SELECT loan_history.*, payroll.ref_no, payroll.date_from, payroll.date_to, payroll_items.employee_id FROM loan_history 
         INNER JOIN payroll ON  loan_history.payroll_id = payroll.id 
@@ -5338,7 +5433,7 @@ class Action
             $stmt->execute();
             $result = $stmt->get_result();
             $emp = $result->fetch_assoc();
-            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Rest Day Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys"];
+            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Rest Day Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys", 'adjustment' => "Adjustment", 'adjustment_remarks' => "Adjustment Remarks"];
             $details = "Employee: " . $emp['lastname'] . ", " . $emp['firstname'] . " & Field: {$files_types[$field]} & Value: $value";
         }
 
@@ -5504,6 +5599,10 @@ class Action
         $is_paid      = isset($_POST['is_paid']) ? (int) $_POST['is_paid'] : 1;
         $description  = trim($_POST['description'] ?? '');
         $status       = isset($_POST['status']) ? (int) $_POST['status'] : 1;
+        // Year-end policy (paid types only): carry unused credits, with optional cap.
+        $carryover    = ($is_paid === 1 && (int) ($_POST['carryover'] ?? 0) === 1) ? 1 : 0;
+        $cap_raw      = trim($_POST['carryover_cap'] ?? '');
+        $carry_cap    = ($carryover === 1 && $cap_raw !== '') ? max(0.0, (float) $cap_raw) : null;
 
         if ($name === '') {
             return ['result' => false, 'message' => 'Leave type name is required.'];
@@ -5513,11 +5612,11 @@ class Action
         }
 
         if ($id === 0) {
-            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, is_paid, description, status) VALUES (?, ?, ?, ?, ?)");
-            $stmt->bind_param('siisi', $name, $days_allowed, $is_paid, $description, $status);
+            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, is_paid, description, status, carryover, carryover_cap) VALUES (?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param('siisiid', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap);
         } else {
-            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, is_paid = ?, description = ?, status = ? WHERE id = ?");
-            $stmt->bind_param('siisii', $name, $days_allowed, $is_paid, $description, $status, $id);
+            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, is_paid = ?, description = ?, status = ?, carryover = ?, carryover_cap = ? WHERE id = ?");
+            $stmt->bind_param('siisiidi', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $id);
         }
 
         if ($stmt->execute()) {
@@ -5596,6 +5695,25 @@ class Action
             return ['result' => false, 'message' => 'Leave not allowed on: ' . implode(', ', $names) . '.'];
         }
 
+        // Duplicate-date guard: reject days already covered by another PENDING or
+        // APPROVED request of this employee. Rejected requests don't block; when
+        // editing, the request being edited is excluded from the check.
+        $taken = [];
+        $dupq  = $this->db->query("SELECT dates, date_from, date_to FROM leave_requests
+            WHERE employee_id = $employee_id AND status IN (0,1)" . ($id > 0 ? " AND id <> $id" : ''));
+        if ($dupq) while ($dx = $dupq->fetch_assoc()) {
+            $dd = [];
+            if (!empty($dx['dates'])) { $j = json_decode($dx['dates'], true); if (is_array($j)) $dd = $j; }
+            if (!$dd) { for ($t = strtotime($dx['date_from']); $t <= strtotime($dx['date_to']); $t = strtotime('+1 day', $t)) $dd[] = date('Y-m-d', $t); }
+            foreach ($dd as $d1) $taken[date('Y-m-d', strtotime($d1))] = true;
+        }
+        $dup_hit = array_values(array_filter($days, function ($d1) use ($taken) { return isset($taken[date('Y-m-d', strtotime($d1))]); }));
+        if ($dup_hit) {
+            $nice = array_map(function ($d1) { return date('M d', strtotime($d1)); }, array_slice($dup_hit, 0, 5));
+            return ['result' => false, 'message' => 'This employee already has a pending or approved leave on: '
+                . implode(', ', $nice) . (count($dup_hit) > 5 ? '…' : '') . '.'];
+        }
+
         $duration   = count($days);
         $date_from  = $days[0];
         $date_to    = $days[count($days) - 1];
@@ -5615,16 +5733,21 @@ class Action
             if ($id === 0) {
                 $new_id = $this->db->insert_id;
                 $info = $this->leaveInfo($new_id);
-                // Notify HR that a new request needs their review.
-                $this->notifyRole(9, 'New leave request', "{$info['emp']} filed a {$info['type']} ({$info['dur']} day/s). Needs HR review.", 'ri-calendar-event-line', 'warning', 'index.php?page=leaves');
+                // Notify the FIRST approver in the configured chain (scoped to the
+                // employee's department) that a new request needs their review.
+                $stages   = leave_stages();
+                $firstKey = array_key_first($stages);
+                $firstCfg = $stages[$firstKey];
+                $this->notifyRoleForEmployee((int) $firstCfg['role'], $employee_id, 'New leave request', "{$info['emp']} filed a {$info['type']} ({$info['dur']} day/s). Needs {$firstCfg['label']} approval.", $firstCfg['icon'] ?? 'ri-calendar-event-line', 'warning', 'index.php?page=leaves');
             }
             return ['result' => true, 'message' => $id === 0 ? 'Leave request filed. Sent to HR for review.' : 'Leave request updated.'];
         }
         return ['result' => false, 'message' => $stmt->error];
     }
 
-    // Two-stage decision: stage = 'hr' (HR) or 'admin' (Admin / Department Head).
-    // status = 1 approve, 2 reject, 0 revert to pending.
+    // Config-driven approval decision. `stage` is a key in LEAVE_APPROVAL_STAGES
+    // (db_connect.php); the current flow is sup → admin → hr. status = 1 approve,
+    // 2 reject. Ordering, allowed role, and notifications all follow the config.
     function decide_leave()
     {
         $id      = (int) ($_POST['id'] ?? 0);
@@ -5647,116 +5770,188 @@ class Action
             if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
         }
 
+        // Validate the stage against the configured workflow (LEAVE_APPROVAL_STAGES).
+        $stages = leave_stages();
+        if (!isset($stages[$stage])) return ['result' => false, 'message' => 'Invalid approval stage.'];
+        $cfg = $stages[$stage];
+
+        // Only the role that owns this stage may act on it. Administrator (role 1)
+        // and every other role stay view-only.
+        if ($role !== (int) $cfg['role']) {
+            return ['result' => false, 'message' => 'You are not allowed to act on the ' . $cfg['label'] . ' approval.'];
+        }
+
+        // Enforce the chain order: a stage can only be decided while it is the one
+        // currently awaiting action — i.e. all earlier stages approved, none
+        // rejected, and this stage not already decided.
+        if (leave_current_stage($row) !== $stage) {
+            if ((int) ($row[$stage . '_status'] ?? 0) !== 0) {
+                return ['result' => false, 'message' => 'This stage has already been decided.'];
+            }
+            return ['result' => false, 'message' => 'An earlier approval is still required before the ' . $cfg['label'] . ' stage.'];
+        }
+
+        if ($status === 2 && $remarks === '') {
+            return ['result' => false, 'message' => 'A reason is required to reject.'];
+        }
+
         $remarks_sql = $remarks !== '' ? "'" . $this->db->real_escape_string($remarks) . "'" : 'NULL';
         $uid_sql     = $uid ? (int) $uid : 'NULL';
 
-        if ($stage === 'hr') {
-            // Admin (role 1) is view-only — only HR (9) may act on the HR stage.
-            if (!in_array($role, [9], true)) return ['result' => false, 'message' => 'Only HR can act on the HR approval.'];
-            $this->db->query("UPDATE leave_requests SET hr_status = $status, hr_by = $uid_sql, hr_remarks = $remarks_sql, hr_at = NOW() WHERE id = $id");
-        } elseif ($stage === 'admin') {
-            // Admin (role 1) is view-only — only the Department Head (8) gives final approval.
-            if (!in_array($role, [8], true)) return ['result' => false, 'message' => 'Only the Department Head can give final approval.'];
-            if ($status === 1 && (int) $row['hr_status'] !== 1) {
-                return ['result' => false, 'message' => 'HR approval is required before final approval.'];
-            }
-            $this->db->query("UPDATE leave_requests SET admin_status = $status, admin_by = $uid_sql, admin_remarks = $remarks_sql, admin_at = NOW() WHERE id = $id");
-        } else {
-            return ['result' => false, 'message' => 'Invalid approval stage.'];
-        }
+        // Persist this stage's decision ({stage}_status / _by / _remarks / _at).
+        $this->db->query(
+            "UPDATE leave_requests
+             SET {$stage}_status = $status, {$stage}_by = $uid_sql,
+                 {$stage}_remarks = $remarks_sql, {$stage}_at = NOW()
+             WHERE id = $id"
+        );
 
-        // Recompute overall status: rejected if either rejects; approved only when both approve.
-        $r2 = $this->db->query("SELECT hr_status, admin_status, filed_by FROM leave_requests WHERE id = $id")->fetch_assoc();
-        $overall = 0;
-        if ((int) $r2['hr_status'] === 2 || (int) $r2['admin_status'] === 2) {
-            $overall = 2;
-        } elseif ((int) $r2['hr_status'] === 1 && (int) $r2['admin_status'] === 1) {
-            $overall = 1;
-        }
-        $this->db->query("UPDATE leave_requests SET status = $overall, approved_by = $uid_sql WHERE id = $id");
+        // Recompute the overall status from every configured stage.
+        $r2       = $this->db->query("SELECT * FROM leave_requests WHERE id = $id")->fetch_assoc();
+        $overall  = leave_overall_status($r2);
+        $appr_sql = ($overall === 1) ? $uid_sql : 'NULL';
+        $this->db->query("UPDATE leave_requests SET status = $overall, approved_by = $appr_sql WHERE id = $id");
 
         // Fire notifications.
-        $info = $this->leaveInfo($id);
-        $link = 'index.php?page=leaves';                 // staff review page
+        $info     = $this->leaveInfo($id);
+        $link     = 'index.php?page=leaves';             // staff review page
         $emp_link = 'employee-portal.php?tab=leave';     // employee self-service portal
-        $emp = (int) $row['employee_id'];                // the leave owner — notified on their portal bell
-        if ($stage === 'hr') {
-            if ($status === 1) {
-                // Final approval is the Department Head's (role 8) action; Admin is view-only.
-                $this->notifyRole(8, 'Leave needs final approval', "{$info['emp']}'s {$info['type']} passed HR review.", 'ri-shield-check-line', 'info', $link);
-                $this->notifyEmployee($emp, 'Leave approved by HR', "Your {$info['type']} was approved by HR. Awaiting final approval.", 'ri-checkbox-circle-line', 'info', $emp_link);
-            } elseif ($status === 2) {
-                $this->notifyEmployee($emp, 'Leave rejected by HR', "Your {$info['type']} was rejected by HR." . ($remarks ? " Reason: $remarks" : ''), 'ri-close-circle-line', 'danger', $emp_link);
+        $emp      = (int) $row['employee_id'];           // the leave owner
+        $stageLbl = $cfg['label'];
+        $hr_stage = leave_stage_for_role(9);             // HR owns the leave records
+
+        if ($status === 2) {
+            // Rejected — halts the chain. Tell the employee, and HR (unless HR did it).
+            $this->notifyEmployee($emp, 'Leave rejected', "Your {$info['type']} was rejected by {$stageLbl}." . ($remarks ? " Reason: $remarks" : ''), 'ri-close-circle-line', 'danger', $emp_link);
+            if ($hr_stage !== $stage) {
+                $this->notifyRole(9, 'Leave rejected', "{$info['emp']}'s {$info['type']} was rejected by {$stageLbl}.", 'ri-close-circle-line', 'danger', $link);
             }
-        } else { // admin / head
-            if ($status === 1) {
+        } elseif ($status === 1) {
+            $next = leave_current_stage($r2);            // next stage awaiting action, or null when done
+            if ($next === null) {
+                // Fully approved through the whole chain.
                 $this->notifyEmployee($emp, 'Leave fully approved', "Your {$info['type']} has been fully approved.", 'ri-checkbox-circle-line', 'success', $emp_link);
                 $this->notifyRole(9, 'Leave fully approved', "{$info['emp']}'s {$info['type']} received final approval.", 'ri-checkbox-circle-line', 'success', $link);
-            } elseif ($status === 2) {
-                $this->notifyEmployee($emp, 'Leave rejected', "Your {$info['type']} was rejected on final approval." . ($remarks ? " Reason: $remarks" : ''), 'ri-close-circle-line', 'danger', $emp_link);
-                $this->notifyRole(9, 'Leave rejected', "{$info['emp']}'s {$info['type']} was rejected on final approval.", 'ri-close-circle-line', 'danger', $link);
+            } else {
+                // Hand off to the next approver (scoped to the employee's department).
+                $nextCfg = $stages[$next];
+                $this->notifyRoleForEmployee((int) $nextCfg['role'], $emp, 'Leave needs your approval', "{$info['emp']}'s {$info['type']} ({$info['dur']} day/s) is awaiting {$nextCfg['label']} approval.", $nextCfg['icon'] ?? 'ri-shield-check-line', 'info', $link);
+                $this->notifyEmployee($emp, "Leave approved by {$stageLbl}", "Your {$info['type']} was approved by {$stageLbl}. Awaiting {$nextCfg['label']} approval.", 'ri-checkbox-circle-line', 'info', $emp_link);
             }
         }
 
-        $label = $status === 1 ? 'approved' : ($status === 2 ? 'rejected' : 'reverted to pending');
-        return ['result' => true, 'message' => ucfirst($stage) . " stage $label."];
+        $label = $status === 1 ? 'approved' : ($status === 2 ? 'rejected' : 'updated');
+        return ['result' => true, 'message' => "{$stageLbl} stage $label."];
     }
 
     function delete_leave_request()
     {
-        $id = (int) ($_POST['id'] ?? 0);
+        $id   = (int) ($_POST['id'] ?? 0);
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        // Only leave-workflow roles may delete (Administrator role 1 is view-only).
+        if (!in_array($role, [8, 9, 10], true)) {
+            return ['result' => false, 'message' => 'You are not allowed to delete leave requests.'];
+        }
+        $row = $this->db->query("SELECT * FROM leave_requests WHERE id = $id")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Leave request not found.'];
+
+        // Dept-scoped users (Head / Supervisor) may only act within their department.
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int) $row['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        }
+
+        // An APPROVED leave already counts toward balances and payroll — deleting
+        // it would silently rewrite history. It must be rejected instead.
+        if ((int) $row['status'] === 1) {
+            return ['result' => false, 'message' => 'This leave is already approved and counted in balances/payroll. Reject it instead of deleting.'];
+        }
+
         if ($this->db->query("DELETE FROM leave_requests WHERE id = $id")) {
             return ['result' => true, 'message' => 'Leave request deleted.'];
         }
         return ['result' => false, 'message' => $this->db->error];
     }
 
-    // HR / Admin: set an employee's available leave credits for a leave type.
+    // HR / Admin / Dept Head: change an employee's leave credits for a leave type.
+    // mode = 'set' (absolute), 'add' (+amount) or 'deduct' (−amount, floored at 0).
+    // add/deduct require a reason; every change is written to leave_credit_history.
     function save_leave_credit()
     {
         $employee_id   = (int) ($_POST['employee_id'] ?? 0);
         $leave_type_id = (int) ($_POST['leave_type_id'] ?? 0);
-        $credits       = (float) ($_POST['credits'] ?? 0);
+        $mode          = in_array(($_POST['mode'] ?? 'set'), ['set', 'add', 'deduct'], true) ? $_POST['mode'] : 'set';
+        // 'amount' = delta for add/deduct or the absolute for set; falls back to the
+        // legacy 'credits' field so the plain SET editor keeps working unchanged.
+        $amount        = (float) ($_POST['amount'] ?? $_POST['credits'] ?? 0);
+        $reason        = trim($_POST['reason'] ?? '');
+
+        // Server-side guard matching the UI: only Admin (1), Dept Head (8) and HR (9)
+        // may change credits; scoped Heads only within their own department.
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!in_array($role, [1, 8, 9], true)) {
+            return ['result' => false, 'message' => 'You are not allowed to change leave credits.'];
+        }
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = $employee_id" . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This employee belongs to another department.'];
+        }
 
         if ($employee_id <= 0 || $leave_type_id <= 0) {
             return ['result' => false, 'message' => 'Invalid employee or leave type.'];
         }
-        if ($credits < 0) {
-            return ['result' => false, 'message' => 'Credits cannot be negative.'];
+        if ($amount < 0) {
+            return ['result' => false, 'message' => 'Amount cannot be negative.'];
+        }
+        if ($mode !== 'set' && $amount <= 0) {
+            return ['result' => false, 'message' => 'Enter an amount greater than zero.'];
+        }
+        if ($mode !== 'set' && $reason === '') {
+            return ['result' => false, 'message' => 'A reason is required to add or deduct credits.'];
         }
 
-        // Only Regular / Executive employees are entitled to leave credits.
+        // Only Regular / Executive (or overridden) employees are entitled to leave credits.
         if (!$this->isLeaveEligible($employee_id)) {
-            return ['result' => false, 'message' => 'Only Regular and Executive employees are entitled to leave credits.'];
+            return ['result' => false, 'message' => 'This employee is not eligible for leave credits.'];
         }
 
         $changer = $_SESSION['login_id'] ?? null;
+        $year    = leave_current_year();
 
-        // Current value (defaults to the leave type's standard entitlement when unset).
+        // Current value for this year (defaults to the type's standard entitlement when unset).
         $cur = $this->db->query("
             SELECT COALESCE(c.credits, lt.days_allowed) AS credits
             FROM leave_types lt
-            LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id
+            LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id AND c.year = $year
             WHERE lt.id = $leave_type_id
         ")->fetch_assoc();
         $old_credits = $cur ? (float) $cur['credits'] : 0;
 
-        // Upsert on the (employee_id, leave_type_id) unique key.
+        // Resolve the new balance from the requested action.
+        if ($mode === 'add')        $new_credits = $old_credits + $amount;
+        elseif ($mode === 'deduct') $new_credits = max(0.0, $old_credits - $amount);
+        else                        $new_credits = $amount;   // set
+
+        // Upsert on the (employee_id, leave_type_id, year) unique key.
         $stmt = $this->db->prepare("
-            INSERT INTO employee_leave_credits (employee_id, leave_type_id, credits)
-            VALUES (?, ?, ?)
+            INSERT INTO employee_leave_credits (employee_id, leave_type_id, year, credits)
+            VALUES (?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE credits = VALUES(credits)
         ");
-        $stmt->bind_param('iid', $employee_id, $leave_type_id, $credits);
+        $stmt->bind_param('iiid', $employee_id, $leave_type_id, $year, $new_credits);
         if (!$stmt->execute()) {
             return ['result' => false, 'message' => $stmt->error];
         }
 
-        // Only record history + notify when the value actually changed.
-        if ((float) $old_credits !== (float) $credits) {
-            $cb_sql = $changer ? (int) $changer : 'NULL';
-            $this->db->query("INSERT INTO leave_credit_history (employee_id, leave_type_id, old_credits, new_credits, changed_by)
-                VALUES ($employee_id, $leave_type_id, $old_credits, $credits, $cb_sql)");
+        // Record history + notify when the value actually changed.
+        if ((float) $old_credits !== (float) $new_credits) {
+            $cb_sql     = $changer ? (int) $changer : 'NULL';
+            $reason_sql = $reason !== '' ? "'" . $this->db->real_escape_string($reason) . "'" : 'NULL';
+            $type_sql   = "'" . $this->db->real_escape_string($mode) . "'";
+            $this->db->query("INSERT INTO leave_credit_history (employee_id, leave_type_id, old_credits, new_credits, change_type, reason, changed_by)
+                VALUES ($employee_id, $leave_type_id, $old_credits, $new_credits, $type_sql, $reason_sql, $cb_sql)");
 
             // Build a readable message.
             $meta = $this->db->query("
@@ -5770,15 +5965,154 @@ class Action
                 $wq = $this->db->query("SELECT name FROM users WHERE id = " . (int) $changer)->fetch_assoc();
                 $who = $wq['name'] ?? 'A user';
             }
-            $msg = "$who updated $emp's $type balance: " . rtrim(rtrim(number_format($old_credits, 1), '0'), '.')
-                . " → " . rtrim(rtrim(number_format($credits, 1), '0'), '.') . " day(s).";
+            $fmt  = fn($n) => rtrim(rtrim(number_format($n, 1), '0'), '.');
+            $verb = $mode === 'add' ? 'added ' . $fmt($amount) . ' to' : ($mode === 'deduct' ? 'deducted ' . $fmt($amount) . ' from' : 'set');
+            $msg  = "$who $verb $emp's $type balance: " . $fmt($old_credits) . " → " . $fmt($new_credits) . " day(s)."
+                  . ($reason !== '' ? " Reason: $reason" : '');
 
             // Notify HR + Admins (so any balance change is visible/auditable).
             $this->notifyRole(1, 'Leave balance updated', $msg, 'ri-coins-line', 'info', 'index.php?page=leave_balances&emp=' . $employee_id);
             $this->notifyRole(9, 'Leave balance updated', $msg, 'ri-coins-line', 'info', 'index.php?page=leave_balances&emp=' . $employee_id);
         }
 
-        return ['result' => true, 'message' => 'Leave credit saved.'];
+        $labels = ['set' => 'Balance updated', 'add' => 'Credits added', 'deduct' => 'Credits deducted'];
+        return ['result' => true, 'message' => $labels[$mode] . '.'];
+    }
+
+    // HR / Admin / Dept Head: set the per-employee leave eligibility override.
+    // override = '' | 'auto' (NULL, follow classification) · '1' (force allow) · '0' (force block).
+    function save_leave_override()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!in_array($role, [1, 8, 9], true)) {
+            return ['result' => false, 'message' => 'You are not allowed to change leave eligibility.'];
+        }
+        $employee_id = (int) ($_POST['employee_id'] ?? 0);
+        $val         = $_POST['override'] ?? '';
+        if ($employee_id <= 0) return ['result' => false, 'message' => 'Invalid employee.'];
+
+        // Department Heads may only act within their own department.
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = $employee_id" . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This employee belongs to another department.'];
+        }
+
+        if ($val === '' || $val === 'auto') {
+            $set = 'NULL';        $label = 'Auto (by classification)';
+        } elseif ($val === '1') {
+            $set = '1';           $label = 'Always allowed';
+        } elseif ($val === '0') {
+            $set = '0';           $label = 'Always blocked';
+        } else {
+            return ['result' => false, 'message' => 'Invalid override value.'];
+        }
+        $this->db->query("UPDATE employee SET leave_override = $set WHERE id = $employee_id");
+
+        return ['result' => true, 'message' => 'Leave eligibility set to: ' . $label . '.'];
+    }
+
+    // Year-end rollover: seed each eligible employee's TARGET-year balance from the
+    // SOURCE year, following every paid leave type's policy (reset vs carry-over,
+    // with an optional cap). mode = 'preview' (dry run, no writes) or 'run'.
+    // Every applied change is logged to leave_credit_history for audit.
+    function run_leave_rollover()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!in_array($role, [1, 9], true)) {   // Admin + HR only
+            return ['result' => false, 'message' => 'Only Admin/HR can run the year-end rollover.'];
+        }
+        $from_year = (int) ($_POST['from_year'] ?? 0);
+        $to_year   = (int) ($_POST['to_year'] ?? ($from_year + 1));
+        $preview   = (($_POST['mode'] ?? 'preview') !== 'run');
+        $changer   = $_SESSION['login_id'] ?? null;
+
+        if ($from_year < 2000 || $to_year <= $from_year) {
+            return ['result' => false, 'message' => 'Invalid year range.'];
+        }
+
+        // Active employees + the data needed to judge leave eligibility.
+        $emps = $this->db->query("
+            SELECT e.id, CONCAT(e.lastname, ', ', e.firstname) AS name,
+                   UPPER(COALESCE(cl.clasification,'')) AS clasif, e.leave_override
+            FROM employee e
+            LEFT JOIN clasification cl ON cl.id = e.clasification_id
+            WHERE e.status = 1
+            ORDER BY e.lastname ASC
+        ");
+        if (!$emps) return ['result' => false, 'message' => 'Could not read employees.'];
+
+        // Paid leave types + their year-end policy.
+        $types = [];
+        $tq = $this->db->query("SELECT id, name, days_allowed, carryover, carryover_cap FROM leave_types WHERE status = 1 AND is_paid = 1 ORDER BY name ASC");
+        if ($tq) while ($t = $tq->fetch_assoc()) $types[] = $t;
+        if (!$types) return ['result' => false, 'message' => 'No paid leave types configured.'];
+
+        $rows = []; $emp_count = 0; $changed = 0;
+
+        while ($e = $emps->fetch_assoc()) {
+            if (!leave_eligibility_from($e['clasif'], $e['leave_override'])) continue;
+            $emp_count++;
+            $eid = (int) $e['id'];
+
+            foreach ($types as $t) {
+                $tid       = (int) $t['id'];
+                $allowance = (float) $t['days_allowed'];
+
+                // Source-year balance (defaults to the allowance if never set).
+                $src = $this->db->query("SELECT credits FROM employee_leave_credits WHERE employee_id=$eid AND leave_type_id=$tid AND year=$from_year")->fetch_assoc();
+                $src_credits = $src ? (float) $src['credits'] : $allowance;
+
+                // Days used in the source year.
+                $u = $this->db->query("SELECT COALESCE(SUM(duration),0) AS used FROM leave_requests WHERE employee_id=$eid AND leave_type_id=$tid AND status=1 AND YEAR(date_from)=$from_year")->fetch_assoc();
+                $used     = (float) $u['used'];
+                $leftover = max(0.0, $src_credits - $used);
+
+                // Target-year starting balance from the policy.
+                if ((int) $t['carryover'] === 1) {
+                    $carried = $leftover;
+                    if ($t['carryover_cap'] !== null) $carried = min($carried, (float) $t['carryover_cap']);
+                    $new_credits = $allowance + $carried;
+                } else {
+                    $carried = 0.0;
+                    $new_credits = $allowance;
+                }
+
+                // Existing target value (for the old→new audit line; defaults to allowance).
+                $tgt = $this->db->query("SELECT credits FROM employee_leave_credits WHERE employee_id=$eid AND leave_type_id=$tid AND year=$to_year")->fetch_assoc();
+                $old_target = $tgt ? (float) $tgt['credits'] : $allowance;
+
+                if (count($rows) < 500) {   // cap the preview payload; counts below are exact
+                    $rows[] = [
+                        'employee' => $e['name'], 'type' => $t['name'],
+                        'policy'   => ((int) $t['carryover'] === 1 ? 'carry' : 'reset'),
+                        'leftover' => $leftover, 'carried' => $carried,
+                        'old'      => $old_target, 'new' => $new_credits,
+                    ];
+                }
+
+                if (!$preview) {
+                    $ins = $this->db->prepare("INSERT INTO employee_leave_credits (employee_id, leave_type_id, year, credits) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE credits = VALUES(credits)");
+                    $ins->bind_param('iiid', $eid, $tid, $to_year, $new_credits);
+                    $ins->execute();
+                    if ((float) $old_target !== (float) $new_credits) {
+                        $reason_sql = "'" . $this->db->real_escape_string("Year-end rollover {$from_year}→{$to_year}") . "'";
+                        $cb = $changer ? (int) $changer : 'NULL';
+                        $this->db->query("INSERT INTO leave_credit_history (employee_id, leave_type_id, old_credits, new_credits, change_type, reason, changed_by)
+                            VALUES ($eid, $tid, $old_target, $new_credits, 'set', $reason_sql, $cb)");
+                        $changed++;
+                    }
+                }
+            }
+        }
+
+        if ($preview) {
+            return ['result' => true, 'preview' => true, 'from_year' => $from_year, 'to_year' => $to_year,
+                    'employees' => $emp_count, 'rows' => $rows, 'truncated' => (count($rows) >= 500)];
+        }
+        return ['result' => true, 'preview' => false, 'from_year' => $from_year, 'to_year' => $to_year,
+                'employees' => $emp_count, 'changed' => $changed,
+                'message' => "Rollover {$from_year}→{$to_year} complete: $emp_count employee(s), $changed balance change(s)."];
     }
 
     /* ──────────────────────────────────────────────────────────────
@@ -6101,11 +6435,11 @@ class Action
     {
         $employee_id = (int) $employee_id;
         $r = $this->db->query("
-            SELECT UPPER(cl.clasification) AS c
+            SELECT UPPER(cl.clasification) AS c, e.leave_override
             FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id
             WHERE e.id = $employee_id
         ")->fetch_assoc();
-        return $r && in_array($r['c'], LEAVE_ELIGIBLE_CLASSIFICATIONS, true);
+        return $r && leave_eligibility_from($r['c'], $r['leave_override']);
     }
 
     // Small helper: employee name + leave type + duration for notification text.
@@ -6195,6 +6529,35 @@ class Action
         }
         // Mirror to that role's browsers as a push (best-effort, never fatal) so
         // reviewers get leave / attendance-request alerts with the site closed.
+        try {
+            require_once __DIR__ . '/fcm.php';
+            fcm_push_role($this->db, $role, $title, $message, $link ?: 'index.php');
+        } catch (\Throwable $e) { /* ignore */ }
+    }
+
+    // Like notifyRole, but only reaches users of that role who are responsible
+    // for the given employee's department — the Supervisor / Department Head of
+    // that department, plus any unscoped (NULL / 0 department) reviewer of that
+    // role such as HR. Keeps a department's leave alerts out of other
+    // departments' bells.
+    private function notifyRoleForEmployee($role, $employee_id, $title, $message, $icon = 'ri-notification-3-line', $color = 'primary', $link = null)
+    {
+        $role        = (int) $role;
+        $employee_id = (int) $employee_id;
+
+        $dept = 0;
+        $er = $this->db->query("SELECT department_id FROM employee WHERE id = $employee_id");
+        if ($er && ($e = $er->fetch_assoc())) $dept = (int) $e['department_id'];
+
+        $res = $this->db->query(
+            "SELECT id FROM users
+             WHERE role = $role AND status = 1
+               AND (department_id = $dept OR department_id IS NULL OR department_id = 0)"
+        );
+        if ($res) while ($u = $res->fetch_assoc()) {
+            $this->notify($u['id'], $title, $message, $icon, $color, $link);
+        }
+        // Best-effort browser push to the whole role (never fatal).
         try {
             require_once __DIR__ . '/fcm.php';
             fcm_push_role($this->db, $role, $title, $message, $link ?: 'index.php');
@@ -6491,11 +6854,11 @@ class Action
         $stmtCheckPosition  = $this->db->prepare("SELECT id FROM position WHERE LOWER(name) = LOWER(?)");
         $stmtInsertPosition = $this->db->prepare("INSERT INTO position (name) VALUES (?)");
         $stmtInsert = $this->db->prepare("INSERT INTO employee
-    (employee_no, employee_code, firstname, middlename, lastname, position_id, salary, basic_pay, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, sss_no, ph_no, hdmf_no, tin_no, ext, bday)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    (employee_no, employee_code, firstname, middlename, lastname, position_id, salary, basic_pay, rate_type, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, sss_no, ph_no, hdmf_no, tin_no, ext, bday)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
         $stmtUpdate = $this->db->prepare("UPDATE employee SET
-    position_id=?, salary=?, basic_pay=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, sss_no=?, ph_no=?, hdmf_no=?, bday=?, employee_no=?, employee_code=?, ext=?
+    position_id=?, salary=?, basic_pay=?, rate_type=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, sss_no=?, ph_no=?, hdmf_no=?, bday=?, employee_no=?, employee_code=?, ext=?
     WHERE id=?");
 
         $stmtUpdateContrib = $this->db->prepare("UPDATE employee_contributions SET amount=? WHERE employee_id=? AND contribution_id=?");
@@ -6556,7 +6919,14 @@ class Action
                 $ext = "";
                 $position_name = trim($row[4]);
                 $basic_pay = floatval(preg_replace('/[^0-9.]/', '', $row[10]));
-                $salary = 0;
+                // Daily Rate (col U) -> salary; Rate Type (col V) -> pay basis.
+                // Both are appended columns, so old sheets that lack them fall
+                // back to salary 0 / 'daily' rather than erroring.
+                $salary = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[20] ?? '')));
+                $rate_type = strtolower(trim((string) ($row[21] ?? '')));
+                if (!in_array($rate_type, ['daily', 'monthly', 'fixed'], true)) {
+                    $rate_type = 'daily';
+                }
                 $ot_rate = floatval(preg_replace('/[^0-9.]/', '', $row[12]));
                 $allowance_rate = floatval(preg_replace('/[^0-9.]/', '', $row[11]));
                 $sss_fund = 0;
@@ -6615,10 +6985,11 @@ class Action
                 if ($employee_exists) {
                     // 🔹 UPDATE EXISTING EMPLOYEE
                     $stmtUpdate->bind_param(
-                        "ssssssssssssssssi",
+                        "sssssssssssssssssi",
                         $position_id,
                         $salary,
                         $basic_pay,
+                        $rate_type,
                         $ot_rate,
                         $isAutoDeduct,
                         $weekly_payroll,
@@ -6667,7 +7038,7 @@ class Action
                 } else {
                     // 🔹 INSERT NEW EMPLOYEE
                     $stmtInsert->bind_param(
-                        "sssssssssssssssssssss",
+                        "ssssssssssssssssssssss",
                         $e_num,
                         $employee_code,
                         $firstname,
@@ -6676,6 +7047,7 @@ class Action
                         $position_id,
                         $salary,
                         $basic_pay,
+                        $rate_type,
                         $status,
                         $ot_rate,
                         $isAutoDeduct,

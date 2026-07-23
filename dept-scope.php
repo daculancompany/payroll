@@ -1,8 +1,9 @@
 <?php
-// Department scoping for Department Head (role 8) accounts.
-// A Dept Head with a department assigned only sees that department's employees,
-// leaves, and attendance. Accounts with no department set (0 / NULL) keep full
-// visibility so existing unassigned accounts are not locked out.
+// Department scoping for Department Head (role 8) and Supervisor (role 10).
+// A Dept Head / Supervisor with a department assigned only sees that
+// department's employees, leaves, and attendance. Accounts with no department
+// set (0 / NULL) keep full visibility so existing unassigned accounts are not
+// locked out.
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -10,7 +11,7 @@ if (session_status() === PHP_SESSION_NONE) {
 /** Department id the current session is locked to, or 0 when unscoped. */
 function dept_scope_id(): int
 {
-    if ((int)($_SESSION['login_role'] ?? 0) !== 8) return 0;
+    if (!in_array((int)($_SESSION['login_role'] ?? 0), [8, 10], true)) return 0;
     return (int)($_SESSION['login_department_id'] ?? 0);
 }
 

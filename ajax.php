@@ -450,6 +450,12 @@ if ($action == "delete_leave_request") {
 if ($action == "save_leave_credit") {
 	echo json_encode($crud->save_leave_credit());
 }
+if ($action == "save_leave_override") {
+	echo json_encode($crud->save_leave_override());
+}
+if ($action == "run_leave_rollover") {
+	echo json_encode($crud->run_leave_rollover());
+}
 
 // ── Calendar / Holidays ──
 if ($action == "save_calendar_event") {

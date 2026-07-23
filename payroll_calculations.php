@@ -5,18 +5,12 @@ if (!isset($_GET['id'])) {
 $id = (int) $_GET['id'];
 
 
+// Site filter removed — a payroll always covers all active sites now.
 $filter_query = "";
 $sid = '';
-if (isset($_GET['site_id'])  && $_GET['site_id'] !== 'all') {
-    $sid = $_GET['site_id'];
-    $filter_query = " AND a.site_id = $sid  ";
-}
-// LEFT JOIN payroll g ON g.id = a.payroll_id 
-// LEFT JOIN employers  h ON g.employer_id = h.id
 
-$query = "SELECT  employer_name, category,  clusters.cluster FROM payroll  
-        LEFT JOIN employers  ON payroll.employer_id = employers.id  
-        LEFT JOIN clusters  ON clusters.id = payroll.category 
+$query = "SELECT  category,  clusters.cluster FROM payroll
+        LEFT JOIN clusters  ON clusters.id = payroll.category
         WHERE payroll.id = ?";
 $stmt = $conn->prepare($query);
 $stmt->bind_param("i", $id);
@@ -545,8 +539,6 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                 <small class="text-muted">
                                     <i class="ri-calendar-2-line me-1"></i>
                                     <?= date('M d', strtotime($payroll['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($payroll['date_to'])) ?>
-                                    &nbsp;&bull;&nbsp;
-                                    <i class="ri-user-2-line me-1"></i><?= htmlspecialchars($payroll_r['employer_name']) ?>
                                     <?php if ($payroll_r['category'] != 0): ?>
                                         &nbsp;&bull;&nbsp;<i class="ri-global-line me-1"></i><?= htmlspecialchars($payroll_r['cluster']) ?>
                                     <?php endif; ?>
@@ -1396,11 +1388,12 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                 <th colspan="3" class="text-center info-header">Overtime</th>
                                                 <th colspan="3" class="text-center info-header">Late</th>
                                                 <th rowspan="2" class="text-center success-header">GROSS SALARY</th>
-                                                <th colspan="<?= count($contributions_settings) ?>" class="text-center danger-header">Deduction</th>
+                                                <th colspan="<?= count($contributions_settings) + 5 ?>" class="text-center danger-header">Deduction</th>
                                                 <th rowspan="2" class="text-center danger-header">Total Deduction</th>
                                                 <?php if (count($refunds_settings) > 0) { ?>
                                                     <th colspan="<?= count($refunds_settings) ?>" class="text-center primary-header">Refunds</th>
                                                 <?php } ?>
+                                                <th rowspan="2" class="text-center info-header">Adjustment (+/−)</th>
                                                 <th rowspan="2" class="text-center success-header">Net Pay</th>
                                                 <th rowspan="2" class="text-center  primary-header">Actions</th>
                                                 <th rowspan="2" class="text-center  primary-header">No.</th>
@@ -1452,9 +1445,11 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     <?php } ?>
                                                 <?php } else { ?>
                                                 <?php } ?>
-                                                <!-- <th class="text-center  danger-header">SSS PROVIDENT FUND </th>
-                                                <th class="text-center  danger-header">JEI ADVANCE</th>
-                                                <th class="text-center  danger-header">JCC ADVANCES</th> -->
+                                                <th class="text-center  danger-header">SSS Provident Fund</th>
+                                                <th class="text-center  danger-header">JEI Advance</th>
+                                                <th class="text-center  danger-header">JCC Advances</th>
+                                                <th class="text-center  danger-header">Tax</th>
+                                                <th class="text-center  danger-header">Other Deduction</th>
                                                 <?php if (count($refunds_settings) > 0) {
                                                     foreach ($refunds_settings as $k) {
                                                         $query_con = "SELECT * FROM refunds   WHERE id = ?";
@@ -1739,10 +1734,34 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     <?php  } else { ?>
 
                                                     <?php } ?>
-                                                    <?php $total_deductions = $total_deductions;
-                                                    $t_deduction += $total_deductions;  ?>
+                                                    <!-- Fixed deductions (SSS Fund / JEI / JCC / Tax) + free-form Other
+                                                         Deduction — all subtracted from net, mirroring the monthly table
+                                                         and get_payroll_rows_data(). -->
+                                                    <?php
+                                                    $other_deduction = (float) ($row['other_deduction'] ?? 0);
+                                                    $total_deductions += $sss_fund + $jei_advances + $jcc_advances + $tax + $other_deduction;
+                                                    $t_other_ded = ($t_other_ded ?? 0) + $other_deduction;
+                                                    $fixed_ded_cells = [
+                                                        'sss_fund'        => $sss_fund,
+                                                        'jei_advances'    => $jei_advances,
+                                                        'jcc_advances'    => $jcc_advances,
+                                                        'tax'             => $tax,
+                                                        'other_deduction' => $other_deduction,
+                                                    ];
+                                                    foreach ($fixed_ded_cells as $fd_field => $fd_val): ?>
                                                     <td style="min-width: 90px;" class="text-right">
-                                                        <b><?= number_format($total_deductions, 2) ?></b>
+                                                        <?php if ($status === 1) { ?>
+                                                            <div class="input-group mb-3">
+                                                                <input type="text" value="<?= $fd_val ?>" data-id="<?= $row['id'] ?>" data-type="<?= $fd_field ?>" class="form-control input-class" placeholder="Enter Amount" aria-label="<?= $fd_field ?>">
+                                                            </div>
+                                                        <?php } else { ?>
+                                                            <b><?= number_format($fd_val, 2) ?></b>
+                                                        <?php } ?>
+                                                    </td>
+                                                    <?php endforeach; ?>
+                                                    <?php $t_deduction += $total_deductions;  ?>
+                                                    <td style="min-width: 90px;" class="text-right">
+                                                        <b data-computed="total_deductions"><?= number_format($total_deductions, 2) ?></b>
                                                     </td>
                                                     <!-- refunds -->
                                                     <?php if (count($refunds_settings) > 0) {;
@@ -1769,9 +1788,26 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                     <?php
                                                         }
                                                     } ?>
+                                                    <!-- Adjustment — signed manual correction ADDED to net (+ bonus, − recovery) -->
+                                                    <?php
+                                                    $adjustment  = (float) ($row['adjustment'] ?? 0);
+                                                    $adj_remarks = trim((string) ($row['adjustment_remarks'] ?? ''));
+                                                    $t_adjust = ($t_adjust ?? 0) + $adjustment;
+                                                    ?>
+                                                    <td style="min-width: 130px;" class="text-right">
+                                                        <?php if ($status === 1) { ?>
+                                                            <div class="input-group mb-1">
+                                                                <input type="text" value="<?= $adjustment ?>" data-id="<?= $row['id'] ?>" data-type="adjustment" class="form-control input-class" placeholder="+/− Amount" aria-label="Adjustment" title="Positive adds to net pay, negative deducts">
+                                                            </div>
+                                                            <input type="text" value="<?= htmlspecialchars($adj_remarks, ENT_QUOTES) ?>" data-id="<?= $row['id'] ?>" data-type="adjustment_remarks" class="form-control input-class" placeholder="Remarks" aria-label="Adjustment Remarks" style="font-size:10px;">
+                                                        <?php } else { ?>
+                                                            <b class="<?= $adjustment < 0 ? 'text-danger' : '' ?>"><?= number_format($adjustment, 2) ?></b>
+                                                            <?php if ($adj_remarks !== ''): ?><div class="text-muted" style="font-size:10px;"><?= htmlspecialchars($adj_remarks) ?></div><?php endif; ?>
+                                                        <?php } ?>
+                                                    </td>
                                                     <?php
 
-                                                    $net = $gross_salary -  $total_deductions + $total_refunds;
+                                                    $net = $gross_salary -  $total_deductions + $total_refunds + $adjustment;
                                                     $t_net += $net;
                                                     ?>
                                                     <td style="min-width: 90px;" class="text-right net-content">
@@ -1825,10 +1861,16 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
                                                 <?php foreach ($contributions_settings as $k): ?>
                                                 <th class="text-right"><?= number_format($t_contrib[$k['id']] ?? 0, 2) ?></th>
                                                 <?php endforeach; ?>
+                                                <th class="text-right"><?= number_format($t_sss_fund, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_jei, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_jcc, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_tax, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
                                                 <th class="text-right" id="tfoot-deduct"><?= number_format($t_deduction, 2) ?></th>
                                                 <?php foreach ($refunds_settings as $kd): ?>
                                                 <th class="text-right"><?= number_format($t_refund[$kd['id']] ?? 0, 2) ?></th>
                                                 <?php endforeach; ?>
+                                                <th class="text-right"><?= number_format($t_adjust ?? 0, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_net, 2) ?></th>
                                                 <th></th>
                                                 <th></th>
@@ -2585,8 +2627,8 @@ document.addEventListener('DOMContentLoaded', function () {
     </div>
 </div>
 <script>
-// Single payslip → dompdf PDF in the shared PDF modal, same flow as the other
-// payroll prints (preview inline, download from the modal).
+// Single payslip → dompdf PDF in the shared PDF modal. Server-side PDF cache
+// makes repeat views instant; only the first view after a data change renders.
 function openPayslipPreview(itemId) {
     openPdfPreview('pdf-payroll.php?src=payslip&id=' + encodeURIComponent(itemId), 'Payslip PDF');
 }
@@ -2600,58 +2642,7 @@ function printPayslipPreview() {
 }
 </script>
 
-<div class="modal" id="modal-sites-2" tabindex="-1" role="dialog">
-    <div class="modal-dialog modal-lg" role="document">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="modal-sitesModalLabel">Sites</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <table id="data-table" class="table table-hover dataTable table-custom table-striped m-b-0 c_list">
-                    <thead class="thead-dark">
-                        <tr>
-                            <th>Code</th>
-                            <th>Name</th>
-                            <th>Address</th>
-                            <th>Timekeeper</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (is_array($site_ids)) {
-                            foreach ($site_ids as $k) {  ?>
-
-                                <?php
-                                $query_site = "SELECT A.*,  C.name AS timekeeper 
-                                        FROM sites AS A 
-                                        LEFT JOIN users AS C ON A.timekeeper_id = C.id 
-                           
-                                        WHERE A.id = ?
-                                    ";
-                                $stmt_site = $conn->prepare($query_site);
-                                $stmt_site->bind_param("i", $k);
-                                $stmt_site->execute();
-                                $result_site = $stmt_site->get_result();
-                                $site_details = $result_site->fetch_assoc();
-                                ?>
-                                <tr>
-                                    <td><?php echo htmlspecialchars($site_details['site_code']); ?></td>
-                                    <td><?php echo htmlspecialchars($site_details['site_name']); ?></td>
-                                    <td><?php echo htmlspecialchars($site_details['site_address']); ?></td>
-                                    <td><?php echo htmlspecialchars($site_details['timekeeper']); ?></td>
-                                    <td class="text-center" width="100">
-                                        <button data-toggle="tooltip" title="Payroll PDF for this Site" onclick="openPdfPreview('pdf-payroll.php?src=payroll&id=<?= $id ?>&type=site&site_id=<?= $site_details['id'] ?>', 'Site Payroll PDF — <?= htmlspecialchars($site_details['site_code'], ENT_QUOTES) ?>')" class="btn btn-sm btn-outline-info mr-1"><span class="sr-only">Print</span> <i class="fa fa-print"></i></button>
-                                    </td>
-                                </tr>
-                        <?php }
-                        } ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Sites modal removed — payroll always covers all active sites. -->
 <script>
     let id = "<?= $id ?>";
     let status = "<?= $status ?>";

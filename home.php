@@ -46,8 +46,18 @@ $show_leave   = $login_role !== 7;
 // ── Leave overview stats ────────────────────────────────────────
 $leave_new_today  = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE date_applied = CURDATE() $dsSub");
 $leave_new_week   = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE date_applied >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) $dsSub");
-$leave_wait_hr    = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=0 $dsSub");
-$leave_wait_admin = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=1 AND admin_status=0 $dsSub");
+// Pending count awaiting each approval stage, in workflow order (config-driven).
+$leave_stage_defs = leave_stages();
+$leave_stage_keys = array_keys($leave_stage_defs);
+$leave_wait_by_stage = [];
+foreach ($leave_stage_keys as $sk) {
+    $leave_wait_by_stage[$sk] = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE " . leave_stage_pending_predicate($sk) . " $dsSub");
+}
+// The two dashboard tiles show the first two stages of the chain.
+$leave_wait_hr    = $leave_wait_by_stage[$leave_stage_keys[0]] ?? 0;   // 1st stage (e.g. Supervisor)
+$leave_wait_admin = $leave_wait_by_stage[$leave_stage_keys[1]] ?? 0;   // 2nd stage (e.g. Department Head)
+$leave_stage1_lbl = $leave_stage_defs[$leave_stage_keys[0]]['label'] ?? 'Stage 1';
+$leave_stage2_lbl = $leave_stage_defs[$leave_stage_keys[1]]['label'] ?? 'Stage 2';
 $leave_appr_month = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=1 AND MONTH(date_from)=MONTH(CURDATE()) AND YEAR(date_from)=YEAR(CURDATE()) $dsSub");
 $leave_rej_month  = db_count($conn, "SELECT COUNT(*) AS c FROM leave_requests WHERE status=2 AND MONTH(date_applied)=MONTH(CURDATE()) AND YEAR(date_applied)=YEAR(CURDATE()) $dsSub");
 
@@ -485,7 +495,13 @@ $recent_dtr = $conn->query("
                             <div class="ac-lbl">
                                 Leave request<?= $pending_leaves == 1 ? '' : 's' ?> awaiting review
                                 <?php if ($pending_leaves): ?>
-                                · <?= $leave_wait_hr ?> at HR, <?= $leave_wait_admin ?> at Dept Head
+                                · <?php
+                                    $__parts = [];
+                                    foreach ($leave_stage_defs as $sk => $sd) {
+                                        if (($leave_wait_by_stage[$sk] ?? 0) > 0) $__parts[] = $leave_wait_by_stage[$sk] . ' at ' . htmlspecialchars($sd['label']);
+                                    }
+                                    echo implode(', ', $__parts);
+                                ?>
                                 <?php endif; ?>
                             </div>
                         </div>
@@ -854,7 +870,7 @@ $recent_dtr = $conn->query("
                         <div class="ds-icon" style="background:#fff6e0;"><i class="ri-user-heart-line" style="color:#c98a00;"></i></div>
                         <div>
                             <div class="ds-val" style="color:#c98a00;" data-stat="leave_wait_hr"><?= $leave_wait_hr ?></div>
-                            <div class="ds-lbl">Awaiting HR</div>
+                            <div class="ds-lbl">Awaiting <?= htmlspecialchars($leave_stage1_lbl) ?></div>
                             <div class="ds-sub">1st approval stage</div>
                         </div>
                     </div>
@@ -864,8 +880,8 @@ $recent_dtr = $conn->query("
                         <div class="ds-icon" style="background:#fff4ec;"><i class="ri-shield-check-line" style="color:#fd7e14;"></i></div>
                         <div>
                             <div class="ds-val" style="color:#fd7e14;" data-stat="leave_wait_admin"><?= $leave_wait_admin ?></div>
-                            <div class="ds-lbl">Awaiting Dept Head</div>
-                            <div class="ds-sub">final approval stage</div>
+                            <div class="ds-lbl">Awaiting <?= htmlspecialchars($leave_stage2_lbl) ?></div>
+                            <div class="ds-sub">2nd approval stage</div>
                         </div>
                     </div>
                 </div>

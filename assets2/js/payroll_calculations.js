@@ -60,10 +60,6 @@ $(document).ready(function () {
     updatePayroll();
 });
 
-function view_site() {
-    $("#modal-sites-2").modal("show");
-}
-
 function updatePayslipCount() {
     var checked = document.querySelectorAll('.ps-row-chk:checked');
     var cnt    = document.getElementById('ps-count');
@@ -181,11 +177,6 @@ async function updatePayroll() {
         success: function (res) {},
     });
 }
-
-$("#site-select").on("change", function () {
-    var selectedValue = $(this).val();
-    window.location.href = `payroll_calculations.php?id=${id}&site_id=${selectedValue}`;
-});
 
 function handleError(e) {
     $(".submitbutton").removeAttr("disabled");
@@ -426,8 +417,9 @@ $(document).ready(function () {
             (item) => !(item.id === inputId && item.type === inputType && item.dd_id === inputDID)
         );
 
-        // Only add if value is not empty
-        if (inputValue !== "") {
+        // Only add if value is not empty — except adjustment_remarks, where an
+        // empty value is a deliberate "clear the remark".
+        if (inputValue !== "" || inputType === "adjustment_remarks") {
             changedInputs.push({
                 id: inputId,
                 type: inputType,
@@ -439,6 +431,12 @@ $(document).ready(function () {
         // Instantly reflect Basic Rate / No. of Days edits in Total Basic Rate
         if (inputType === "per_day" || inputType === "present") {
             recalcRowBasicRate(inputId);
+        }
+        // Instantly reflect adjustment / deduction edits in this row's Net Pay
+        // (+1 = added to net, −1 = deducted). Server recomputes on Save.
+        const NET_FIELDS = { adjustment: 1, other_deduction: -1, sss_fund: -1, jei_advances: -1, jcc_advances: -1, tax: -1 };
+        if (inputType in NET_FIELDS) {
+            recalcRowNet(this, inputId, NET_FIELDS[inputType]);
         }
         countUnsaved();
     });
@@ -469,6 +467,33 @@ function recalcRowBasicRate(rowId) {
     const cell = tr.querySelector('[data-computed="total_basic_rate"]');
     if (cell) cell.textContent = fmtNum(present * perDay);
     recalcBasicRateFooter();
+}
+
+// Live-preview an adjustment/deduction edit in the row's Net Pay (and Total
+// Deduction for deduction fields) without waiting for Save. Applies the delta
+// between the previous and current input value; the server-side refresh after
+// Save remains the authoritative recompute.
+function recalcRowNet(el, rowId, sign) {
+    const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
+    if (!tr) return;
+    const $el = $(el);
+    const stored = parseFloat($el.data("prev"));
+    const prevV = Number.isNaN(stored) ? (parseFloat(el.defaultValue) || 0) : stored;
+    const newV = parseFloat(el.value) || 0;
+    $el.data("prev", newV);
+    const delta = (newV - prevV) * sign;
+    if (delta === 0) return;
+    const netCell = tr.querySelector('[data-computed="net"]');
+    if (netCell) {
+        const next = (parseFloat(String(netCell.textContent).replace(/,/g, "")) || 0) + delta;
+        netCell.textContent = fmtNum(next);
+        const wrap = tr.querySelector(".net-content");
+        if (wrap) wrap.classList.toggle("net-danger", next <= 0);
+    }
+    if (sign === -1) {
+        const dedCell = tr.querySelector('[data-computed="total_deductions"]');
+        if (dedCell) dedCell.textContent = fmtNum((parseFloat(String(dedCell.textContent).replace(/,/g, "")) || 0) - delta);
+    }
 }
 
 // Sum every visible Total Basic Rate cell into the table-2 footer total.
@@ -512,6 +537,7 @@ function refreshPayrollRows(payrollId) {
                     set('overtime_amount',   r.overtime_amount);
                     set('late_amount',       r.late_amount);
                     set('gross',             r.gross);
+                    set('total_deductions',  r.total_deductions);
                     set('net',               r.net);
 
                     // Net danger styling

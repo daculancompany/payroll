@@ -86,7 +86,6 @@ foreach ($rows as $att) {
             . '</div>';
     }
     if (!$popLines) $popLines = '<span style="color:#aaa;font-size:11px;">No logs</span>';
-    $popContent = htmlspecialchars('<div style="min-width:150px;">' . $popLines . '</div>');
     $totalLogs  = count($logs_obj);
 
     $dateHtml = '<div style="font-weight:700;">' . date('M d, Y', strtotime($dt)) . '</div>'
@@ -112,10 +111,10 @@ foreach ($rows as $att) {
         } else {
             $ioHtml .= '<span class="dtr-time-chip na">No Out</span>';
         }
+        // Plain pill — no popover. Tapping it bubbles to the row/card click,
+        // which opens the Attendance Details modal showing ALL logs inline.
         $ioHtml .= '</div>'
-            . '<span class="dtr-logs-pill mt-1"'
-            . ' data-bs-toggle="popover" data-bs-trigger="click" data-bs-placement="left" data-bs-html="true"'
-            . ' data-bs-content="' . $popContent . '" title="All Logs">'
+            . '<span class="dtr-logs-pill mt-1" title="All Logs">'
             . '<span class="dtr-logs-count"><i class="ri-list-check"></i> ' . $totalLogs . ' log' . ($totalLogs > 1 ? 's' : '') . ' — view details</span>'
             . '</span>';
     } else {
@@ -129,6 +128,10 @@ foreach ($rows as $att) {
         'ot_hours'  => $otHtml,
         'time_io'   => $ioHtml,
         'notes'     => '<span style="font-size:11px;color:#888;">' . htmlspecialchars($att['notes'] ?? '—') . '</span>',
+        // Full punch list (unescaped markup) + count, rendered inline by the
+        // portal's Attendance Details modal — same lines the popover shows.
+        'logs_all'  => $popLines,
+        'logs_count'=> $totalLogs,
     ];
 }
 

@@ -7,14 +7,20 @@ if ($bdq) while ($b = $bdq->fetch_assoc()) {
     while ($d <= $e) { $blocked_dates[] = date('Y-m-d', $d); $d = strtotime('+1 day', $d); }
 }
 
-// Current user's role drives which approval actions are available.
+require_once __DIR__ . '/includes/leave_timeline.php';
+
+// Current user's role drives which approval actions are available. The workflow
+// itself (order, roles, labels) is defined by LEAVE_APPROVAL_STAGES.
 $my_role = (int) ($_SESSION['login_role'] ?? 0);
-// Admin (role 1) is VIEW-ONLY for leaves — HR approves the HR stage, the
-// Department Head gives final approval. Admin can see everything but not act.
-$can_hr    = in_array($my_role, [9], true);   // HR only
-$can_admin = in_array($my_role, [8], true);   // Department Head only
+$leave_stage_defs = leave_stages();
+// The single stage (if any) this user owns; null = cannot act on any stage.
+$my_stage = leave_stage_for_role($my_role);
 // Administrator (role 1) is strictly VIEW-ONLY: no approve, no edit, no delete.
 $is_admin_view = ($my_role === 1);
+// Timeline HTML per request id, collected during the row loop for the modal.
+$leave_timelines = [];
+// Employee + type per request id — used in the action confirmation dialogs.
+$leave_meta = [];
 
 // Department Heads only see their own department's requests.
 require_once 'dept-scope.php';
@@ -122,7 +128,7 @@ function stageBadge($status, $by_name, $remarks, $at)
                                 <i class="ri-calendar-event-line me-2 text-success"></i>Leave Requests
                             </h4>
                             <span class="badge bg-light text-dark border me-2" title="Approval flow">
-                                <i class="ri-flow-chart me-1"></i>HR &rarr; Admin/Head
+                                <i class="ri-flow-chart me-1"></i><?= implode(' &rarr; ', array_map(fn($s) => htmlspecialchars($s['label']), $leave_stage_defs)) ?>
                             </span>
                             <button type="button" class="btn btn-success btn-sm" id="btn-file-leave">
                                 <i class="ri-add-line me-1"></i>File Leave
@@ -158,10 +164,11 @@ function stageBadge($status, $by_name, $remarks, $at)
                                             <th><i class="ri-bookmark-line me-1"></i>Type</th>
                                             <th class="text-center"><i class="ri-time-line me-1"></i>Duration</th>
                                             <th><i class="ri-chat-1-line me-1"></i>Reason</th>
-                                            <th class="text-center">HR Approval</th>
-                                            <th class="text-center">Final Approval</th>
+                                            <?php foreach ($leave_stage_defs as $sdef): ?>
+                                            <th class="text-center"><i class="<?= htmlspecialchars($sdef['icon'] ?? 'ri-check-line') ?> me-1"></i><?= htmlspecialchars($sdef['label']) ?></th>
+                                            <?php endforeach; ?>
                                             <th class="text-center"><i class="ri-pulse-line me-1"></i>Status</th>
-                                            <th class="text-center" style="width:160px;">Action</th>
+                                            <th class="text-center" style="width:180px;">Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -171,11 +178,13 @@ function stageBadge($status, $by_name, $remarks, $at)
                                                 CONCAT(e.lastname, ', ', e.firstname) AS employee_name,
                                                 e.employee_no,
                                                 lt.name AS leave_type_name,
+                                                su.name AS sup_name,
                                                 hu.name AS hr_name,
                                                 au.name AS admin_name
                                             FROM leave_requests lr
                                             INNER JOIN employee e ON e.id = lr.employee_id
                                             INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                                            LEFT JOIN users su ON su.id = lr.sup_by
                                             LEFT JOIN users hu ON hu.id = lr.hr_by
                                             LEFT JOIN users au ON au.id = lr.admin_by
                                             $where_sql
@@ -188,7 +197,18 @@ function stageBadge($status, $by_name, $remarks, $at)
                                                 2 => ['Rejected', 'bg-danger'],
                                             ];
                                             [$slabel, $sclass] = $statusMap[$row['status']] ?? ['Unknown', 'bg-secondary'];
-                                            $editable = ($row['hr_status'] == 0 && $row['admin_status'] == 0);
+                                            // Editable only while no stage has been decided at all.
+                                            $editable = true;
+                                            foreach ($leave_stage_defs as $skey => $sdef) {
+                                                if ((int) $row[$skey . '_status'] !== 0) { $editable = false; break; }
+                                            }
+                                            $cur_stage = leave_current_stage($row);         // stage awaiting action now
+                                            $leave_timelines[$row['id']] = leave_timeline_html($row);
+                                            $leave_meta[$row['id']] = [
+                                                'emp'  => $row['employee_name'],
+                                                'type' => $row['leave_type_name'],
+                                                'dur'  => rtrim(rtrim(number_format($row['duration'], 1), '0'), '.'),
+                                            ];
                                         ?>
                                         <tr>
                                             <td><?= date('M d, Y', strtotime($row['date_applied'])) ?></td>
@@ -209,18 +229,16 @@ function stageBadge($status, $by_name, $remarks, $at)
                                                 </div>
                                             </td>
                                             <td style="max-width:200px;"><span class="text-muted"><?= nl2br(htmlspecialchars($row['reason'] ?? '')) ?></span></td>
-                                            <td class="text-center"><?= stageBadge($row['hr_status'], $row['hr_name'], $row['hr_remarks'], $row['hr_at']) ?></td>
-                                            <td class="text-center"><?= stageBadge($row['admin_status'], $row['admin_name'], $row['admin_remarks'], $row['admin_at']) ?></td>
+                                            <?php foreach ($leave_stage_defs as $skey => $sdef): ?>
+                                            <td class="text-center"><?= stageBadge($row[$skey . '_status'], $row[$skey . '_name'] ?? '', $row[$skey . '_remarks'], $row[$skey . '_at']) ?></td>
+                                            <?php endforeach; ?>
                                             <td class="text-center"><span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span></td>
                                             <td class="text-center">
-                                                <?php if ($can_hr && $row['hr_status'] == 0): ?>
-                                                    <button class="btn btn-sm btn-success" title="HR Approve" onclick="decideLeave(<?= $row['id'] ?>,'hr',1)"><i class="ri-check-double-line"></i></button>
-                                                    <button class="btn btn-sm btn-danger" title="HR Reject" onclick="decideLeave(<?= $row['id'] ?>,'hr',2)"><i class="ri-close-line"></i></button>
+                                                <?php if ($my_stage && $my_stage === $cur_stage && !$is_admin_view): ?>
+                                                    <button class="btn btn-sm btn-success" title="<?= htmlspecialchars($leave_stage_defs[$my_stage]['label']) ?> Approve" onclick="decideLeave(<?= $row['id'] ?>,'<?= $my_stage ?>',1)"><i class="ri-check-double-line"></i></button>
+                                                    <button class="btn btn-sm btn-danger" title="<?= htmlspecialchars($leave_stage_defs[$my_stage]['label']) ?> Reject" onclick="decideLeave(<?= $row['id'] ?>,'<?= $my_stage ?>',2)"><i class="ri-close-line"></i></button>
                                                 <?php endif; ?>
-                                                <?php if ($can_admin && $row['hr_status'] == 1 && $row['admin_status'] == 0): ?>
-                                                    <button class="btn btn-sm btn-success" title="Final Approve" onclick="decideLeave(<?= $row['id'] ?>,'admin',1)"><i class="ri-shield-check-line"></i></button>
-                                                    <button class="btn btn-sm btn-danger" title="Final Reject" onclick="decideLeave(<?= $row['id'] ?>,'admin',2)"><i class="ri-close-line"></i></button>
-                                                <?php endif; ?>
+                                                <button class="btn btn-sm btn-outline-info" title="Approval timeline" onclick="openLeaveTimeline(<?= $row['id'] ?>)"><i class="ri-history-line"></i></button>
                                                 <?php if ($editable && !$is_admin_view): ?>
                                                     <button class="btn btn-sm btn-outline-primary" title="Edit"
                                                         onclick='editLeave(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'><i class="ri-edit-line"></i></button>
@@ -305,18 +323,50 @@ function stageBadge($status, $by_name, $remarks, $at)
     </div>
 </div>
 
+<?php leave_timeline_css(); ?>
+<!-- Approval Timeline Modal -->
+<div class="modal fade" id="modal-leave-timeline" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="ri-history-line me-2" style="color:#009688;"></i>Approval Timeline</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="leave-timeline-body"></div>
+        </div>
+    </div>
+</div>
+
 <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
 var LEAVE_BLOCKED = <?= json_encode(array_values(array_unique($blocked_dates))) ?>;
+var LEAVE_TIMELINES = <?= json_encode($leave_timelines) ?>;
+var LEAVE_META = <?= json_encode($leave_meta) ?>;
+var LEAVE_STAGE_LABELS = <?= json_encode(array_map(fn($s) => $s['label'], $leave_stage_defs)) ?>;
+
+// "Vacation Leave (3 days) — Dela Cruz, Juan" line for confirmation dialogs.
+function leaveWho(id) {
+    var m = LEAVE_META[id];
+    if (!m) return 'this leave request';
+    return m.type + ' (' + m.dur + ' day/s) — ' + m.emp;
+}
 var leaveFp = null;
+
+// Action column sits after the fixed columns + one per approval stage.
+var LEAVE_ACTION_COL = <?= 6 + count($leave_stage_defs) ?>;
+
+function openLeaveTimeline(id) {
+    document.getElementById('leave-timeline-body').innerHTML = LEAVE_TIMELINES[id] || '<div class="text-muted">No timeline available.</div>';
+    new bootstrap.Modal(document.getElementById('modal-leave-timeline')).show();
+}
 
 document.addEventListener('DOMContentLoaded', function () {
     if (window.jQuery && jQuery.fn.DataTable && !jQuery.fn.DataTable.isDataTable('#leave-table')) {
         jQuery('#leave-table').DataTable({
             order: [[0, 'desc']],
             pageLength: 10,
-            columnDefs: [{ orderable: false, targets: 8 }],
+            columnDefs: [{ orderable: false, targets: LEAVE_ACTION_COL }],
             language: { search: '', searchPlaceholder: 'Search leave…' }
         });
     }
@@ -379,6 +429,15 @@ document.getElementById('modal-leave').addEventListener('hidden.bs.modal', reset
 
 document.getElementById('form-leave').addEventListener('submit', async function (e) {
     e.preventDefault();
+    // Confirm before saving — filing and editing both go through here.
+    const isEdit = !!document.getElementById('leave-id').value;
+    const c = await Swal.fire({
+        title: isEdit ? 'Save changes?' : 'Submit leave request?',
+        text: isEdit ? 'Update this leave request with the new details?' : 'File this leave request and send it for approval?',
+        icon: 'question', showCancelButton: true,
+        confirmButtonText: isEdit ? 'Save' : 'Submit', confirmButtonColor: '#28a745'
+    });
+    if (!c.isConfirmed) return;
     const res = await fetch('ajax.php?action=save_leave_request', { method: 'POST', body: new URLSearchParams(new FormData(this)) });
     const json = await res.json();
     if (json?.result) {
@@ -389,13 +448,14 @@ document.getElementById('form-leave').addEventListener('submit', async function 
     }
 });
 
-// stage = 'hr' | 'admin', status = 1 approve / 2 reject
+// stage = a key in LEAVE_APPROVAL_STAGES, status = 1 approve / 2 reject
 async function decideLeave(id, stage, status) {
-    const stageLabel = stage === 'hr' ? 'HR' : 'Final';
+    const stageLabel = LEAVE_STAGE_LABELS[stage] || stage;
     let remarks = '';
     if (status === 2) {
         const r = await Swal.fire({
             title: stageLabel + ' Rejection',
+            text: leaveWho(id),
             input: 'textarea',
             inputLabel: 'Reason for rejection',
             inputPlaceholder: 'Enter the reason…',
@@ -407,7 +467,7 @@ async function decideLeave(id, stage, status) {
     } else {
         const c = await Swal.fire({
             title: stageLabel + ' Approval',
-            text: 'Approve this leave at the ' + stageLabel + ' stage?',
+            text: 'Approve ' + leaveWho(id) + ' at the ' + stageLabel + ' stage?',
             icon: 'question', showCancelButton: true, confirmButtonText: 'Approve', confirmButtonColor: '#28a745'
         });
         if (!c.isConfirmed) return;
@@ -422,7 +482,11 @@ async function decideLeave(id, stage, status) {
 }
 
 async function deleteLeave(id) {
-    const c = await Swal.fire({ title: 'Delete this leave request?', icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', confirmButtonColor: '#d33' });
+    const c = await Swal.fire({
+        title: 'Delete this leave request?',
+        text: leaveWho(id) + ' — this cannot be undone.',
+        icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', confirmButtonColor: '#d33'
+    });
     if (!c.isConfirmed) return;
     const res = await fetch('ajax.php?action=delete_leave_request', { method: 'POST', body: new URLSearchParams({ id }) });
     const json = await res.json();

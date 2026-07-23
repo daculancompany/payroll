@@ -15,7 +15,7 @@ $p2 = $_POST['p2'];
 
 // Define column mappings (Period sorts by the actual start date, not the label).
 // Index 0 is the bulk-select checkbox column (not sortable).
-$columns = ["select", "ref_no", "employer_name", "date_from", "status"];
+$columns = ["select", "ref_no", "date_from", "status"];
 $orderColumn = (isset($columns[$orderColumnIndex]) && $columns[$orderColumnIndex] !== "select")
     ? $columns[$orderColumnIndex] : "date_from";
 $orderDirection = strtoupper($orderDirection) === 'ASC' ? 'ASC' : 'DESC';
@@ -25,18 +25,17 @@ $totalRecordsQuery = "SELECT COUNT(*) AS total FROM payroll";
 $totalRecordsResult = $conn->query($totalRecordsQuery);
 $totalRecords = $totalRecordsResult->fetch_assoc()['total'];
 
-// Base query
-$query = "SELECT payroll.*, employers.employer_name, clusters.cluster 
-          FROM payroll  
-          LEFT JOIN employers ON payroll.employer_id = employers.id   
-          LEFT JOIN clusters ON clusters.id = payroll.category 
+// Base query (Employer column removed — no employers join needed)
+$query = "SELECT payroll.*, clusters.cluster
+          FROM payroll
+          LEFT JOIN clusters ON clusters.id = payroll.category
           WHERE payroll.p2 = '" . mysqli_real_escape_string($conn, $p2) . "'";
 
 // Add search filter
 if (!empty($search)) {
-    $query .= " AND ref_no LIKE '%$search%' 
-                OR employers.employer_name LIKE '%$search%' 
-                OR clusters.cluster LIKE '%$search%' ";
+    $search = mysqli_real_escape_string($conn, $search);
+    $query .= " AND (ref_no LIKE '%$search%'
+                OR clusters.cluster LIKE '%$search%') ";
 }
 
 // Add ordering and pagination
@@ -52,7 +51,6 @@ while ($row = $result->fetch_assoc()) {
             ? '<input type="checkbox" class="pay-bulk-check" value="' . (int)$row['id'] . '">'
             : '',
         "ref_no" => '<span class="payroll-ref">' . htmlspecialchars($row['ref_no']) . '</span>',
-        "employer_name" => '<span class="payroll-employer">' . htmlspecialchars($row['employer_name']) . '</span>',
         "period" => '<span class="payroll-period"><i class="ri-calendar-2-line me-1 text-muted"></i>'
                   . date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M d, Y", strtotime($row['date_to'])) . '</span>',
         "status" => getStatusBadge($row['status']),

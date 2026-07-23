@@ -69,8 +69,9 @@ function dashboard_live_stats(mysqli $conn): array
         'employees'             => $count("SELECT COUNT(*) AS c FROM employee WHERE status=1 $dsD"),
         'pending_dtr'           => $count("SELECT COUNT(*) AS c FROM DTR WHERE status=1"),
         'pending_leaves'        => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 $dsSub"),
-        'leave_wait_hr'         => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=0 $dsSub"),
-        'leave_wait_admin'      => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=0 AND hr_status=1 AND admin_status=0 $dsSub"),
+        // First two approval stages of the configured workflow (e.g. Supervisor, Department Head).
+        'leave_wait_hr'         => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE " . leave_stage_pending_predicate(array_keys(leave_stages())[0]) . " $dsSub"),
+        'leave_wait_admin'      => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE " . leave_stage_pending_predicate(array_keys(leave_stages())[1]) . " $dsSub"),
         'leave_new_week'        => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE date_applied >= DATE_SUB(CURDATE(), INTERVAL 6 DAY) $dsSub"),
         'on_leave_today'        => $count("SELECT COUNT(*) AS c FROM leave_requests WHERE status=1 AND CURDATE() BETWEEN date_from AND date_to $dsSub"),
         'pending_att_req'       => $count("SELECT COUNT(*) AS c FROM attendance_requests WHERE status=0 $dsSub"),

@@ -59,6 +59,8 @@ $columns = [
     ['Shift / Schedule',    20, ($shifts ? 'One of: ' . implode(', ', $shifts) : 'No work schedules defined yet.') . ' Blank = unassigned.'],
     ['Deduction Name',      20, ($deductionNames ? 'One of: ' . implode(', ', $deductionNames) : 'No deductions defined yet.') . ' Blank = none.'],
     ['Deduction Amount',    16, 'Number. Required when Deduction Name is filled.'],
+    ['Daily Rate',          12, 'Number. Basic daily rate — used when Rate Type is Daily. Blank = 0.'],
+    ['Rate Type',           14, 'One of: Daily, Monthly, Fixed. Daily = days present × daily rate; Monthly = salary share − absences; Fixed = full salary, no attendance. Blank = Daily.'],
 ];
 
 $spreadsheet = new Spreadsheet();
@@ -95,6 +97,7 @@ $example = [
     '15000', '1500', '85',
     $classifications[0], '675', '375', '100',
     $shifts[0] ?? '', $deductionNames[0] ?? '', $deductionNames ? '250' : '',
+    '600', 'Daily',
 ];
 foreach ($example as $i => $val) {
     $col = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($i + 1);
@@ -133,6 +136,7 @@ $lines = [
     ['Classification', 'Matched by name against: ' . implode(', ', $classifications) . '. Blank or unrecognised falls back to Regular.'],
     ['Shift / Schedule', $shifts ? 'Matched by name against: ' . implode(', ', $shifts) . '. Blank leaves the employee unassigned.' : 'No work schedules are defined yet — leave this blank until you create some.'],
     ['Deductions', $deductionNames ? 'Deduction Name must match an existing deduction (' . implode(', ', $deductionNames) . ') and needs an amount. Blank name = no deduction added.' : 'No deductions are defined yet — leave these blank until you create some.'],
+    ['Pay basis', 'Basic Pay (col K) is the MONTHLY basic pay. Daily Rate (col U) is the basic DAILY rate. Rate Type (col V) decides how pay is computed: Daily = days present × daily rate; Monthly = monthly salary share minus unpaid absences; Fixed = full salary regardless of attendance. Blank Rate Type defaults to Daily.'],
     ['Reserved columns', 'Columns G and I are unused spacers. Leave them empty — they exist only to keep the other columns in the positions the importer expects.'],
     ['Number formatting', 'Currency symbols, spaces and commas in amount columns are stripped automatically, so "P 15,000.00" is read as 15000.'],
     ['Payroll type', 'Everyone is semi-monthly. There is no weekly payroll column.'],

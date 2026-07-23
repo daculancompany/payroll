@@ -4,8 +4,11 @@ $(document).ready(function () {
     // Password show/hide toggle lives inline in component/add_user_form.php
     // (single handler — binding it here too caused both to fire and cancel out).
 
-    // DataTable
-    const oTable = $("#data-table").DataTable();
+    // DataTable — every column sortable except the last (Action).
+    const oTable = $("#data-table").DataTable({
+        order: [[0, "asc"]],
+        columnDefs: [{ orderable: false, targets: -1 }],
+    });
     $("#search-input").keyup(function () {
         oTable.search($(this).val()).draw();
     });
@@ -41,11 +44,12 @@ $(document).ready(function () {
     $(document).on("shown.bs.modal", "#modal", toggleDepartment);
 });
 
-// Show the Department picker only for a Department Head (role 8) and make it
-// required only while visible, so other roles aren't blocked by validation.
+// Show the Department picker for a Department Head (role 8) or a Supervisor
+// (role 10) and make it required only while visible, so other roles aren't
+// blocked by validation.
 function toggleDepartment() {
     const role = $("#role").val();
-    if (role === "8") {
+    if (role === "8" || role === "10") {
         $("#department-wrapper").removeClass("d-none");
         $("#department_id").attr("required", "required");
     } else {

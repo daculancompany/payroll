@@ -156,15 +156,42 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-btn.warn:hover:not(:disabled) { background:#fdefc3; }
 .ddv-pend-pill { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; border-radius:12px; padding:0 7px; font-size:10px; font-weight:800; }
 .ddv-exc-pill {
-    display:inline-flex; align-items:center; gap:4px; cursor:help;
+    position:relative; display:inline-flex; align-items:center; gap:4px; cursor:help;
     font-size:11px; font-weight:800; padding:5px 11px; border-radius:20px;
     background:#fdecea; color:#c62828; border:1px solid #f5c6cb;
+}
+/* Instant styled tooltip (native title is flaky in the sticky header) */
+.ddv-exc-pill[data-tip]:hover::after {
+    content:attr(data-tip);
+    position:absolute; top:calc(100% + 8px); right:0; z-index:60;
+    width:250px; max-width:70vw; white-space:normal; text-align:left;
+    background:#263733; color:#fff; padding:8px 11px; border-radius:8px;
+    font-size:11px; font-weight:600; line-height:1.4; letter-spacing:.2px;
+    box-shadow:0 6px 18px rgba(0,0,0,.28); pointer-events:none;
+}
+.ddv-exc-pill[data-tip]:hover::before {
+    content:''; position:absolute; top:calc(100% + 3px); right:14px; z-index:60;
+    border:5px solid transparent; border-bottom-color:#263733; pointer-events:none;
+}
+/* Reusable instant tooltip for header buttons (native title is flaky here) */
+.ddv-tip { position:relative; }
+.ddv-tip[data-tip]:hover::after {
+    content:attr(data-tip);
+    position:absolute; top:calc(100% + 8px); right:0; z-index:60;
+    width:250px; max-width:70vw; white-space:normal; text-align:left;
+    background:#263733; color:#fff; padding:8px 11px; border-radius:8px;
+    font-size:11px; font-weight:600; line-height:1.4; letter-spacing:.2px;
+    box-shadow:0 6px 18px rgba(0,0,0,.28); pointer-events:none;
+}
+.ddv-tip[data-tip]:hover::before {
+    content:''; position:absolute; top:calc(100% + 3px); right:14px; z-index:60;
+    border:5px solid transparent; border-bottom-color:#263733; pointer-events:none;
 }
 
 /* ── Workspace ── */
 .ddv-wrap {
     flex:1; min-height:0;
-    display:grid; grid-template-columns:250px minmax(0,1fr) 330px; gap:13px;
+    display:grid; grid-template-columns:300px minmax(0,1fr) 330px; gap:13px;
     padding:13px 16px;
 }
 /* Small screens: the right panel becomes a slide-in drawer so no action is lost */
@@ -175,7 +202,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
     border:1px solid var(--brand-dark); box-shadow:0 4px 14px rgba(33,150,136,.4);
 }
 @media (max-width:1150px) {
-    .ddv-wrap { grid-template-columns:220px minmax(0,1fr); }
+    .ddv-wrap { grid-template-columns:260px minmax(0,1fr); }
     .ddv-drawer-btn { display:inline-flex; }
     .ddv-right {
         position:fixed; top:0; right:0; bottom:0; z-index:45;
@@ -197,21 +224,89 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
     font-size:12px; font-weight:800; color:var(--brand-dark);
 }
 .ddv-panel-head i { color:var(--brand); }
+/* Collapsible right-column panel heads */
+.ddv-panel-head.ddv-ch { cursor:pointer; user-select:none; }
+.ddv-panel-head.ddv-ch:hover { background:#eef6f4; }
+.ddv-collapse-ic { margin-left:auto; color:#7a8f88 !important; font-size:17px; transition:transform .2s; flex-shrink:0; }
+.ddv-panel.collapsed .ddv-collapse-ic { transform:rotate(-90deg); }
+.ddv-panel.collapsed > :not(.ddv-panel-head) { display:none; }
+.ddv-panel.collapsed { flex:0 0 auto !important; }
 
 /* ── Left: previews ── */
 .ddv-left { min-height:0; }
-.ddv-search { flex-shrink:0; padding:9px 11px 5px; }
+.ddv-search { flex-shrink:0; padding:9px 11px 5px; position:relative; }
+.ddv-filter-btn {
+    position:relative; display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; flex-shrink:0; border-radius:7px; cursor:pointer;
+    color:var(--brand-dark); background:#eef7f5; border:1px solid #d5e6e2; transition:background .12s;
+}
+.ddv-filter-btn:hover { background:#dcefec; }
+.ddv-filter-btn.on { background:#d7ece9; border-color:#aad5d0; }
+.ddv-filter-count {
+    position:absolute; top:-5px; right:-5px; min-width:14px; height:14px; padding:0 3px;
+    border-radius:8px; background:#c62828; color:#fff; font-size:8.5px; font-weight:800;
+    display:flex; align-items:center; justify-content:center;
+}
+.ddv-filter-pop {
+    display:none; position:absolute; left:11px; right:11px; top:calc(100% + 4px); z-index:40;
+    background:#fff; border:1px solid var(--line); border-radius:12px; padding:11px;
+    box-shadow:0 10px 30px rgba(16,55,50,.18);
+}
+.ddv-filter-pop.open { display:block; }
+.ddv-fp-head { display:flex; justify-content:space-between; align-items:center; font-size:11.5px; font-weight:800; color:var(--brand-dark); }
+.ddv-fp-head i { color:var(--brand); }
+.ddv-fp-reset {
+    display:inline-flex; align-items:center; gap:3px; border:none; background:transparent;
+    color:#c62828; font-size:10px; font-weight:700; cursor:pointer; padding:2px 5px; border-radius:6px;
+}
+.ddv-fp-reset:hover { background:#fdf4f3; }
+.ddv-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#8aa39c; margin:9px 0 3px; }
+.ddv-fp-select {
+    width:100%; margin-top:4px; border:1px solid #d5e6e2; border-radius:8px;
+    font-size:11.5px; padding:5px 8px; color:#33403c; background:#fff; outline:none;
+}
+.ddv-fp-select:focus { border-color:var(--brand); box-shadow:0 0 0 2px rgba(33,150,136,.15); }
 .ddv-search-wrap { display:flex; align-items:center; gap:7px; border:1px solid #d5e6e2; border-radius:8px; background:#fff; padding:6px 10px; }
 .ddv-search-wrap:focus-within { border-color:var(--brand); box-shadow:0 0 0 2px rgba(33,150,136,.15); }
 .ddv-search-wrap i { color:var(--brand); font-size:14px; }
 .ddv-search-wrap input { border:none; outline:none; flex:1; font-size:12px; min-width:0; background:transparent; }
-.ddv-flag-toggle {
-    margin-top:6px; width:100%; display:inline-flex; align-items:center; justify-content:center; gap:5px;
-    padding:5px 10px; border-radius:8px; font-size:11px; font-weight:700; cursor:pointer;
-    color:#c62828; background:#fff; border:1px dashed #f5c6cb; transition:all .12s;
+.ddv-filter-seg {
+    display:flex; gap:2px; padding:2px;
+    background:#eef4f2; border:1px solid #d5e6e2; border-radius:9px;
 }
-.ddv-flag-toggle:hover { background:#fdf4f4; }
-.ddv-flag-toggle.on { background:#fdecea; border-style:solid; box-shadow:0 0 0 1px #f5c6cb inset; }
+.ddv-filter-seg button {
+    flex:1; display:inline-flex; align-items:center; justify-content:center; gap:3px;
+    border:none; background:transparent; border-radius:7px; cursor:pointer;
+    font-size:10px; font-weight:700; color:#5b6f68; padding:4px 2px; transition:background .12s, color .12s;
+}
+.ddv-filter-seg button:hover:not(.on) { background:#e0ece9; }
+.ddv-filter-seg button.on { background:#fff; color:#116257; box-shadow:0 1px 3px rgba(16,55,50,.18); }
+.ddv-filter-seg .fdot { width:6px; height:6px; border-radius:50%; }
+.ddv-filter-seg .fdot.ok { background:#0f9d58; } .ddv-filter-seg .fdot.pend { background:#f7b84b; } .ddv-filter-seg .fdot.disa { background:#c62828; }
+.ddv-flag-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.ddv-flag-chips button {
+    display:inline-flex; align-items:center; gap:3px; padding:3px 8px; border-radius:20px;
+    font-size:9.5px; font-weight:700; cursor:pointer; color:#a04545;
+    background:#fff; border:1px dashed #f0c7c3; transition:all .12s;
+}
+.ddv-flag-chips button i { font-size:11px; }
+.ddv-flag-chips button:hover:not(.on) { background:#fdf4f3; }
+.ddv-flag-chips button.on {
+    background:#fdecea; border-style:solid; border-color:#e8a9a3; color:#c62828;
+    box-shadow:0 0 0 1px #f5c6cb inset;
+}
+.ddv-act-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.ddv-act-chips button {
+    display:inline-flex; align-items:center; gap:3px; padding:3px 8px; border-radius:20px;
+    font-size:9.5px; font-weight:700; cursor:pointer; color:var(--brand-dark);
+    background:#fff; border:1px dashed #cfe2dd; transition:all .12s;
+}
+.ddv-act-chips button i { font-size:11px; }
+.ddv-act-chips button:hover:not(.on) { background:#f2faf8; }
+.ddv-act-chips button.on {
+    background:#e6f5f3; border-style:solid; border-color:#aad5d0; color:#116257;
+    box-shadow:0 0 0 1px #aad5d0 inset;
+}
 .ddv-list { flex:1; overflow-y:auto; padding:5px 9px 9px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
 .ddv-item {
     display:flex; align-items:center; gap:9px; width:100%;
@@ -228,6 +323,16 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 }
 .ddv-thumb::before { content:''; width:70%; height:2px; background:#3a3a3a; border-radius:1px; }
 .ddv-thumb span { display:block; width:78%; height:1.5px; background:#c9c4b4; }
+/* Status tint: the paper itself hints the employee's approval state */
+.ddv-thumb.ok        { background:#f0faf4; border-color:#c4e8d1; box-shadow:1px 1px 0 #ddf0e4; }
+.ddv-thumb.ok::before   { background:#0f9d58; }
+.ddv-thumb.ok span      { background:#b5dcc3; }
+.ddv-thumb.pend      { background:#fffbef; border-color:#f0dfa8; box-shadow:1px 1px 0 #f5eccf; }
+.ddv-thumb.pend::before { background:#c98a00; }
+.ddv-thumb.pend span    { background:#e6d49a; }
+.ddv-thumb.disa      { background:#fdf4f3; border-color:#f0c7c3; box-shadow:1px 1px 0 #f6dcd9; }
+.ddv-thumb.disa::before { background:#c62828; }
+.ddv-thumb.disa span    { background:#e8b8b3; }
 .ddv-item-name { font-size:11px; font-weight:700; color:#33403c; line-height:1.2; word-break:break-word; }
 .ddv-item-sub  { font-size:9.5px; color:#8aa39c; margin-top:1px; display:block; }
 .ddv-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; margin-left:auto; }
@@ -244,7 +349,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 
 /* ── Center: paper ── */
 .ddv-center { min-width:0; min-height:0; display:flex; flex-direction:column; }
-.ddv-doc-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; max-width:640px; margin:0 auto 9px; width:100%; }
+.ddv-doc-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; max-width:780px; margin:0 auto 9px; width:100%; }
 .ddv-doc-nav { display:flex; align-items:center; gap:6px; }
 .ddv-doc-pos { font-size:11px; color:#7a8f88; font-weight:600; }
 .ddv-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:#b8d8c2 transparent; padding-bottom:10px; }
@@ -252,7 +357,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
    horizontally stays fully reachable by scrolling */
 .ddv-paper-holder { display:block; }
 .ddv-paper {
-    background:#fffefb; width:100%; max-width:640px; margin:0 auto;
+    background:#fffefb; width:100%; max-width:780px; margin:0 auto;
     border:1px solid #dcd8cc; border-radius:2px;
     box-shadow:0 2px 14px rgba(60,55,40,.14);
     padding:28px 32px 24px; font-family:'Times New Roman', Times, serif; color:#1a1a1a;
@@ -277,7 +382,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 /* ── Right: summary + records ── */
 .ddv-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
 .ddv-right .ddv-panel.grow { flex:1; min-height:0; }
-.ddv-sum-body { padding:11px 13px; }
+.ddv-sum-body { padding:11px 13px; max-height:34vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
 .ddv-sum-emp { font-size:12.5px; font-weight:800; color:#33403c; }
 .ddv-sum-sub { font-size:10.5px; color:#8aa39c; margin:1px 0 9px; }
 .ddv-sum-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
@@ -295,6 +400,43 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-bar { height:7px; border-radius:6px; background:#e9f1ee; overflow:hidden; }
 .ddv-bar > div { height:100%; border-radius:6px; background:linear-gradient(90deg,#219688,#5fc9bb); transition:width .3s; }
 .ddv-emp-approve-all { width:100%; justify-content:center; margin-top:9px; }
+
+/* Internal admin notes (admin-only, per employee) */
+.ddv-notes { margin-top:11px; border-top:1px dashed #e4ece9; padding-top:9px; }
+.ddv-notes-hd { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; color:#5b6f68; margin-bottom:6px; }
+.ddv-notes-hd .lock { font-size:9px; font-weight:800; color:#8aa39c; background:#eef2f0; border-radius:10px; padding:1px 6px; }
+.ddv-note { display:flex; gap:7px; align-items:flex-start; padding:6px 8px; border-radius:8px; margin-bottom:5px; border:1px solid; }
+.ddv-note .nt { flex:1; min-width:0; font-size:11px; font-weight:600; color:#3a4a45; line-height:1.35; word-break:break-word; }
+.ddv-note .nm { font-size:8.5px; color:#98a8a2; margin-top:2px; font-weight:600; }
+.ddv-note .nx { border:none; background:transparent; color:#b7c2be; cursor:pointer; font-size:13px; line-height:1; padding:0; flex-shrink:0; }
+.ddv-note .nx:hover { color:#c62828; }
+.ddv-note.info     { background:#eef4fd; border-color:#c9def7; } .ddv-note.info .lv     { color:#1565c0; }
+.ddv-note.good     { background:#eefaf2; border-color:#bfe6cd; } .ddv-note.good .lv     { color:#0f9d58; }
+.ddv-note.watch    { background:#fff8e6; border-color:#f2e0a6; } .ddv-note.watch .lv    { color:#c98a00; }
+.ddv-note.critical { background:#fdecec; border-color:#f3c9c9; } .ddv-note.critical .lv { color:#c62828; }
+.ddv-note .lv { font-size:14px; flex-shrink:0; line-height:1.2; }
+.ddv-note-empty { font-size:10px; color:#a4b3ad; padding:2px 2px 6px; }
+.ddv-note-add { display:flex; flex-direction:column; gap:6px; margin-top:2px; }
+.ddv-lvpick { display:flex; gap:4px; }
+.ddv-lvpick button {
+    flex:1; min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:3px;
+    border:1px solid #dde6e3; background:#fff; border-radius:7px; cursor:pointer;
+    font-size:9.5px; font-weight:700; color:#7a8f88; padding:4px 2px; transition:all .12s;
+    white-space:nowrap; overflow:hidden;
+}
+.ddv-lvpick button.on { color:#fff; }
+.ddv-lvpick button[data-lv="info"].on     { background:#1565c0; border-color:#1565c0; }
+.ddv-lvpick button[data-lv="good"].on     { background:#0f9d58; border-color:#0f9d58; }
+.ddv-lvpick button[data-lv="watch"].on    { background:#c98a00; border-color:#c98a00; }
+.ddv-lvpick button[data-lv="critical"].on { background:#c62828; border-color:#c62828; }
+.ddv-note-in { display:flex; gap:5px; }
+.ddv-note-in input { flex:1; min-width:0; border:1px solid #d5e6e2; border-radius:7px; font-size:11px; padding:5px 8px; outline:none; }
+.ddv-note-in input:focus { border-color:var(--brand); box-shadow:0 0 0 2px rgba(33,150,136,.14); }
+.ddv-note-in button { width:30px; flex-shrink:0; border:none; border-radius:7px; background:var(--brand); color:#fff; cursor:pointer; }
+.ddv-note-in button:hover { background:var(--brand-dark); }
+.ddv-note-tpls { display:flex; flex-wrap:wrap; gap:4px; }
+.ddv-note-tpl { border:1px dashed #d5e6e2; background:#f8fbfa; color:#5b6f68; border-radius:12px; font-size:9px; font-weight:600; padding:2px 8px; cursor:pointer; }
+.ddv-note-tpl:hover { background:#eef7f5; border-style:solid; }
 
 /* Records list */
 .ddv-recs { flex:1; overflow-y:auto; min-height:0; padding:8px 10px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
@@ -334,6 +476,37 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-mini-btn.no   { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
 .ddv-mini-btn.edit { background:#eef2fb; color:#394b7c; border-color:#c3c9e0; }
 .ddv-mini-btn.del  { background:#f3f2f1; color:#605e5c; border-color:#e1dfdd; }
+.ddv-mini-btn.msg  { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
+.ddv-mini-btn.msg.has { box-shadow:0 0 0 1px #ffe082 inset; }
+
+/* Per-record admin ↔ employee conversation — a single floating popover so it
+   never occupies layout space in the record card */
+.ddv-chat-pop {
+    display:none; position:fixed; z-index:60; width:300px; max-width:calc(100vw - 24px);
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    box-shadow:0 12px 34px rgba(16,55,50,.24); overflow:hidden;
+}
+.ddv-chat-pop.open { display:flex; flex-direction:column; }
+.ddv-chat-pop-head {
+    display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:8px 11px; border-bottom:1px solid #eef2f0; background:#f6fbfa;
+    font-size:11.5px; font-weight:800; color:var(--brand-dark);
+}
+.ddv-chat-pop-head i { color:var(--brand); }
+.ddv-chat-pop-head button { border:none; background:transparent; color:#7a8f88; cursor:pointer; font-size:16px; line-height:1; padding:0; }
+.ddv-chat-pop-head button:hover { color:var(--brand-dark); }
+.ddv-chat-pop-head #ddv-chat-refresh.spin i { animation:ddv-spin .7s linear infinite; display:inline-block; }
+.ddv-chat-list { display:flex; flex-direction:column; gap:5px; max-height:230px; overflow-y:auto; padding:9px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.ddv-bub { max-width:85%; padding:5px 9px; border-radius:10px; font-size:11px; line-height:1.35; word-break:break-word; }
+.ddv-bub.me   { align-self:flex-end; background:#d7ece9; color:#116257; border-bottom-right-radius:3px; }
+.ddv-bub.them { align-self:flex-start; background:#f1f3f2; color:#33403c; border-bottom-left-radius:3px; }
+.ddv-bub .m { font-size:8.5px; opacity:.7; margin-top:2px; }
+.ddv-chat-empty { font-size:10.5px; color:#8aa39c; text-align:center; padding:14px 4px; }
+.ddv-chat-in { display:flex; gap:5px; padding:7px; border-top:1px solid #eef2f0; }
+.ddv-chat-in input { flex:1; min-width:0; border:1px solid #d5e6e2; border-radius:7px; font-size:11.5px; padding:6px 9px; outline:none; }
+.ddv-chat-in input:focus { border-color:var(--brand); box-shadow:0 0 0 2px rgba(33,150,136,.15); }
+.ddv-chat-in button { width:32px; flex-shrink:0; border:none; border-radius:7px; background:var(--brand); color:#fff; cursor:pointer; }
+.ddv-chat-in button:hover { background:var(--brand-dark); }
 .ddv-mini-btn:hover:not(:disabled) { filter:brightness(.96); }
 .ddv-mini-btn:disabled { opacity:.4; cursor:not-allowed; }
 .ddv-batch-rows { overflow-y:auto; }
@@ -406,27 +579,33 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
         <div class="ddv-h-actions">
             <?php if ($canEdit): ?>
                 <span class="ddv-exc-pill" id="hdr-exc" style="<?= $excPending > 0 ? '' : 'display:none;' ?>"
-                    title="Pending records with something unusual (no time-out, zero hours, or high OT). Bulk approval skips these — decide them per employee.">
+                    data-tip="Pending records with something unusual (no time-out, zero hours, or high OT). Bulk approval skips these — decide them per employee.">
                     <i class="ri-error-warning-line"></i> <span id="hdr-exc-n"><?= $excPending ?></span> exception<?= $excPending === 1 ? '' : 's' ?>
                 </span>
-                <button class="ddv-btn warn" id="btn-approve-all-batch" onclick="approveAllBatch()" style="<?= $cleanPending > 0 ? '' : 'display:none;' ?>"
-                    title="Approve every pending record that has no exception flags. Flagged records stay pending.">
+                <button class="ddv-btn warn ddv-tip" id="btn-approve-all-batch" onclick="approveAllBatch()" style="<?= $cleanPending > 0 ? '' : 'display:none;' ?>"
+                    data-tip="Approve every pending record that has no exception flags. Flagged records stay pending.">
                     <i class="ri-checkbox-multiple-line"></i> Approve Clean
                     <span class="ddv-pend-pill" id="hdr-clean"><?= $cleanPending ?></span>
                 </button>
                 <?php if ($batchStatus === 1): ?>
-                    <button class="ddv-btn primary" id="btn-send-review" onclick="sendForReview()" <?= $pendingRecs > 0 ? 'disabled' : '' ?>
-                        title="Decide all records first, then send to employees for review">
+                    <button class="ddv-btn primary ddv-tip" id="btn-send-review" onclick="sendForReview()" <?= $pendingRecs > 0 ? 'disabled' : '' ?>
+                        data-tip="Decide all records first, then send to employees for review.">
                         <i class="ri-user-received-2-line"></i> Send for Review
                     </button>
                 <?php elseif ($batchStatus === 3): ?>
-                    <button class="ddv-btn primary" onclick="finalApprove()" title="Final approve for payroll">
+                    <button class="ddv-btn primary ddv-tip" onclick="finalApprove()" data-tip="Final approve this batch for payroll processing.">
                         <i class="ri-checkbox-circle-line"></i> Final Approve
                     </button>
                 <?php endif; ?>
             <?php endif; ?>
-            <button class="ddv-btn" id="ddv-print" onclick="window.print()" title="Print the selected employee's DTR"><i class="ri-printer-line"></i> Print</button>
-            <button class="ddv-btn" id="ddv-print-all-btn" onclick="printAll()" title="Print every employee's DTR sheet in this batch"><i class="ri-printer-cloud-line"></i> Print All</button>
+            <?php if ($canEdit && $batchStatus !== 2): ?>
+                <button class="ddv-btn ddv-tip" onclick="recomputeBatch()"
+                    data-tip="Re-derive every record's hours / late / undertime / OT from its raw logs using current schedules and the holiday calendar.">
+                    <i class="ri-refresh-line"></i> Recompute
+                </button>
+            <?php endif; ?>
+            <button class="ddv-btn ddv-tip" id="ddv-print" onclick="window.print()" data-tip="Print the selected employee's DTR sheet."><i class="ri-printer-line"></i> Print</button>
+            <button class="ddv-btn ddv-tip" id="ddv-print-all-btn" onclick="printAll()" data-tip="Print every employee's DTR sheet in this batch."><i class="ri-printer-cloud-line"></i> Print All</button>
         </div>
     </div>
 
@@ -440,11 +619,41 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
                 <div class="ddv-search-wrap">
                     <i class="ri-search-2-line"></i>
                     <input id="ddv-q" type="text" placeholder="Search name, no., position...">
+                    <button type="button" class="ddv-filter-btn" id="ddv-filter-btn" onclick="toggleFilterPop()" title="Filters">
+                        <i class="ri-filter-3-line"></i>
+                        <span class="ddv-filter-count" id="ddv-filter-count" style="display:none;">0</span>
+                    </button>
                 </div>
-                <button type="button" class="ddv-flag-toggle" id="ddv-flagged-toggle" onclick="toggleFlagged()"
-                    title="Show only employees with flagged pending records or low attendance">
-                    <i class="ri-error-warning-line"></i> Flagged only
-                </button>
+                <div class="ddv-filter-pop" id="ddv-filter-pop">
+                    <div class="ddv-fp-head">
+                        <span><i class="ri-filter-3-line"></i> Filters</span>
+                        <button type="button" class="ddv-fp-reset" onclick="resetFilters()"><i class="ri-restart-line"></i> Reset all</button>
+                    </div>
+                    <div class="ddv-fp-lbl">Approval status</div>
+                    <div class="ddv-filter-seg" id="ddv-status-seg">
+                        <button type="button" data-st="" class="on">All</button>
+                        <button type="button" data-st="pending"><span class="fdot pend"></span>Pending</button>
+                        <button type="button" data-st="approved"><span class="fdot ok"></span>Approved</button>
+                        <button type="button" data-st="disapproved"><span class="fdot disa"></span>Rejected</button>
+                    </div>
+                    <div class="ddv-fp-lbl">Exceptions</div>
+                    <div class="ddv-flag-chips" id="ddv-flag-chips" title="Click again to clear">
+                        <button type="button" data-fl="any"><i class="ri-error-warning-line"></i> Flagged</button>
+                        <button type="button" data-fl="no_out"><i class="ri-logout-box-r-line"></i> No time-out</button>
+                        <button type="button" data-fl="zero_hours"><i class="ri-time-line"></i> Zero hrs</button>
+                        <button type="button" data-fl="high_ot"><i class="ri-sun-line"></i> High OT</button>
+                        <button type="button" data-fl="manual"><i class="ri-edit-line"></i> Manual</button>
+                        <button type="button" data-fl="low_att"><i class="ri-calendar-close-line"></i> Low attend.</button>
+                    </div>
+                    <div class="ddv-fp-lbl">Activity</div>
+                    <div class="ddv-act-chips" id="ddv-act-chips" title="Click again to clear">
+                        <button type="button" data-ac="notes"><i class="ri-sticky-note-line"></i> Has notes</button>
+                        <button type="button" data-ac="msgs"><i class="ri-chat-3-line"></i> Has messages</button>
+                    </div>
+                    <div class="ddv-fp-lbl">Employee</div>
+                    <select id="ddv-f-dep" class="ddv-fp-select" onchange="filterSel('dep', this.value)"><option value="">Department: All</option></select>
+                    <select id="ddv-f-pos" class="ddv-fp-select" onchange="filterSel('pos', this.value)"><option value="">Position: All</option></select>
+                </div>
             </div>
             <div class="ddv-list" id="ddv-list">
                 <div class="ddv-loader show"><span class="ddv-ring"></span> Loading...</div>
@@ -488,23 +697,25 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
         <!-- RIGHT -->
         <div class="ddv-right">
             <div class="ddv-panel">
-                <div class="ddv-panel-head"><span><i class="ri-user-3-line"></i> Employee Summary</span></div>
+                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)"><span><i class="ri-user-3-line"></i> Employee Summary</span><i class="ri-arrow-down-s-line ddv-collapse-ic"></i></div>
                 <div class="ddv-sum-body" id="ddv-emp-summary">
                     <div style="font-size:12px;color:#8aa39c;">No employee selected.</div>
                 </div>
             </div>
             <div class="ddv-panel grow">
-                <div class="ddv-panel-head">
+                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)">
                     <span><i class="ri-fingerprint-line"></i> Records &amp; Logs</span>
                     <span id="ddv-rec-count" style="font-weight:600;color:#7a8f88;font-size:10.5px;"></span>
+                    <i class="ri-arrow-down-s-line ddv-collapse-ic"></i>
                 </div>
                 <div class="ddv-recs" id="ddv-recs">
                     <div style="font-size:11.5px;color:#8aa39c;padding:8px;">No employee selected.</div>
                 </div>
             </div>
             <div class="ddv-panel" style="flex-shrink:0;">
-                <div class="ddv-panel-head"><span><i class="ri-stack-line"></i> Batch Summary</span>
-                    <button type="button" class="ddv-pg-btn" onclick="toggleDrawer(false)" style="display:none;" id="ddv-drawer-close" title="Close"><i class="ri-close-line"></i></button>
+                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)"><span><i class="ri-stack-line"></i> Batch Summary</span>
+                    <button type="button" class="ddv-pg-btn" onclick="event.stopPropagation();toggleDrawer(false)" style="display:none;" id="ddv-drawer-close" title="Close"><i class="ri-close-line"></i></button>
+                    <i class="ri-arrow-down-s-line ddv-collapse-ic"></i>
                 </div>
                 <div class="ddv-batch-rows" id="ddv-batch">
                     <div class="ddv-batch-row"><span>Employees</span><b data-b="employees"><?= (int)($agg['employees'] ?? 0) ?></b></div>
@@ -526,6 +737,23 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 <!-- Print All target: every employee's sheet is rendered here on demand -->
 <div id="ddv-print-all"></div>
 
+<!-- Floating conversation popover (single, reused for every record) -->
+<div class="ddv-chat-pop" id="ddv-chat-pop">
+    <div class="ddv-chat-pop-head">
+        <span id="ddv-chat-title"><i class="ri-chat-3-line"></i> Conversation</span>
+        <span style="display:flex;gap:4px;">
+            <button type="button" id="ddv-chat-refresh" onclick="refreshChat()" title="Refresh — check for new replies"><i class="ri-refresh-line"></i></button>
+            <button type="button" onclick="closeChat()" title="Close"><i class="ri-close-line"></i></button>
+        </span>
+    </div>
+    <div class="ddv-chat-list" id="ddv-chat-list"></div>
+    <div class="ddv-chat-in" id="ddv-chat-in">
+        <input type="text" id="ddv-chat-input" maxlength="500" placeholder="Message the employee…"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();sendChat();}">
+        <button type="button" onclick="sendChat()" title="Send — the employee gets a portal notification"><i class="ri-send-plane-2-line"></i></button>
+    </div>
+</div>
+
 <script>
 const root      = document.getElementById('ddv-root');
 const DDTR_ID   = root.dataset.id;
@@ -538,7 +766,7 @@ const OT_HOURS  = <?= (float)DTR_HIGH_OT_HOURS ?>;
 const MIN_DAYS  = <?= (int)$minDays ?>;
 const ME        = <?= json_encode($loginName) ?>;         // for instant audit lines
 
-const st = { page: 0, size: 20, q: '', flagged: false, total: 0, emps: [], sel: -1, seq: 0 };
+const st = { page: 0, size: 20, q: '', flag: '', status: '', dep: '', pos: '', act: '', total: 0, emps: [], sel: -1, seq: 0, chatRec: null };
 
 const $id = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -549,7 +777,12 @@ async function loadPage(keepSel) {
     const seq = ++st.seq;
     $id('ddv-list').innerHTML = '<div class="ddv-loader show"><span class="ddv-ring"></span> Loading...</div>';
     try {
-        const u = `dtr-employee-server.php?action=docs&id=${DDTR_ID}&offset=${st.page * st.size}&limit=${st.size}&q=${encodeURIComponent(st.q)}${st.flagged ? '&flagged=1' : ''}`;
+        const u = `dtr-employee-server.php?action=docs&id=${DDTR_ID}&offset=${st.page * st.size}&limit=${st.size}&q=${encodeURIComponent(st.q)}`
+            + (st.flag === 'any' ? '&flagged=1' : (st.flag ? '&flag=' + st.flag : ''))
+            + (st.status ? '&status=' + st.status : '')
+            + (st.dep ? '&dep=' + st.dep : '')
+            + (st.pos ? '&pos=' + st.pos : '')
+            + (st.act ? '&act=' + st.act : '');
         const r = await fetch(u);
         const j = await r.json();
         if (seq !== st.seq) return;
@@ -603,8 +836,14 @@ function renderList() {
         const marks = [];
         if (e.exc > 0)  marks.push(`<i class="ri-error-warning-fill" style="color:#c62828;font-size:13px;flex-shrink:0;" title="${e.exc} flagged record(s) need a manual decision"></i>`);
         if (e.low_att)  marks.push(`<i class="ri-calendar-close-fill" style="color:#c98a00;font-size:13px;flex-shrink:0;" title="Low attendance — fewer than ${MIN_DAYS} logged days"></i>`);
+        if (e.notes && e.notes.length) {
+            const NC = { info:'#1565c0', good:'#0f9d58', watch:'#c98a00', critical:'#c62828' };
+            const order = ['critical','watch','info','good'];
+            const top = order.find(l => e.notes.some(n => n.level === l)) || 'info';
+            marks.push(`<i class="ri-sticky-note-fill" style="color:${NC[top]};font-size:13px;flex-shrink:0;" title="${e.notes.length} internal note(s)"></i>`);
+        }
         return `<button type="button" class="ddv-item ${i === st.sel ? 'active' : ''}" data-i="${i}">
-            <span class="ddv-thumb"><span></span><span></span><span></span><span></span></span>
+            <span class="ddv-thumb ${dot}"><span></span><span></span><span></span><span></span></span>
             <span style="min-width:0;">
                 <span class="ddv-item-name">${esc(e.lastname)}, ${esc(e.firstname)}</span>
                 <span class="ddv-item-sub">${esc(e.no)}${e.position ? ' · ' + esc(e.position) : ''}</span>
@@ -638,6 +877,7 @@ $id('ddv-q').addEventListener('input', ev => {
 // ── Selection ────────────────────────────────────────────────────────────────
 function renderSelected() {
     const e = st.emps[st.sel];
+    if (typeof closeChat === 'function') closeChat();   // don't leave a chat popover open across employees
     $id('ddv-doc-pos').textContent = e ? `${st.page * st.size + st.sel + 1} of ${st.total}` : '';
     $id('ddv-doc-prev').disabled = st.sel <= 0;
     $id('ddv-doc-next').disabled = st.sel < 0 || st.sel >= st.emps.length - 1;
@@ -716,7 +956,106 @@ function renderSummary(e) {
             <div class="ddv-bar"><div style="width:${pct}%;"></div></div>
         </div>
         ${CAN_EDIT && e.pend > 0 ? `<button class="ddv-btn primary ddv-emp-approve-all" onclick="approveEmployee()">
-            <i class="ri-checkbox-circle-line"></i> Approve All Pending (${e.pend})</button>` : ''}`;
+            <i class="ri-checkbox-circle-line"></i> Approve All Pending (${e.pend})</button>` : ''}
+        ${notesHTML(e)}`;
+}
+
+// ── Internal admin notes (admin-only, per employee) ──────────────────────────
+const NOTE_LV = {
+    info:     { icon: '🔵', lbl: 'Info' },
+    good:     { icon: '🟢', lbl: 'Good' },
+    watch:    { icon: '🟠', lbl: 'Watch' },
+    critical: { icon: '🔴', lbl: 'Critical' },
+};
+// Recommended quick-notes per level (admin picks then tweaks).
+const NOTE_TEMPLATES = [
+    'Attendance improved this period',
+    'Frequent no time-out — remind employee',
+    'Repeated tardiness — monitor',
+    'Pending incident report to resolve',
+    'Verified with supervisor',
+];
+let noteLevel = 'info';
+
+function notesHTML(e) {
+    const notes = e.notes || [];
+    const list = notes.length
+        ? notes.map(n => {
+            const m = NOTE_LV[n.level] || NOTE_LV.info;
+            return `<div class="ddv-note ${esc(n.level)}">
+                <span class="lv">${m.icon}</span>
+                <span class="nt">${esc(n.note)}<span class="nm">${esc(n.by || 'Admin')}${n.at ? ' · ' + esc(n.at) : ''}</span></span>
+                ${CAN_EDIT && n.id ? `<button class="nx" title="Delete note" data-note-id="${n.id}" onclick="deleteNote(this)"><i class="ri-close-line"></i></button>` : ''}
+            </div>`;
+        }).join('')
+        : '<div class="ddv-note-empty">No notes yet.</div>';
+
+    const adder = CAN_EDIT ? `
+        <div class="ddv-note-add">
+            <div class="ddv-lvpick" id="ddv-lvpick">
+                ${Object.keys(NOTE_LV).map(k => `<button type="button" data-lv="${k}" class="${k === noteLevel ? 'on' : ''}" onclick="pickNoteLevel('${k}')">${NOTE_LV[k].icon} ${NOTE_LV[k].lbl}</button>`).join('')}
+            </div>
+            <div class="ddv-note-in">
+                <input type="text" id="ddv-note-input" maxlength="500" placeholder="Add an internal note…"
+                    onkeydown="if(event.key==='Enter'){event.preventDefault();addNote();}">
+                <button type="button" onclick="addNote()" title="Add note"><i class="ri-add-line"></i></button>
+            </div>
+            <div class="ddv-note-tpls">
+                ${NOTE_TEMPLATES.map(t => `<span class="ddv-note-tpl" onclick="fillNote(this)">${esc(t)}</span>`).join('')}
+            </div>
+        </div>` : '';
+
+    return `<div class="ddv-notes">
+        <div class="ddv-notes-hd"><i class="ri-sticky-note-line"></i> Internal Notes <span class="lock"><i class="ri-lock-2-line"></i> admin only</span></div>
+        ${list}${adder}
+    </div>`;
+}
+
+function pickNoteLevel(lv) {
+    noteLevel = lv;
+    document.querySelectorAll('#ddv-lvpick button').forEach(b => b.classList.toggle('on', b.dataset.lv === lv));
+}
+function fillNote(el) {
+    const inp = $id('ddv-note-input');
+    if (inp) { inp.value = el.textContent; inp.focus(); }
+}
+function addNote() {
+    const e = st.emps[st.sel];
+    const inp = $id('ddv-note-input');
+    const note = (inp?.value || '').trim();
+    if (!e || !note) return;
+    inp.disabled = true;
+    $.ajax({
+        url: 'ajax.php?action=save_dtr_note', method: 'POST', dataType: 'JSON',
+        data: { ddtr_id: DDTR_ID, employee_id: e.id, level: noteLevel, note: note },
+        success: r => {
+            if (!(r && r.result)) { inp.disabled = false; return Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' }); }
+            e.notes = e.notes || [];
+            e.notes.push({ id: r.id, level: noteLevel, note: note, by: r.by || ME, at: r.at || '' });
+            renderList();          // show the note indicator in the left list
+            renderSummary(e);
+            toast('Note added');
+        },
+        error: () => { inp.disabled = false; Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }); },
+    });
+}
+function deleteNote(arg) {
+    // Accept either the button element (data-note-id) or a raw id.
+    const id = parseInt(typeof arg === 'object' && arg ? arg.dataset.noteId : arg, 10);
+    const e = st.emps[st.sel];
+    if (!e || !id) { if (!id) Swal.fire({ icon: 'error', title: 'Error!', text: 'Could not identify the note. Reload and try again.' }); return; }
+    $.ajax({
+        url: 'ajax.php?action=delete_dtr_note', method: 'POST', dataType: 'JSON',
+        data: { id: id },
+        success: r => {
+            if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
+            e.notes = (e.notes || []).filter(n => n.id !== id);
+            renderList();          // refresh the left-list note indicator
+            renderSummary(e);
+            toast('Note deleted');
+        },
+        error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
+    });
 }
 
 // ── Right: records & logs ────────────────────────────────────────────────────
@@ -750,6 +1089,12 @@ function renderRecords(e) {
                 ? `<div class="ddv-rec-note"><i class="ri-chat-1-line"></i> ${esc(r.note)}</div>` : '';
             const audit = (r.status !== 0 && r.by)
                 ? `<div style="margin-top:4px;font-size:9px;color:#98a8a2;"><i class="ri-user-follow-line"></i> ${r.status === 1 ? 'Approved' : 'Disapproved'} by ${esc(r.by)}${r.at ? ' · ' + esc(r.at) : ''}</div>` : '';
+            // Conversation thread lives in a single floating popover (openChat),
+            // so it never adds height to the record card.
+            const msgs = r.msgs || [];
+            const msgBtn = `<button class="ddv-mini-btn msg ${msgs.length ? 'has' : ''}" data-rec="${r.id}" onclick="openChat(${r.id}, this)" title="Conversation with the employee about this date">
+                        <i class="ri-chat-3-line"></i>${msgs.length ? ' ' + msgs.length : ''}
+                    </button>`;
             html += `<div class="ddv-rec ${cls}" id="rec-${r.id}">
                 <div class="ddv-rec-top"><span class="ddv-rec-date"><i class="ri-calendar-event-line" style="color:#219688;"></i> ${dLbl}</span>${badge}</div>
                 <div class="ddv-rec-logs">${logs}</div>
@@ -764,9 +1109,10 @@ function renderRecords(e) {
                 ${CAN_EDIT ? `<div class="ddv-rec-actions">
                     <button class="ddv-mini-btn ok"   onclick="decideRecs([${r.id}], 1)" ${r.status === 1 ? 'disabled' : ''}><i class="ri-check-line"></i> Approve</button>
                     <button class="ddv-mini-btn no"   onclick="decideRecs([${r.id}], 2)" ${r.status === 2 ? 'disabled' : ''}><i class="ri-close-line"></i> Reject</button>
-                    <button class="ddv-mini-btn edit" onclick="editRec(${r.id})"><i class="ri-pencil-line"></i></button>
-                    <button class="ddv-mini-btn del"  onclick="deleteRec(${r.id})"><i class="ri-delete-bin-6-line"></i></button>
-                </div>` : ''}
+                    <button class="ddv-mini-btn edit" onclick="editRec(${r.id})" title="Edit hours"><i class="ri-pencil-line"></i></button>
+                    ${msgBtn}
+                    <button class="ddv-mini-btn del"  onclick="deleteRec(${r.id})" title="Delete record"><i class="ri-delete-bin-6-line"></i></button>
+                </div>` : (msgs.length ? `<div class="ddv-rec-actions">${msgBtn}</div>` : '')}
             </div>`;
         });
     });
@@ -896,6 +1242,35 @@ function approveAllBatch() {
     });
 }
 
+function recomputeBatch() {
+    Swal.fire({
+        title: 'Recompute this batch?',
+        html: 'Every record\'s hours, late, undertime, OT and night-diff will be <b>re-derived from its raw logs</b> ' +
+              'using current schedules and the holiday calendar.<br><br>' +
+              '<b>Approved records whose figures change go back to Pending</b> for re-approval; ' +
+              'unchanged records are left untouched.',
+        icon: 'warning', showCancelButton: true,
+        confirmButtonColor: '#219688', confirmButtonText: 'Yes, recompute',
+    }).then(res => {
+        if (!res.isConfirmed) return;
+        Swal.fire({ title: 'Recomputing…', text: 'Re-deriving figures from raw logs', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.ajax({
+            url: 'ajax.php?action=recompute_dtr', method: 'POST', dataType: 'JSON',
+            data: { id: DDTR_ID },
+            success: async r => {
+                if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
+                await loadPage(st.sel);
+                await refreshBatch();
+                Swal.fire({
+                    icon: 'success', title: 'Recomputed',
+                    html: `${r.scanned} record(s) scanned — <b>${r.changed}</b> updated, <b>${r.repending}</b> sent back to Pending.`,
+                });
+            },
+            error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
+        });
+    });
+}
+
 function sendForReview() {
     Swal.fire({
         title: 'Send for employee review?',
@@ -981,6 +1356,125 @@ function editRec(recId) {
     });
 }
 
+// ── Per-record conversation — a single floating popover (no layout space) ────
+function renderChatBubbles() {
+    const hit = st.chatRec != null ? findRec(st.chatRec) : null;
+    const list = $id('ddv-chat-list');
+    const msgs = hit ? (hit.r.msgs || []) : [];
+    list.innerHTML = msgs.length
+        ? msgs.map(m => `<div class="ddv-bub ${m.from === 'emp' ? 'them' : 'me'}">
+                <div>${esc(m.msg)}</div>
+                <div class="m">${esc(m.from === 'emp' ? 'Employee' : (m.by || 'Support'))}${m.at ? ' · ' + esc(m.at) : ''}</div>
+            </div>`).join('')
+        : '<div class="ddv-chat-empty">No messages yet — ask the employee about this day.</div>';
+    list.scrollTop = list.scrollHeight;
+}
+
+function positionChat(btn) {
+    const pop = $id('ddv-chat-pop');
+    const b = btn.getBoundingClientRect();
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    // Prefer opening to the LEFT of the button (records panel sits at the right
+    // edge); fall back to the right, then clamp inside the viewport.
+    let left = b.left - pw - 8;
+    if (left < 8) left = b.right + 8;
+    if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    let top = b.top;
+    if (top + ph > window.innerHeight - 8) top = window.innerHeight - ph - 8;
+    if (top < 8) top = 8;
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+}
+
+function openChat(recId, btn) {
+    if (st.chatRec === recId && $id('ddv-chat-pop').classList.contains('open')) { closeChat(); return; }
+    const hit = findRec(recId);
+    if (!hit) return;
+    st.chatRec = recId;
+    const dLbl = new Date(hit.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    $id('ddv-chat-title').innerHTML = `<i class="ri-chat-3-line"></i> ${esc(hit.e.lastname)}, ${esc(hit.e.firstname)} · ${dLbl}`;
+    $id('ddv-chat-in').style.display = CAN_EDIT ? '' : 'none';
+    renderChatBubbles();
+    const pop = $id('ddv-chat-pop');
+    pop.classList.add('open');
+    positionChat(btn);                      // measure after it's displayed
+    if (CAN_EDIT) { const i = $id('ddv-chat-input'); i.value = ''; i.focus(); }
+}
+
+function closeChat() {
+    $id('ddv-chat-pop').classList.remove('open');
+    st.chatRec = null;
+}
+
+// Keep the popover glued to its record's chat button while the list scrolls;
+// hide it only once that button scrolls out of the records panel.
+function followChat() {
+    const pop = $id('ddv-chat-pop');
+    if (!pop.classList.contains('open') || st.chatRec == null) return;
+    const btn = document.querySelector('.ddv-mini-btn.msg[data-rec="' + st.chatRec + '"]');
+    const scroller = document.querySelector('.ddv-recs');
+    if (!btn || !scroller) { closeChat(); return; }
+    const b = btn.getBoundingClientRect(), s = scroller.getBoundingClientRect();
+    // Off the visible records area → hide (the popover would point at nothing).
+    if (b.bottom < s.top || b.top > s.bottom) { pop.style.display = 'none'; return; }
+    pop.style.display = 'flex';
+    positionChat(btn);
+}
+
+// Dismiss on outside click / Escape
+document.addEventListener('mousedown', ev => {
+    const pop = $id('ddv-chat-pop');
+    if (!pop.classList.contains('open')) return;
+    if (ev.target.closest('#ddv-chat-pop') || ev.target.closest('.ddv-mini-btn.msg')) return;
+    closeChat();
+});
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape') closeChat(); });
+document.addEventListener('scroll', followChat, true);
+window.addEventListener('resize', followChat);
+
+// Pull the latest thread for the open record (employee may have replied)
+function refreshChat() {
+    if (st.chatRec == null) return;
+    const hit = findRec(st.chatRec);
+    if (!hit) return;
+    const icon = $id('ddv-chat-refresh');
+    icon.classList.add('spin');
+    fetch(`dtr-employee-server.php?action=rec_msgs&id=${DDTR_ID}&rec=${st.chatRec}`)
+        .then(r => r.json())
+        .then(j => {
+            if (j && j.result) {
+                hit.r.msgs = j.msgs || [];
+                renderChatBubbles();
+                renderRecords(st.emps[st.sel]);   // update the badge count
+            }
+        })
+        .finally(() => icon.classList.remove('spin'));
+}
+
+function sendChat() {
+    const inp = $id('ddv-chat-input');
+    const msg = (inp.value || '').trim();
+    if (!msg || st.chatRec == null) return;
+    const hit = findRec(st.chatRec);
+    if (!hit) return;
+    inp.disabled = true;
+    $.ajax({
+        url: 'ajax.php?action=message_dtr_record', method: 'POST', dataType: 'JSON',
+        data: { id: st.chatRec, message: msg },
+        success: r => {
+            inp.disabled = false;
+            if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
+            hit.r.msgs = hit.r.msgs || [];
+            hit.r.msgs.push({ from: 'admin', msg: msg, by: r.by || ME, at: r.at || '' });
+            inp.value = '';
+            renderRecords(st.emps[st.sel]); // refresh the record's message-count badge
+            renderChatBubbles();            // popover is a separate fixed node — survives the rerender
+            inp.focus();
+        },
+        error: () => { inp.disabled = false; Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }); },
+    });
+}
+
 function deleteRec(recId) {
     Swal.fire({
         title: 'Delete this record?',
@@ -1009,13 +1503,93 @@ function deleteRec(recId) {
     });
 }
 
-// ── Flagged-only filter ──────────────────────────────────────────────────────
-function toggleFlagged() {
-    st.flagged = !st.flagged;
-    $id('ddv-flagged-toggle').classList.toggle('on', st.flagged);
+// ── Filter popover ───────────────────────────────────────────────────────────
+function toggleFilterPop() {
+    $id('ddv-filter-pop').classList.toggle('open');
+}
+document.addEventListener('click', ev => {
+    const pop = $id('ddv-filter-pop');
+    if (!pop.classList.contains('open')) return;
+    if (ev.target.closest('#ddv-filter-pop') || ev.target.closest('#ddv-filter-btn')) return;
+    pop.classList.remove('open');
+});
+
+// Active-filter badge on the funnel icon
+function updateFilterCount() {
+    const n = [st.status, st.flag, st.dep, st.pos, st.act].filter(Boolean).length;
+    const b = $id('ddv-filter-count');
+    b.style.display = n ? 'flex' : 'none';
+    b.textContent = n;
+    $id('ddv-filter-btn').classList.toggle('on', n > 0);
+}
+
+// Dropdown filters (department / position / shift)
+function filterSel(key, val) {
+    st[key] = val;
     st.page = 0;
     loadPage();
+    updateFilterCount();
 }
+
+function resetFilters() {
+    st.status = st.flag = st.dep = st.pos = st.act = '';
+    document.querySelectorAll('#ddv-status-seg button').forEach(x => x.classList.toggle('on', x.dataset.st === ''));
+    document.querySelectorAll('#ddv-flag-chips button').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('#ddv-act-chips button').forEach(x => x.classList.remove('on'));
+    ['ddv-f-dep', 'ddv-f-pos'].forEach(i => { $id(i).value = ''; });
+    st.page = 0;
+    loadPage();
+    updateFilterCount();
+}
+
+// ── Activity chips (has notes / has messages — single-select) ────────────────
+$id('ddv-act-chips').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    st.act = (st.act === b.dataset.ac) ? '' : b.dataset.ac;
+    document.querySelectorAll('#ddv-act-chips button').forEach(x => x.classList.toggle('on', x.dataset.ac === st.act));
+    st.page = 0;
+    loadPage();
+    updateFilterCount();
+});
+
+// Options only contain values present in this batch (action=filter_opts)
+async function loadFilterOpts() {
+    try {
+        const r = await fetch(`dtr-employee-server.php?action=filter_opts&id=${DDTR_ID}`);
+        const j = await r.json();
+        if (!j.result) return;
+        const fill = (id, rows, label) => {
+            $id(id).innerHTML = `<option value="">${label}: All</option>`
+                + (rows || []).map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('');
+        };
+        fill('ddv-f-dep', j.departments, 'Department');
+        fill('ddv-f-pos', j.positions, 'Position');
+    } catch (e) { /* filters simply stay at "All" */ }
+}
+loadFilterOpts();
+
+// ── Status filter (All / Pending / Approved / Rejected) ──────────────────────
+$id('ddv-status-seg').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b || b.dataset.st === st.status) return;
+    st.status = b.dataset.st;
+    document.querySelectorAll('#ddv-status-seg button').forEach(x => x.classList.toggle('on', x === b));
+    st.page = 0;
+    loadPage();
+    updateFilterCount();
+});
+
+// ── Exception-flag chips (single-select, click again to clear) ───────────────
+$id('ddv-flag-chips').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    st.flag = (st.flag === b.dataset.fl) ? '' : b.dataset.fl;
+    document.querySelectorAll('#ddv-flag-chips button').forEach(x => x.classList.toggle('on', x.dataset.fl === st.flag));
+    st.page = 0;
+    loadPage();
+    updateFilterCount();
+});
 
 // ── Print All: every employee's sheet, one page each ─────────────────────────
 async function printAll() {
@@ -1064,6 +1638,12 @@ document.querySelector('.ddv-paper-scroll').addEventListener('wheel', ev => {
     setZoom(zoom + (ev.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
 }, { passive: false });
 setZoom(zoom);
+
+// ── Collapsible right-column panels ──────────────────────────────────────────
+function togglePanel(head) {
+    const panel = head.closest('.ddv-panel');
+    if (panel) panel.classList.toggle('collapsed');
+}
 
 // ── Right-panel drawer (small screens) ───────────────────────────────────────
 function toggleDrawer(force) {

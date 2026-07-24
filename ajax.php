@@ -561,6 +561,18 @@ if ($action == 'finalize_dtr_bulk') {
 if ($action == 'decide_dtr_details') {
     echo json_encode($crud->decide_dtr_details());
 }
+if ($action == 'recompute_dtr') {
+    echo json_encode($crud->recompute_dtr());
+}
+if ($action == 'message_dtr_record') {
+    echo json_encode($crud->message_dtr_record());
+}
+if ($action == 'save_dtr_note') {
+    echo json_encode($crud->save_dtr_note());
+}
+if ($action == 'delete_dtr_note') {
+    echo json_encode($crud->delete_dtr_note());
+}
 if ($action == 'delete_dtr_record') {
     echo json_encode($crud->delete_dtr_record());
 }

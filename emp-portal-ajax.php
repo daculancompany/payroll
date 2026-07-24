@@ -129,8 +129,27 @@ switch ($action) {
         $me = $conn->query("SELECT firstname, middlename, lastname FROM employee WHERE id = $emp_id")->fetch_assoc();
         $empName = trim(($me['lastname'] ?? '') . ', ' . ($me['firstname'] ?? '') . ' ' . ($me['middlename'] ?? ''));
 
+        // Per-record admin↔employee message threads (guarded: the dtr_messages
+        // table may not exist on older databases).
+        $msgMap = [];
+        $mq = @$conn->query("SELECT m.dtr_detail_id, m.message, m.created_at, m.sender_type, u.name AS sender
+                             FROM dtr_messages m LEFT JOIN users u ON u.id = m.sent_by
+                             WHERE m.employee_id = $emp_id AND m.dtr_detail_id IN
+                                   (SELECT id FROM DTR_details WHERE ddtr_id = $ddtr_id AND employee_id = $emp_id)
+                             ORDER BY m.id ASC");
+        if ($mq) {
+            while ($m = $mq->fetch_assoc()) {
+                $msgMap[(int)$m['dtr_detail_id']][] = [
+                    'from' => ($m['sender_type'] === 'employee') ? 'emp' : 'admin',
+                    'msg'  => $m['message'],
+                    'by'   => $m['sender'] ?? '',
+                    'at'   => date('M j, g:i A', strtotime($m['created_at'])),
+                ];
+            }
+        }
+
         $days = [];
-        $st = $conn->prepare("SELECT date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note
+        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
         $st->bind_param('ii', $ddtr_id, $emp_id);
         $st->execute();
@@ -154,6 +173,8 @@ switch ($action) {
                 ];
             }
             $days[] = [
+                'rec_id'     => (int) $d['id'],
+                'msgs'       => $msgMap[(int)$d['id']] ?? [],
                 'iso'        => date('Y-m-d', strtotime($d['date_time'])),
                 'date'       => date('D, M j, Y', strtotime($d['date_time'])),
                 'time_in'    => $tIn,
@@ -187,6 +208,69 @@ switch ($action) {
             'days' => $days,
             'review' => $review ?: null,
         ]);
+        break;
+    }
+
+    // ── DTR conversation: employee sends/replies about one attendance date ──
+    case 'reply_dtr_message': {
+        $rec_id  = (int) ($_POST['rec_id'] ?? 0);
+        $message = trim($_POST['message'] ?? '');
+        if (!$rec_id || $message === '') { echo json_encode(['result' => false, 'message' => 'Please write a message.']); break; }
+        if (mb_strlen($message) > 500)   { echo json_encode(['result' => false, 'message' => 'Message is too long (max 500 characters).']); break; }
+
+        // The record must be the employee's own.
+        $rec = $conn->query("SELECT id, date_time FROM DTR_details WHERE id = $rec_id AND employee_id = $emp_id")->fetch_assoc();
+        if (!$rec) { echo json_encode(['result' => false, 'message' => 'Record not found.']); break; }
+
+        $ins = $conn->prepare("INSERT INTO dtr_messages (dtr_detail_id, employee_id, date_time, message, sent_by, sender_type)
+                               VALUES (?,?,?,?,NULL,'employee')");
+        $ins->bind_param('iiss', $rec_id, $emp_id, $rec['date_time'], $message);
+        if (!$ins->execute()) { echo json_encode(['result' => false, 'message' => 'Could not send your message.']); break; }
+
+        // Notify the deciding admins: bell for Admin / Dept Head / HR Head + push.
+        $erow    = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
+        $ename   = $erow['n'] ?? 'Employee';
+        $dateLbl = date('M j, Y', strtotime($rec['date_time']));
+        $ttl     = $conn->real_escape_string('DTR message from ' . $ename);
+        $bodyN   = $conn->real_escape_string("About their $dateLbl attendance: \u{201C}" . mb_substr($message, 0, 150) . "\u{201D}");
+        $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link)
+                      SELECT id, 'user', '$ttl', '$bodyN', 'ri-chat-3-line', 'info', 'index.php?page=dtr' FROM users WHERE role IN (1, 8, 9)");
+        // Browser push to the deciding admins (fcm.php isn't loaded globally here).
+        try {
+            require_once __DIR__ . '/fcm.php';
+            if (function_exists('fcm_push_role')) {
+                fcm_push_role($conn, [1, 8, 9], 'DTR message from ' . $ename,
+                    "About their $dateLbl attendance.", 'index.php?page=dtr');
+            }
+        } catch (\Throwable $e) { /* push is best-effort */ }
+
+        echo json_encode(['result' => true, 'at' => date('M j, g:i A')]);
+        break;
+    }
+
+    // ── Refresh one record's message thread (attendance details refresh) ──
+    case 'dtr_message_thread': {
+        $rec_id = (int) ($_POST['rec_id'] ?? 0);
+        $msgs   = [];
+        if ($rec_id > 0) {
+            $own = $conn->query("SELECT id FROM DTR_details WHERE id = $rec_id AND employee_id = $emp_id")->fetch_assoc();
+            if ($own) {
+                $mq = @$conn->query("SELECT m.message, m.created_at, m.sender_type, u.name AS sender
+                                     FROM dtr_messages m LEFT JOIN users u ON u.id = m.sent_by
+                                     WHERE m.dtr_detail_id = $rec_id ORDER BY m.id ASC");
+                if ($mq) {
+                    while ($m = $mq->fetch_assoc()) {
+                        $msgs[] = [
+                            'from' => ($m['sender_type'] === 'employee') ? 'emp' : 'admin',
+                            'msg'  => $m['message'],
+                            'by'   => $m['sender'] ?? '',
+                            'at'   => date('M j, g:i A', strtotime($m['created_at'])),
+                        ];
+                    }
+                }
+            }
+        }
+        echo json_encode(['result' => true, 'msgs' => $msgs]);
         break;
     }
 

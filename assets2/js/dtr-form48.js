@@ -83,7 +83,7 @@
             var wkend = (dow === 0 || dow === 6) ? ' wkend' : '';
             var infos = (marks[iso] || []).map(markInfo);
             var badges = infos.map(function (i) {
-                return '<span class="dm ' + i.cls + '" title="' + esc(i.note) + '">' + i.ltr + '</span>';
+                return '<span class="dm ' + i.cls + '" data-tip="' + esc(i.note) + '">' + i.ltr + '</span>';
             }).join('');
             if (!d) {
                 // A marked blank day explains itself across the time cells,
@@ -102,8 +102,11 @@
             var times = ampm
                 ? '<td>' + esc(d.am_in) + '</td><td>' + esc(d.am_out) + '</td><td>' + esc(d.pm_in) + '</td><td>' + esc(d.pm_out) + '</td>'
                 : '<td>' + esc(d.in) + '</td><td>' + esc(d.out) + '</td>';
+            var dayCell = badges
+                ? '<span class="day-no">' + dayNo + '</span><span class="day-marks">' + badges + '</span>'
+                : dayNo;
             rows += '<tr class="' + wkend.trim() + '">'
-                + '<td class="day">' + dayNo + badges + '</td>' + times
+                + '<td class="day">' + dayCell + '</td>' + times
                 + '<td class="x-col num">' + (d.wh > 0 ? num(d.wh) : '') + '</td>'
                 + '<td class="x-col num ot">' + (d.ot > 0 ? num(d.ot) : '') + '</td>'
                 + '<td class="ut">' + (d.ut > 0 ? ut[0] : '') + '</td>'
@@ -115,12 +118,12 @@
         // ── Header: adds Work Hrs / Overtime / Late alongside the official cols ──
         var head = ampm
             ? '<tr><th rowspan="2">Day</th><th colspan="2">A.M.</th><th colspan="2">P.M.</th>'
-              + '<th class="x-col" rowspan="2">Work<br>Hrs</th><th class="x-col" rowspan="2">Over-<br>time</th>'
-              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late<br>(min)</th></tr>'
+              + '<th class="x-col" rowspan="2">Work Hrs</th><th class="x-col" rowspan="2">Overtime</th>'
+              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late (min)</th></tr>'
               + '<tr><th>Arrival</th><th>Departure</th><th>Arrival</th><th>Departure</th><th>Hours</th><th>Minutes</th></tr>'
             : '<tr><th rowspan="2">Day</th><th colspan="2">TIME</th>'
-              + '<th class="x-col" rowspan="2">Work<br>Hrs</th><th class="x-col" rowspan="2">Over-<br>time</th>'
-              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late<br>(min)</th></tr>'
+              + '<th class="x-col" rowspan="2">Work Hrs</th><th class="x-col" rowspan="2">Overtime</th>'
+              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late (min)</th></tr>'
               + '<tr><th>Arrival</th><th>Departure</th><th>Hours</th><th>Minutes</th></tr>';
 
         // ── Footer: full totals — Work Hrs, OT, UT (H/M) and Late ──

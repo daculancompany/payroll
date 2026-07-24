@@ -620,6 +620,21 @@ class Action
                     throw new Exception("Failed to insert employee.");
                 }
 
+                // Default work schedule (DTR_DEFAULT_SHIFT / DTR_DEFAULT_REST_DAYS,
+                // db_connect.php) so DTR hour/late computations work from day one.
+                $defSched = $this->db->query("SELECT id FROM work_schedules
+                    WHERE LOWER(description) = LOWER('" . $this->db->real_escape_string(DTR_DEFAULT_SHIFT) . "')
+                      AND status = 1 LIMIT 1")->fetch_assoc();
+                if ($defSched) {
+                    $ds = $this->db->prepare("INSERT INTO employee_schedules
+                        (employee_id, schedule_id, effective_from, rest_days, notes)
+                        VALUES (?, ?, CURDATE(), ?, 'Default shift (auto-assigned)')");
+                    $dsId = (int)$defSched['id'];
+                    $dsRd = DTR_DEFAULT_REST_DAYS;
+                    $ds->bind_param('iis', $employee_id, $dsId, $dsRd);
+                    $ds->execute();
+                }
+
                 // Insert contributions for SSS, PHIC, HDMF
                 $contributions = [
                     ['id' => 1, 'amount' => $sss],
@@ -1484,79 +1499,129 @@ class Action
         return ['result' => true, 'message' => $msg];
     }
 
+    /**
+     * Approved incident report → write/repair the day's DTR_details row.
+     *
+     * Where the row lands, in order of preference:
+     *   1. the row this employee already has for that date (repaired in place,
+     *      whatever batch it is in — so the fix is visible in DTR Documents)
+     *   2. a new row in the DTR batch whose period covers the date
+     *      (the employee's own site first)
+     *   3. a new one-day fallback batch — only when no batch covers the date,
+     *      and never with site_id 0 (the FK made that fail silently before)
+     *
+     * Figures (late / undertime / overtime / NSD / holiday type) are computed
+     * exactly like the manual edit path (edit_dtr_time) so an incident repair
+     * and a manual repair always agree. The row is left PENDING so it still
+     * passes through the normal DTR approval flow. Every write is checked and
+     * throws on failure so decide_attendance_request rolls the approval back.
+     */
     private function applyIncidentToDtr($req)
     {
-        $employee_id = $req['employee_id'];
-        $date        = $req['request_date'];
+        $employee_id = (int) $req['employee_id'];
+        $date        = $this->db->real_escape_string($req['request_date']);
 
-        $site_row = $this->db->query("SELECT site_id FROM employee_bio WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1")->fetch_assoc();
-        $site_id  = $site_row ? $site_row['site_id'] : 0;
+        $in_ts  = strtotime($date . ' ' . $req['claimed_time_in']);
+        $out_ts = strtotime($date . ' ' . $req['claimed_time_out']);
+        if ($out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
 
-        $site = $this->db->query("SELECT employer_id FROM sites WHERE id = $site_id LIMIT 1")->fetch_assoc();
-        $employer_id = $site ? $site['employer_id'] : 1;
-
-        $admin_row = $this->db->query("SELECT id FROM users WHERE role = 1 LIMIT 1")->fetch_assoc();
-        $admin_id  = $admin_row ? $admin_row['id'] : 1;
-
-        $dtr_row = $this->db->query("SELECT id FROM DTR WHERE date_from = '$date' AND site_id = $site_id AND device_id = 0 LIMIT 1")->fetch_assoc();
-        if ($dtr_row) {
-            $ddtr_id = $dtr_row['id'];
-        } else {
-            $stmt = $this->db->prepare(
-                "INSERT INTO DTR (local_id, date_from, date_to, timekeeper_id, site_id, device_id, file, uploaded_by, employer_id, status)
-                 VALUES (0, ?, ?, ?, ?, 0, 'incident', NULL, ?, 2)"
-            );
-            $stmt->bind_param('ssiii', $date, $date, $admin_id, $site_id, $employer_id);
-            $stmt->execute();
-            $ddtr_id = $this->db->insert_id;
-        }
-
-        $time_in_ts  = strtotime($date . ' ' . $req['claimed_time_in']);
-        $time_out_ts = strtotime($date . ' ' . $req['claimed_time_out']);
-        if ($time_out_ts <= $time_in_ts) $time_out_ts = strtotime('+1 day', $time_out_ts);
+        // Figures via the shared day math (dtr_compute_day, db_connect.php).
+        $c = dtr_compute_day($this->db, $employee_id, $date, [$in_ts, $out_ts]);
+        $work_hours = $c['work_hours'];
+        $overtime   = $c['overtime'];
+        $undertime  = $c['undertime'];
+        $late       = $c['late'];
+        $nsd_hours  = $c['nsd_hours'];
+        $day_type   = $c['day_type'];
 
         $logs = json_encode([
-            ['dateTime' => date('Y-m-d H:i:s', $time_in_ts), 'type' => 'incident'],
-            ['dateTime' => date('Y-m-d H:i:s', $time_out_ts), 'type' => 'incident'],
+            ['dateTime' => date('Y-m-d H:i:s', $in_ts), 'type' => 'incident'],
+            ['dateTime' => date('Y-m-d H:i:s', $out_ts), 'type' => 'incident'],
         ]);
 
-        $schedule = $this->db->query("
-            SELECT ws.* FROM employee_schedules es
-            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-            WHERE es.employee_id = $employee_id AND es.effective_from <= '$date' AND (es.effective_to IS NULL OR es.effective_to >= '$date')
-            ORDER BY es.effective_from DESC LIMIT 1
+        // ── 1. Repair the employee's existing row for that date, in place ──
+        $existing = $this->db->query("
+            SELECT id FROM DTR_details
+            WHERE employee_id = $employee_id AND date_time = '$date'
+            ORDER BY id DESC LIMIT 1
+        ")->fetch_assoc();
+        if ($existing) {
+            $existing_id = (int) $existing['id'];
+            $stmt = $this->db->prepare(
+                "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
+                 day_type=?, nsd_hours=?, is_complete=1, attendance_type='incident',
+                 status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+            );
+            $stmt->bind_param('sddddsdi', $logs, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours, $existing_id);
+            if (!$stmt->execute()) throw new Exception('Could not update the DTR record: ' . $stmt->error);
+            return;
+        }
+
+        // ── 2. No row yet — put one in the batch that covers the date ──
+        $siteRow = $this->db->query("
+            SELECT b.site_id FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+            WHERE d.employee_id = $employee_id ORDER BY d.date_time DESC LIMIT 1
+        ")->fetch_assoc();
+        $emp_site = $siteRow ? (int) $siteRow['site_id'] : 0;
+
+        $batch = $this->db->query("
+            SELECT id FROM DTR WHERE date_from <= '$date' AND date_to >= '$date'
+            ORDER BY (site_id = $emp_site) DESC, id DESC LIMIT 1
         ")->fetch_assoc();
 
-        $raw_hours  = ($time_out_ts - $time_in_ts) / 3600;
-        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
-        $work_hours = round(max(0, $raw_hours - $break_hrs), 2);
-        if ($schedule) {
-            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+        if ($batch) {
+            $ddtr_id = (int) $batch['id'];
         } else {
-            $work_hours = round(min(8, $work_hours), 2);
+            // ── 3. Fallback: a one-day incident batch with a real site_id ──
+            $site_id = $emp_site;
+            if (!$site_id) {
+                $bio = $this->db->query("SELECT site_id FROM employee_bio WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1")->fetch_assoc();
+                $site_id = $bio ? (int) $bio['site_id'] : 0;
+            }
+            if (!$site_id) {
+                $first = $this->db->query("SELECT id FROM sites ORDER BY id ASC LIMIT 1")->fetch_assoc();
+                $site_id = $first ? (int) $first['id'] : 0;
+            }
+            if (!$site_id) throw new Exception('No site exists to attach the incident DTR to.');
+
+            $site        = $this->db->query("SELECT employer_id FROM sites WHERE id = $site_id LIMIT 1")->fetch_assoc();
+            $employer_id = $site ? (int) $site['employer_id'] : 1;
+            $admin_row   = $this->db->query("SELECT id FROM users WHERE role = 1 LIMIT 1")->fetch_assoc();
+            $admin_id    = $admin_row ? (int) $admin_row['id'] : 1;
+
+            $found = $this->db->query("SELECT id FROM DTR WHERE date_from = '$date' AND site_id = $site_id AND device_id = 0 AND file = 'incident' LIMIT 1")->fetch_assoc();
+            if ($found) {
+                $ddtr_id = (int) $found['id'];
+            } else {
+                $stmt = $this->db->prepare(
+                    "INSERT INTO DTR (local_id, date_from, date_to, timekeeper_id, site_id, device_id, file, uploaded_by, employer_id, status)
+                     VALUES (0, ?, ?, ?, ?, 0, 'incident', NULL, ?, 2)"
+                );
+                $stmt->bind_param('ssiii', $date, $date, $admin_id, $site_id, $employer_id);
+                if (!$stmt->execute()) throw new Exception('Could not create the incident DTR batch: ' . $stmt->error);
+                $ddtr_id = $this->db->insert_id;
+            }
         }
 
-        $existing = $this->db->query("SELECT id FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' AND ddtr_id = $ddtr_id LIMIT 1")->fetch_assoc();
-        if ($existing) {
-            $stmt = $this->db->prepare("UPDATE DTR_details SET logs=?, work_hours=?, attendance_type='incident' WHERE id=?");
-            $stmt->bind_param('sdi', $logs, $work_hours, $existing['id']);
-        } else {
-            $stmt = $this->db->prepare(
-                "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type) VALUES (?,?,?,?,?,'incident')"
-            );
-            $stmt->bind_param('iisds', $ddtr_id, $employee_id, $date, $work_hours, $logs);
-        }
-        $stmt->execute();
+        $stmt = $this->db->prepare(
+            "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, late, undertime,
+                                      day_type, nsd_hours, is_complete, logs, attendance_type, status)
+             VALUES (?,?,?,?,?,?,?,?,?,1,?,'incident',0)"
+        );
+        $stmt->bind_param('iisddddsds', $ddtr_id, $employee_id, $date, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours, $logs);
+        if (!$stmt->execute()) throw new Exception('Could not write the DTR record: ' . $stmt->error);
     }
 
     // Writes an approved OT request's requested hours onto the matching DTR_details
     // row (same employee + date) so the timekeeper sees it filled in, not 0.
-    // Returns false when no DTR row exists for that date (e.g. rest-day OT or the
-    // biometric import hasn't run yet) so the caller can warn the approver.
+    // With no row for that date (rest-day OT / biometric import not run yet) the
+    // hours are parked on a pending zero-hour row in the batch covering the date
+    // so they aren't lost; its exception flags force a manual decision.
+    // Returns false only when NO batch covers the date, so the caller can warn.
     private function applyOvertimeToDtr($req)
     {
         $employee_id = (int) $req['employee_id'];
-        $date        = $req['request_date'];
+        $date        = $this->db->real_escape_string($req['request_date']);
         $ot_hours    = (float) $req['ot_hours_requested'];
 
         $existing = $this->db->query(
@@ -1564,12 +1629,26 @@ class Action
         )->fetch_assoc();
 
         if ($existing) {
+            $existing_id = (int) $existing['id'];
             $stmt = $this->db->prepare("UPDATE DTR_details SET overtime = ? WHERE id = ?");
-            $stmt->bind_param('di', $ot_hours, $existing['id']);
-            $stmt->execute();
+            $stmt->bind_param('di', $ot_hours, $existing_id);
+            if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
             return true;
         }
-        return false;
+
+        $batch = $this->db->query(
+            "SELECT id FROM DTR WHERE date_from <= '$date' AND date_to >= '$date' ORDER BY id DESC LIMIT 1"
+        )->fetch_assoc();
+        if (!$batch) return false;
+
+        $ddtr_id = (int) $batch['id'];
+        $stmt = $this->db->prepare(
+            "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, logs, attendance_type, status)
+             VALUES (?,?,?,0,?,'[]','overtime',0)"
+        );
+        $stmt->bind_param('iisd', $ddtr_id, $employee_id, $date, $ot_hours);
+        if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
+        return true;
     }
 
     function delete_attendance_request()
@@ -6604,43 +6683,18 @@ class Action
         $logs = [['dateTime' => date('Y-m-d H:i:s', $in_ts), 'type' => 'manual']];
         if ($out_ts) $logs[] = ['dateTime' => date('Y-m-d H:i:s', $out_ts), 'type' => 'manual'];
 
-        // Detect holiday
-        $day_type = 'regular';
-        $hol = $this->db->query("SELECT type FROM calendar_events WHERE '$date' BETWEEN start_date AND COALESCE(end_date,'$date') AND type IN (1,3) LIMIT 1")->fetch_assoc();
-        if ($hol) $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
-
-        // Get schedule
-        $schedule = $this->db->query("
-            SELECT ws.* FROM employee_schedules es
-            INNER JOIN work_schedules ws ON ws.id=es.schedule_id
-            INNER JOIN DTR_details d ON d.id=$id
-            WHERE es.employee_id=d.employee_id AND es.effective_from<='$date' AND (es.effective_to IS NULL OR es.effective_to>='$date')
-            ORDER BY es.effective_from DESC LIMIT 1
-        ")->fetch_assoc();
-
-        $raw_hours  = $out_ts ? ($out_ts - $in_ts) / 3600 : 0;
-        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
-        $work_hours = $out_ts ? round(max(0, $raw_hours - $break_hrs), 2) : 0;
-        $overtime   = 0;
-        $late = 0;
-        $undertime = 0;
-        $nsd_hours = 0;
-        $is_complete = $out_ts ? 1 : 0;
-
-        if ($out_ts && $schedule) {
-            $sched_start = strtotime($date . ' ' . $schedule['start_time']);
-            $sched_end   = strtotime($date . ' ' . $schedule['end_time']);
-            if ($schedule['is_graveyard']) $sched_end = strtotime('+1 day', $sched_end);
-            $late      = round(max(0, ($in_ts - $sched_start) / 3600), 2);
-            $undertime = round(max(0, ($sched_end - $out_ts) / 3600), 2);
-            $overtime  = round(max(0, ($out_ts - $sched_end) / 3600), 2);
-            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
-
-            foreach ([[$date . ' 22:00:00', $date . ' 23:59:59'], [$date . ' 00:00:00', $date . ' 06:00:00']] as $w) {
-                $nsd_hours += max(0, min($out_ts, strtotime($w[1])) - max($in_ts, strtotime($w[0]))) / 3600;
-            }
-            $nsd_hours = round($nsd_hours, 2);
-        }
+        // Figures via the shared day math (dtr_compute_day, db_connect.php) —
+        // identical to the incident repair and batch recompute.
+        $emp_row = $this->db->query("SELECT employee_id FROM DTR_details WHERE id = $id")->fetch_assoc();
+        if (!$emp_row) return ['result' => false, 'message' => 'Record not found'];
+        $c = dtr_compute_day($this->db, (int)$emp_row['employee_id'], $date, $out_ts ? [$in_ts, $out_ts] : [$in_ts]);
+        $work_hours  = $c['work_hours'];
+        $overtime    = $c['overtime'];
+        $undertime   = $c['undertime'];
+        $late        = $c['late'];
+        $nsd_hours   = $c['nsd_hours'];
+        $day_type    = $c['day_type'];
+        $is_complete = $c['is_complete'];
 
         $json_logs = json_encode($logs);
         $stmt = $this->db->prepare(
@@ -6780,6 +6834,171 @@ class Action
     {
         $id   = intval($_POST['id'] ?? 0);
         $stmt = $this->db->prepare("DELETE FROM DTR_details WHERE id=?");
+        $stmt->bind_param('i', $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
+    }
+
+    /**
+     * Recompute every record of a batch from its raw logs using the shared
+     * day math (dtr_compute_day: current schedules + holiday calendar).
+     * Needed for batches generated before schedules existed, or after a
+     * schedule assignment changes mid-period.
+     *
+     * Policy: figures are updated in place; APPROVED rows whose figures
+     * actually changed are reset to pending for re-approval (the approval
+     * was given for the old numbers). Disapproved rows keep their status —
+     * rejection reasons are usually independent of the figures. Rows whose
+     * figures come out identical are left completely untouched.
+     */
+    function recompute_dtr()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $ddtr_id = (int)($_POST['id'] ?? 0);
+        if (!$ddtr_id) return ['result' => false, 'message' => 'Missing DTR id'];
+        $batch = $this->db->query("SELECT id, status FROM DTR WHERE id = $ddtr_id")->fetch_assoc();
+        if (!$batch) return ['result' => false, 'message' => 'Batch not found'];
+        if ((int)$batch['status'] === 2) {
+            return ['result' => false, 'message' => 'This batch is final-approved — its figures are locked.'];
+        }
+
+        $res = $this->db->query("SELECT id, employee_id, date_time, work_hours, overtime, undertime,
+                                        late, nsd_hours, day_type, status, logs
+                                 FROM DTR_details WHERE ddtr_id = $ddtr_id");
+        $scanned = $changed = $repending = 0;
+
+        $this->db->begin_transaction();
+        try {
+            $upd = $this->db->prepare(
+                "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=? WHERE id=?"
+            );
+            $updPend = $this->db->prepare(
+                "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=?,
+                 status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+            );
+            while ($row = $res->fetch_assoc()) {
+                $scanned++;
+                $ts = [];
+                foreach ((json_decode($row['logs']) ?: []) as $lg) {
+                    $t = strtotime($lg->dateTime ?? '');
+                    if ($t !== false) $ts[] = $t;
+                }
+                $c = dtr_compute_day($this->db, (int)$row['employee_id'], $row['date_time'], $ts);
+
+                $same = abs($c['work_hours'] - (float)$row['work_hours']) < 0.005
+                     && abs($c['overtime']   - (float)$row['overtime'])   < 0.005
+                     && abs($c['undertime']  - (float)$row['undertime'])  < 0.005
+                     && abs($c['late']       - (float)$row['late'])       < 0.005
+                     && abs($c['nsd_hours']  - (float)$row['nsd_hours'])  < 0.005
+                     && $c['day_type'] === $row['day_type'];
+                if ($same) continue;
+
+                $changed++;
+                $rowId    = (int)$row['id'];
+                $toPend   = ((int)$row['status'] === 1);   // only approved rows re-open
+                $stmt     = $toPend ? $updPend : $upd;
+                if ($toPend) $repending++;
+                $stmt->bind_param('dddddsii', $c['work_hours'], $c['overtime'], $c['undertime'],
+                                  $c['late'], $c['nsd_hours'], $c['day_type'], $c['is_complete'], $rowId);
+                if (!$stmt->execute()) throw new Exception('Row ' . $rowId . ': ' . $stmt->error);
+            }
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Recompute failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        return [
+            'result'    => true,
+            'scanned'   => $scanned,
+            'changed'   => $changed,
+            'repending' => $repending,
+            'message'   => "$scanned record(s) scanned, $changed updated, $repending sent back to pending.",
+        ];
+    }
+
+    /**
+     * Message an employee about one specific attendance record — asks for an
+     * explanation without forcing a disapproval. Stored per record
+     * (dtr_messages) and delivered as a portal bell notification + push.
+     */
+    function message_dtr_record()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $rec_id  = (int)($_POST['id'] ?? 0);
+        $message = trim($_POST['message'] ?? '');
+        if (!$rec_id || $message === '') return ['result' => false, 'message' => 'A message is required.'];
+        if (mb_strlen($message) > 500)   return ['result' => false, 'message' => 'Message is too long (max 500 characters).'];
+
+        $rec = $this->db->query("SELECT id, employee_id, date_time FROM DTR_details WHERE id = $rec_id")->fetch_assoc();
+        if (!$rec) return ['result' => false, 'message' => 'Record not found'];
+
+        $uid    = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $rid    = (int)$rec['id'];
+        $eid    = (int)$rec['employee_id'];
+        $rdate  = $rec['date_time'];
+        $stmt = $this->db->prepare("INSERT INTO dtr_messages (dtr_detail_id, employee_id, date_time, message, sent_by, sender_type) VALUES (?,?,?,?,?,'admin')");
+        $stmt->bind_param('iissi', $rid, $eid, $rdate, $message, $uid);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        $dateLbl = date('M j, Y', strtotime($rdate));
+        $this->notifyEmployee(
+            $eid,
+            'Question about your attendance',
+            "Support asks about your $dateLbl attendance: \u{201C}$message\u{201D}",
+            'ri-chat-3-line',
+            'warning',
+            'employee-portal.php?tab=attendance&rec=' . $rid . '&date=' . rawurlencode($rdate)
+        );
+
+        $by = '';
+        if ($uid) {
+            $u = $this->db->query("SELECT name FROM users WHERE id = $uid")->fetch_assoc();
+            $by = $u['name'] ?? '';
+        }
+        return ['result' => true, 'message' => 'Message sent', 'by' => $by, 'at' => date('M j, g:i A')];
+    }
+
+    // ── Internal admin notes on an employee (DTR Documents, admin-only) ──
+    // These never reach the employee — separate from dtr_messages (which do).
+    // Levels: info (blue), good (green), watch (amber), critical (red).
+    function save_dtr_note()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $ddtr_id = (int)($_POST['ddtr_id'] ?? 0);
+        $emp_id  = (int)($_POST['employee_id'] ?? 0);
+        $level   = (string)($_POST['level'] ?? 'info');
+        $note    = trim($_POST['note'] ?? '');
+        if (!$ddtr_id || !$emp_id)  return ['result' => false, 'message' => 'Missing employee or batch.'];
+        if ($note === '')           return ['result' => false, 'message' => 'A note is required.'];
+        if (mb_strlen($note) > 500) return ['result' => false, 'message' => 'Note is too long (max 500 characters).'];
+        if (!in_array($level, ['info', 'good', 'watch', 'critical'], true)) $level = 'info';
+
+        $uid = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $stmt = $this->db->prepare("INSERT INTO dtr_admin_notes (ddtr_id, employee_id, level, note, created_by) VALUES (?,?,?,?,?)");
+        $stmt->bind_param('iissi', $ddtr_id, $emp_id, $level, $note, $uid);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        $by = '';
+        if ($uid) {
+            $u = $this->db->query("SELECT name FROM users WHERE id = $uid")->fetch_assoc();
+            $by = $u['name'] ?? '';
+        }
+        return ['result' => true, 'id' => $this->db->insert_id, 'by' => $by, 'at' => date('M j, g:i A')];
+    }
+
+    function delete_dtr_note()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing id'];
+        $stmt = $this->db->prepare("DELETE FROM dtr_admin_notes WHERE id = ?");
         $stmt->bind_param('i', $id);
         return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
     }
@@ -7610,28 +7829,35 @@ class Action
                 // ── Appended template columns, shared by insert and update ──
                 if (!empty($employee_id)) {
                     // Shift / schedule (col R) -> employee_schedules, matched by name.
+                    // A blank cell falls back to the global default shift
+                    // (DTR_DEFAULT_SHIFT, db_connect.php) so every imported
+                    // employee ends up with a working schedule.
                     $shift_name = trim((string) ($row[17] ?? ''));
-                    if ($shift_name !== '') {
-                        $stmtCheckSchedule->bind_param("s", $shift_name);
-                        $stmtCheckSchedule->execute();
-                        $stmtCheckSchedule->store_result();
-                        if ($stmtCheckSchedule->num_rows > 0) {
-                            $stmtCheckSchedule->bind_result($schedule_id);
-                            $stmtCheckSchedule->fetch();
-                            $stmtCheckSchedule->free_result();
-                            // Re-importing must not stack duplicate assignments.
-                            $chk = $this->db->query("SELECT id FROM employee_schedules
-                                WHERE employee_id = $employee_id AND schedule_id = " . (int) $schedule_id . " LIMIT 1");
-                            if (!$chk || $chk->num_rows === 0) {
-                                $eff = date('Y-m-d');
-                                $ins = $this->db->prepare("INSERT INTO employee_schedules
-                                    (employee_id, schedule_id, effective_from, notes) VALUES (?, ?, ?, 'Imported')");
-                                $ins->bind_param("iis", $employee_id, $schedule_id, $eff);
-                                $ins->execute();
-                            }
-                        } else {
-                            $stmtCheckSchedule->free_result();
+                    $is_default = ($shift_name === '');
+                    if ($is_default) $shift_name = DTR_DEFAULT_SHIFT;
+                    $stmtCheckSchedule->bind_param("s", $shift_name);
+                    $stmtCheckSchedule->execute();
+                    $stmtCheckSchedule->store_result();
+                    if ($stmtCheckSchedule->num_rows > 0) {
+                        $stmtCheckSchedule->bind_result($schedule_id);
+                        $stmtCheckSchedule->fetch();
+                        $stmtCheckSchedule->free_result();
+                        // Re-importing must not stack duplicate assignments; the
+                        // default never overrides an existing assignment at all.
+                        $dupWhere = $is_default ? '' : ' AND schedule_id = ' . (int) $schedule_id;
+                        $chk = $this->db->query("SELECT id FROM employee_schedules
+                            WHERE employee_id = $employee_id$dupWhere LIMIT 1");
+                        if (!$chk || $chk->num_rows === 0) {
+                            $eff  = date('Y-m-d');
+                            $note = $is_default ? 'Default shift (auto-assigned)' : 'Imported';
+                            $rd   = DTR_DEFAULT_REST_DAYS;
+                            $ins = $this->db->prepare("INSERT INTO employee_schedules
+                                (employee_id, schedule_id, effective_from, rest_days, notes) VALUES (?, ?, ?, ?, ?)");
+                            $ins->bind_param("iisss", $employee_id, $schedule_id, $eff, $rd, $note);
+                            $ins->execute();
                         }
+                    } else {
+                        $stmtCheckSchedule->free_result();
                     }
 
                     // Recurring deduction (cols S/T) -> employee_deductions, matched by name.

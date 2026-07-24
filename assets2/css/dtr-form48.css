@@ -24,7 +24,8 @@
 .dtrf48-table th,
 .dtrf48-table td { border: 1px solid #1a1a1a; text-align: center; padding: 2.5px 3px; }
 .dtrf48-table th { font-weight: 700; }
-.dtrf48-table td.day { font-weight: 700; width: 34px; }
+.dtrf48-table th.x-col { white-space: nowrap; }
+.dtrf48-table td.day { font-weight: 700; width: 52px; white-space: nowrap; position: relative; }
 .dtrf48-table tr.wkend td { background: #f4f1e7; }
 .dtrf48-table tr.absent td:not(.day) { color: #b9b3a2; }
 .dtrf48-table td.ut   { width: 40px; }
@@ -43,11 +44,30 @@
    (.dtrf48-legend hook for host pages); blank marked days get a text note
    across the time cells instead. Chips are screen-only; notes also print. */
 .dtrf48 .dm, .dtrf48-legend .dm {
-    display: inline-block; min-width: 12px; height: 12px; line-height: 11px; padding: 0 2px;
-    border-radius: 3px; margin-left: 3px; vertical-align: 1px; cursor: help;
-    font-family: Arial, sans-serif; font-size: 8px; font-weight: 700; text-align: center;
+    display: inline-block; min-width: 16px; height: 16px; line-height: 15px; padding: 0 3px;
+    border-radius: 4px; cursor: help;
+    font-family: Arial, sans-serif; font-size: 10px; font-weight: 700; text-align: center;
 }
-.dtrf48-legend .dm { margin-left: 0; cursor: default; }
+.dtrf48-legend .dm { cursor: default; }
+/* Instant styled tooltip on hover (chips carry data-tip). Shown to the RIGHT
+   of the chip — the day column is leftmost, so there is always room. */
+.dtrf48 .dm { position: relative; }
+.dtrf48 .dm[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%);
+    background: #263733; color: #fff; padding: 4px 9px; border-radius: 6px;
+    font-family: Arial, sans-serif; font-size: 10px; font-weight: 600; letter-spacing: .3px;
+    white-space: nowrap; z-index: 60; pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .25);
+}
+.dtrf48 .dm[data-tip]:hover::before {
+    content: ''; position: absolute; left: calc(100% + 3px); top: 50%; transform: translateY(-50%);
+    border: 5px solid transparent; border-right-color: #263733; z-index: 60; pointer-events: none;
+}
+/* Marked days: the number stays perfectly centered; chips overlay the cell's
+   top-right corner without displacing it */
+.dtrf48-table td.day .day-no { display: inline-block; }
+.dtrf48-table td.day .day-marks { position: absolute; top: 1px; right: 1px; display: inline-flex; gap: 1px; }
 .dtrf48 .dm-hol, .dtrf48-legend .dm-hol { background: #fdecea; color: #c62828; border: 1px solid #f5c6cb; }
 .dtrf48 .dm-spc, .dtrf48-legend .dm-spc { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
 .dtrf48 .dm-lv,  .dtrf48-legend .dm-lv  { background: #e3f2fd; color: #1565c0; border: 1px solid #a8cff5; }

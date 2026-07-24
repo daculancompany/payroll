@@ -481,6 +481,13 @@ body{
 .ptop-logout{background:#f0f7f5;color:#176358;border:1px solid #d5e8e4;border-radius:9px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;}
 .ptop-logout:hover{background:#e0f0ec;color:#176358;border-color:#bfe0d9;}
 .ptop-logout i{margin-right:5px;}
+.ptop-actions{display:flex;align-items:center;gap:8px;}
+.ptop-icbtn{position:relative;width:38px;height:38px;border-radius:50%;background:#f0f7f5;border:1px solid #d5e8e4;color:#176358;font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .15s,transform .12s;-webkit-tap-highlight-color:transparent;}
+.ptop-icbtn:hover{background:#e0f0ec;}
+.ptop-icbtn:active{transform:scale(.92);}
+.ptop-bell .emp-bell-dot{position:absolute;top:6px;right:7px;width:9px;height:9px;background:#ff4d4f;border:2px solid #fff;border-radius:50%;}
+.ptop-icbtn.spinning i{animation:ptop-spin .7s linear infinite;}
+@keyframes ptop-spin{to{transform:rotate(360deg);}}
 /* Per-screen title — only surfaces in the mobile app header */
 .ptop-screen-title{display:none;}
 
@@ -500,21 +507,43 @@ body{
 .emp-bell{position:relative;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;cursor:pointer;transition:background .15s;}
 .emp-bell:hover{background:rgba(255,255,255,.32);}
 .emp-bell-dot{position:absolute;top:7px;right:8px;width:9px;height:9px;background:#ffcf33;border:2px solid #176358;border-radius:50%;}
-.emp-notif-panel{position:absolute;top:64px;right:14px;width:340px;max-width:calc(100vw - 28px);background:#fff;border-radius:14px;box-shadow:0 10px 40px rgba(0,0,0,.22);z-index:1200;overflow:hidden;display:none;}
-.emp-notif-panel.open{display:block;}
-.emp-notif-head{display:flex;align-items:center;justify-content:space-between;padding:11px 15px;border-bottom:1px solid #eef3f2;font-size:13px;font-weight:800;color:#176358;}
-.emp-notif-allread{background:none;border:0;color:#219688;font-size:11px;font-weight:700;cursor:pointer;}
-.emp-notif-list{max-height:380px;overflow-y:auto;}
-.emp-notif-empty{padding:26px 14px;text-align:center;color:#aaa;font-size:12px;}
-.emp-notif-item{display:flex;gap:10px;padding:11px 15px;border-bottom:1px solid #f4f7f6;cursor:pointer;transition:background .12s;}
+/* Notification panel — a top-bar dropdown on desktop, a bottom sheet on mobile */
+.emp-notif-scrim{position:fixed;inset:0;background:rgba(16,40,36,.28);z-index:1199;opacity:0;visibility:hidden;transition:opacity .2s;}
+.emp-notif-scrim.open{opacity:1;visibility:visible;}
+.emp-notif-panel{position:fixed;top:52px;right:12px;width:360px;max-width:calc(100vw - 24px);background:#fff;border-radius:16px;box-shadow:0 14px 44px rgba(16,40,36,.24);z-index:1201;overflow:hidden;display:flex;flex-direction:column;
+    opacity:0;visibility:hidden;transform:translateY(-8px) scale(.98);transform-origin:top right;transition:opacity .16s,transform .16s,visibility .16s;}
+.emp-notif-panel.open{opacity:1;visibility:visible;transform:translateY(0) scale(1);}
+.emp-notif-sheet-grip{display:none;}
+.emp-notif-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #eef3f2;font-size:14px;font-weight:800;color:#176358;}
+.emp-notif-allread{background:none;border:0;color:#219688;font-size:11.5px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:7px;}
+.emp-notif-allread:active{background:#eef7f5;}
+.emp-notif-list{max-height:min(70vh,440px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.emp-notif-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:38px 16px;color:#aaa;}
+.emp-notif-empty i{font-size:38px;color:#cfe0da;margin-bottom:10px;}
+.emp-notif-empty .net{font-size:14px;font-weight:800;color:#5b7a72;}
+.emp-notif-empty .nes{font-size:11.5px;color:#9fb2ab;margin-top:3px;}
+.emp-notif-item{display:flex;gap:11px;padding:13px 16px;border-bottom:1px solid #f4f7f6;cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent;}
 .emp-notif-item:hover{background:#f7fbfa;}
+.emp-notif-item:active{background:#eef5f3;}
 .emp-notif-item.unread{background:#f0faf8;}
-.emp-notif-ic{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;}
+.emp-notif-item.unread .emp-notif-title::after{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#219688;margin-left:6px;vertical-align:middle;}
+.emp-notif-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
 .emp-notif-primary{background:#e6f0fb;color:#2563eb;} .emp-notif-success{background:#eafaf0;color:#0f9d58;}
 .emp-notif-warning{background:#fff6e0;color:#c98a00;} .emp-notif-danger{background:#fdecea;color:#c62828;} .emp-notif-info{background:#e6f7fb;color:#0891b2;}
-.emp-notif-title{font-size:12.5px;font-weight:800;color:#333;}
-.emp-notif-msg{font-size:11.5px;color:#666;margin-top:1px;line-height:1.35;}
-.emp-notif-time{font-size:10px;color:#aaa;margin-top:3px;}
+.emp-notif-txt{flex:1;min-width:0;}
+.emp-notif-title{font-size:13px;font-weight:800;color:#2b3330;}
+.emp-notif-msg{font-size:12px;color:#667;margin-top:2px;line-height:1.4;}
+.emp-notif-time{font-size:10.5px;color:#aab;margin-top:4px;}
+@media (max-width:600px){
+    /* Bottom sheet — the native pattern for a phone */
+    .emp-notif-panel{top:auto;left:0;right:0;bottom:0;width:100%;max-width:100%;border-radius:20px 20px 0 0;
+        transform:translateY(100%);transform-origin:bottom center;transition:transform .26s cubic-bezier(.32,.72,0,1),opacity .2s,visibility .2s;
+        box-shadow:0 -8px 34px rgba(16,40,36,.22);padding-bottom:env(safe-area-inset-bottom);}
+    .emp-notif-panel.open{transform:translateY(0);}
+    .emp-notif-sheet-grip{display:block;width:38px;height:4px;border-radius:3px;background:#d7e2df;margin:8px auto 2px;}
+    .emp-notif-list{max-height:66vh;}
+    .emp-notif-head{padding:10px 18px 13px;}
+}
 /* My DTR tab */
 .mydtr-intro{background:#f0faf8;border:1px solid #cdeeda;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#4a6b5f;line-height:1.5;margin-bottom:14px;}
 .mydtr-empty{padding:34px 14px;text-align:center;color:#aaa;font-size:13px;}
@@ -634,6 +663,9 @@ body{
 .ps-hist-table thead th.r{text-align:right;}
 .ps-hist-table tbody tr{border-bottom:1px solid #f0f5f4;cursor:pointer;transition:background .14s;}
 .ps-hist-table tbody tr:hover{background:#f4fbfa;}
+/* Read-only variant — a plain, non-interactive item list (holidays/activities) */
+.ps-hist-table.no-click tbody tr{cursor:default;}
+.ps-hist-table.no-click tbody tr:hover{background:transparent;}
 .ps-hist-table tbody td{padding:10px 12px;vertical-align:middle;}
 .ps-hist-table tbody td.r{text-align:right;}
 .ps-hist-table tfoot td{background:#f4fbfa;padding:9px 12px;font-weight:800;color:#219688;border-top:2px solid #ddecea;}
@@ -945,6 +977,42 @@ body{
 .bootstrap-datetimepicker-widget a[data-action]:active{opacity:.8;}
 .bootstrap-datetimepicker-widget a[data-action] span{
     display:inline-flex;align-items:center;width:auto;height:auto;line-height:1;margin:0;font-size:15px;}
+/* Attendance row/card badge: this date has a conversation with HR */
+.att-msg-badge {
+    display:inline-flex; align-items:center; gap:3px; margin-left:6px;
+    padding:1px 6px; border-radius:10px; font-size:9px; font-weight:800;
+    background:#fff3e0; color:#c98a00; border:1px solid #ffe0a3; vertical-align:1px;
+}
+.att-msg-badge i { font-size:10px; }
+
+/* Thread header (title + refresh) shared by DTR review & attendance details */
+.drev-thread-hd{display:flex;align-items:center;justify-content:space-between;margin:0 2px 4px;}
+.drev-refresh{width:28px;height:28px;flex-shrink:0;border:1px solid #d5e8e4;background:#f0f7f5;color:#176358;border-radius:8px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s;}
+.drev-refresh:hover{background:#e0f0ec;}
+.drev-refresh.spinning i{animation:ptop-spin .7s linear infinite;display:inline-block;}
+.drev-thread-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:20px 14px;color:#8aa39c;}
+.drev-thread-empty i{font-size:30px;color:#c3d6d0;margin-bottom:7px;}
+.drev-thread-empty .det{font-size:12.5px;font-weight:800;color:#5b7a72;}
+.drev-thread-empty .des{font-size:11px;color:#9fb2ab;margin-top:3px;line-height:1.4;max-width:230px;}
+.drev-send.sending{opacity:.8;cursor:default;}
+.drev-send.sending i{animation:ptop-spin .7s linear infinite;display:inline-block;}
+
+/* DTR review — per-day conversation threads with HR */
+.drev-msgs { margin-top: 12px; }
+.drev-thread { background:#fff; border:1px solid #eef3f2; border-radius:12px; padding:10px 12px; margin-top:8px; }
+.drev-thread-date { font-size:11px; font-weight:800; color:#176358; margin-bottom:6px; }
+.drev-thread-date i { color:#219688; }
+.drev-thread-list { display:flex; flex-direction:column; gap:5px; max-height:180px; overflow-y:auto; }
+.drev-bub { max-width:85%; padding:6px 10px; border-radius:11px; font-size:12px; line-height:1.35; word-break:break-word; }
+.drev-bub.me   { align-self:flex-end; background:#d7ece9; color:#116257; border-bottom-right-radius:3px; }
+.drev-bub.them { align-self:flex-start; background:#f1f3f2; color:#2b3330; border-bottom-left-radius:3px; }
+.drev-bub .mm { font-size:9px; opacity:.7; margin-top:2px; }
+.drev-thread-in { display:flex; gap:6px; margin-top:7px; }
+.drev-thread-in input { flex:1; min-width:0; border:1px solid #d5e6e2; border-radius:8px; padding:7px 10px; font-size:12.5px; outline:none; }
+.drev-thread-in input:focus { border-color:#219688; box-shadow:0 0 0 2px rgba(33,150,136,.12); }
+.drev-thread-in button { width:38px; flex-shrink:0; border:none; border-radius:8px; background:#219688; color:#fff; cursor:pointer; }
+.drev-thread-in button:hover { background:#176358; }
+
 /* clock-timepicker (File a Request claimed times) — brand teal accent.
    The picker itself works in 24h (its only unambiguous mode); an invisible
    overlay input catches the taps while .ctp-display shows friendly 12-hour
@@ -1363,8 +1431,30 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <span class="ptop-brand-txt">COMC Employee Portal</span>
         <span class="ptop-screen-title" id="ptop-screen-title">Home</span>
     </div>
-    <a href="?logout=1" class="ptop-logout"><i class="ri-logout-box-line"></i><span class="ptop-logout-txt">Logout</span></a>
+    <div class="ptop-actions">
+        <button type="button" class="ptop-icbtn" id="emp-reload" onclick="portalReload(this)" title="Refresh" aria-label="Refresh">
+            <i class="ri-refresh-line"></i>
+        </button>
+        <button type="button" class="ptop-icbtn ptop-bell" id="emp-bell" onclick="toggleEmpBell(event)" title="Notifications" aria-label="Notifications">
+            <i class="ri-notification-3-line"></i>
+            <span class="emp-bell-dot" id="emp-bell-dot" style="display:none;"></span>
+        </button>
+        <a href="?logout=1" class="ptop-logout"><i class="ri-logout-box-line"></i><span class="ptop-logout-txt">Logout</span></a>
+    </div>
 </div>
+
+<!-- Notification dropdown (anchored to the top-bar bell) -->
+<div class="emp-notif-panel" id="emp-notif-panel">
+    <div class="emp-notif-sheet-grip"></div>
+    <div class="emp-notif-head">
+        <span><i class="ri-notification-3-line me-1"></i>Notifications</span>
+        <button type="button" onclick="empMarkAllRead()" class="emp-notif-allread">Mark all read</button>
+    </div>
+    <div class="emp-notif-list" id="emp-notif-list">
+        <div class="emp-notif-empty">Loading…</div>
+    </div>
+</div>
+<div class="emp-notif-scrim" id="emp-notif-scrim" onclick="toggleEmpBell()"></div>
 
 <div class="portal-wrap">
 
@@ -1406,12 +1496,17 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <button class="tab-btn tab-secondary" onclick="switchTab('contrib',this)">
             <i class="ri-shield-check-line"></i><span class="tab-label">Contributions</span>
         </button>
+        <button class="tab-btn tab-secondary" onclick="switchTab('holidays',this)">
+            <i class="ri-calendar-2-line"></i><span class="tab-label">Holidays</span>
+        </button>
         <button class="tab-btn tab-secondary" onclick="switchTab('info',this)">
             <i class="ri-profile-line"></i><span class="tab-label">My Info</span>
         </button>
+        <?php /* Help tab hidden for now — restore by uncommenting.
         <button class="tab-btn tab-secondary" onclick="switchTab('help',this)">
             <i class="ri-question-line"></i><span class="tab-label">Help</span>
         </button>
+        */ ?>
         <!-- Mobile-only "More" launcher -->
         <button type="button" class="tab-btn tab-more" id="tabbtn-more" onclick="openMore()">
             <i class="ri-apps-2-line"></i><span class="tab-label">More</span>
@@ -1448,14 +1543,20 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <span class="more-ic" style="background:#eef7f5;color:#176358;"><i class="ri-shield-check-line"></i></span>
                 <span class="more-lbl">Contributions</span>
             </button>
+            <button type="button" class="more-item" onclick="goMore('holidays')">
+                <span class="more-ic" style="background:#fff0f0;color:#c62828;"><i class="ri-calendar-2-line"></i></span>
+                <span class="more-lbl">Holidays</span>
+            </button>
             <button type="button" class="more-item" onclick="goMore('info')">
                 <span class="more-ic" style="background:#e8f7f5;color:#219688;"><i class="ri-profile-line"></i></span>
                 <span class="more-lbl">My Info</span>
             </button>
+            <?php /* Help hidden for now — restore by uncommenting.
             <button type="button" class="more-item" onclick="goMore('help')">
                 <span class="more-ic" style="background:#eafaf0;color:#0f9d58;"><i class="ri-question-line"></i></span>
                 <span class="more-lbl">Help</span>
             </button>
+            */ ?>
         </div>
     </div>
 
@@ -1510,24 +1611,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="emp-sub"><?= htmlspecialchars($emp['pos_name']) ?> &bull; <?= htmlspecialchars($emp['dept_name']) ?></div>
                 </div>
                 <div class="emp-hdr-right">
-                    <div class="emp-bell" id="emp-bell" onclick="toggleEmpBell(event)">
-                        <i class="ri-notification-3-line"></i>
-                        <span class="emp-bell-dot" id="emp-bell-dot" style="display:none;"></span>
-                    </div>
                     <div class="emp-no-badge"><?= htmlspecialchars($emp['employee_no']) ?></div>
                 </div>
             </div>
 
-            <!-- Notification dropdown -->
-            <div class="emp-notif-panel" id="emp-notif-panel">
-                <div class="emp-notif-head">
-                    <span><i class="ri-notification-3-line me-1"></i>Notifications</span>
-                    <button type="button" onclick="empMarkAllRead()" class="emp-notif-allread">Mark all read</button>
-                </div>
-                <div class="emp-notif-list" id="emp-notif-list">
-                    <div class="emp-notif-empty">Loading…</div>
-                </div>
-            </div>
             <div class="emp-stats">
                 <div class="est">
                     <div class="est-v"><?= count($payslips) ?></div>
@@ -1828,7 +1915,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <div class="trend-card">
                 <div class="trend-head">
                     <span class="trend-title"><i class="ri-calendar-2-line me-1"></i>Upcoming Holidays &amp; Activities</span>
-                    <a href="javascript:void(0)" onclick="switchTab('leave',null)" style="font-size:10px;color:#219688;font-weight:700;text-decoration:none;">See all →</a>
+                    <a href="javascript:void(0)" onclick="switchTab('holidays',null)" style="font-size:10px;color:#219688;font-weight:700;text-decoration:none;">See all →</a>
                 </div>
                 <?php foreach (array_slice($calendar_events_portal, 0, 5) as $ev):
                     $isHol = $ev['type'] == 1; $st = strtotime($ev['start_date']); ?>
@@ -2168,7 +2255,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <div style="display:flex;align-items:center;gap:6px;">
                     <div id="att-range" class="att-range-picker">
                         <i class="ri-calendar-2-line"></i>
-                        <span id="att-range-label">Today</span>
+                        <span id="att-range-label">Last 7 Days</span>
                         <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
                     </div>
                     <button onclick="clearAttFilter()" class="btn btn-sm" style="background:#f0f5f4;color:#888;padding:5px 10px;font-size:11px;border:none;border-radius:7px;">Today</button>
@@ -2387,31 +2474,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </div>
         <?php endif; ?>
 
-        <!-- Company calendar (holidays / activities) -->
-        <div class="sec"><i class="ri-calendar-2-line"></i>Holidays &amp; Activities</div>
-        <?php if (count($calendar_events_portal)): ?>
-        <div class="paper" style="border-radius:14px;overflow:hidden;margin-bottom:18px;">
-            <div class="table-responsive">
-            <table class="ps-hist-table">
-                <thead><tr><th>Date</th><th>Event</th><th>Type</th></tr></thead>
-                <tbody>
-                <?php foreach ($calendar_events_portal as $ev):
-                    $isHol = $ev['type'] == 1;
-                    $range = date('M d, Y', strtotime($ev['start_date'])) . ($ev['end_date'] && $ev['end_date'] != $ev['start_date'] ? ' – ' . date('M d, Y', strtotime($ev['end_date'])) : '');
-                ?>
-                <tr>
-                    <td data-label="Date" style="white-space:nowrap;"><span style="border-left:4px solid <?= htmlspecialchars($ev['color']) ?>;padding-left:8px;"><?= $range ?></span></td>
-                    <td data-label="Event"><b><?= $isHol ? '🛑' : '📌' ?> <?= htmlspecialchars($ev['title']) ?></b><?php if ($ev['note']): ?><div style="font-size:11px;color:#999;"><?= htmlspecialchars($ev['note']) ?></div><?php endif; ?></td>
-                    <td data-label="Type"><?php if ($isHol): ?><span style="background:#fff0f0;color:#c62828;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Holiday</span><?php else: ?><span style="background:#e8f0ff;color:#0d6efd;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Activity</span><?php endif; ?></td>
-                </tr>
-                <?php endforeach; ?>
-                </tbody>
-            </table>
-            </div>
-        </div>
-        <?php else: ?>
-        <div class="empty-state"><div class="empty-ic"><i class="ri-calendar-2-line"></i></div><p>No upcoming holidays or activities.</p></div>
-        <?php endif; ?>
+        <!-- Holidays & Activities now lives in its own tab (#tab-holidays). -->
 
         <?php if ($portal_leave_eligible): ?>
         <!-- Leave balance -->
@@ -2545,6 +2608,34 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <div class="empty-state"><div class="empty-ic"><i class="ri-calendar-event-line"></i></div><p>You haven't filed any leave requests yet.</p></div>
         <?php endif; ?>
         </div>
+    </div>
+
+    <!-- ── Tab: Holidays & Activities ── -->
+    <div class="tab-panel" id="tab-holidays">
+        <div class="sec"><i class="ri-calendar-2-line"></i>Holidays &amp; Activities</div>
+        <?php if (count($calendar_events_portal)): ?>
+        <div class="paper" style="border-radius:14px;overflow:hidden;margin-bottom:18px;">
+            <div class="table-responsive">
+            <table class="ps-hist-table no-click">
+                <thead><tr><th>Date</th><th>Event</th><th>Type</th></tr></thead>
+                <tbody>
+                <?php foreach ($calendar_events_portal as $ev):
+                    $isHol = $ev['type'] == 1;
+                    $range = date('M d, Y', strtotime($ev['start_date'])) . ($ev['end_date'] && $ev['end_date'] != $ev['start_date'] ? ' – ' . date('M d, Y', strtotime($ev['end_date'])) : '');
+                ?>
+                <tr>
+                    <td data-label="Date" style="white-space:nowrap;"><span style="border-left:4px solid <?= htmlspecialchars($ev['color']) ?>;padding-left:8px;"><?= $range ?></span></td>
+                    <td data-label="Event"><b><?= $isHol ? '🛑' : '📌' ?> <?= htmlspecialchars($ev['title']) ?></b><?php if ($ev['note']): ?><div style="font-size:11px;color:#999;"><?= htmlspecialchars($ev['note']) ?></div><?php endif; ?></td>
+                    <td data-label="Type"><?php if ($isHol): ?><span style="background:#fff0f0;color:#c62828;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Holiday</span><?php else: ?><span style="background:#e8f0ff;color:#0d6efd;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Activity</span><?php endif; ?></td>
+                </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+            </div>
+        </div>
+        <?php else: ?>
+        <div class="empty-state"><div class="empty-ic"><i class="ri-calendar-2-line"></i></div><p>No upcoming holidays or activities.</p></div>
+        <?php endif; ?>
     </div>
 
     <!-- ── Tab: My Info ── -->
@@ -3449,11 +3540,21 @@ wireAjaxForm('att-request-form', 'submit_attendance_request', function (res) {
 <?php
 // Deep-link support for staff notification links (employee-portal.php?tab=mydtr etc).
 // Whitelisted so a stray query value can never be interpolated unsafely into the script.
-$valid_portal_tabs = ['overview','payslips','attendance','leave','mydtr','att-requests','compare','loans','contrib','info','help'];
+$valid_portal_tabs = ['overview','payslips','attendance','leave','mydtr','att-requests','compare','loans','contrib','holidays','info','help'];
 $req_tab = $_GET['tab'] ?? null;
 if ($req_tab !== null && in_array($req_tab, $valid_portal_tabs, true)):
+    // Optional deep-link into a specific attendance record (from a message push).
+    $dl_rec  = isset($_GET['rec']) ? (int)$_GET['rec'] : 0;
+    $dl_date = (isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date'])) ? $_GET['date'] : '';
 ?>
-document.addEventListener('DOMContentLoaded', function () { switchTab('<?= $req_tab ?>', null); window.scrollTo(0, 0); });
+document.addEventListener('DOMContentLoaded', function () {
+<?php if ($req_tab === 'attendance' && $dl_rec > 0): ?>
+    goAttendanceRecord(<?= $dl_rec ?>, '<?= $dl_date ?>');
+<?php else: ?>
+    switchTab('<?= $req_tab ?>', null);
+<?php endif; ?>
+    window.scrollTo(0, 0);
+});
 <?php endif; ?>
 
 // ── Notification bell ────────────────────────────────────────────────────────
@@ -3463,7 +3564,11 @@ function empRenderNotif(data) {
     if (dot) dot.style.display = (data.unread > 0) ? 'block' : 'none';
     if (!list) return;
     if (!data.items || !data.items.length) {
-        list.innerHTML = '<div class="emp-notif-empty">No notifications yet.</div>';
+        list.innerHTML = '<div class="emp-notif-empty">'
+            + '<i class="ri-notification-off-line"></i>'
+            + '<div class="net">You\'re all caught up</div>'
+            + '<div class="nes">New notifications will show up here.</div>'
+            + '</div>';
         return;
     }
     list.innerHTML = data.items.map(function (n) {
@@ -3488,11 +3593,48 @@ function empLoadNotif() {
     fetch('emp-portal-ajax.php?action=emp_notifications', { credentials: 'same-origin' })
         .then(function (r) { return r.json(); }).then(empRenderNotif).catch(function(){});
 }
+// Refresh the current view: notifications, action badges, and whatever the
+// active tab shows. The icon spins for the duration so the tap feels alive.
+var _portalReloading = false;
+function portalReload(btn) {
+    if (_portalReloading) return;
+    _portalReloading = true;
+    btn = btn || document.getElementById('emp-reload');
+    if (btn) btn.classList.add('spinning');
+
+    var jobs = [];
+    // Always refresh the notification list + unread dot.
+    jobs.push(fetch('emp-portal-ajax.php?action=emp_notifications', { credentials: 'same-origin' })
+        .then(function (r) { return r.json(); }).then(empRenderNotif).catch(function () {}));
+
+    // Reload the data behind the active tab (only the ones with live feeds).
+    var active = document.querySelector('.tab-panel.active');
+    var tabId = active ? active.id.replace(/^tab-/, '') : '';
+    try {
+        if (tabId === 'attendance') {
+            if (window.attTable) window.attTable.ajax.reload(null, false);
+            if (typeof attMReset === 'function' && (attM.started || attMobileMQ.matches)) attMReset();
+        } else if (tabId === 'mydtr' && typeof loadMyDtr === 'function') { loadMyDtr(); }
+        else if (tabId === 'att-requests' && window.areqTable) { window.areqTable.ajax.reload(null, false); }
+    } catch (e) {}
+
+    // Keep the spin visible for at least a beat so it reads as a refresh.
+    Promise.all(jobs).catch(function () {}).finally(function () {
+        setTimeout(function () {
+            if (btn) btn.classList.remove('spinning');
+            _portalReloading = false;
+        }, 500);
+    });
+}
+
 function toggleEmpBell(e) {
     if (e) e.stopPropagation();
     var p = document.getElementById('emp-notif-panel');
-    p.classList.toggle('open');
-    if (p.classList.contains('open')) empLoadNotif();
+    var s = document.getElementById('emp-notif-scrim');
+    var open = !p.classList.contains('open');
+    p.classList.toggle('open', open);
+    if (s) s.classList.toggle('open', open);
+    if (open) empLoadNotif();
 }
 function empMarkAllRead() {
     fetch('emp-portal-ajax.php?action=emp_mark_all_read', { method: 'POST', credentials: 'same-origin' })
@@ -3501,8 +3643,10 @@ function empMarkAllRead() {
 document.addEventListener('click', function (e) {
     var panel = document.getElementById('emp-notif-panel');
     var bell  = document.getElementById('emp-bell');
+    var scrim = document.getElementById('emp-notif-scrim');
     if (panel && panel.classList.contains('open') && !panel.contains(e.target) && !bell.contains(e.target)) {
         panel.classList.remove('open');
+        if (scrim) scrim.classList.remove('open');
     }
     var item = e.target.closest('.emp-notif-item');
     if (item) {
@@ -3512,7 +3656,18 @@ document.addEventListener('click', function (e) {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
             body: 'id=' + encodeURIComponent(id)
         }).then(function () {
-            if (link && link.indexOf('tab=mydtr') !== -1) { switchTab('mydtr', null); loadMyDtr(); document.getElementById('emp-notif-panel').classList.remove('open'); }
+            var closePanel = function () {
+                document.getElementById('emp-notif-panel').classList.remove('open');
+                var sc = document.getElementById('emp-notif-scrim'); if (sc) sc.classList.remove('open');
+            };
+            if (link && link.indexOf('tab=attendance') !== -1) {
+                // Message about an attendance date → open that record's details in-place.
+                var qs = link.split('?')[1] || '';
+                var p = new URLSearchParams(qs);
+                closePanel();
+                goAttendanceRecord(p.get('rec'), p.get('date'));
+            }
+            else if (link && link.indexOf('tab=mydtr') !== -1) { switchTab('mydtr', null); loadMyDtr(); closePanel(); }
             else if (link) { window.location.href = link; }
             else { empLoadNotif(); }
         });
@@ -3621,12 +3776,57 @@ function renderDtrReview(res) {
         }
     }
 
+    // Per-day conversations with HR: only days that already have a message
+    // thread show up, each with a reply box so it stays a two-way "combo".
+    var threads = (res.days || []).filter(function (d) { return (d.msgs || []).length; }).map(function (d) {
+        var bubbles = d.msgs.map(function (m) {
+            return '<div class="drev-bub ' + (m.from === 'emp' ? 'me' : 'them') + '">'
+                + '<div>' + escapeHtml(m.msg) + '</div>'
+                + '<div class="mm">' + escapeHtml(m.from === 'emp' ? 'You' : (m.by || 'Support')) + (m.at ? ' · ' + escapeHtml(m.at) : '') + '</div>'
+                + '</div>';
+        }).join('');
+        return '<div class="drev-thread">'
+            + '<div class="drev-thread-date"><i class="ri-calendar-event-line"></i> ' + escapeHtml(d.date) + '</div>'
+            + '<div class="drev-thread-list" id="drev-thread-' + d.rec_id + '">' + bubbles + '</div>'
+            + '<div class="drev-thread-in">'
+            + '<input type="text" id="drev-in-' + d.rec_id + '" maxlength="500" placeholder="Reply to Support…" '
+            + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();sendDtrReply(' + d.rec_id + ');}">'
+            + '<button type="button" onclick="sendDtrReply(' + d.rec_id + ')" title="Send"><i class="ri-send-plane-2-line"></i></button>'
+            + '</div></div>';
+    }).join('');
+    var threadBlock = threads
+        ? '<div class="drev-msgs"><div class="drev-thread-date" style="margin:0 0 2px 2px;"><i class="ri-question-answer-line"></i> Messages with Support</div>' + threads + '</div>'
+        : '';
+
     document.getElementById('dtr-review-body').innerHTML =
-        reviewedNote + '<div style="background:#fff;border:1px solid #eef3f2;border-radius:12px;padding:16px 18px;">' + form48 + '</div>';
+        reviewedNote + '<div style="background:#fff;border:1px solid #eef3f2;border-radius:12px;padding:16px 18px;">' + form48 + '</div>' + threadBlock;
 
     // read-only view once approved (status 2) — hide the action footer
     var footer = document.getElementById('dtr-review-footer');
     footer.style.display = (res.dtr.status === 3) ? 'flex' : 'none';
+}
+
+// Employee replies to an HR message about one attendance date (two-way thread)
+function sendDtrReply(recId) {
+    var inp = document.getElementById('drev-in-' + recId);
+    var msg = (inp && inp.value || '').trim();
+    if (!msg) return;
+    inp.disabled = true;
+    fetch('emp-portal-ajax.php?action=reply_dtr_message', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'rec_id=' + encodeURIComponent(recId) + '&message=' + encodeURIComponent(msg)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        if (!res.result) { inp.disabled = false; Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Failed' }); return; }
+        var list = document.getElementById('drev-thread-' + recId);
+        if (list) {
+            list.insertAdjacentHTML('beforeend',
+                '<div class="drev-bub me"><div>' + escapeHtml(msg) + '</div>'
+                + '<div class="mm">You' + (res.at ? ' · ' + escapeHtml(res.at) : '') + '</div></div>');
+            list.scrollTop = list.scrollHeight;
+        }
+        inp.value = ''; inp.disabled = false; inp.focus();
+    }).catch(function () { inp.disabled = false; Swal.fire({ icon: 'error', title: 'Error', text: 'Request failed.' }); });
 }
 function submitDtrReview(decision) {
     var comment = document.getElementById('dtr-review-comment').value.trim();
@@ -3986,7 +4186,9 @@ document.getElementById('ps-search') && document.getElementById('ps-search').add
 // ── Attendance Records — server-side DataTable on desktop; on mobile a
 // dedicated infinite-scroll card feed (#att-mlist) hits the same endpoint. ──
 var attToday = moment().format('YYYY-MM-DD');
-var attFrom  = attToday, attTo = attToday;
+// Default view: the last 7 days (today included) rather than only today.
+var attWeekAgo = moment().subtract(6, 'days').format('YYYY-MM-DD');
+var attFrom  = attWeekAgo, attTo = attToday;
 var attMobileMQ = window.matchMedia('(max-width:767.98px), (pointer:coarse) and (max-height:500px)');
 
 // (Re)binds Bootstrap popovers on the log-detail pills just drawn (table or feed).
@@ -4035,9 +4237,94 @@ function openAttDetail(r) {
         + '<div style="background:#f7fbfa;border:1px solid #e4ecea;border-radius:10px;padding:8px 12px;margin-top:3px;">'
         + (r.logs_all || '<span style="color:#aaa;font-size:11px;">No logs</span>') + '</div></div>'
         + ((noteText && noteText !== '—') ? '<div class="col-12" style="margin-top:6px;">' + lbl('Notes') + r.notes + '</div>' : '')
-        + '</div>';
+        + '</div>'
+        + attThreadHtml(r);
     document.getElementById('att-detail-body').innerHTML = h;
     new bootstrap.Modal(document.getElementById('modal-att-detail')).show();
+}
+
+// Conversation with Support about this attendance date — shown in the details
+// modal, with a reply box + refresh (same two-way thread + endpoint as DTR review).
+function attBubblesHtml(msgs) {
+    if (!msgs || !msgs.length) return '<div class="drev-thread-empty">'
+        + '<i class="ri-chat-off-line"></i>'
+        + '<div class="det">No messages yet</div>'
+        + '<div class="des">Ask Support about this day and your conversation appears here.</div>'
+        + '</div>';
+    return msgs.map(function (m) {
+        return '<div class="drev-bub ' + (m.from === 'emp' ? 'me' : 'them') + '">'
+            + '<div>' + escapeHtml(m.msg) + '</div>'
+            + '<div class="mm">' + escapeHtml(m.from === 'emp' ? 'You' : (m.by || 'Support')) + (m.at ? ' · ' + escapeHtml(m.at) : '') + '</div>'
+            + '</div>';
+    }).join('');
+}
+
+function attThreadHtml(r) {
+    if (!r || !r.rec_id) return '';
+    return '<div class="drev-msgs" style="margin-top:14px;">'
+        + '<div class="drev-thread-hd">'
+        + '<span class="drev-thread-date"><i class="ri-question-answer-line"></i> Messages with Support</span>'
+        + '<button type="button" class="drev-refresh" id="att-thread-rf-' + r.rec_id + '" onclick="refreshAttThread(' + r.rec_id + ')" title="Check for replies"><i class="ri-refresh-line"></i></button>'
+        + '</div>'
+        + '<div class="drev-thread">'
+        + '<div class="drev-thread-list" id="att-thread-' + r.rec_id + '">' + attBubblesHtml(r.msgs) + '</div>'
+        + '<div class="drev-thread-in">'
+        + '<input type="text" id="att-thread-in-' + r.rec_id + '" maxlength="500" placeholder="Message Support about this date…" '
+        + 'onkeydown="if(event.key===\'Enter\'){event.preventDefault();sendAttReply(' + r.rec_id + ');}">'
+        + '<button type="button" class="drev-send" id="att-thread-send-' + r.rec_id + '" onclick="sendAttReply(' + r.rec_id + ')" title="Send"><i class="ri-send-plane-2-line"></i></button>'
+        + '</div></div></div>';
+}
+
+function refreshAttThread(recId) {
+    var rf = document.getElementById('att-thread-rf-' + recId);
+    if (rf) rf.classList.add('spinning');
+    fetch('emp-portal-ajax.php?action=dtr_message_thread', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'rec_id=' + encodeURIComponent(recId)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        if (res && res.result) {
+            var list = document.getElementById('att-thread-' + recId);
+            if (list) { list.innerHTML = attBubblesHtml(res.msgs); list.scrollTop = list.scrollHeight; }
+        }
+    }).catch(function () {}).finally(function () {
+        setTimeout(function () { if (rf) rf.classList.remove('spinning'); }, 500);
+    });
+}
+
+function sendAttReply(recId) {
+    var inp  = document.getElementById('att-thread-in-' + recId);
+    var send = document.getElementById('att-thread-send-' + recId);
+    var msg  = (inp && inp.value || '').trim();
+    if (!msg) return;
+    inp.disabled = true;
+    if (send) { send.disabled = true; send.classList.add('sending'); send.innerHTML = '<i class="ri-loader-4-line"></i>'; }
+    fetch('emp-portal-ajax.php?action=reply_dtr_message', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'rec_id=' + encodeURIComponent(recId) + '&message=' + encodeURIComponent(msg)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        var restore = function () {
+            inp.disabled = false;
+            if (send) { send.disabled = false; send.classList.remove('sending'); send.innerHTML = '<i class="ri-send-plane-2-line"></i>'; }
+        };
+        if (!res.result) { restore(); Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Failed' }); return; }
+        var list = document.getElementById('att-thread-' + recId);
+        if (list) {
+            var empty = list.querySelector('.drev-thread-empty');
+            if (empty) empty.remove();
+            list.insertAdjacentHTML('beforeend',
+                '<div class="drev-bub me"><div>' + escapeHtml(msg) + '</div>'
+                + '<div class="mm">You' + (res.at ? ' · ' + escapeHtml(res.at) : '') + '</div></div>');
+            list.scrollTop = list.scrollHeight;
+        }
+        inp.value = ''; restore(); inp.focus();
+        if (window.attTable) window.attTable.ajax.reload(null, false);   // refresh the row badge
+    }).catch(function () {
+        inp.disabled = false;
+        if (send) { send.disabled = false; send.classList.remove('sending'); send.innerHTML = '<i class="ri-send-plane-2-line"></i>'; }
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Request failed.' });
+    });
 }
 
 function attMCard(r) {
@@ -4085,6 +4372,7 @@ function attMLoad() {
         var c = document.getElementById('att-count');
         if (c) c.textContent = res.recordsFiltered;
         (res.data || []).forEach(function (r) { list.appendChild(attMCard(r)); });
+        attTryOpenTarget(res.data);
         attM.start += (res.data || []).length;
         attM.done = attM.start >= res.recordsFiltered || !(res.data || []).length;
         if (!attM.start) {
@@ -4170,8 +4458,35 @@ function attInitTable($) {
             var c = document.getElementById('att-count');
             if (c && json) c.textContent = json.recordsFiltered;
             initAttPopovers();
+            attTryOpenTarget(json && json.data);
         },
     });
+}
+
+// Deep-link target: when a notification points at a specific attendance record,
+// open its details modal once that record shows up in the loaded data.
+window._attOpenRec = null;
+function attTryOpenTarget(rows) {
+    if (!window._attOpenRec || !rows) return;
+    var hit = rows.find(function (r) { return parseInt(r.rec_id, 10) === window._attOpenRec; });
+    if (hit) { window._attOpenRec = null; openAttDetail(hit); }
+}
+
+// Jump to the Attendance tab, frame the date in a 7-day window, and open the
+// record's details. Called from a notification click (link tab=attendance).
+function goAttendanceRecord(recId, dateStr) {
+    switchTab('attendance', null);
+    if (dateStr && window.moment) {
+        attTo   = dateStr;
+        attFrom = moment(dateStr).subtract(6, 'days').format('YYYY-MM-DD');
+        var lbl = (attFrom === attToday && attTo === attToday) ? 'Today'
+                : moment(attFrom).format('MMM D, YYYY') + ' – ' + moment(dateStr).format('MMM D, YYYY');
+        var lblEl = document.getElementById('att-range-label');
+        if (lblEl) lblEl.textContent = lbl;
+    }
+    window._attOpenRec = recId ? parseInt(recId, 10) : null;
+    if (window.attTable) window.attTable.ajax.reload();      // desktop
+    if (attM.started || attMobileMQ.matches) attMReset();     // mobile feed
 }
 
 jQuery(function ($) {
@@ -4189,7 +4504,7 @@ jQuery(function ($) {
         autoUpdateInput: false,
         opens: 'left',
         showDropdowns: true,
-        startDate: moment(),
+        startDate: moment().subtract(6, 'days'),
         endDate: moment(),
         locale: { format: 'MMM D, YYYY', cancelLabel: 'Clear', applyLabel: 'Apply' },
         ranges: {
@@ -4203,9 +4518,10 @@ jQuery(function ($) {
     $picker.on('apply.daterangepicker', function (ev, picker) {
         attFrom = picker.startDate.format('YYYY-MM-DD');
         attTo   = picker.endDate.format('YYYY-MM-DD');
-        var lbl = (attFrom === attToday && attTo === attToday)
-            ? 'Today'
-            : picker.startDate.format('MMM D, YYYY') + ' – ' + picker.endDate.format('MMM D, YYYY');
+        var lbl;
+        if (attFrom === attToday && attTo === attToday) lbl = 'Today';
+        else if (attFrom === moment().subtract(6, 'days').format('YYYY-MM-DD') && attTo === attToday) lbl = 'Last 7 Days';
+        else lbl = picker.startDate.format('MMM D, YYYY') + ' – ' + picker.endDate.format('MMM D, YYYY');
         $('#att-range-label').text(lbl);
         if (window.attTable) window.attTable.ajax.reload();
         if (attM.started || attMobileMQ.matches) attMReset();

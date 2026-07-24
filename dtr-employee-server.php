@@ -112,6 +112,61 @@ if ($action === 'summary') {
     exit;
 }
 
+if ($action === 'rec_msgs') {
+    // Latest thread for one record (chat popover refresh). Scoped to this batch.
+    $recId = (int)($_GET['rec'] ?? 0);
+    $msgs  = [];
+    if ($recId > 0) {
+        $own = $conn->query("SELECT id FROM DTR_details WHERE id = $recId AND ddtr_id = " . (int)$ddtrId)->fetch_assoc();
+        if ($own) {
+            $mq = @$conn->query("SELECT m.message, m.created_at, m.sender_type, u.name AS sender
+                                 FROM dtr_messages m LEFT JOIN users u ON u.id = m.sent_by
+                                 WHERE m.dtr_detail_id = $recId ORDER BY m.id ASC");
+            if ($mq) {
+                while ($m = $mq->fetch_assoc()) {
+                    $msgs[] = [
+                        'from' => ($m['sender_type'] === 'employee') ? 'emp' : 'admin',
+                        'msg'  => $m['message'],
+                        'by'   => $m['sender'] ?? '',
+                        'at'   => date('M j, g:i A', strtotime($m['created_at'])),
+                    ];
+                }
+            }
+        }
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['result' => true, 'msgs' => $msgs]);
+    exit;
+}
+
+if ($action === 'filter_opts') {
+    // Options for the document viewer's filter popover — only values that
+    // actually occur in this batch, so no filter can ever return zero by design.
+    $out = ['departments' => [], 'positions' => []];
+
+    $q1 = $conn->prepare("SELECT DISTINCT dep.id, dep.name FROM DTR_details d
+                          INNER JOIN employee e ON e.id = d.employee_id
+                          INNER JOIN department dep ON dep.id = e.department_id
+                          WHERE d.ddtr_id = ? ORDER BY dep.name");
+    $q1->bind_param('i', $ddtrId);
+    $q1->execute();
+    $r1 = $q1->get_result();
+    while ($row = $r1->fetch_assoc()) $out['departments'][] = ['id' => (int)$row['id'], 'name' => $row['name']];
+
+    $q2 = $conn->prepare("SELECT DISTINCT p.id, p.name FROM DTR_details d
+                          INNER JOIN employee e ON e.id = d.employee_id
+                          INNER JOIN position p ON p.id = e.position_id
+                          WHERE d.ddtr_id = ? ORDER BY p.name");
+    $q2->bind_param('i', $ddtrId);
+    $q2->execute();
+    $r2 = $q2->get_result();
+    while ($row = $r2->fetch_assoc()) $out['positions'][] = ['id' => (int)$row['id'], 'name' => $row['name']];
+
+    header('Content-Type: application/json');
+    echo json_encode(['result' => true] + $out);
+    exit;
+}
+
 if ($action === 'docs') {
     // ── Document viewer (dtr-documents.php) ─────────────────────────────────
     // One page of employees as structured JSON. Each record's biometric/manual
@@ -133,6 +188,66 @@ if ($action === 'docs') {
         $like = '%' . $q . '%';
         $types .= 'ssssss';
         array_push($params, $like, $like, $like, $like, $like, $like);
+    }
+
+    // status filter → employees by their approval state within this batch:
+    //   pending     = has at least one undecided record
+    //   approved    = every record approved
+    //   disapproved = has at least one rejected record
+    $statusF = (string)($_GET['status'] ?? '');
+    $idInt   = (int)$ddtrId;
+    if ($statusF === 'pending') {
+        $where .= " AND e.id IN (SELECT employee_id FROM DTR_details
+                                 WHERE ddtr_id = $idInt AND status <> 1 AND status <> 2)";
+    } elseif ($statusF === 'approved') {
+        $where .= " AND e.id NOT IN (SELECT employee_id FROM DTR_details
+                                     WHERE ddtr_id = $idInt AND status <> 1)";
+    } elseif ($statusF === 'disapproved') {
+        $where .= " AND e.id IN (SELECT employee_id FROM DTR_details
+                                 WHERE ddtr_id = $idInt AND status = 2)";
+    }
+
+    // Employee-attribute filters (popover): department, position.
+    $depF = (int)($_GET['dep'] ?? 0);
+    if ($depF > 0) $where .= " AND e.department_id = $depF";
+    $posF = (int)($_GET['pos'] ?? 0);
+    if ($posF > 0) $where .= " AND e.position_id = $posF";
+
+    // Activity filters: employees with internal admin notes or a message thread
+    // in this batch. Guarded with table-existence so older DBs don't error.
+    $actF = (string)($_GET['act'] ?? '');
+    if ($actF === 'notes') {
+        $has = $conn->query("SHOW TABLES LIKE 'dtr_admin_notes'");
+        if ($has && $has->num_rows) {
+            $where .= " AND e.id IN (SELECT employee_id FROM dtr_admin_notes WHERE ddtr_id = $idInt)";
+        }
+    } elseif ($actF === 'msgs') {
+        $has = $conn->query("SHOW TABLES LIKE 'dtr_messages'");
+        if ($has && $has->num_rows) {
+            $where .= " AND e.id IN (SELECT m.employee_id FROM dtr_messages m
+                                     INNER JOIN DTR_details d2 ON d2.id = m.dtr_detail_id
+                                     WHERE d2.ddtr_id = $idInt)";
+        }
+    }
+
+    // flag=<key> → employees with a specific exception on a still-pending
+    // record (mirrors the client's recFlags rules); low_att is per-employee.
+    $flagF = (string)($_GET['flag'] ?? '');
+    if ($flagF !== '') {
+        $otMax = (float)DTR_HIGH_OT_HOURS;
+        $flagConds = [
+            'no_out'     => "NOT (JSON_VALID(logs) AND JSON_LENGTH(logs) >= 2)",
+            'zero_hours' => "work_hours <= 0",
+            'high_ot'    => "overtime > $otMax",
+            'manual'     => "(logs LIKE '%\"manual\"%' OR logs LIKE '%\"incident\"%')",
+        ];
+        if (isset($flagConds[$flagF])) {
+            $where .= " AND e.id IN (SELECT employee_id FROM DTR_details
+                                     WHERE ddtr_id = $idInt AND status = 0 AND {$flagConds[$flagF]})";
+        } elseif ($flagF === 'low_att' && $minDays > 0) {
+            $where .= " AND e.id IN (SELECT employee_id FROM DTR_details WHERE ddtr_id = $idInt
+                                     GROUP BY employee_id HAVING COUNT(DISTINCT date_time) < $minDays)";
+        }
     }
 
     // flagged=1 → only employees that still need a human decision: a pending
@@ -179,6 +294,24 @@ if ($action === 'docs') {
     $employees = [];
     if ($empIds) {
         $idList = implode(',', $empIds);
+
+        // Full admin↔employee thread per record (dtr_messages); the guard keeps
+        // this page working on databases where the table doesn't exist yet.
+        $msgMap = [];
+        $mq = @$conn->query("SELECT m.dtr_detail_id, m.message, m.created_at, m.sender_type, u.name AS sender
+                             FROM dtr_messages m LEFT JOIN users u ON u.id = m.sent_by
+                             WHERE m.employee_id IN ($idList) ORDER BY m.id ASC");
+        if ($mq) {
+            while ($m = $mq->fetch_assoc()) {
+                $msgMap[(int)$m['dtr_detail_id']][] = [
+                    'from' => ($m['sender_type'] === 'employee') ? 'emp' : 'admin',
+                    'msg'  => $m['message'],
+                    'by'   => $m['sender'] ?? '',
+                    'at'   => date('M j, g:i A', strtotime($m['created_at'])),
+                ];
+            }
+        }
+
         $rs = $conn->prepare("
             SELECT a.*, e.employee_no, e.lastname, e.firstname, e.middlename,
                    dep.name AS department, p.name AS position,
@@ -275,6 +408,7 @@ if ($action === 'docs') {
                 'note'   => $row['decision_note'] ?? '',
                 'by'     => $row['decided_by_name'] ?? '',
                 'at'     => !empty($row['decided_at']) ? date('M j, g:i A', strtotime($row['decided_at'])) : '',
+                'msgs'   => $msgMap[(int)$row['id']] ?? [],
             ];
             unset($E, $D);
         }
@@ -355,9 +489,29 @@ if ($action === 'docs') {
         $sres = $sq->get_result();
         while ($sr = $sres->fetch_assoc()) $schedMap[(int)$sr['employee_id']][] = $sr;
 
+        // Internal admin notes for these employees in this batch (admin-only,
+        // never sent to the employee side). Guarded for older databases.
+        $noteMap = [];
+        $nq = @$conn->query("SELECT n.id, n.employee_id, n.level, n.note, n.created_at, u.name AS author
+                             FROM dtr_admin_notes n LEFT JOIN users u ON u.id = n.created_by
+                             WHERE n.ddtr_id = " . (int)$ddtrId . " AND n.employee_id IN ($idList)
+                             ORDER BY n.id ASC");
+        if ($nq) {
+            while ($nr = $nq->fetch_assoc()) {
+                $noteMap[(int)$nr['employee_id']][] = [
+                    'id'    => (int)$nr['id'],
+                    'level' => $nr['level'],
+                    'note'  => $nr['note'],
+                    'by'    => $nr['author'] ?? '',
+                    'at'    => date('M j, g:i A', strtotime($nr['created_at'])),
+                ];
+            }
+        }
+
         foreach ($empIds as $eid) {
             if (!isset($byEmp[$eid])) continue;
             $E = $byEmp[$eid];
+            $E['notes'] = $noteMap[$eid] ?? [];
             // Below the batch's minimum logged days → "Low attendance": marked
             // as an exception in the UI and excluded from clean bulk-approval.
             $E['low_att'] = ($minDays > 0 && count($E['days']) < $minDays);

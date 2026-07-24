@@ -3716,7 +3716,12 @@ class Action
             $stmt5->execute();
             $detail = $stmt5->get_result()->fetch_assoc();
 
-            $log_entry = ['dateTime' => $scan_time, 'type' => 'bio'];
+            // Manual (admin-authorized) punches are flagged in the log for audit.
+            $entry_type = ($_POST['entry_type'] ?? '') === 'manual' ? 'manual' : 'bio';
+            $log_entry  = ['dateTime' => $scan_time, 'type' => $entry_type];
+            if ($entry_type === 'manual' && !empty($_POST['authorized_by'])) {
+                $log_entry['authorized_by'] = substr(trim($_POST['authorized_by']), 0, 80);
+            }
 
             // Shift label stored on the row (shows under Notes in the portal / DTR
             // screens) and echoed in the API response, e.g. "Night Shift · 11:00 PM–8:00 AM".
@@ -3952,11 +3957,20 @@ class Action
             SELECT e.id, e.employee_no, e.firstname, e.lastname, e.status,
                    COALESCE(d.name, '') AS department,
                    COALESCE(p.name, '') AS position,
-                   COALESCE(c.clasification, '') AS classification
+                   COALESCE(c.clasification, '') AS classification,
+                   COALESCE(fp.fp_count, 0) AS fingerprint_count,
+                   COALESCE(fp.fingers, '') AS fingers
             FROM employee e
             LEFT JOIN department    d ON d.id = e.department_id
             LEFT JOIN position      p ON p.id = e.position_id
             LEFT JOIN clasification c ON c.id = e.clasification_id
+            LEFT JOIN (
+                SELECT employee_id,
+                       COUNT(*) AS fp_count,
+                       GROUP_CONCAT(finger_index ORDER BY finger_index SEPARATOR ', ') AS fingers
+                FROM employee_fingerprints
+                GROUP BY employee_id
+            ) fp ON fp.employee_id = e.id
             WHERE e.status = 1
             ORDER BY e.lastname, e.firstname
         ");
@@ -3972,10 +3986,19 @@ class Action
                 'position'       => $row['position'],
                 'classification' => $row['classification'],
                 'is_active'      => (int) $row['status'],
+                'fingerprint_count' => (int) $row['fingerprint_count'],
+                'fingers'           => $row['fingers'],
             ];
         }
 
-        return ['result' => true, 'employees' => $employees, 'total' => count($employees)];
+        $enrolled = count(array_filter($employees, fn($e) => $e['fingerprint_count'] > 0));
+
+        return [
+            'result'    => true,
+            'employees' => $employees,
+            'total'     => count($employees),
+            'enrolled'  => $enrolled,
+        ];
     }
 
     /* ── Biometric scanner app: all stored fingerprint templates ────────────── */
@@ -4001,6 +4024,58 @@ class Action
     }
 
     /* ── Biometric scanner app: today's attendance summary ──────────────────── */
+    /* ── Biometric scanner app: manual attendance (admin-authorized) ─────────
+     * Fallback for a finger that cannot scan (bandage, injury). The admin's
+     * credentials are re-verified here and the punch goes through the normal
+     * biometric save flow flagged type=manual + authorized_by in the log. */
+    function manual_biometric_attendance()
+    {
+        $employee_no = trim($_POST['employee_no'] ?? '');
+        $username    = trim($_POST['admin_username'] ?? '');
+        $password    = (string) ($_POST['admin_password'] ?? '');
+
+        if ($employee_no === '' || $username === '' || $password === '') {
+            return ['result' => false, 'message' => 'Missing employee_no, admin_username or admin_password'];
+        }
+
+        // Re-verify the authorizing admin (role = 1) — same rule as scanner login.
+        $stmt = $this->db->prepare("SELECT id, name, password, role FROM users WHERE username = ? AND status = 1 LIMIT 1");
+        $stmt->bind_param('s', $username);
+        $stmt->execute();
+        $user = $stmt->get_result()->fetch_assoc();
+        if (!$user || empty($user['password']) || !password_verify($password, $user['password'])) {
+            return ['result' => false, 'message' => 'Invalid admin username or password'];
+        }
+        if ((int) $user['role'] !== 1) {
+            return ['result' => false, 'message' => 'Access denied — administrator account required'];
+        }
+
+        $stmt2 = $this->db->prepare("
+            SELECT id, firstname, lastname FROM employee
+            WHERE (employee_no = ? OR employee_code = ?) AND status = 1
+            LIMIT 1
+        ");
+        $stmt2->bind_param('ss', $employee_no, $employee_no);
+        $stmt2->execute();
+        $emp = $stmt2->get_result()->fetch_assoc();
+        if (!$emp) {
+            return ['result' => false, 'message' => 'No active employee with number ' . $employee_no];
+        }
+
+        // Reuse the full biometric save flow (schedule resolution, overnight
+        // shifts, duplicate window) with the manual-entry flag set.
+        $_POST['employee_id']   = (string) $emp['id'];
+        $_POST['entry_type']    = 'manual';
+        $_POST['authorized_by'] = trim($user['name']) . ' (' . $username . ')';
+
+        $result = $this->save_biometric_attendance();
+        if (!empty($result['result'])) {
+            $result['employee'] = trim($emp['firstname'] . ' ' . $emp['lastname']);
+            $result['manual']   = true;
+        }
+        return $result;
+    }
+
     function get_biometric_attendance_summary()
     {
         $today = date('Y-m-d');
@@ -4061,6 +4136,27 @@ class Action
         $stmt->execute();
         if (!$stmt->get_result()->fetch_assoc()) {
             return ['result' => false, 'message' => 'Employee not found or inactive'];
+        }
+
+        /* Duplicate guard: the exact same template blob under a different
+         * employee means a data mix-up (re-sent enrollment, copy-paste).
+         * Biometric similarity between different enrollments of one finger is
+         * checked by the scanner app — the server can only compare bytes. */
+        $dup_stmt = $this->db->prepare("
+            SELECT f.employee_id, CONCAT(e.firstname, ' ', e.lastname) AS name
+            FROM employee_fingerprints f
+            INNER JOIN employee e ON e.id = f.employee_id
+            WHERE f.template = ? AND f.employee_id != ?
+            LIMIT 1
+        ");
+        $dup_stmt->bind_param('si', $template, $employee_id);
+        $dup_stmt->execute();
+        if ($dup = $dup_stmt->get_result()->fetch_assoc()) {
+            return [
+                'result'  => false,
+                'message' => 'This fingerprint is already registered to ' . trim($dup['name'])
+                           . ' (employee #' . $dup['employee_id'] . ')',
+            ];
         }
 
         $stmt2 = $this->db->prepare("

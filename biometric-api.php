@@ -15,6 +15,8 @@
  *   get-fingerprints  (no body)                       → all stored templates
  *   save-fingerprint  employee_id, finger_index, template (base64)
  *   save-attendance   employee_id, scan_time (Y-m-d H:i:s), site_id   [DEFAULT]
+ *   manual-attendance employee_no, scan_time, site_id, admin_username, admin_password
+ *                     (admin-authorized fallback when a finger cannot scan)
  */
 
 header('Content-Type: application/json');
@@ -79,6 +81,9 @@ switch ($api_action) {
         break;
     case 'save-attendance':
         $result = $action->save_biometric_attendance();
+        break;
+    case 'manual-attendance':
+        $result = $action->manual_biometric_attendance();
         break;
     default:
         http_response_code(404);

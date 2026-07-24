@@ -1,0 +1,56 @@
+/* ==========================================================================
+   Global DTR template — Civil Service Form No. 48 (Daily Time Record)
+   Shared by the admin DTR Documents page and the Employee Portal so the two
+   never drift. Everything is scoped under .dtrf48 so it can be dropped onto
+   any page (print sheet, modal, panel) without leaking styles.
+
+   Paired renderer: assets2/js/dtr-form48.js  (window.DTRForm48.render)
+   ========================================================================== */
+
+.dtrf48 {
+    color: #1a1a1a;
+    font-family: "Times New Roman", Georgia, serif;
+    background: #fff;
+}
+
+.dtrf48 .p-formno   { font-size: 10px; font-style: italic; }
+.dtrf48 .p-title    { text-align: center; font-size: 19px; font-weight: 800; letter-spacing: .6px; margin: 4px 0 15px; }
+.dtrf48 .p-name     { text-align: center; font-size: 14px; font-weight: 700; text-transform: uppercase; border-bottom: 1.5px solid #1a1a1a; padding: 0 20px 2px; margin: 0 26px; }
+.dtrf48 .p-name-lbl { text-align: center; font-size: 11px; font-style: italic; margin: 2px 0 11px; }
+.dtrf48 .p-line     { font-size: 12px; margin: 3px 0; }
+.dtrf48 .p-line b   { border-bottom: 1px solid #1a1a1a; padding: 0 8px; font-weight: 700; }
+
+/* ── The record grid ── */
+.dtrf48-table { width: 100%; border-collapse: collapse; margin-top: 11px; font-size: 11px; }
+.dtrf48-table th,
+.dtrf48-table td { border: 1px solid #1a1a1a; text-align: center; padding: 2.5px 3px; }
+.dtrf48-table th { font-weight: 700; }
+.dtrf48-table td.day { font-weight: 700; width: 34px; }
+.dtrf48-table tr.wkend td { background: #f4f1e7; }
+.dtrf48-table tr.absent td:not(.day) { color: #b9b3a2; }
+.dtrf48-table td.ut   { width: 40px; }
+.dtrf48-table td.num  { width: 52px; }
+/* Extra detail columns get a faint tint so they read as "added" info, not the
+   official arrival/departure/undertime the paper form prescribes. */
+.dtrf48-table th.x-col,
+.dtrf48-table td.x-col { background: #f7fbfa; }
+.dtrf48-table td.x-col.ot   { color: #8a6d1a; }
+.dtrf48-table td.x-col.late { color: #b02a37; }
+.dtrf48-table tfoot td { font-weight: 800; background: #efeadb; }
+.dtrf48-table tfoot td.x-col { background: #e9f2ee; }
+
+/* ── Certification / signatures ── */
+.dtrf48 .p-sign { margin-top: 24px; font-size: 11px; }
+.dtrf48 .p-sign .sig-line { border-bottom: 1.2px solid #1a1a1a; margin: 22px 30px 3px; }
+.dtrf48 .p-sign .sig-lbl  { text-align: center; font-style: italic; font-size: 10.5px; }
+
+/* Compact variant for tight containers (portal modal). */
+.dtrf48.is-compact .p-title { font-size: 17px; margin: 3px 0 11px; }
+.dtrf48.is-compact .dtrf48-table { font-size: 10.5px; }
+.dtrf48.is-compact .p-sign { margin-top: 18px; }
+
+@media (max-width: 575.98px) {
+    .dtrf48 .p-name { margin: 0 6px; padding: 0 6px 2px; }
+    .dtrf48-table { font-size: 9.5px; }
+    .dtrf48-table th, .dtrf48-table td { padding: 2px 2px; }
+}

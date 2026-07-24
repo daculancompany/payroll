@@ -199,6 +199,63 @@ class Action
         return $count > 0;
     }
 
+    /**
+     * Give a newly created employee a portal login on the default password.
+     *
+     * Username is the supplied email when it is a real one, otherwise
+     * firstname.lastname@<default domain>. employee_portal_accounts.username is
+     * UNIQUE, so a numeric suffix is added until the candidate is free —
+     * duplicate emails across staff are common and must not abort the insert.
+     *
+     * No-op when the employee already has an account, which keeps re-imports
+     * from resetting a password the employee has already changed.
+     */
+    private function ensure_portal_account($employee_id, $firstname, $lastname, $email = '')
+    {
+        if (!$this->tableExists('employee_portal_accounts')) return null;
+        $employee_id = (int) $employee_id;
+        if ($employee_id <= 0) return null;
+
+        $chk = $this->db->query("SELECT id FROM employee_portal_accounts WHERE employee_id = $employee_id LIMIT 1");
+        if ($chk && $chk->num_rows > 0) return null;
+
+        $email = strtolower(trim((string) $email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $slug = function ($s) {
+                return preg_replace('/[^a-z0-9]+/', '', strtolower(trim((string) $s)));
+            };
+            $base = $slug($firstname) . '.' . $slug($lastname);
+            if ($base === '' || $base === '.') $base = 'user' . $employee_id;
+            $email = $base . '@' . PORTAL_DEFAULT_EMAIL_DOMAIN;
+        }
+
+        $parts  = array_pad(explode('@', $email, 2), 2, PORTAL_DEFAULT_EMAIL_DOMAIN);
+        $local  = $parts[0];
+        $domain = $parts[1];
+
+        $find = $this->db->prepare("SELECT id FROM employee_portal_accounts WHERE LOWER(username) = LOWER(?) LIMIT 1");
+        $candidate = $email;
+        $n = 1;
+        while (true) {
+            $find->bind_param('s', $candidate);
+            $find->execute();
+            $find->store_result();
+            $taken = $find->num_rows > 0;
+            $find->free_result();
+            if (!$taken) break;
+            $n++;
+            $candidate = $local . $n . '@' . $domain;
+        }
+
+        $hash = password_hash(PORTAL_DEFAULT_PASSWORD, PASSWORD_BCRYPT);
+        $ins  = $this->db->prepare("INSERT INTO employee_portal_accounts
+            (employee_id, username, password, is_active, must_change) VALUES (?, ?, ?, 1, 1)");
+        $ins->bind_param('iss', $employee_id, $candidate, $hash);
+        $ins->execute();
+
+        return $candidate;
+    }
+
     // Returns true if the given column exists on the given table.
     private function columnExists($table, $column)
     {
@@ -583,6 +640,11 @@ class Action
                         throw new Exception("Failed to insert contribution.");
                     }
                 }
+
+                // Every new employee gets a portal login on the default password
+                // (must_change = 1) so they can sign in without an extra step.
+                $this->ensure_portal_account($employee_id, $firstname, $lastname, $_POST['email'] ?? '');
+
                 $this->db->commit();
                 return $employee_id;
             } else {
@@ -7480,6 +7542,11 @@ class Action
                             $stmt->bind_param("ssss", $employee_id, $contribution['id'], $contribution['amount'], $payroll_type);
                             $stmt->execute();
                         }
+
+                        // Imported employees get a portal login on the default
+                        // password too — the sheet carries no email, so the
+                        // username is generated from their name.
+                        $this->ensure_portal_account($employee_id, $firstname, $lastname);
 
                         // Insert loans and deductions for new employees only
                         if ($sss_loan > 0) {

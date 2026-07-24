@@ -97,6 +97,9 @@ $excPending   = max(0, $pendingRecs - $cleanPending);
     <title>DTR Documents &mdash; <?= htmlspecialchars($dtr['site_code']) ?> <?= date('M d', strtotime($dtr['date_from'])) ?>&ndash;<?= date('M d, Y', strtotime($dtr['date_to'])) ?></title>
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/icons.min.css" rel="stylesheet">
+    <!-- Global DTR (Form 48) template — shared with the employee portal -->
+    <link href="assets2/css/dtr-form48.css" rel="stylesheet">
+    <script src="assets2/js/dtr-form48.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
@@ -252,22 +255,9 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
     box-shadow:0 2px 14px rgba(60,55,40,.14);
     padding:28px 32px 24px; font-family:'Times New Roman', Times, serif; color:#1a1a1a;
 }
-.ddv-paper .p-formno { font-size:10px; font-style:italic; }
-.ddv-paper .p-title { text-align:center; font-size:19px; font-weight:800; letter-spacing:.6px; margin:4px 0 15px; }
-.ddv-paper .p-name { text-align:center; font-size:14px; font-weight:700; text-transform:uppercase; border-bottom:1.5px solid #1a1a1a; padding:0 20px 2px; margin:0 26px; }
-.ddv-paper .p-name-lbl { text-align:center; font-size:11px; font-style:italic; margin:2px 0 11px; }
-.ddv-paper .p-line { font-size:12px; margin:3px 0; }
-.ddv-paper .p-line b { border-bottom:1px solid #1a1a1a; padding:0 8px; font-weight:700; }
-.ddv-table { width:100%; border-collapse:collapse; margin-top:11px; font-size:11px; }
-.ddv-table th, .ddv-table td { border:1px solid #1a1a1a; text-align:center; padding:2.5px 3px; }
-.ddv-table td.day { font-weight:700; width:34px; }
-.ddv-table tr.wkend td { background:#f4f1e7; }
-.ddv-table tr.absent td:not(.day) { color:#b9b3a2; }
-.ddv-table td.ut { width:44px; }
-.ddv-table tfoot td { font-weight:800; background:#efeadb; }
-.ddv-paper .p-sign { margin-top:24px; font-size:11px; }
-.ddv-paper .p-sign .sig-line { border-bottom:1.2px solid #1a1a1a; margin:22px 30px 3px; }
-.ddv-paper .p-sign .sig-lbl { text-align:center; font-style:italic; font-size:10.5px; }
+/* Form 48 paper styles now come from the shared global template:
+   assets2/css/dtr-form48.css (rendered by window.DTRForm48.render).
+   Only the .ddv-paper page frame stays here. */
 .ddv-doc-empty { text-align:center; color:#8aa39c; font-size:13px; padding:60px 10px; }
 
 /* ── Right: summary + records ── */
@@ -645,55 +635,18 @@ const utSplit = ut => { const h = Math.floor(ut); return [h, Math.round((ut - h)
 // day; 'ampm' = the classic 4-punch Form 48. Returns HTML so Print All can
 // render every employee with the same markup.
 function docHTML(e) {
-    const ampm = LOG_MODE === 'ampm';
-    let rows = '';
-    eachDay((iso, dayNo, dow) => {
-        const d = e.days[iso];
-        const wkend = (dow === 0 || dow === 6) ? ' wkend' : '';
-        const blank = ampm ? '<td></td><td></td><td></td><td></td>' : '<td></td><td></td>';
-        if (!d) {
-            rows += `<tr class="absent${wkend}"><td class="day">${dayNo}</td>${blank}<td class="ut"></td><td class="ut"></td></tr>`;
-            return;
-        }
-        const [uh, um] = utSplit(d.ut || 0);
-        const times = ampm
-            ? `<td>${esc(d.am_in)}</td><td>${esc(d.am_out)}</td><td>${esc(d.pm_in)}</td><td>${esc(d.pm_out)}</td>`
-            : `<td>${esc(d.in)}</td><td>${esc(d.out)}</td>`;
-        rows += `<tr class="${wkend.trim()}">
-            <td class="day">${dayNo}</td>${times}
-            <td class="ut">${d.ut > 0 ? uh : ''}</td><td class="ut">${d.ut > 0 ? um : ''}</td>
-        </tr>`;
+    // Delegate to the shared global Form 48 template so the admin sheet and the
+    // employee portal render identically (now with Work Hrs / OT / Late columns
+    // and a full totals row).
+    return window.DTRForm48.render({
+        name: `${e.lastname}, ${e.firstname} ${e.middlename || ''}`.trim(),
+        periodLabel: fmtPeriod(),
+        dateFrom: DATE_FROM,
+        dateTo: DATE_TO,
+        logMode: LOG_MODE,
+        days: e.days,
+        totals: e.totals,
     });
-    const [tuh, tum] = utSplit(e.totals.ut || 0);
-    const head = ampm
-        ? `<tr><th rowspan="2">Day</th><th colspan="2">A.M.</th><th colspan="2">P.M.</th><th colspan="2">UNDERTIME</th></tr>
-           <tr><th>Arrival</th><th>Departure</th><th>Arrival</th><th>Departure</th><th>Hours</th><th>Minutes</th></tr>`
-        : `<tr><th rowspan="2">Day</th><th colspan="2">TIME</th><th colspan="2">UNDERTIME</th></tr>
-           <tr><th>Arrival</th><th>Departure</th><th>Hours</th><th>Minutes</th></tr>`;
-    const totals = `${Number(e.totals.wh).toFixed(2)} hrs${e.totals.ot > 0 ? ' &nbsp;·&nbsp; OT ' + Number(e.totals.ot).toFixed(2) : ''}`;
-    const foot = ampm
-        ? `<td colspan="2">TOTAL</td><td colspan="2">${totals}</td><td>${tuh}</td><td>${tum}</td><td></td>`
-        : `<td>TOTAL</td><td colspan="2">${totals}</td><td>${tuh}</td><td>${tum}</td>`;
-    return `
-        <div class="p-formno">Civil Service Form No. 48</div>
-        <div class="p-title">DAILY TIME RECORD</div>
-        <div class="p-name">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')}</div>
-        <div class="p-name-lbl">(NAME)</div>
-        <div class="p-line">For the Month of: <b>${esc(fmtPeriod())}</b></div>
-        <div class="p-line">Official Hours arrival: <b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b> / <b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b> &nbsp;Regular days: <b>Mon &ndash; Fri</b></div>
-        <div class="p-line">And departure: <b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b> / <b>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</b> &nbsp;Saturdays: <b>as required</b></div>
-        <table class="ddv-table">
-            <thead>${head}</thead>
-            <tbody>${rows}</tbody>
-            <tfoot><tr>${foot}</tr></tfoot>
-        </table>
-        <div class="p-sign">
-            I certify on my honor that the above is a true and correct report of the hours of work performed, record of which was made daily at the time of arrival and departure from office.
-            <div class="sig-line"></div>
-            <div class="sig-lbl">(Signature)</div>
-            <div class="sig-line"></div>
-            <div class="sig-lbl">Verified as to the prescribed office hours &mdash; In Charge</div>
-        </div>`;
 }
 
 function renderDoc(e) {

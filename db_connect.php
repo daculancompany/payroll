@@ -20,6 +20,18 @@ if (!defined('LEAVE_ELIGIBLE_CLASSIFICATIONS')) {
     define('LEAVE_ELIGIBLE_CLASSIFICATIONS', ['REGULAR', 'EXECUTIVE']);
 }
 
+// ── Employee portal defaults (GLOBAL) ───────────────────────────────────
+// Every newly created employee gets a portal login automatically. The account
+// starts on this default password with must_change = 1, so the employee is
+// forced to set their own on first sign-in. Change these two lines to adjust.
+if (!defined('PORTAL_DEFAULT_PASSWORD')) {
+    define('PORTAL_DEFAULT_PASSWORD', 'password');
+}
+// Used to build a username when the employee has no real email address.
+if (!defined('PORTAL_DEFAULT_EMAIL_DOMAIN')) {
+    define('PORTAL_DEFAULT_EMAIL_DOMAIN', 'hospital.local');
+}
+
 // ── Payroll exclusions (GLOBAL) ─────────────────────────────────────────
 // Employees with these classifications are SKIPPED when calculating payroll.
 // Matched by NAME (case-insensitive). Change this ONE line to adjust.

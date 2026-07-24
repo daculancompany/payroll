@@ -125,6 +125,10 @@ switch ($action) {
 
         $dtr = $conn->query("SELECT DTR.*, sites.site_code, sites.site_name FROM DTR LEFT JOIN sites ON sites.id = DTR.site_id WHERE DTR.id = $ddtr_id")->fetch_assoc();
 
+        // Employee name for the Form 48 header.
+        $me = $conn->query("SELECT firstname, middlename, lastname FROM employee WHERE id = $emp_id")->fetch_assoc();
+        $empName = trim(($me['lastname'] ?? '') . ', ' . ($me['firstname'] ?? '') . ' ' . ($me['middlename'] ?? ''));
+
         $days = [];
         $st = $conn->prepare("SELECT date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
@@ -138,14 +142,28 @@ switch ($action) {
                 $tIn  = date('g:i A', strtotime($logs[0]['dateTime']));
                 $tOut = count($logs) > 1 ? date('g:i A', strtotime(end($logs)['dateTime'])) : '';
             }
+            // Full punch list so the detail view can mirror the admin DTR card
+            // (IN / OUT / #n chips + biometric-vs-manual marker per punch).
+            $punches = [];
+            $lc = count($logs);
+            foreach ($logs as $li => $lg) {
+                $punches[] = [
+                    'label' => ($li === 0) ? 'IN' : (($li === $lc - 1) ? 'OUT' : '#' . ($li + 1)),
+                    'time'  => date('g:i A', strtotime($lg['dateTime'])),
+                    'bio'   => (($lg['type'] ?? '') === 'bio'),
+                ];
+            }
             $days[] = [
+                'iso'        => date('Y-m-d', strtotime($d['date_time'])),
                 'date'       => date('D, M j, Y', strtotime($d['date_time'])),
                 'time_in'    => $tIn,
                 'time_out'   => $tOut,
                 'work_hours' => (float) $d['work_hours'],
                 'overtime'   => (float) $d['overtime'],
+                'undertime'  => (float) $d['undertime'],
                 'late'       => (float) $d['late'],
                 'type'       => $d['attendance_type'],
+                'punches'    => $punches,
                 'status'     => (int) $d['status'],
                 // Why the timekeeper rejected this day — shown so a dispute
                 // can answer the actual reason instead of guessing it.
@@ -157,9 +175,12 @@ switch ($action) {
 
         echo json_encode([
             'result' => true,
+            'name' => $empName,
             'dtr' => [
                 'id' => (int) $dtr['id'],
                 'period' => date('M j', strtotime($dtr['date_from'])) . ' – ' . date('M j, Y', strtotime($dtr['date_to'])),
+                'date_from' => date('Y-m-d', strtotime($dtr['date_from'])),
+                'date_to' => date('Y-m-d', strtotime($dtr['date_to'])),
                 'site' => trim(($dtr['site_code'] ? $dtr['site_code'] . ' — ' : '') . $dtr['site_name']),
                 'status' => (int) $dtr['status'],
             ],

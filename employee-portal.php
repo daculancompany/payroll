@@ -528,16 +528,46 @@ body{
 .mydtr-btn.primary{background:linear-gradient(135deg,#219688,#176358);color:#fff;}
 .mydtr-btn.ghost{background:#f0f5f4;color:#176358;}
 /* Review modal table */
-.drev-tbl-wrap{border:1px solid #eef3f2;border-radius:10px;overflow:hidden;}
-.drev-tbl{width:100%;border-collapse:collapse;font-size:12px;}
-.drev-tbl th{background:#f3f8f7;color:#176358;font-weight:800;padding:7px 9px;text-align:left;font-size:11px;}
-.drev-tbl td{padding:6px 9px;border-top:1px solid #f1f5f4;color:#444;}
-.drev-tbl .tc{text-align:center;}
-.drev-tbl tfoot th{background:#e9f5f2;}
-.drow-flag{font-size:9px;font-weight:800;padding:1px 7px;border-radius:8px;}
-.drow-flag.ok{background:#eafaf0;color:#0f9d58;} .drow-flag.dis{background:#fdecea;color:#c62828;}
 .drev-prev{font-size:12px;font-weight:700;padding:9px 12px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
 .drev-prev.ok{background:#eafaf0;color:#0f9d58;} .drev-prev.dis{background:#fdecea;color:#c62828;}
+/* ── DTR detail view — mirrors the admin DTR "By Employee" card ── */
+.drev-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;}
+.drev-stat{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #eef3f2;border-radius:11px;padding:9px 11px;}
+.drev-stat .ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+.drev-stat .val{font-size:16px;font-weight:800;line-height:1.1;}
+.drev-stat .lbl{font-size:10px;color:#8a9a95;font-weight:600;text-transform:uppercase;letter-spacing:.02em;}
+.drev-stat.wh .ic{background:#e6f5f3;color:#219688;} .drev-stat.wh .val{color:#219688;}
+.drev-stat.ot .ic{background:#fff8e1;color:#f7b84b;} .drev-stat.ot .val{color:#c98a00;}
+.drev-stat.ut .ic{background:#e3f2fd;color:#50a5f1;} .drev-stat.ut .val{color:#1565c0;}
+.drev-stat.late .ic{background:#fce4ec;color:#f06548;} .drev-stat.late .val{color:#c62828;}
+.drev-daygrp{border:1px solid #eef3f2;border-radius:12px;overflow:hidden;margin-bottom:10px;background:#fff;}
+.drev-dayhead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:#f0faf8;border-bottom:1px solid #e2f0ec;}
+.drev-daylabel{font-size:12px;font-weight:800;color:#176358;display:flex;align-items:center;gap:6px;}
+.drev-daytot{display:flex;gap:10px;font-size:10.5px;font-weight:700;}
+.drev-entry{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;flex-wrap:wrap;}
+.drev-entry + .drev-entry{border-top:1px dashed #f1f5f4;}
+.drev-entry.is-approved{background:#f4fbf6;} .drev-entry.is-disapproved{background:#fdf3f3;}
+.drev-times{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.dtime-chip{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:8px;white-space:nowrap;}
+.dtime-chip.in{background:#eafaf0;color:#0f9d58;} .dtime-chip.out{background:#e3f2fd;color:#1565c0;}
+.dtime-chip.na{background:#f3f4f6;color:#aaa;}
+.dpunch{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:5px;}
+.dpunch-chip{font-size:10px;font-weight:700;padding:2px 7px;border-radius:7px;display:inline-flex;align-items:center;gap:3px;}
+.dpunch-chip.bio{background:#e6f5f3;color:#178a7c;} .dpunch-chip.manual{background:#fff4e0;color:#b57e12;}
+.dpunch-chip .pl{color:#9aa;font-weight:800;font-size:9px;margin-right:1px;}
+.drev-mini{display:flex;gap:6px;flex-wrap:wrap;}
+.dmini{display:flex;flex-direction:column;align-items:center;background:#f7fbfa;border-radius:8px;padding:3px 9px;min-width:42px;}
+.dmini .k{font-size:9px;color:#9aa;font-weight:700;text-transform:uppercase;}
+.dmini .v{font-size:12.5px;font-weight:800;color:#2c3e3a;}
+.dmini.ot .v{color:#c98a00;} .dmini.ut .v{color:#1565c0;} .dmini.late .v{color:#c62828;}
+.dstat-badge{font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;}
+.dstat-badge.ok{background:#eafaf0;color:#0f9d58;} .dstat-badge.dis{background:#fdecea;color:#c62828;} .dstat-badge.pend{background:#fff6e0;color:#c98a00;}
+.dstat-note{font-size:11px;color:#a33;margin-top:3px;flex-basis:100%;}
+@media (max-width:575.98px){
+    .drev-stats{grid-template-columns:repeat(2,1fr);}
+    .drev-entry{flex-direction:column;align-items:stretch;}
+    .drev-mini{justify-content:space-between;}
+}
 .emp-stats{display:grid;grid-template-columns:repeat(5,1fr);}
 .est{padding:12px 14px;border-right:1px solid #eef3f2;text-align:center;}
 .est:last-child{border-right:none;}
@@ -1303,6 +1333,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 </style>
 <!-- Mobile-first native-app layer — must load AFTER the inline styles it refines -->
 <link href="assets2/css/portal-mobile.css?v=1" rel="stylesheet">
+<!-- Global DTR (Form 48) template — shared with the admin DTR Documents page -->
+<link href="assets2/css/dtr-form48.css" rel="stylesheet">
+<script src="assets2/js/dtr-form48.js"></script>
+<script>window.DTR_LOG_MODE = <?= json_encode(defined('DTR_LOG_MODE') ? DTR_LOG_MODE : 'single') ?>;</script>
 </head>
 <body>
 
@@ -3533,18 +3567,32 @@ function openDtrReview(id) {
 }
 function renderDtrReview(res) {
     document.getElementById('dtr-review-sub').textContent = res.dtr.period + '  ·  ' + res.dtr.site;
-    var totH = 0, totOT = 0;
-    var rows = res.days.map(function (d) {
-        totH += d.work_hours; totOT += d.overtime;
-        var io = (d.time_in || '—') + ' → ' + (d.time_out || '—');
-        var flag = d.status === 2 ? '<span class="drow-flag dis">disapproved</span>' : (d.status === 1 ? '<span class="drow-flag ok">approved</span>' : '');
-        // Timekeeper's reason for a rejected day, right under its status.
-        if (d.status === 2 && d.note) {
-            flag += '<div style="font-size:11px;color:#a33;margin-top:2px;">“' + escapeHtml(d.note) + '”</div>';
-        }
-        return '<tr><td data-label="Date">' + d.date + '</td><td data-label="Time In/Out">' + io + '</td><td class="tc" data-label="Hrs">' + d.work_hours.toFixed(2) + '</td>'
-            + '<td class="tc" data-label="OT">' + d.overtime.toFixed(2) + '</td><td class="tc" data-label="Late">' + d.late.toFixed(0) + '</td><td data-label="Status">' + (flag || '—') + '</td></tr>';
-    }).join('');
+
+    // Reshape the flat day list into the { 'YYYY-MM-DD': {in,out,wh,ot,ut,late} }
+    // map the shared Form 48 template expects, and total everything up.
+    var days = {}, totals = { wh: 0, ot: 0, ut: 0, late: 0 };
+    res.days.forEach(function (d) {
+        days[d.iso] = {
+            in: d.time_in, out: d.time_out,
+            wh: d.work_hours, ot: d.overtime, ut: (d.undertime || 0), late: d.late
+        };
+        totals.wh += d.work_hours; totals.ot += d.overtime;
+        totals.ut += (d.undertime || 0); totals.late += d.late;
+    });
+
+    // Same Civil Service Form 48 the admin DTR Documents page renders, now with
+    // Work Hrs / Overtime / Late columns and a full totals row.
+    var form48 = window.DTRForm48.render({
+        name: res.name || '',
+        periodLabel: res.dtr.period,
+        dateFrom: res.dtr.date_from,
+        dateTo: res.dtr.date_to,
+        logMode: (window.DTR_LOG_MODE || 'single'),
+        compact: true,
+        days: days,
+        totals: totals
+    });
+
     var reviewedNote = '';
     if (res.review) {
         var s = parseInt(res.review.status, 10);
@@ -3555,11 +3603,9 @@ function renderDtrReview(res) {
             reviewedNote += '<div class="drev-prev ok"><i class="ri-chat-check-line"></i> HR replied to your dispute: “' + escapeHtml(res.review.admin_reply) + '”</div>';
         }
     }
+
     document.getElementById('dtr-review-body').innerHTML =
-        reviewedNote +
-        '<div class="drev-tbl-wrap"><table class="drev-tbl"><thead><tr><th>Date</th><th>Time In/Out</th><th class="tc">Hrs</th><th class="tc">OT</th><th class="tc">Late</th><th>Status</th></tr></thead>'
-        + '<tbody>' + rows + '</tbody>'
-        + '<tfoot><tr><th colspan="2">Total</th><th class="tc" data-label="Total Hrs">' + totH.toFixed(2) + '</th><th class="tc" data-label="Total OT">' + totOT.toFixed(2) + '</th><th colspan="2" data-label=""></th></tr></tfoot></table></div>';
+        reviewedNote + '<div style="background:#fff;border:1px solid #eef3f2;border-radius:12px;padding:16px 18px;">' + form48 + '</div>';
 
     // read-only view once approved (status 2) — hide the action footer
     var footer = document.getElementById('dtr-review-footer');

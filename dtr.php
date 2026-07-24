@@ -95,7 +95,7 @@ function dtr_status_badge($s) {
                                     while ($row = $query->fetch_assoc()):
                                         $status = (int)$row['status'];
                                         $period = date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M j, Y", strtotime($row['date_to']));
-                                        $viewUrl = "index.php?page=dtr-details&id=" . base64_encode($row['id'])
+                                        $viewUrl = "dtr-documents.php?id=" . base64_encode($row['id'])
                                             . "&timekeeper_name=" . base64_encode($row['timekeeper_name'])
                                             . "&device_id=" . base64_encode($row['device_id'])
                                             . "&site_id=" . base64_encode($row['site_id'])

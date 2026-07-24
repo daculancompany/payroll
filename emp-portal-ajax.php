@@ -126,7 +126,7 @@ switch ($action) {
         $dtr = $conn->query("SELECT DTR.*, sites.site_code, sites.site_name FROM DTR LEFT JOIN sites ON sites.id = DTR.site_id WHERE DTR.id = $ddtr_id")->fetch_assoc();
 
         $days = [];
-        $st = $conn->prepare("SELECT date_time, work_hours, overtime, undertime, late, logs, attendance_type, status
+        $st = $conn->prepare("SELECT date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
         $st->bind_param('ii', $ddtr_id, $emp_id);
         $st->execute();
@@ -147,6 +147,9 @@ switch ($action) {
                 'late'       => (float) $d['late'],
                 'type'       => $d['attendance_type'],
                 'status'     => (int) $d['status'],
+                // Why the timekeeper rejected this day — shown so a dispute
+                // can answer the actual reason instead of guessing it.
+                'note'       => (int)$d['status'] === 2 ? (string)($d['decision_note'] ?? '') : '',
             ];
         }
 

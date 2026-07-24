@@ -647,16 +647,28 @@ function _toast(msg) {
 
 function _postDecision(payload, decision, confirmText, applyFn) {
     var label = decision === 1 ? "Approve" : "Disapprove";
-    Swal.fire({
+    // Disapprovals require a written reason (stored in DTR_details.decision_note).
+    var opts = {
         title: label + "?",
         text: confirmText,
         icon: "question",
         showCancelButton: true,
         confirmButtonColor: decision === 1 ? "#0f9d58" : "#c62828",
         confirmButtonText: "Yes, " + label.toLowerCase(),
-    }).then(function (result) {
+    };
+    if (decision === 2) {
+        opts.input = "text";
+        opts.inputLabel = "Reason (required)";
+        opts.inputPlaceholder = "e.g. No matching schedule / duplicate log / wrong site";
+        opts.inputAttributes = { maxlength: 255 };
+        opts.inputValidator = function (v) {
+            return (!v || !v.trim()) ? "A reason is required to disapprove." : undefined;
+        };
+    }
+    Swal.fire(opts).then(function (result) {
         if (!result.isConfirmed) return;
         payload.decision = decision;
+        if (decision === 2) payload.note = String(result.value || "").trim();
         $.ajax({
             url: "ajax.php?action=decide_dtr_details",
             method: "POST",

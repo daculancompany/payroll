@@ -27,6 +27,61 @@ if (!defined('PAYROLL_EXCLUDED_CLASSIFICATIONS')) {
     define('PAYROLL_EXCLUDED_CLASSIFICATIONS', ['INTERM', 'INTERN']);
 }
 
+// ── DTR review rules (GLOBAL) ───────────────────────────────────────────
+// How the DTR Documents screen reads punches and flags exceptions.
+// Change these lines to adjust app-wide; other companies may need 'ampm'.
+//
+// DTR_LOG_MODE
+//   'single' → one time-in / one time-out per day; the paper DTR shows a
+//              plain Arrival | Departure pair.
+//   'ampm'   → classic 4-punch Form 48 (A.M. in/out + P.M. in/out columns).
+if (!defined('DTR_LOG_MODE')) {
+    define('DTR_LOG_MODE', 'single');
+}
+// A record with more overtime hours than this is flagged "High OT" and is
+// skipped by clean bulk-approval until a human decides it.
+if (!defined('DTR_HIGH_OT_HOURS')) {
+    define('DTR_HIGH_OT_HOURS', 4);
+}
+// An employee who logged fewer than this percentage of the batch period's
+// days is flagged "Low attendance"; their records are excluded from clean
+// bulk-approval so absences can't be waved through silently.
+if (!defined('DTR_LOW_ATTENDANCE_PCT')) {
+    define('DTR_LOW_ATTENDANCE_PCT', 60);
+}
+
+// Minimum logged days for an employee to count as "normal attendance"
+// in a batch covering $periodDays calendar days.
+if (!function_exists('dtr_min_days')) {
+    function dtr_min_days(int $periodDays): int
+    {
+        if ($periodDays <= 0) return 0;
+        return (int)ceil($periodDays * DTR_LOW_ATTENDANCE_PCT / 100);
+    }
+}
+
+// SQL fragment appended to "... WHERE ddtr_id = X AND status = 0" to keep
+// only records that clean bulk-approval may touch: a time-out exists, hours
+// are non-zero, OT is within DTR_HIGH_OT_HOURS, and (when $minDays > 0) the
+// record's employee has normal attendance. The single source of the rule —
+// the summary counters, the docs flags, and decide_dtr_details all use it,
+// so the numbers can never disagree. The derived table wrapper keeps the
+// self-referencing subquery legal inside an UPDATE on DTR_details.
+if (!function_exists('dtr_clean_condition_sql')) {
+    function dtr_clean_condition_sql(int $ddtrId, int $minDays): string
+    {
+        $sql = " AND work_hours > 0 AND overtime <= " . (float)DTR_HIGH_OT_HOURS
+             . " AND JSON_VALID(logs) AND JSON_LENGTH(logs) >= 2";
+        if ($minDays > 0) {
+            $sql .= " AND employee_id IN (SELECT employee_id FROM ("
+                  . "SELECT employee_id FROM DTR_details WHERE ddtr_id = " . (int)$ddtrId
+                  . " GROUP BY employee_id HAVING COUNT(DISTINCT date_time) >= " . (int)$minDays
+                  . ") dtr_att_ok)";
+        }
+        return $sql;
+    }
+}
+
 // ── Leave eligibility resolver (GLOBAL) ─────────────────────────────────
 // Single source of truth for "can this employee file leave / hold credits".
 // Honors the per-employee override first, then falls back to classification.

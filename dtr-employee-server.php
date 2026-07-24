@@ -59,13 +59,26 @@ if (!$batch) {
     exit;
 }
 
+// Period length + the minimum logged days for "normal attendance"
+// (see DTR_LOW_ATTENDANCE_PCT in db_connect.php).
+$periodDays = 0;
+if (!empty($batch['date_from']) && !empty($batch['date_to'])) {
+    $pdF = date_create($batch['date_from']);
+    $pdT = date_create($batch['date_to']);
+    if ($pdF && $pdT) $periodDays = (int)$pdF->diff($pdT)->days + 1;
+}
+$minDays = dtr_min_days($periodDays);
+
 /**
  * Batch-wide approval counters. Always computed over every record of the batch,
  * never over the loaded page, so the summary cards stay honest while only ten
  * employees are on screen.
  */
-function dtr_batch_summary(mysqli $conn, $ddtrId)
+function dtr_batch_summary(mysqli $conn, $ddtrId, int $minDays = 0)
 {
+    // clean_pending mirrors dtr_clean_condition_sql (db_connect.php) exactly —
+    // it's the count of records a clean bulk-approval would touch.
+    $cleanExpr = "status = 0" . dtr_clean_condition_sql((int)$ddtrId, $minDays);
     $stmt = $conn->prepare("
         SELECT
             COUNT(*)                                      AS total,
@@ -77,13 +90,14 @@ function dtr_batch_summary(mysqli $conn, $ddtrId)
             COALESCE(SUM(undertime), 0)                   AS undertime,
             COALESCE(SUM(late), 0)                        AS late,
             COUNT(DISTINCT employee_id)                   AS employees,
-            COUNT(DISTINCT date_time)                     AS days
+            COUNT(DISTINCT date_time)                     AS days,
+            SUM($cleanExpr)                               AS clean_pending
         FROM DTR_details WHERE ddtr_id = ?
     ");
     $stmt->bind_param('i', $ddtrId);
     $stmt->execute();
     $r = $stmt->get_result()->fetch_assoc() ?: [];
-    foreach (['total','approved','disapproved','pending','employees','days'] as $k) {
+    foreach (['total','approved','disapproved','pending','employees','days','clean_pending'] as $k) {
         $r[$k] = (int)($r[$k] ?? 0);
     }
     foreach (['work_hours','overtime','undertime','late'] as $k) {
@@ -94,7 +108,237 @@ function dtr_batch_summary(mysqli $conn, $ddtrId)
 
 if ($action === 'summary') {
     header('Content-Type: application/json');
-    echo json_encode(['result' => true, 'summary' => dtr_batch_summary($conn, $ddtrId)]);
+    echo json_encode(['result' => true, 'summary' => dtr_batch_summary($conn, $ddtrId, $minDays)]);
+    exit;
+}
+
+if ($action === 'docs') {
+    // ── Document viewer (dtr-documents.php) ─────────────────────────────────
+    // One page of employees as structured JSON. Each record's biometric/manual
+    // logs are merged per day and split into the four Form-48 cells
+    // (AM arrival/departure, PM arrival/departure); the client renders the
+    // paper document, so no HTML leaves this endpoint.
+    $offset = max(0, (int)($_GET['offset'] ?? 0));
+    $limit  = (int)($_GET['limit'] ?? 20);
+    if ($limit <= 0 || $limit > 100) $limit = 20;
+    $q = trim((string)($_GET['q'] ?? ''));
+
+    $where  = "d.ddtr_id = ?";
+    $types  = 'i';
+    $params = [$ddtrId];
+
+    if ($q !== '') {
+        $where .= " AND (e.lastname LIKE ? OR e.firstname LIKE ? OR e.middlename LIKE ?
+                         OR e.employee_no LIKE ? OR p.name LIKE ? OR dep.name LIKE ?)";
+        $like = '%' . $q . '%';
+        $types .= 'ssssss';
+        array_push($params, $like, $like, $like, $like, $like, $like);
+    }
+
+    // flagged=1 → only employees that still need a human decision: a pending
+    // record with an exception flag, or attendance below the batch minimum.
+    if (!empty($_GET['flagged'])) {
+        $idInt  = (int)$ddtrId;
+        $recBad = "SELECT DISTINCT employee_id FROM DTR_details
+                   WHERE ddtr_id = $idInt AND status = 0
+                     AND NOT (work_hours > 0 AND overtime <= " . (float)DTR_HIGH_OT_HOURS . "
+                              AND JSON_VALID(logs) AND JSON_LENGTH(logs) >= 2)";
+        $where .= " AND (e.id IN ($recBad)";
+        if ($minDays > 0) {
+            $where .= " OR e.id IN (SELECT employee_id FROM DTR_details WHERE ddtr_id = $idInt
+                                    GROUP BY employee_id HAVING COUNT(DISTINCT date_time) < $minDays)";
+        }
+        $where .= ")";
+    }
+
+    $cs = $conn->prepare("SELECT COUNT(DISTINCT e.id) AS total
+                          FROM DTR_details d
+                          INNER JOIN employee e ON d.employee_id = e.id
+                          LEFT JOIN position p ON e.position_id = p.id
+                          LEFT JOIN department dep ON e.department_id = dep.id
+                          WHERE $where");
+    $cs->bind_param($types, ...$params);
+    $cs->execute();
+    $total = (int)($cs->get_result()->fetch_assoc()['total'] ?? 0);
+
+    $is = $conn->prepare("SELECT e.id
+                          FROM DTR_details d
+                          INNER JOIN employee e ON d.employee_id = e.id
+                          LEFT JOIN position p ON e.position_id = p.id
+                          LEFT JOIN department dep ON e.department_id = dep.id
+                          WHERE $where
+                          GROUP BY e.id
+                          ORDER BY e.lastname ASC, e.firstname ASC
+                          LIMIT ?, ?");
+    $is->bind_param($types . 'ii', ...array_merge($params, [$offset, $limit]));
+    $is->execute();
+    $empIds = [];
+    $idRes = $is->get_result();
+    while ($row = $idRes->fetch_assoc()) $empIds[] = (int)$row['id'];
+
+    $employees = [];
+    if ($empIds) {
+        $idList = implode(',', $empIds);
+        $rs = $conn->prepare("
+            SELECT a.*, e.employee_no, e.lastname, e.firstname, e.middlename,
+                   dep.name AS department, p.name AS position,
+                   du.name AS decided_by_name,
+                   DATE(a.date_time) AS attendance_date
+            FROM DTR_details a
+            INNER JOIN employee e ON a.employee_id = e.id
+            LEFT JOIN department dep ON e.department_id = dep.id
+            LEFT JOIN position p ON e.position_id = p.id
+            LEFT JOIN users du ON a.decided_by = du.id
+            WHERE a.ddtr_id = ? AND a.employee_id IN ($idList)
+            ORDER BY a.date_time ASC
+        ");
+        $rs->bind_param('i', $ddtrId);
+        $rs->execute();
+        $res = $rs->get_result();
+
+        $byEmp = [];
+        while ($row = $res->fetch_assoc()) {
+            $eid = (int)$row['employee_id'];
+            if (!isset($byEmp[$eid])) {
+                $byEmp[$eid] = [
+                    'id'         => $eid,
+                    'no'         => $row['employee_no'],
+                    'lastname'   => $row['lastname'],
+                    'firstname'  => $row['firstname'],
+                    'middlename' => $row['middlename'] ?? '',
+                    'position'   => $row['position'] ?? '',
+                    'department' => $row['department'] ?? '',
+                    'totals'     => ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0],
+                    'appr'       => 0, 'pend' => 0, 'disa' => 0, 'exc' => 0,
+                    '_logs'      => [],   // per-date raw log timestamps, merged across records
+                    'days'       => [],   // per-date aggregates + the four form cells
+                ];
+            }
+            $E = &$byEmp[$eid];
+            $date = $row['attendance_date'];
+            if (!isset($E['days'][$date])) {
+                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => []];
+                $E['_logs'][$date] = [];
+            }
+            $D = &$E['days'][$date];
+            $D['wh']   += (float)$row['work_hours'];
+            $D['ot']   += (float)$row['overtime'];
+            $D['ut']   += (float)$row['undertime'];
+            $D['late'] += (float)$row['late'];
+            $E['totals']['wh']   += (float)$row['work_hours'];
+            $E['totals']['ot']   += (float)$row['overtime'];
+            $E['totals']['ut']   += (float)$row['undertime'];
+            $E['totals']['late'] += (float)$row['late'];
+
+            $s = (int)$row['status'];
+            if ($s === 1)     $E['appr']++;
+            elseif ($s === 2) $E['disa']++;
+            else              $E['pend']++;
+            // Day status: any disapproved wins, then any pending, else approved
+            if ($s === 2)                          $D['status'] = 2;
+            elseif ($s !== 1 && $D['status'] !== 2) $D['status'] = 0;
+
+            $recLogs   = [];
+            $hasManual = false;
+            foreach ((json_decode($row['logs']) ?: []) as $lg) {
+                $ts = strtotime($lg->dateTime);
+                if ($ts !== false) {
+                    $E['_logs'][$date][] = $ts;
+                    $isBio = (($lg->type ?? '') === 'bio');
+                    if (!$isBio) $hasManual = true;
+                    $recLogs[] = ['t' => date('g:i A', $ts), 'bio' => $isBio];
+                }
+                $D['logs']++;
+            }
+
+            // Exception flags. The first three block clean bulk-approval (rule
+            // shared with dtr_clean_condition_sql); 'manual' is informational.
+            $wh = (float)$row['work_hours'];
+            $ot = (float)$row['overtime'];
+            $flags = [];
+            if (count($recLogs) < 2)        $flags[] = 'no_out';
+            if ($wh <= 0)                   $flags[] = 'zero_hours';
+            if ($ot > DTR_HIGH_OT_HOURS)    $flags[] = 'high_ot';
+            if ($hasManual)                 $flags[] = 'manual';
+            $isException = (count($recLogs) < 2 || $wh <= 0 || $ot > DTR_HIGH_OT_HOURS);
+            if ($isException && $s !== 1 && $s !== 2) $E['exc']++;
+
+            $D['recs'][] = [
+                'id'     => (int)$row['id'],
+                'status' => $s,
+                'wh'     => $wh,
+                'ot'     => $ot,
+                'ut'     => (float)$row['undertime'],
+                'late'   => (float)$row['late'],
+                'logs'   => $recLogs,
+                'flags'  => $flags,
+                'note'   => $row['decision_note'] ?? '',
+                'by'     => $row['decided_by_name'] ?? '',
+                'at'     => !empty($row['decided_at']) ? date('M j, g:i A', strtotime($row['decided_at'])) : '',
+            ];
+            unset($E, $D);
+        }
+
+        foreach ($empIds as $eid) {
+            if (!isset($byEmp[$eid])) continue;
+            $E = $byEmp[$eid];
+            // Below the batch's minimum logged days → "Low attendance": marked
+            // as an exception in the UI and excluded from clean bulk-approval.
+            $E['low_att'] = ($minDays > 0 && count($E['days']) < $minDays);
+            foreach ($E['days'] as $date => $d) {
+                $logs = $E['_logs'][$date];
+                sort($logs);
+                $f = function ($ts) { return date('g:i', $ts); };
+                $n = count($logs);
+                // Single-mode cells: plain first-in / last-out for the day.
+                $cells = ['am_in' => '', 'am_out' => '', 'pm_in' => '', 'pm_out' => '', 'in' => '', 'out' => ''];
+                if ($n >= 1) $cells['in']  = $f($logs[0]);
+                if ($n >= 2) $cells['out'] = $f($logs[$n - 1]);
+                // Positional mapping, the way the paper form is filled:
+                // in / lunch-out / lunch-in / out. Odd counts fall back on the
+                // clock: a middle log before 1 PM is the lunch-out, after is the
+                // lunch-in; a lone log lands on arrival (AM or PM by its hour).
+                if ($n >= 4) {
+                    $cells['am_in']  = $f($logs[0]);
+                    $cells['am_out'] = $f($logs[1]);
+                    $cells['pm_in']  = $f($logs[$n - 2]);
+                    $cells['pm_out'] = $f($logs[$n - 1]);
+                } elseif ($n === 3) {
+                    $cells['am_in']  = $f($logs[0]);
+                    $cells['pm_out'] = $f($logs[2]);
+                    if ((int)date('G', $logs[1]) < 13) $cells['am_out'] = $f($logs[1]);
+                    else                               $cells['pm_in']  = $f($logs[1]);
+                } elseif ($n === 2) {
+                    $h0 = (int)date('G', $logs[0]);
+                    $h1 = (int)date('G', $logs[1]);
+                    if ($h1 < 12)      { $cells['am_in'] = $f($logs[0]); $cells['am_out'] = $f($logs[1]); }
+                    elseif ($h0 >= 12) { $cells['pm_in'] = $f($logs[0]); $cells['pm_out'] = $f($logs[1]); }
+                    else               { $cells['am_in'] = $f($logs[0]); $cells['pm_out'] = $f($logs[1]); }
+                } elseif ($n === 1) {
+                    if ((int)date('G', $logs[0]) < 12) $cells['am_in'] = $f($logs[0]);
+                    else                               $cells['pm_in'] = $f($logs[0]);
+                }
+                $E['days'][$date] = array_merge($d, $cells);
+            }
+            unset($E['_logs']);
+            $employees[] = $E;
+        }
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode([
+        'result'    => true,
+        'employees' => $employees,
+        'offset'    => $offset,
+        'limit'     => $limit,
+        'total'     => $total,
+        'config'    => [
+            'mode'     => DTR_LOG_MODE,
+            'ot_hours' => (float)DTR_HIGH_OT_HOURS,
+            'min_days' => $minDays,
+            'low_pct'  => (int)DTR_LOW_ATTENDANCE_PCT,
+        ],
+    ]);
     exit;
 }
 

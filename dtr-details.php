@@ -978,6 +978,13 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
                             <div class="xl-ribbon-sep"></div>
                             <button id="btn-dtr-reload" onclick="reloadDtr()" class="xl-btn" title="Reload DTR records"><i class="ri-refresh-line"></i> Reload</button>
                             <div class="xl-ribbon-sep"></div>
+                            <?php $docsQs = http_build_query([
+                                'id'              => $_GET['id'],
+                                'device_id'       => $_GET['device_id'],
+                                'site_id'         => $_GET['site_id'],
+                                'timekeeper_name' => $_GET['timekeeper_name'] ?? '',
+                            ]); ?>
+                            <a href="dtr-documents.php?<?= htmlspecialchars($docsQs) ?>" class="xl-btn" title="View as paper DTR documents"><i class="ri-file-text-line"></i> Documents</a>
                             <button onclick="printDTRTable()" class="xl-btn"><i class="ri-printer-line"></i> Print</button>
                             <button onclick="toggleDtrFullscreen()" class="xl-btn" id="btn-dtr-fullscreen" title="Fullscreen table (Esc to exit)"><i class="ri-fullscreen-line"></i> Fullscreen</button>
                             <?php if ($login_role !== 6): ?>

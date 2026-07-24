@@ -3538,6 +3538,10 @@ function renderDtrReview(res) {
         totH += d.work_hours; totOT += d.overtime;
         var io = (d.time_in || '—') + ' → ' + (d.time_out || '—');
         var flag = d.status === 2 ? '<span class="drow-flag dis">disapproved</span>' : (d.status === 1 ? '<span class="drow-flag ok">approved</span>' : '');
+        // Timekeeper's reason for a rejected day, right under its status.
+        if (d.status === 2 && d.note) {
+            flag += '<div style="font-size:11px;color:#a33;margin-top:2px;">“' + escapeHtml(d.note) + '”</div>';
+        }
         return '<tr><td data-label="Date">' + d.date + '</td><td data-label="Time In/Out">' + io + '</td><td class="tc" data-label="Hrs">' + d.work_hours.toFixed(2) + '</td>'
             + '<td class="tc" data-label="OT">' + d.overtime.toFixed(2) + '</td><td class="tc" data-label="Late">' + d.late.toFixed(0) + '</td><td data-label="Status">' + (flag || '—') + '</td></tr>';
     }).join('');

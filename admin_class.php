@@ -3887,7 +3887,8 @@ class Action
         $id = $_POST['id'];
         if (isset($_POST['work_hours'])) {
             try {
-                $query_update = "UPDATE DTR_details SET work_hours = ? WHERE id = ?";
+                // Edited figures void any earlier decision — back to pending for re-approval.
+                $query_update = "UPDATE DTR_details SET work_hours = ?, status = 0, decision_note = NULL, decided_by = NULL, decided_at = NULL WHERE id = ?";
                 $stmt3 = $this->db->prepare($query_update);
                 if ($stmt3 === false) {
                     throw new Exception('Failed to prepare the statement: ' . $this->db->error);
@@ -3908,7 +3909,7 @@ class Action
 
         if (isset($_POST['overtime'])) {
             try {
-                $query_update = "UPDATE DTR_details SET overtime = ? WHERE id = ?";
+                $query_update = "UPDATE DTR_details SET overtime = ?, status = 0, decision_note = NULL, decided_by = NULL, decided_at = NULL WHERE id = ?";
                 $stmt3 = $this->db->prepare($query_update);
                 if ($stmt3 === false) {
                     throw new Exception('Failed to prepare the statement: ' . $this->db->error);
@@ -3929,7 +3930,7 @@ class Action
 
         if (isset($_POST['undertime'])) {
             try {
-                $query_update = "UPDATE DTR_details SET undertime = ? WHERE id = ?";
+                $query_update = "UPDATE DTR_details SET undertime = ?, status = 0, decision_note = NULL, decided_by = NULL, decided_at = NULL WHERE id = ?";
                 $stmt3 = $this->db->prepare($query_update);
                 if ($stmt3 === false) {
                     throw new Exception('Failed to prepare the statement: ' . $this->db->error);
@@ -3950,7 +3951,7 @@ class Action
 
         if (isset($_POST['late'])) {
             try {
-                $query_update = "UPDATE DTR_details SET late = ? WHERE id = ?";
+                $query_update = "UPDATE DTR_details SET late = ?, status = 0, decision_note = NULL, decided_by = NULL, decided_at = NULL WHERE id = ?";
                 $stmt3 = $this->db->prepare($query_update);
                 if ($stmt3 === false) {
                     throw new Exception('Failed to prepare the statement: ' . $this->db->error);
@@ -6560,30 +6561,58 @@ class Action
             return ['result' => false, 'message' => 'Invalid decision'];
         }
 
+        // Disapprovals carry a reason so the employee's review round isn't
+        // arguing against a blank rejection; approvals clear any stale note.
+        $note = $decision === 2 ? substr(trim($_POST['note'] ?? ''), 0, 255) : '';
+        if ($decision === 2 && $note === '') {
+            return ['result' => false, 'message' => 'A reason is required to disapprove.'];
+        }
+        $noteSql = $decision === 2 ? $note : null;
+
+        // Audit stamp: every decision records who made it and when.
+        $decider = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $setSql  = "status = ?, decision_note = ?, decided_by = ?, decided_at = NOW()";
+
         // Explicit id list (checkbox selection) takes precedence.
         $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? $_POST['ids'] : [];
         $ids = array_values(array_filter(array_map('intval', $ids)));
         if (!empty($ids)) {
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            $stmt   = $this->db->prepare("UPDATE DTR_details SET status = ? WHERE id IN ($placeholders)");
-            $types  = 'i' . str_repeat('i', count($ids));
-            $params = array_merge([$decision], $ids);
+            $stmt   = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE id IN ($placeholders)");
+            $types  = 'isi' . str_repeat('i', count($ids));
+            $params = array_merge([$decision, $noteSql, $decider], $ids);
             $stmt->bind_param($types, ...$params);
             if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
             return ['result' => true, 'message' => 'Records updated', 'affected' => $stmt->affected_rows];
         }
 
         // Whole batch (ddtr_id), optionally a single day — only touches still-pending rows.
-        $ddtr_id = (int)($_POST['ddtr_id'] ?? 0);
-        $date    = trim($_POST['date'] ?? '');
+        // clean_only limits a batch-wide approval to records with no exception
+        // flags (rule lives in dtr_clean_condition_sql: time-out present,
+        // non-zero hours, OT within DTR_HIGH_OT_HOURS, employee attendance at
+        // least DTR_LOW_ATTENDANCE_PCT of the period); the rest stay pending.
+        $ddtr_id    = (int)($_POST['ddtr_id'] ?? 0);
+        $date       = trim($_POST['date'] ?? '');
+        $clean_only = !empty($_POST['clean_only']);
         if (!$ddtr_id) return ['result' => false, 'message' => 'Missing ids or ddtr_id'];
 
+        $cleanSql = '';
+        if ($clean_only) {
+            $hdr = $this->db->query("SELECT date_from, date_to FROM DTR WHERE id = $ddtr_id")->fetch_assoc();
+            $periodDays = 0;
+            if ($hdr && $hdr['date_from'] && $hdr['date_to']) {
+                $df = date_create($hdr['date_from']);
+                $dt = date_create($hdr['date_to']);
+                if ($df && $dt) $periodDays = (int)$df->diff($dt)->days + 1;
+            }
+            $cleanSql = dtr_clean_condition_sql($ddtr_id, dtr_min_days($periodDays));
+        }
         if ($date !== '') {
-            $stmt = $this->db->prepare("UPDATE DTR_details SET status = ? WHERE ddtr_id = ? AND DATE(date_time) = ? AND status = 0");
-            $stmt->bind_param('iis', $decision, $ddtr_id, $date);
+            $stmt = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE ddtr_id = ? AND DATE(date_time) = ? AND status = 0" . $cleanSql);
+            $stmt->bind_param('isiis', $decision, $noteSql, $decider, $ddtr_id, $date);
         } else {
-            $stmt = $this->db->prepare("UPDATE DTR_details SET status = ? WHERE ddtr_id = ? AND status = 0");
-            $stmt->bind_param('ii', $decision, $ddtr_id);
+            $stmt = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE ddtr_id = ? AND status = 0" . $cleanSql);
+            $stmt->bind_param('isii', $decision, $noteSql, $decider, $ddtr_id);
         }
         if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
         return ['result' => true, 'message' => 'Records updated', 'affected' => $stmt->affected_rows];

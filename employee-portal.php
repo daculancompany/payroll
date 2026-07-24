@@ -452,6 +452,8 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <link href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap.min.css" rel="stylesheet">
 <link href="assets2/css/modal-stacking.css" rel="stylesheet">
+<!-- Clock-face timepicker web component (File a Request claimed times) — https://github.com/loebi-ch/clock-timepicker -->
+<script type="module" src="assets2/vendor/clock-timepicker.js"></script>
 <style>
 *{box-sizing:border-box;}
 body{
@@ -943,6 +945,21 @@ body{
 .bootstrap-datetimepicker-widget a[data-action]:active{opacity:.8;}
 .bootstrap-datetimepicker-widget a[data-action] span{
     display:inline-flex;align-items:center;width:auto;height:auto;line-height:1;margin:0;font-size:15px;}
+/* clock-timepicker (File a Request claimed times) — brand teal accent.
+   The picker itself works in 24h (its only unambiguous mode); an invisible
+   overlay input catches the taps while .ctp-display shows friendly 12-hour
+   text ("8:00 PM") and the named picker input carries the HH:mm value. */
+clock-timepicker{
+    display:block;width:100%;
+    --clock-timepicker-accent-color:#219688;
+    --clock-timepicker-popup-border-radius:16px;
+    --clock-timepicker-popup-shadow:0 12px 34px rgba(16,55,50,.2);
+    --clock-timepicker-font-family:inherit;
+}
+.ctp-12h{position:relative;}
+.ctp-12h clock-timepicker{position:absolute;inset:0;}
+.ctp-12h clock-timepicker input{width:100%;height:100%;opacity:0;border:0;padding:0;background:transparent;}
+.ctp-12h:focus-within .ctp-display{border-color:#219688;box-shadow:0 0 0 .25rem rgba(33,150,136,.15);}
 .bootstrap-datetimepicker-widget a[data-action] span::after{
     font-family:'Segoe UI',-apple-system,Arial,sans-serif;font-size:12.5px;font-weight:800;margin-left:6px;line-height:1;}
 .bootstrap-datetimepicker-widget a[data-action="clear"]{background:#fdecea;color:#c62828;}
@@ -4223,6 +4240,29 @@ $(function () {
     });
 });
 
+// ── "File a Request" claimed time in/out — clock-timepicker web component ────
+// (assets2/vendor/clock-timepicker.js). The picker's named input carries the
+// 24-hour HH:mm the backend (submit_attendance_request → applyIncidentToDtr)
+// expects; the .ctp-display twin mirrors it as 12-hour text ("8:00 PM").
+$(function () {
+    document.querySelectorAll('#att-request-form .ctp-12h').forEach(function (wrap) {
+        var ctp  = wrap.querySelector('clock-timepicker');
+        var disp = wrap.querySelector('.ctp-display');
+        function sync() {
+            var v = ctp.value;                       // 'HH:mm' or undefined
+            if (v) {
+                var p = v.split(':'), h = parseInt(p[0], 10);
+                disp.value = (h % 12 || 12) + ':' + p[1] + ' ' + (h >= 12 ? 'PM' : 'AM');
+            } else {
+                disp.value = '';
+            }
+            if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().validate();
+        }
+        ctp.addEventListener('input', sync);         // live while the popup is open
+        ctp.addEventListener('change', sync);
+    });
+});
+
 function clearAttFilter() {
     attFrom = attTo = attToday;
     var lbl = document.getElementById('att-range-label');
@@ -4741,11 +4781,23 @@ jQuery(function ($) {
                         <!-- Incident fields -->
                         <div class="col-6 att-incident-field" style="display:none;">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time In <span style="color:red;">*</span></label>
-                            <input type="time" name="claimed_time_in" class="form-control" data-parsley-required-message="Please enter your claimed time in.">
+                            <div class="ctp-12h">
+                                <input type="text" id="att-time-in-disp" class="form-control ctp-display" placeholder="e.g. 8:00 AM" readonly tabindex="-1"
+                                    data-parsley-required-message="Please enter your claimed time in.">
+                                <clock-timepicker format="HH:mm" precision="00:05">
+                                    <input type="text" name="claimed_time_in" autocomplete="off">
+                                </clock-timepicker>
+                            </div>
                         </div>
                         <div class="col-6 att-incident-field" style="display:none;">
                             <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time Out <span style="color:red;">*</span></label>
-                            <input type="time" name="claimed_time_out" class="form-control" data-parsley-required-message="Please enter your claimed time out.">
+                            <div class="ctp-12h">
+                                <input type="text" id="att-time-out-disp" class="form-control ctp-display" placeholder="e.g. 5:00 PM" readonly tabindex="-1"
+                                    data-parsley-required-message="Please enter your claimed time out.">
+                                <clock-timepicker format="HH:mm" precision="00:05">
+                                    <input type="text" name="claimed_time_out" autocomplete="off">
+                                </clock-timepicker>
+                            </div>
                         </div>
 
                         <!-- OT fields -->

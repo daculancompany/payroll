@@ -279,6 +279,82 @@ if ($action === 'docs') {
             unset($E, $D);
         }
 
+        // ── Day markers: holidays, leaves, day-offs, portal requests ────────
+        // Context the Form 48 sheet flags per day so a blank row explains
+        // itself (holiday / on leave / rest day) and a logged day shows a
+        // pending OT/incident request. Statuses: 0 pending, 1 approved.
+        $dFrom = $batch['date_from'];
+        $dTo   = $batch['date_to'];
+
+        $holidays = [];   // 'Y-m-d' => ['t' => 'legal'|'special', 'lbl' => title]
+        $hq = $conn->prepare("SELECT title, start_date, end_date, type FROM calendar_events
+                              WHERE type IN (1,3) AND start_date <= ?
+                                AND COALESCE(end_date, start_date) >= ?");
+        $hq->bind_param('ss', $dTo, $dFrom);
+        $hq->execute();
+        $hres = $hq->get_result();
+        while ($h = $hres->fetch_assoc()) {
+            $hs = max(strtotime($h['start_date']), strtotime($dFrom));
+            $he = min(strtotime($h['end_date'] ?: $h['start_date']), strtotime($dTo));
+            for ($d = $hs; $d <= $he; $d = strtotime('+1 day', $d)) {
+                $holidays[date('Y-m-d', $d)] = ['t' => ((int)$h['type'] === 1 ? 'legal' : 'special'), 'lbl' => $h['title']];
+            }
+        }
+
+        $leaveMap = [];   // eid => 'Y-m-d' => ['lbl','s','half']
+        $lq = $conn->prepare("SELECT lr.employee_id, lr.dates, lr.date_from, lr.date_to, lr.status,
+                                     lr.is_half_day, lr.half_date, lt.name AS type_name
+                              FROM leave_requests lr
+                              INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                              WHERE lr.employee_id IN ($idList) AND lr.status IN (0,1)
+                                AND lr.date_from <= ? AND lr.date_to >= ?");
+        $lq->bind_param('ss', $dTo, $dFrom);
+        $lq->execute();
+        $lres = $lq->get_result();
+        while ($lv = $lres->fetch_assoc()) {
+            $lvDays = json_decode((string)($lv['dates'] ?? ''), true);
+            if (!is_array($lvDays) || !$lvDays) {
+                $lvDays = [];
+                for ($d = strtotime($lv['date_from']); $d <= strtotime($lv['date_to']); $d = strtotime('+1 day', $d)) {
+                    $lvDays[] = date('Y-m-d', $d);
+                }
+            }
+            foreach ($lvDays as $dy) {
+                $ymd = date('Y-m-d', strtotime($dy));
+                if ($ymd < $dFrom || $ymd > $dTo) continue;
+                $leaveMap[(int)$lv['employee_id']][$ymd] = [
+                    'lbl'  => $lv['type_name'],
+                    's'    => (int)$lv['status'],
+                    'half' => ((int)$lv['is_half_day'] === 1 && !empty($lv['half_date'])
+                               && date('Y-m-d', strtotime($lv['half_date'])) === $ymd),
+                ];
+            }
+        }
+
+        $reqMap = [];     // eid => 'Y-m-d' => [['t' => 'incident'|'overtime', 's'], ...]
+        $aq = $conn->prepare("SELECT employee_id, request_type, request_date, status
+                              FROM attendance_requests
+                              WHERE employee_id IN ($idList) AND status IN (0,1)
+                                AND request_date BETWEEN ? AND ?");
+        $aq->bind_param('ss', $dFrom, $dTo);
+        $aq->execute();
+        $ares = $aq->get_result();
+        while ($r = $ares->fetch_assoc()) {
+            $reqMap[(int)$r['employee_id']][$r['request_date']][] =
+                ['t' => $r['request_type'], 's' => (int)$r['status']];
+        }
+
+        $schedMap = [];   // eid => schedule windows overlapping the period (effective_from ASC)
+        $sq = $conn->prepare("SELECT employee_id, rest_days, effective_from, effective_to
+                              FROM employee_schedules
+                              WHERE employee_id IN ($idList) AND effective_from <= ?
+                                AND (effective_to IS NULL OR effective_to >= ?)
+                              ORDER BY effective_from ASC");
+        $sq->bind_param('ss', $dTo, $dFrom);
+        $sq->execute();
+        $sres = $sq->get_result();
+        while ($sr = $sres->fetch_assoc()) $schedMap[(int)$sr['employee_id']][] = $sr;
+
         foreach ($empIds as $eid) {
             if (!isset($byEmp[$eid])) continue;
             $E = $byEmp[$eid];
@@ -321,6 +397,32 @@ if ($action === 'docs') {
                 $E['days'][$date] = array_merge($d, $cells);
             }
             unset($E['_logs']);
+
+            // Per-day markers (only days that have at least one are emitted).
+            $marks = [];
+            $sch = $schedMap[$eid] ?? [];
+            for ($d = strtotime($dFrom); $d <= strtotime($dTo); $d = strtotime('+1 day', $d)) {
+                $ymd = date('Y-m-d', $d);
+                $m = [];
+                if (isset($holidays[$ymd]))       $m[] = ['k' => 'holiday'] + $holidays[$ymd];
+                if (isset($leaveMap[$eid][$ymd])) $m[] = ['k' => 'leave'] + $leaveMap[$eid][$ymd];
+                // Rest day: the latest schedule window covering this day wins.
+                $rest = null;
+                foreach ($sch as $srow) {
+                    if ($srow['effective_from'] <= $ymd
+                        && (empty($srow['effective_to']) || $srow['effective_to'] >= $ymd)) {
+                        $rest = (string)$srow['rest_days'];
+                    }
+                }
+                if ($rest !== null && $rest !== ''
+                    && in_array((int)date('w', $d), array_map('intval', explode(',', $rest)), true)) {
+                    $m[] = ['k' => 'off'];
+                }
+                foreach (($reqMap[$eid][$ymd] ?? []) as $rq) $m[] = ['k' => 'req'] + $rq;
+                if ($m) $marks[$ymd] = $m;
+            }
+            $E['marks'] = $marks ?: new stdClass();   // {} not [] when empty
+
             $employees[] = $E;
         }
     }

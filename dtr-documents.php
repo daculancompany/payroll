@@ -247,10 +247,12 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-doc-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; max-width:640px; margin:0 auto 9px; width:100%; }
 .ddv-doc-nav { display:flex; align-items:center; gap:6px; }
 .ddv-doc-pos { font-size:11px; color:#7a8f88; font-weight:600; }
-.ddv-paper-scroll { flex:1; overflow-y:auto; min-height:0; scrollbar-width:thin; scrollbar-color:#b8d8c2 transparent; padding-bottom:10px; }
-.ddv-paper-holder { display:flex; justify-content:center; }
+.ddv-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:#b8d8c2 transparent; padding-bottom:10px; }
+/* block + margin:auto (not flex centering) so a zoomed-in sheet that overflows
+   horizontally stays fully reachable by scrolling */
+.ddv-paper-holder { display:block; }
 .ddv-paper {
-    background:#fffefb; width:100%; max-width:640px;
+    background:#fffefb; width:100%; max-width:640px; margin:0 auto;
     border:1px solid #dcd8cc; border-radius:2px;
     box-shadow:0 2px 14px rgba(60,55,40,.14);
     padding:28px 32px 24px; font-family:'Times New Roman', Times, serif; color:#1a1a1a;
@@ -259,6 +261,18 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
    assets2/css/dtr-form48.css (rendered by window.DTRForm48.render).
    Only the .ddv-paper page frame stays here. */
 .ddv-doc-empty { text-align:center; color:#8aa39c; font-size:13px; padding:60px 10px; }
+
+/* Zoom: --dtr-zoom is set inline on #ddv-paper by setZoom() */
+#ddv-paper { zoom: var(--dtr-zoom, 1); }
+.ddv-doc-zoom { display:flex; align-items:center; gap:5px; }
+.ddv-doc-legend { display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:10px; font-weight:600; color:#7a8f88; }
+.ddv-doc-legend > span { display:inline-flex; align-items:center; gap:3px; }
+.ddv-zoom-val {
+    min-width:48px; height:27px; padding:0 7px; border-radius:7px; cursor:pointer;
+    border:1px solid #d5e6e2; background:#fff; color:var(--brand-dark);
+    font-size:11px; font-weight:700;
+}
+.ddv-zoom-val:hover { background:#eef7f5; }
 
 /* ── Right: summary + records ── */
 .ddv-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
@@ -344,7 +358,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
     body { overflow:visible; }
     body * { visibility:hidden; }
     body:not(.print-all) #ddv-paper, body:not(.print-all) #ddv-paper * { visibility:visible; }
-    body:not(.print-all) #ddv-paper { position:absolute; left:0; top:0; width:100%; max-width:none; border:none; box-shadow:none; padding:10px 24px; }
+    body:not(.print-all) #ddv-paper { position:absolute; left:0; top:0; width:100%; max-width:none; border:none; box-shadow:none; padding:10px 24px; zoom:1 !important; }
     body.print-all #ddv-print-all { display:block; position:absolute; left:0; top:0; width:100%; }
     body.print-all #ddv-print-all, body.print-all #ddv-print-all * { visibility:visible; }
     body.print-all #ddv-print-all .ddv-paper {
@@ -449,6 +463,17 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
                     <button class="ddv-btn" id="ddv-doc-prev"><i class="ri-arrow-left-s-line"></i> Prev</button>
                     <button class="ddv-btn" id="ddv-doc-next">Next <i class="ri-arrow-right-s-line"></i></button>
                     <span class="ddv-doc-pos" id="ddv-doc-pos"></span>
+                </div>
+                <div class="ddv-doc-legend dtrf48-legend" title="Day markers on the sheet — hover a marker for details">
+                    <span><span class="dm dm-hol">H</span> Holiday</span>
+                    <span><span class="dm dm-lv">L</span> Leave</span>
+                    <span><span class="dm dm-off">D</span> Day off</span>
+                    <span><span class="dm dm-req">R</span> Request</span>
+                </div>
+                <div class="ddv-doc-zoom">
+                    <button class="ddv-pg-btn" id="ddv-zoom-out" title="Zoom out (Ctrl+scroll or −)"><i class="ri-zoom-out-line"></i></button>
+                    <button type="button" class="ddv-zoom-val" id="ddv-zoom-val" title="Reset zoom (0)">100%</button>
+                    <button class="ddv-pg-btn" id="ddv-zoom-in" title="Zoom in (Ctrl+scroll or +)"><i class="ri-zoom-in-line"></i></button>
                 </div>
             </div>
             <div class="ddv-paper-scroll">
@@ -646,6 +671,7 @@ function docHTML(e) {
         logMode: LOG_MODE,
         days: e.days,
         totals: e.totals,
+        marks: e.marks,
     });
 }
 
@@ -1018,6 +1044,27 @@ async function printAll() {
     }
 }
 
+// ── Zoom (buttons, Ctrl+scroll, +/−/0 keys) ─────────────────────────────────
+const ZOOM_MIN = 50, ZOOM_MAX = 200, ZOOM_STEP = 10;
+let zoom = parseInt(localStorage.getItem('ddv_zoom'), 10) || 100;
+function setZoom(z) {
+    zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    $id('ddv-paper').style.setProperty('--dtr-zoom', zoom / 100);
+    $id('ddv-zoom-val').textContent = zoom + '%';
+    $id('ddv-zoom-out').disabled = zoom <= ZOOM_MIN;
+    $id('ddv-zoom-in').disabled  = zoom >= ZOOM_MAX;
+    localStorage.setItem('ddv_zoom', zoom);
+}
+$id('ddv-zoom-in').onclick  = () => setZoom(zoom + ZOOM_STEP);
+$id('ddv-zoom-out').onclick = () => setZoom(zoom - ZOOM_STEP);
+$id('ddv-zoom-val').onclick = () => setZoom(100);
+document.querySelector('.ddv-paper-scroll').addEventListener('wheel', ev => {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    setZoom(zoom + (ev.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+}, { passive: false });
+setZoom(zoom);
+
 // ── Right-panel drawer (small screens) ───────────────────────────────────────
 function toggleDrawer(force) {
     const open = typeof force === 'boolean' ? force : !document.querySelector('.ddv-right').classList.contains('open');
@@ -1034,6 +1081,12 @@ document.addEventListener('keydown', ev => {
     if (Swal.isVisible()) return;
     if (ev.key === 'ArrowUp')   { ev.preventDefault(); $id('ddv-doc-prev').click(); }
     if (ev.key === 'ArrowDown') { ev.preventDefault(); $id('ddv-doc-next').click(); }
+    // Zoom keys (plain keys only — Ctrl/Cmd+/- stays browser zoom)
+    if (!ev.ctrlKey && !ev.metaKey) {
+        if (ev.key === '+' || ev.key === '=') { ev.preventDefault(); setZoom(zoom + ZOOM_STEP); }
+        if (ev.key === '-')                   { ev.preventDefault(); setZoom(zoom - ZOOM_STEP); }
+        if (ev.key === '0')                   { ev.preventDefault(); setZoom(100); }
+    }
     // A = approve the selected employee's pending records (confirm dialog opens;
     // Enter confirms), then jump to the next employee once applied.
     if (CAN_EDIT && (ev.key === 'a' || ev.key === 'A')) {

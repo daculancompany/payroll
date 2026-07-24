@@ -14,7 +14,8 @@
      officialArrival, officialDeparture, // header blanks (optional)
      compact,                    // true → tighter type for modals
      days,                       // { 'YYYY-MM-DD': {in,out,am_in,am_out,pm_in,pm_out,wh,ot,ut,late} }
-     totals                      // { wh, ot, ut, late }
+     totals,                     // { wh, ot, ut, late }
+     marks                       // optional { 'YYYY-MM-DD': [marker,…] } — see markInfo()
    }) => HTML string
 
    Every day between dateFrom..dateTo is emitted; days missing from `days`
@@ -42,10 +43,33 @@
         }
     }
 
+    // ── Day markers: holiday / leave / day-off / attendance request ──
+    // Server shape (dtr-employee-server.php `marks`):
+    //   holiday {k,t:'legal'|'special',lbl}  leave {k,lbl,s,half}
+    //   off {k}                              req  {k,t:'incident'|'overtime',s}
+    function markInfo(m) {
+        if (m.k === 'holiday') return {
+            cls: m.t === 'legal' ? 'dm-hol' : 'dm-spc', ltr: 'H',
+            note: (m.t === 'legal' ? 'LEGAL HOLIDAY' : 'SPECIAL HOLIDAY') + (m.lbl ? ' — ' + m.lbl : '')
+        };
+        if (m.k === 'leave') return {
+            cls: 'dm-lv', ltr: 'L',
+            note: String(m.lbl || 'LEAVE').toUpperCase()
+                + (m.half ? ' (HALF DAY)' : '') + (m.s === 0 ? ' (PENDING)' : '')
+        };
+        if (m.k === 'off') return { cls: 'dm-off', ltr: 'D', note: 'DAY OFF' };
+        return {
+            cls: 'dm-req', ltr: 'R',
+            note: (m.t === 'overtime' ? 'OT REQUEST' : 'INCIDENT REPORT')
+                + (m.s === 0 ? ' (PENDING)' : ' (APPROVED)')
+        };
+    }
+
     function render(opt) {
         opt = opt || {};
         var ampm    = opt.logMode === 'ampm';
         var days    = opt.days || {};
+        var marks   = opt.marks || {};
         var totals  = opt.totals || {};
         var rd      = opt.regularDays || 'Mon – Fri';
         var sat     = opt.saturdays || 'as required';
@@ -57,10 +81,17 @@
         eachDay(opt.dateFrom, opt.dateTo, function (iso, dayNo, dow) {
             var d = days[iso];
             var wkend = (dow === 0 || dow === 6) ? ' wkend' : '';
+            var infos = (marks[iso] || []).map(markInfo);
+            var badges = infos.map(function (i) {
+                return '<span class="dm ' + i.cls + '" title="' + esc(i.note) + '">' + i.ltr + '</span>';
+            }).join('');
             if (!d) {
-                var blankTimes = ampm
-                    ? '<td></td><td></td><td></td><td></td>'
-                    : '<td></td><td></td>';
+                // A marked blank day explains itself across the time cells,
+                // the way a paper DTR is annotated (HOLIDAY / SL / DAY OFF).
+                var blankTimes = infos.length
+                    ? '<td class="dm-note ' + infos[0].cls + '" colspan="' + (ampm ? 4 : 2) + '">'
+                      + esc(infos.map(function (i) { return i.note; }).join(' · ')) + '</td>'
+                    : (ampm ? '<td></td><td></td><td></td><td></td>' : '<td></td><td></td>');
                 rows += '<tr class="absent' + wkend + '"><td class="day">' + dayNo + '</td>' + blankTimes
                     + '<td class="x-col num"></td><td class="x-col num ot"></td>'
                     + '<td class="ut"></td><td class="ut"></td>'
@@ -72,7 +103,7 @@
                 ? '<td>' + esc(d.am_in) + '</td><td>' + esc(d.am_out) + '</td><td>' + esc(d.pm_in) + '</td><td>' + esc(d.pm_out) + '</td>'
                 : '<td>' + esc(d.in) + '</td><td>' + esc(d.out) + '</td>';
             rows += '<tr class="' + wkend.trim() + '">'
-                + '<td class="day">' + dayNo + '</td>' + times
+                + '<td class="day">' + dayNo + badges + '</td>' + times
                 + '<td class="x-col num">' + (d.wh > 0 ? num(d.wh) : '') + '</td>'
                 + '<td class="x-col num ot">' + (d.ot > 0 ? num(d.ot) : '') + '</td>'
                 + '<td class="ut">' + (d.ut > 0 ? ut[0] : '') + '</td>'
@@ -103,7 +134,6 @@
 
         return ''
             + '<div class="dtrf48' + (opt.compact ? ' is-compact' : '') + '">'
-            + '<div class="p-formno">Civil Service Form No. 48</div>'
             + '<div class="p-title">DAILY TIME RECORD</div>'
             + '<div class="p-name">' + esc(opt.name || '') + '</div>'
             + '<div class="p-name-lbl">(NAME)</div>'

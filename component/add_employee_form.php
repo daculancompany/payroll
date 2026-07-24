@@ -226,6 +226,39 @@
                         -->
                     </div>
 
+                    <!-- Bank / Payout details -->
+                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#009688;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
+                        <i class="ri-bank-line me-1"></i>Bank / Payout Details
+                    </div>
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                                Bank
+                            </label>
+                            <select class="form-select" name="bank_id">
+                                <option value="">— No bank selected —</option>
+                                <?php
+                                $__bank_q = $conn->query("SELECT id, bank_name FROM banks WHERE status = 1 ORDER BY bank_name ASC");
+                                if ($__bank_q) while ($__b = $__bank_q->fetch_assoc()): ?>
+                                    <option value="<?= (int) $__b['id'] ?>" <?= isset($bank_id) && (int) $bank_id === (int) $__b['id'] ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($__b['bank_name']) ?>
+                                    </option>
+                                <?php endwhile; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                                Account Number
+                            </label>
+                            <input type="text" class="form-control" name="bank_account_no" maxlength="50"
+                                value="<?= isset($bank_account_no) ? htmlspecialchars($bank_account_no ?? '') : '' ?>"
+                                placeholder="e.g. 001234567890"
+                                pattern="[A-Za-z0-9 \-]*"
+                                data-parsley-pattern="[A-Za-z0-9 \-]*"
+                                data-parsley-pattern-message="Letters, numbers, spaces and dashes only.">
+                        </div>
+                    </div>
+
                     <!-- Settings -->
                     <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#009688;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
                         <i class="ri-settings-3-line me-1"></i>Payroll Settings

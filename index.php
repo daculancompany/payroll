@@ -909,6 +909,9 @@ function getRole($login_role)
                 'attendance-requests'  => 'attendance-requests',
                 'biometric-dtr'        => 'biometric-dtr',
                 'pay-settings'         => 'pay-settings',
+                'thirteenth-month'     => 'thirteenth-month',
+                'bank-payout'          => 'bank-payout',
+                'bir-alphalist'        => 'bir-alphalist',
             ];
 
             $page = isset($_GET['page']) ? trim($_GET['page']) : 'home';

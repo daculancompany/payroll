@@ -113,11 +113,13 @@ foreach ($my_leaves as $ml) if ($ml['status'] == 0) $leave_pending_count++;
 // ── Employee info ───────────────────────────────────────────────
 $s = $conn->prepare("
     SELECT e.*, COALESCE(d.name,'—') AS dept_name, COALESCE(p.name,'—') AS pos_name,
-           COALESCE(cl.clasification,'—') AS clasification_name
+           COALESCE(cl.clasification,'—') AS clasification_name,
+           b.bank_name
     FROM employee e
     LEFT JOIN department   d  ON e.department_id   = d.id
     LEFT JOIN position     p  ON e.position_id     = p.id
     LEFT JOIN clasification cl ON e.clasification_id = cl.id
+    LEFT JOIN banks        b  ON e.bank_id         = b.id
     WHERE e.id = ?
 ");
 $s->bind_param('i', $emp_id); $s->execute();
@@ -2560,6 +2562,22 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="info-val mono"><?= !empty($emp['tin_no']) ? htmlspecialchars($emp['tin_no']) : '<span style="color:#ccc;">Not set</span>' ?></div>
                 </div>
             </div>
+        </div>
+
+        <!-- Bank / Payout — where the salary is sent. Contact HR if wrong. -->
+        <div class="info-section">
+            <div class="info-sec-title"><i class="ri-bank-line"></i> Bank / Payout</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-lbl">Bank</div>
+                    <div class="info-val"><?= !empty($emp['bank_name']) ? htmlspecialchars($emp['bank_name']) : '<span style="color:#ccc;">Not set</span>' ?></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-lbl">Account Number</div>
+                    <div class="info-val mono"><?= !empty($emp['bank_account_no']) ? htmlspecialchars($emp['bank_account_no']) : '<span style="color:#ccc;">Not set</span>' ?></div>
+                </div>
+            </div>
+            <div style="font-size:11px;color:#98a2ad;margin-top:6px;"><i class="ri-information-line me-1"></i>Your salary is deposited to this account. If anything is wrong, contact HR.</div>
         </div>
 
         <!-- Compensation -->

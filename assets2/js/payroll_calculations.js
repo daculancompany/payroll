@@ -299,14 +299,48 @@ function sendPayrollForReview(id) {
 }
 
 async function lockPayroll(id) {
+    // ── Pre-lock sanity check: surface problems BEFORE committing the lock ──
+    Swal.fire({ title: "Checking payroll…", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    let chk = null;
+    try {
+        chk = await $.ajax({ url: "ajax.php?action=payroll_sanity_check", method: "POST", dataType: "JSON", data: { id: id } });
+    } catch (e) { /* check unavailable — still allow locking below */ }
+
+    let issues = 0;
+    let html = "";
+    if (chk?.result) {
+        const peso = (v) => "₱" + Number(v).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const section = (icon, title, rows, fmt) => {
+            if (!rows || !rows.length) return "";
+            issues += rows.length;
+            return "<div style='text-align:left;margin-top:10px;'><b style='font-size:13px;'>" + icon + " " + title + " (" + rows.length + ")</b>"
+                 + "<ul style='margin:4px 0 0 20px;padding:0;max-height:110px;overflow:auto;'>"
+                 + rows.map(fmt).map(s => "<li style='font-size:12px;margin:2px 0;'>" + s + "</li>").join("")
+                 + "</ul></div>";
+        };
+        html += section("🔴", "Net pay ≤ 0", chk.negative, r => "<b>" + r.name + "</b> — " + peso(r.net));
+        html += section("⚪", "Zero days present", chk.zero_days, r => "<b>" + r.name + "</b>");
+        html += section("🟠", "Net changed > " + chk.threshold + "%" + (chk.prev_label ? " vs " + chk.prev_label : ""), chk.swings,
+            r => "<b>" + r.name + "</b> — " + peso(r.prev) + " → " + peso(r.net) + " (" + (r.pct > 0 ? "+" : "") + r.pct + "%)");
+        html += section("🟡", "Missing DTR days", chk.missing,
+            r => "<b>" + r.name + "</b> — " + r.missing + " day(s) unaccounted (" + r.counted + " of " + r.expected + ")");
+    }
+
+    const allClear = chk?.result && issues === 0;
     const result = await Swal.fire({
-        title: "Are you sure?",
-        text: "You won't be able to revert this!",
-        icon: "warning",
+        title: allClear ? "All clear" : (chk?.result ? "Review before locking" : "Are you sure?"),
+        icon: allClear ? "success" : "warning",
+        html: (allClear
+                ? "Checked <b>" + chk.total + "</b> employees — no issues found."
+                : (chk?.result
+                    ? "<div style='font-size:13px;'>Checked <b>" + chk.total + "</b> employees — <b>" + issues + "</b> finding(s):</div>" + html
+                    : "Couldn't run the sanity check."))
+            + "<div style='margin-top:12px;font-size:12px;color:#888;'>Locking commits loan deductions and freezes this payroll. Employees will be notified their final payslip is ready.</div>",
+        width: 620,
         showCancelButton: true,
-        confirmButtonColor: "#3085d6",
-        cancelButtonColor: "#d33",
-        confirmButtonText: "Yes, lock it!",
+        confirmButtonColor: allClear ? "#3085d6" : "#d33",
+        cancelButtonColor: "#6c757d",
+        confirmButtonText: allClear ? "Lock payroll" : "Lock anyway",
     });
     if (result.isConfirmed) {
         $.ajax({
@@ -361,6 +395,27 @@ function closeFullscreen() {
     }
 }
 
+// ── Keep SweetAlert dialogs visible while #myDiv is fullscreen ──
+// Swal appends to <body>, which doesn't paint while another element holds the
+// fullscreen top-layer. Re-target every Swal.fire into the fullscreen element
+// when one is active, so saving/locking no longer has to exit fullscreen.
+(function patchSwalForFullscreen() {
+    function apply() {
+        if (typeof Swal === "undefined" || Swal.__fsPatched) return;
+        const orig = Swal.fire.bind(Swal);
+        Swal.fire = function (...args) {
+            const fs = document.fullscreenElement || document.webkitFullscreenElement;
+            if (fs && args.length === 1 && args[0] && typeof args[0] === "object" && !args[0].target) {
+                args[0] = Object.assign({}, args[0], { target: fs });
+            }
+            return orig(...args);
+        };
+        Swal.__fsPatched = true;
+    }
+    apply();
+    document.addEventListener("DOMContentLoaded", apply);
+})();
+
 // ── Keep Bootstrap modals visible while #myDiv is in the Fullscreen top-layer ──
 // A fullscreened element only paints its own subtree. The page modals live on
 // <body> (outside #myDiv), so in fullscreen they render *behind* the fullscreen
@@ -409,6 +464,24 @@ $(document).ready(function () {
     $(".input-class").on("input", function () {
         let inputId = $(this).data("id");
         let inputType = $(this).data("type");
+
+        // ── Amount guard: strip anything that isn't a valid number as it's
+        // typed. Digits + ONE decimal point; adjustment may start with "-".
+        // adjustment_remarks is free text and skips the filter.
+        if (inputType !== "adjustment_remarks") {
+            const allowNeg = inputType === "adjustment";
+            const raw = $(this).val();
+            let cleaned = raw.replace(allowNeg ? /[^0-9.\-]/g : /[^0-9.]/g, "");
+            if (allowNeg) cleaned = cleaned.charAt(0) + cleaned.slice(1).replace(/-/g, ""); // "-" only leading
+            const dot = cleaned.indexOf(".");
+            if (dot !== -1) cleaned = cleaned.slice(0, dot + 1) + cleaned.slice(dot + 1).replace(/\./g, ""); // one "."
+            if (cleaned !== raw) {
+                const pos = Math.max(0, (this.selectionStart || cleaned.length) - (raw.length - cleaned.length));
+                $(this).val(cleaned);
+                try { this.setSelectionRange(pos, pos); } catch (e) { /* non-text input */ }
+            }
+        }
+
         let inputValue = $(this).val().trim(); // Trim to remove extra spaces
         let inputDID = $(this).data("dd_id");
 
@@ -582,7 +655,8 @@ function refreshPayrollRows(payrollId) {
 }
 
 async function saveUnsaved() {
-    closeFullscreen();
+    // Stay in fullscreen: Swal renders inside the fullscreen element (see the
+    // fullscreen patch below), so there's no need to exit before saving.
     Swal.fire({
         title: "Saving, please wait...",
         allowOutsideClick: false,

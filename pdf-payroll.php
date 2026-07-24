@@ -12,6 +12,7 @@ $sources = [
     'employer' => 'print-payroll-employer.php',
     'dept'     => 'print-payroll-dept.php',
     'payslip'  => 'view_payslip.php',   // individual payslip — portrait A4
+    '13th'     => 'print-13th-month.php', // 13th month register — id = year
 ];
 
 $src = isset($_GET['src']) ? $_GET['src'] : 'payroll';

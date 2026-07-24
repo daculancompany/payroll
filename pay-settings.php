@@ -178,6 +178,60 @@ $payroll_period = isset($period_codes[$pp_code]) ? $period_codes[$pp_code] : 'se
                                         </div>
                                     </div>
 
+                                    <!-- 13th Month Pay -->
+                                    <div class="col-12">
+                                        <hr class="my-1">
+                                        <h6 class="fw-bold text-uppercase text-muted mb-3" style="font-size:11px;letter-spacing:1px;">
+                                            <i class="ri-hand-coin-line me-1"></i>13th Month Pay (PD 851)
+                                        </h6>
+                                        <div class="row g-3">
+                                            <div class="col-md-4">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" name="th13_include_paid_leave" id="th13-leave" value="1"
+                                                        <?= ps('th13_include_paid_leave', $settings) >= 1 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label fw-semibold" for="th13-leave">Include paid leave days</label>
+                                                </div>
+                                                <small class="text-muted">Approved paid leave counts as basic salary earned (standard DOLE reading).</small>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" name="th13_include_allowance" id="th13-allow" value="1"
+                                                        <?= ps('th13_include_allowance', $settings) >= 1 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label fw-semibold" for="th13-allow">Include allowances</label>
+                                                </div>
+                                                <small class="text-muted">Off = strict basic only (DOLE minimum). On = allowances integrated into the basis.</small>
+                                            </div>
+                                            <div class="col-md-4">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" name="th13_round_to_peso" id="th13-round" value="1"
+                                                        <?= ps('th13_round_to_peso', $settings) >= 1 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label fw-semibold" for="th13-round">Round to whole peso</label>
+                                                </div>
+                                                <small class="text-muted">Off = centavo-exact (basic &divide; 12 as-is).</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Pre-lock payroll checks -->
+                                    <div class="col-12">
+                                        <hr class="my-1">
+                                        <h6 class="fw-bold text-uppercase text-muted mb-3" style="font-size:11px;letter-spacing:1px;">
+                                            <i class="ri-shield-check-line me-1"></i>Pre-Lock Payroll Checks
+                                        </h6>
+                                        <div class="row g-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-semibold">Net pay swing alert threshold</label>
+                                                <div class="input-group">
+                                                    <input type="number" class="form-control" name="sanity_net_swing_pct"
+                                                           value="<?= ps('sanity_net_swing_pct', $settings) ?: 30 ?>"
+                                                           min="1" max="500" step="1" required>
+                                                    <span class="input-group-text">%</span>
+                                                </div>
+                                                <small class="text-muted">Before locking, employees whose net pay changed more than this vs. the previous period are flagged for review.</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- Summary -->
                                     <div class="col-12">
                                         <hr class="my-1">

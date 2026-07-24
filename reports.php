@@ -8,6 +8,8 @@ $report_groups = [
         ['remittance-report',      'Government Remittance',    'ri-government-line',         '#1976d2', 'SSS, PhilHealth, Pag-IBIG, provident fund and withholding tax per period.'],
         ['payroll-comparison',     'Payroll Comparison',       'ri-git-commit-line',        '#6f42c1', 'Compare two payroll periods side by side to spot variances.'],
         ['payroll-report',         'Payroll List Report',      'ri-list-check-2',           '#f57c00', 'List of all payroll runs with status and totals.'],
+        ['bank-payout',            'Bank Payout',              'ri-bank-line',              '#00695c', 'Per-payroll net pay with each employee\'s bank and account number — CSV for bank upload.'],
+        ['bir-alphalist',          'BIR Alphalist',            'ri-file-shield-2-line',     '#5d4037', 'Annual per-employee compensation, non-taxable items and tax withheld — annex to Form 1604-C.'],
     ],
     'HRIS' => [
         ['employee-masterlist',    'Employee Masterlist',      'ri-team-line',              '#009688', 'Full roster: IDs, position, department, government numbers, salary and status.'],

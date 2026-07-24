@@ -498,6 +498,13 @@ class Action
         $employee_code    = trim($_POST['employee_code'] ?? '');
         $rate_type        = in_array($_POST['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $_POST['rate_type'] : 'daily';
         $payroll_type     = 1;
+        // Bank / payout details (both optional).
+        $bank_id          = !empty($_POST['bank_id']) ? (int) $_POST['bank_id'] : null;
+        $bank_account_no  = trim($_POST['bank_account_no'] ?? '');
+        if ($bank_account_no !== '' && !preg_match('/^[A-Za-z0-9 \-]{1,50}$/', $bank_account_no)) {
+            return 'error:Account number may only contain letters, numbers, spaces and dashes.';
+        }
+        if ($bank_account_no === '') $bank_account_no = null;
 
         $status         = isset($_POST['status']) ? 1 : 0;
         $isAutoDeduct   = isset($_POST['isAutoDeduct']) ? 1 : 0;
@@ -544,10 +551,10 @@ class Action
                 // Insert new employee
                 $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : null;
                 $query = "INSERT INTO employee
-                (employee_no, employee_code, firstname, middlename, lastname, position_id, department_id, salary, basic_pay, rate_type, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, bday, ext)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                (employee_no, employee_code, firstname, middlename, lastname, position_id, department_id, salary, basic_pay, rate_type, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, bday, ext, bank_id, bank_account_no)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $this->db->prepare($query);
-                $stmt->bind_param("sssssssssssssssssss", $e_num, $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext);
+                $stmt->bind_param("sssssssssssssssssssss", $e_num, $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $bank_id, $bank_account_no);
                 $stmt->execute();
 
                 if ($stmt->affected_rows > 0) {
@@ -582,10 +589,10 @@ class Action
                 // Update existing employee
                 $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : null;
                 $query = "UPDATE employee SET
-                employee_code=COALESCE(NULLIF(?, ''), employee_code), firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, salary=?, basic_pay=?, rate_type=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?
+                employee_code=COALESCE(NULLIF(?, ''), employee_code), firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, salary=?, basic_pay=?, rate_type=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?, bank_id=?, bank_account_no=?
                 WHERE id=?";
                 $stmt = $this->db->prepare($query);
-                $stmt->bind_param("sssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $id);
+                $stmt->bind_param("sssssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $bank_id, $bank_account_no, $id);
                 $stmt->execute();
 
                 $this->db->commit();
@@ -5193,6 +5200,108 @@ class Action
         return 1;
     }
 
+    /**
+     * Pre-lock sanity check — everything an admin should eyeball before Lock,
+     * computed in one pass over the payroll's items (same math as the page):
+     *   negative  — net pay ≤ 0
+     *   zero_days — no days present (fixed-rate staff excluded: paid regardless)
+     *   swings    — net changed more than sanity_net_swing_pct% vs the previous period
+     *   missing   — expected working days (rest days excluded) not accounted for
+     *               by present + paid leave + absent
+     */
+    function payroll_sanity_check()
+    {
+        $id = (int) ($_POST['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Invalid payroll.'];
+        $pay = $this->db->query("SELECT * FROM payroll WHERE id = $id")->fetch_assoc();
+        if (!$pay) return ['result' => false, 'message' => 'Payroll not found.'];
+
+        $threshold = 30.0;
+        $ts = $this->db->query("SELECT setting_value FROM pay_settings WHERE setting_key = 'sanity_net_swing_pct'");
+        if ($ts && ($tr = $ts->fetch_assoc())) $threshold = max(1, (float) $tr['setting_value']);
+
+        // Current rows via the same computation the details page refreshes with.
+        $keep = $_POST;
+        $_POST = ['payroll_id' => $id];
+        $data = $this->get_payroll_rows_data();
+        $_POST = $keep;
+
+        // Names + employee ids per payroll item.
+        $names = [];
+        $emps = [];
+        $nq = $this->db->query("SELECT pi.id, pi.employee_id, CONCAT(e.lastname, ', ', e.firstname) AS name
+            FROM payroll_items pi INNER JOIN employee e ON e.id = pi.employee_id WHERE pi.payroll_id = $id");
+        if ($nq) while ($n = $nq->fetch_assoc()) {
+            $names[$n['id']] = $n['name'];
+            $emps[$n['id']] = (int) $n['employee_id'];
+        }
+
+        // Previous period's net per employee (nearest earlier payroll).
+        $prevNet = [];
+        $prev = $this->db->query("SELECT id, date_from, date_to FROM payroll
+            WHERE date_from < '" . $this->db->real_escape_string($pay['date_from']) . "' AND id <> $id
+            ORDER BY date_from DESC, id DESC LIMIT 1")->fetch_assoc();
+        if ($prev) {
+            $pq = $this->db->query("SELECT employee_id, SUM(net) AS n FROM payroll_items WHERE payroll_id = {$prev['id']} GROUP BY employee_id");
+            if ($pq) while ($p = $pq->fetch_assoc()) $prevNet[(int) $p['employee_id']] = (float) $p['n'];
+        }
+
+        // Rest-day schedules overlapping the period → expected working days.
+        $restMap = [];
+        $rq = $this->db->prepare("SELECT employee_id, effective_from, effective_to, rest_days
+            FROM employee_schedules
+            WHERE effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)
+            ORDER BY effective_from DESC");
+        $rq->bind_param('ss', $pay['date_to'], $pay['date_from']);
+        $rq->execute();
+        $rr = $rq->get_result();
+        while ($rw = $rr->fetch_assoc()) $restMap[$rw['employee_id']][] = $rw;
+
+        $negative = [];
+        $zero = [];
+        $swings = [];
+        $missing = [];
+        foreach ($data['rows'] as $r) {
+            $iid = $r['id'];
+            $eid = $emps[$iid] ?? 0;
+            $nm = $names[$iid] ?? ('#' . $iid);
+            $net = (float) $r['net'];
+            $isFixed = ($r['rate_type'] ?? 'daily') === 'fixed';
+
+            if ($net <= 0) $negative[] = ['name' => $nm, 'net' => round($net, 2)];
+            if (!$isFixed && (float) $r['present'] <= 0) $zero[] = ['name' => $nm];
+            if (isset($prevNet[$eid]) && $prevNet[$eid] > 0) {
+                $pct = ($net - $prevNet[$eid]) / $prevNet[$eid] * 100;
+                if (abs($pct) > $threshold) {
+                    $swings[] = ['name' => $nm, 'prev' => round($prevNet[$eid], 2), 'net' => round($net, 2), 'pct' => round($pct, 1)];
+                }
+            }
+            if (!$isFixed) {
+                $expected = 0;
+                for ($d = strtotime($pay['date_from']); $d <= strtotime($pay['date_to']); $d = strtotime('+1 day', $d)) {
+                    if (!$this->isRestDay($restMap[$eid] ?? [], date('Y-m-d', $d))) $expected++;
+                }
+                $counted = (float) $r['present'] + (float) ($r['paid_leave'] ?? 0) + (float) $r['absent'];
+                $miss = $expected - $counted;
+                if ($miss >= 1) {
+                    $missing[] = ['name' => $nm, 'expected' => $expected, 'counted' => round($counted, 2), 'missing' => round($miss, 1)];
+                }
+            }
+        }
+        usort($swings, fn($a, $b) => abs($b['pct']) <=> abs($a['pct']));
+
+        return [
+            'result' => true,
+            'total' => count($data['rows']),
+            'threshold' => $threshold,
+            'prev_label' => $prev ? date('M j', strtotime($prev['date_from'])) . '–' . date('M j, Y', strtotime($prev['date_to'])) : null,
+            'negative' => $negative,
+            'zero_days' => $zero,
+            'swings' => $swings,
+            'missing' => $missing,
+        ];
+    }
+
     function update_payroll_status()
     {
         extract($_POST);
@@ -5312,6 +5421,29 @@ class Action
 
             // Commit Transaction
             $this->db->commit();
+
+            // Locked = payslips are FINAL. Tell every employee in the batch
+            // (portal bell + best-effort browser push). Outside the transaction
+            // and never fatal — a notification failure must not undo a lock.
+            if ((int) $status === 2) {
+                try {
+                    $p = $this->db->query("SELECT date_from, date_to FROM payroll WHERE id = " . intval($id))->fetch_assoc();
+                    $period = date('M j', strtotime($p['date_from'])) . ' – ' . date('M j, Y', strtotime($p['date_to']));
+                    $this->notifyEmployeesFromQuery(
+                        "SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = " . intval($id),
+                        'Your final payslip is ready',
+                        "Payroll for $period has been finalized. Your payslip is now available in the portal.",
+                        'ri-file-text-line',
+                        'success',
+                        'employee-portal.php?tab=payslips'
+                    );
+                    require_once __DIR__ . '/fcm.php';
+                    $eq = $this->db->query("SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = " . intval($id));
+                    if ($eq) while ($e = $eq->fetch_assoc()) {
+                        fcm_push_employee($this->db, (int) $e['employee_id'], 'Your final payslip is ready', "Payroll for $period has been finalized.", 'employee-portal.php?tab=payslips');
+                    }
+                } catch (\Throwable $e) { /* best-effort */ }
+            }
             return 1;
         } catch (Exception $e) {
             // Rollback on error
@@ -6122,7 +6254,13 @@ class Action
     function save_pay_settings()
     {
         $uid  = $_SESSION['login_id'] ?? null;
-        $keys = ['legal_holiday_rate', 'special_holiday_rate', 'ot_regular_rate', 'ot_holiday_multiplier', 'nsd_rate', 'rest_day_rate'];
+        $keys = ['legal_holiday_rate', 'special_holiday_rate', 'ot_regular_rate', 'ot_holiday_multiplier', 'nsd_rate', 'rest_day_rate', 'sanity_net_swing_pct'];
+        // 13th month checkboxes: absent from POST = unchecked = 0.
+        $flag_keys = ['th13_include_paid_leave', 'th13_include_allowance', 'th13_round_to_peso'];
+        foreach ($flag_keys as $fk) {
+            $_POST[$fk] = isset($_POST[$fk]) && $_POST[$fk] ? 1 : 0;
+        }
+        $keys = array_merge($keys, $flag_keys);
         $this->db->begin_transaction();
         try {
             foreach ($keys as $key) {
@@ -6156,6 +6294,140 @@ class Action
             $this->db->rollback();
             return ['result' => false, 'message' => $e->getMessage()];
         }
+    }
+
+    // ══════════════════ 13th Month Pay (PD 851) ══════════════════
+
+    /** Numeric flag/value from pay_settings, with a default when unset. */
+    private function th13_setting($key, $default)
+    {
+        $key = $this->db->real_escape_string($key);
+        $r = $this->db->query("SELECT setting_value FROM pay_settings WHERE setting_key = '$key'");
+        $row = $r ? $r->fetch_assoc() : null;
+        return $row !== null ? (float) $row['setting_value'] : $default;
+    }
+
+    /**
+     * Scan every payroll of the given year and (re)build the draft rows:
+     * per employee, BASIC salary actually paid per cutoff, summed, ÷ 12.
+     *   daily        → (present [+ paid_leave]) × per_day  [+ allowance]
+     *   monthly/fixed→ (basic_pay [+ allowance] − absent × per_day) / 2
+     * All payrolls with items count (any status); unlocked ones are tallied
+     * separately so the UI can warn the figures may still move.
+     * Refuses to run once the year is finalized.
+     */
+    function th13_generate()
+    {
+        $year = (int) ($_POST['year'] ?? 0);
+        if ($year < 2000 || $year > 2100) return ['result' => false, 'message' => 'Invalid year.'];
+
+        $fin = $this->db->query("SELECT 1 FROM thirteenth_month WHERE year = $year AND status = 1 LIMIT 1");
+        if ($fin && $fin->num_rows > 0) {
+            return ['result' => false, 'message' => "$year is finalized. Unfinalize it first to regenerate."];
+        }
+
+        $inc_leave = $this->th13_setting('th13_include_paid_leave', 1) >= 1;
+        $inc_allow = $this->th13_setting('th13_include_allowance', 0) >= 1;
+        $round_p   = $this->th13_setting('th13_round_to_peso', 0) >= 1;
+
+        $excluded_clasif = "'" . implode("','", array_map([$this->db, 'real_escape_string'], PAYROLL_EXCLUDED_CLASSIFICATIONS)) . "'";
+
+        $leave_term = $inc_leave ? " + COALESCE(pi.paid_leave, 0)" : "";
+        $allow_term = $inc_allow ? " + (pi.allowance_amount * pi.allowance_days)" : "";
+
+        // Per-cutoff basic actually paid, following each item's frozen rate_type.
+        $q = $this->db->query("
+            SELECT pi.employee_id,
+                   COUNT(*) AS cutoffs,
+                   SUM(p.status <> 2) AS unlocked_cutoffs,
+                   SUM(CASE WHEN pi.rate_type IN ('monthly','fixed')
+                        THEN (pi.basic_pay $allow_term - (pi.absent * pi.per_day)) / 2
+                        ELSE ((pi.present $leave_term) * pi.per_day) $allow_term
+                   END) AS basic_earned
+            FROM payroll_items pi
+            INNER JOIN payroll p ON p.id = pi.payroll_id
+            INNER JOIN employee e ON e.id = pi.employee_id
+            WHERE YEAR(p.date_from) = $year
+              AND e.clasification_id NOT IN (SELECT id FROM clasification WHERE UPPER(clasification) IN ($excluded_clasif))
+            GROUP BY pi.employee_id
+        ");
+        if (!$q) return ['result' => false, 'message' => $this->db->error];
+
+        $uid = (int) ($_SESSION['login_id'] ?? 0);
+        $this->db->begin_transaction();
+        try {
+            $seen = [];
+            $ins = $this->db->prepare("
+                INSERT INTO thirteenth_month (year, employee_id, basic_earned, cutoffs, unlocked_cutoffs, amount, generated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE basic_earned = VALUES(basic_earned), cutoffs = VALUES(cutoffs),
+                    unlocked_cutoffs = VALUES(unlocked_cutoffs), amount = VALUES(amount), generated_by = VALUES(generated_by)
+            ");
+            $n = 0;
+            while ($row = $q->fetch_assoc()) {
+                $basic = max(0, (float) $row['basic_earned']);
+                $amount = $basic / 12;
+                if ($round_p) $amount = round($amount);
+                $eid = (int) $row['employee_id'];
+                $cut = (int) $row['cutoffs'];
+                $unl = (int) $row['unlocked_cutoffs'];
+                $ins->bind_param('iidiidi', $year, $eid, $basic, $cut, $unl, $amount, $uid);
+                $ins->execute();
+                $seen[] = $eid;
+                $n++;
+            }
+            // Drop draft rows for employees no longer in the year's payrolls.
+            if ($seen) {
+                $in = implode(',', $seen);
+                $this->db->query("DELETE FROM thirteenth_month WHERE year = $year AND status = 0 AND employee_id NOT IN ($in)");
+            } else {
+                $this->db->query("DELETE FROM thirteenth_month WHERE year = $year AND status = 0");
+            }
+            $this->db->commit();
+            return ['result' => true, 'message' => "Computed 13th month pay for $n employee(s)."];
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /** Save a manual final amount + remarks on one draft row. */
+    function th13_save_row()
+    {
+        $id = (int) ($_POST['id'] ?? 0);
+        $override = $_POST['override_amount'] ?? '';
+        $remarks = trim((string) ($_POST['remarks'] ?? ''));
+        if (!$id) return ['result' => false, 'message' => 'Invalid row.'];
+
+        $chk = $this->db->query("SELECT status FROM thirteenth_month WHERE id = $id")->fetch_assoc();
+        if (!$chk) return ['result' => false, 'message' => 'Row not found.'];
+        if ((int) $chk['status'] === 1) return ['result' => false, 'message' => 'Finalized — unfinalize the year first.'];
+
+        $stmt = ($override === '' || $override === null)
+            ? $this->db->prepare("UPDATE thirteenth_month SET override_amount = NULL, remarks = ? WHERE id = ?")
+            : null;
+        if ($stmt) {
+            $stmt->bind_param('si', $remarks, $id);
+        } else {
+            $ov = (float) $override;
+            $stmt = $this->db->prepare("UPDATE thirteenth_month SET override_amount = ?, remarks = ? WHERE id = ?");
+            $stmt->bind_param('dsi', $ov, $remarks, $id);
+        }
+        $stmt->execute();
+        return ['result' => true, 'message' => 'Saved.'];
+    }
+
+    /** Lock (or unlock, admin only) every row of a year. */
+    function th13_set_final()
+    {
+        $year = (int) ($_POST['year'] ?? 0);
+        $to = (int) ($_POST['finalize'] ?? 1) === 1 ? 1 : 0;
+        if (!$year) return ['result' => false, 'message' => 'Invalid year.'];
+        if ($to === 0 && (int) ($_SESSION['login_role'] ?? 0) !== 1) {
+            return ['result' => false, 'message' => 'Only an administrator can unfinalize.'];
+        }
+        $this->db->query("UPDATE thirteenth_month SET status = $to WHERE year = $year");
+        return ['result' => true, 'message' => $to ? 'Finalized — rows are now locked.' : 'Unfinalized — rows are editable again.'];
     }
 
     function edit_dtr_time()

@@ -533,6 +533,21 @@ if ($action == 'save_pay_settings') {
     echo json_encode($crud->save_pay_settings());
 }
 
+if ($action == 'payroll_sanity_check') {
+    echo json_encode($crud->payroll_sanity_check());
+}
+
+// ── 13th Month Pay ──
+if ($action == 'th13_generate') {
+    echo json_encode($crud->th13_generate());
+}
+if ($action == 'th13_save_row') {
+    echo json_encode($crud->th13_save_row());
+}
+if ($action == 'th13_set_final') {
+    echo json_encode($crud->th13_set_final());
+}
+
 // ── DTR Review ──
 if ($action == 'edit_dtr_time') {
     echo json_encode($crud->edit_dtr_time());

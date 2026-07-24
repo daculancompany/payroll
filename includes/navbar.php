@@ -151,6 +151,11 @@
                         <i class="ri-money-dollar-circle-line"></i> <span>Pay Settings</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a href="index.php?page=thirteenth-month" class="nav-link menu-link <?= $page === 'thirteenth-month' ? 'active' : '' ?>">
+                        <i class="ri-hand-coin-line"></i> <span>13th Month Pay</span>
+                    </a>
+                </li>
                 <?php endif; ?>
 
                 <!-- Loan management (Payroll Comparison & Remittance now live under Reports) -->
@@ -189,7 +194,7 @@
 
                 <!-- ===== REPORTS ===== -->
                 <?php
-                $rep_acct = ['payroll-register','loan-deduction-ledger','remittance-report','payroll-comparison','payroll-report'];
+                $rep_acct = ['payroll-register','loan-deduction-ledger','remittance-report','payroll-comparison','payroll-report','bank-payout','bir-alphalist'];
                 $rep_hris = ['employee-masterlist','attendance-summary'];
                 $rep_all  = array_merge(['reports'], $rep_acct, $rep_hris);
                 ?>
@@ -210,6 +215,8 @@
                             <li class="nav-item"><a href="payroll-register" class="nav-link <?= $page === 'payroll-register' ? 'active' : '' ?>"><i class="ri-file-list-3-line me-1"></i>Payroll Register</a></li>
                             <li class="nav-item"><a href="loan-deduction-ledger" class="nav-link <?= $page === 'loan-deduction-ledger' ? 'active' : '' ?>"><i class="ri-bank-card-line me-1"></i>Loan &amp; Deduction Ledger</a></li>
                             <li class="nav-item"><a href="remittance-report" class="nav-link <?= $page === 'remittance-report' ? 'active' : '' ?>"><i class="ri-government-line me-1"></i>Remittance Report</a></li>
+                            <li class="nav-item"><a href="index.php?page=bank-payout" class="nav-link <?= $page === 'bank-payout' ? 'active' : '' ?>"><i class="ri-bank-line me-1"></i>Bank Payout</a></li>
+                            <li class="nav-item"><a href="index.php?page=bir-alphalist" class="nav-link <?= $page === 'bir-alphalist' ? 'active' : '' ?>"><i class="ri-file-shield-2-line me-1"></i>BIR Alphalist</a></li>
                             <li class="nav-item"><a href="payroll-comparison" class="nav-link <?= $page === 'payroll-comparison' ? 'active' : '' ?>"><i class="ri-arrow-left-right-line me-1"></i>Payroll Comparison</a></li>
                             <li class="nav-item"><a href="payroll-report" class="nav-link <?= $page === 'payroll-report' ? 'active' : '' ?>"><i class="ri-list-check-2 me-1"></i>Payroll List</a></li>
                         </ul>

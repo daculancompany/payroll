@@ -440,6 +440,29 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     </div>
                                 </div>
 
+                                <!-- Bank / Payout -->
+                                <?php
+                                $__bank_name = '';
+                                if (!empty($bank_id)) {
+                                    $__bq = $conn->query("SELECT bank_name FROM banks WHERE id = " . (int) $bank_id);
+                                    if ($__bq && ($__br = $__bq->fetch_assoc())) $__bank_name = $__br['bank_name'];
+                                }
+                                ?>
+                                <div class="detail-section">
+                                    <div class="detail-section-title"><i class="ri-bank-line"></i>Bank / Payout</div>
+                                    <div class="detail-row">
+                                        <div class="detail-item">
+                                            <div class="detail-label">Bank</div>
+                                            <div class="detail-value"><?= $__bank_name !== '' ? htmlspecialchars($__bank_name) : '<span class="text-muted">Not set</span>' ?></div>
+                                        </div>
+                                        <div class="detail-item">
+                                            <div class="detail-label">Account Number</div>
+                                            <div class="detail-value" style="font-family:monospace;"><?= !empty($bank_account_no) ? htmlspecialchars($bank_account_no) : '<span class="text-muted">Not set</span>' ?></div>
+                                        </div>
+                                        <div class="detail-item" style="flex:2;"></div>
+                                    </div>
+                                </div>
+
                                 <!-- Payroll Settings -->
                                 <div class="detail-section">
                                     <div class="detail-section-title"><i class="ri-settings-3-line"></i>Payroll Settings</div>

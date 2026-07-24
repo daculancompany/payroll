@@ -407,17 +407,11 @@ $(document).ready(function () {
     //     'columnKeep': true,
     // });
 });
-$(document).ready(function () {
-    $("#myInput").on("keyup", function () {
-        var value = $(this).val().toLowerCase();
-        $("#table-1 tbody tr").filter(function () {
-            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1);
-        });
-        // $("#table-2 tbody tr").filter(function() {
-        //     $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
-        // });
-    });
-});
+// NOTE: search is handled by _applyDtrSearch() in dtr-details.php.
+// A second jQuery handler used to live here that toggled EVERY row in
+// #table-1 (including date separators and employee headers) on each keystroke —
+// it both fought the other handler and doubled the per-keystroke work on a
+// 4k-row batch. Removed.
 
 // ── Resolve a disputed review (shared shape with payroll page) ──
 function openResolveDispute(type, reviewId, empName) {
@@ -636,55 +630,15 @@ function _applyRowStatus(id, status) {
     });
 }
 
-// Recompute summary cards, batch-approve button and per-day buttons from the DOM.
+// Refresh the summary cards and each employee card's chips after a decision.
+//
+// The top stat cards must reflect the WHOLE batch, but only a page of employees
+// is in the DOM, so those numbers come from the server (dtr-employee-server.php
+// ?action=summary). The per-card chips are local — a card carries all of that
+// employee's entries — so they're recomputed from the DOM.
 function _recomputeTotals() {
-    var appr = 0, disa = 0, pend = 0, perDay = {};
-    document.querySelectorAll("tr[data-rec-id]").forEach(function (tr) {
-        var s = parseInt(tr.dataset.recStatus || "0", 10);
-        if (s === 1) appr++;
-        else if (s === 2) disa++;
-        else { pend++; var d = tr.dataset.recDate; perDay[d] = (perDay[d] || 0) + 1; }
-    });
-    var setTxt = function (idv, val) { var el = document.getElementById(idv); if (el) el.textContent = val; };
-    setTxt("stat-approved", appr);
-    setTxt("stat-disapproved", disa);
-    setTxt("stat-pending", pend);
-
-    var b = document.getElementById("btn-batch-approve");
-    if (b) {
-        b.disabled = (pend > 0) || (b.dataset.dup === "1");
-        var badge = document.getElementById("batch-pending-badge");
-        var cnt   = document.getElementById("batch-pending-count");
-        if (cnt) cnt.textContent = pend;
-        if (badge) badge.style.display = (pend > 0) ? "" : "none";
-    }
-
-    document.querySelectorAll(".approveday-btn").forEach(function (btn) {
-        var d = btn.dataset.approvedayDate;
-        var c = perDay[d] || 0;
-        var span = btn.querySelector(".approveday-count");
-        if (span) span.textContent = c;
-        btn.style.display = (c > 0) ? "" : "none";
-    });
-
-    // Per-employee summary chips + Approve All button on each card
-    document.querySelectorAll("#view-by-employee .ecard").forEach(function (card) {
-        var a = 0, p = 0, d = 0;
-        card.querySelectorAll(".ecard-entry[data-rec-id]").forEach(function (en) {
-            var s = parseInt(en.dataset.recStatus || "0", 10);
-            if (s === 1) a++; else if (s === 2) d++; else p++;
-        });
-        var set = function (cls, val) { var el = card.querySelector(cls); if (el) el.textContent = val; };
-        set(".emp-sum-appr", a);
-        set(".emp-sum-pend", p);
-        set(".emp-sum-disa", d);
-        var btn = card.querySelector(".ecard-approve-all");
-        if (btn) {
-            btn.style.display = (p > 0) ? "" : "none";
-            var c = btn.querySelector(".emp-appr-count");
-            if (c) c.textContent = p;
-        }
-    });
+    if (typeof _dtrRefreshAllCardSummaries === "function") _dtrRefreshAllCardSummaries();
+    if (typeof refreshDtrSummary === "function") refreshDtrSummary();
 }
 
 function _toast(msg) {
@@ -730,13 +684,17 @@ function decideRecord(id, decision) {
         function () { _applyRowStatus(id, decision); });
 }
 
-// All pending records for one day
+// All pending records for one day.
+// The By Day table this used to be driven from is gone (the screen is By
+// Employee only now), so there is no "Approve day" button on the page. The
+// ajax.php?action=decide_dtr_details endpoint still accepts ddtr_id + date, so
+// this is kept as a working entry point rather than deleted.
 function approveDay(ddtrId, date) {
     _postDecision({ ddtr_id: ddtrId, date: date }, 1,
         "All pending records for " + date + " will be approved.",
         function () {
-            document.querySelectorAll('tr[data-rec-id][data-rec-date="' + date + '"]').forEach(function (tr) {
-                if (parseInt(tr.dataset.recStatus || "0", 10) === 0) _applyRowStatus(tr.dataset.recId, 1);
+            document.querySelectorAll('[data-rec-id][data-rec-date="' + date + '"]').forEach(function (el) {
+                if (parseInt(el.dataset.recStatus || "0", 10) === 0) _applyRowStatus(el.dataset.recId, 1);
             });
         });
 }
@@ -787,7 +745,9 @@ function decideSelected(decision) {
         function () { ids.forEach(function (id) { _applyRowStatus(id, decision); }); });
 }
 
-// Approve every pending record of one employee (By Employee card header button)
+// Approve every pending record of one employee (By Employee card header button).
+// The card holds all of that employee's entries for the batch, so its own DOM
+// is the complete id list.
 function approveEmployee(btn, name) {
     var card = btn.closest(".ecard");
     if (!card) return;

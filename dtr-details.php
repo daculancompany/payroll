@@ -29,6 +29,21 @@ if (!$dtr) {
     exit;
 }
 
+// ── Output trimming for the big record loops ─────────────────────────────────
+// The row markup is indented ~60 columns deep and each record spans dozens of
+// lines, so on a full batch more than half the HTML is leading whitespace —
+// ~37 MB the browser's parser has to walk for nothing. These wrap only the three
+// record loops (by-day tbody + the two <template> blocks); the rest of the page
+// is left alone so nothing inside <pre>, <textarea> or inline <script> is touched.
+function dtr_trim_start()
+{
+    ob_start();
+}
+function dtr_trim_end()
+{
+    echo preg_replace(['/^[ \t]+/m', '/\n{2,}/'], ['', "\n"], ob_get_clean());
+}
+
 function stringToArrayBySpaces($string)
 {
     $split_array = preg_split('/\s{7}+/', $string, -1, PREG_SPLIT_NO_EMPTY);
@@ -65,145 +80,109 @@ $decoded_data = isset($file_parts[1]) ? base64_decode($file_parts[1]) : '';
 $result_array = $decoded_data !== '' ? stringToArrayBySpaces($decoded_data) : [];
 $is_duplicate = false;
 
-// Fetch attendance data grouped by date and employee
-$query = $conn->query("SELECT  
-                        a.*, 
-                        e.employee_no, 
-                        e.lastname, 
-                        e.firstname, 
-                        e.middlename,  
-                        d.name as department, 
-                        p.name as position,
-                        DATE(a.date_time) as attendance_date
-                    FROM DTR_details a 
-                    INNER JOIN employee e ON a.employee_id = e.id 
-                    LEFT JOIN department d ON e.department_id = d.id 
-                    LEFT JOIN position p ON e.position_id = p.id  
-                    WHERE a.ddtr_id = $id
-                    ORDER BY a.date_time ASC");
-
-// Overtime requests for this batch's period, keyed by "employee_id|date".
-// The OT column only shows a value when a matching request was approved —
-// a computed overtime figure (e.g. staying late without filing a request)
-// should not display as if it were payable OT.
-$otRequests = [];
-$otStmt = $conn->prepare("
-    SELECT ar.*, u.name AS reviewer_name
-    FROM attendance_requests ar
-    LEFT JOIN users u ON u.id = ar.reviewed_by
-    WHERE ar.request_type = 'overtime' AND ar.request_date BETWEEN ? AND ?
+// ── Batch aggregates ─────────────────────────────────────────────────────────
+// The page used to SELECT every DTR_details row of the batch and group it in PHP
+// (4,310 rows on a 15-day / 361-employee batch) purely to draw the summary cards
+// and three full renderings of the same data. The summary now comes from one
+// aggregate query and the employee cards are paginated — the first page is
+// rendered below, the rest come from dtr-employee-server.php.
+$sumStmt = $conn->prepare("
+    SELECT COUNT(*)                          AS total,
+           SUM(status = 1)                   AS approved,
+           SUM(status = 2)                   AS disapproved,
+           SUM(status <> 1 AND status <> 2)  AS pending,
+           COALESCE(SUM(work_hours), 0)      AS work_hours,
+           COALESCE(SUM(overtime), 0)        AS overtime,
+           COALESCE(SUM(undertime), 0)       AS undertime,
+           COALESCE(SUM(late), 0)            AS late,
+           COUNT(DISTINCT employee_id)       AS employees,
+           COUNT(DISTINCT date_time)         AS days
+    FROM DTR_details WHERE ddtr_id = ?
 ");
-$otStmt->bind_param('ss', $dtr['date_from'], $dtr['date_to']);
-$otStmt->execute();
-$otResult = $otStmt->get_result();
-while ($otr = $otResult->fetch_assoc()) {
-    $otRequests[$otr['employee_id'] . '|' . $otr['request_date']] = $otr;
-}
+$sumStmt->bind_param("i", $id);
+$sumStmt->execute();
+$agg = $sumStmt->get_result()->fetch_assoc() ?: [];
 
-$groupedData = [];
-$employeeTotals = [];
-$dateTotals = [];
 $grandTotals = [
-    'work_hours' => 0,
-    'overtime' => 0,
-    'undertime' => 0,
-    'late' => 0,
-    'approved' => 0,     // DTR_details.status = 1
-    'disapproved' => 0,  // DTR_details.status = 2
-    'pending' => 0,      // DTR_details.status = 0
-    'total' => 0
+    "work_hours"  => (float)($agg["work_hours"] ?? 0),
+    "overtime"    => (float)($agg["overtime"] ?? 0),
+    "undertime"   => (float)($agg["undertime"] ?? 0),
+    "late"        => (float)($agg["late"] ?? 0),
+    "approved"    => (int)($agg["approved"] ?? 0),
+    "disapproved" => (int)($agg["disapproved"] ?? 0),
+    "pending"     => (int)($agg["pending"] ?? 0),
+    "total"       => (int)($agg["total"] ?? 0),
 ];
+$empCount   = (int)($agg["employees"] ?? 0);
+$daysLogged = (int)($agg["days"] ?? 0);
 
-while ($row = $query->fetch_assoc()) {
-    $date = $row['attendance_date'];
-    $employeeId = $row['employee_id'];
+// Cross-batch duplicates: same employee, same date, different DTR batch.
+// Reported as a count only. The old per-row check ran 4,310 queries and set a
+// flag that the ribbon had already read, so it never actually gated anything —
+// gating behaviour is left exactly as it was.
+$dupCount = 0;
+$dupStmt = $conn->prepare("
+    SELECT COUNT(*) AS c
+    FROM DTR_details a
+    INNER JOIN DTR_details b
+        ON b.employee_id = a.employee_id AND b.date_time = a.date_time AND b.ddtr_id <> a.ddtr_id
+    WHERE a.ddtr_id = ?
+");
+$dupStmt->bind_param("i", $id);
+$dupStmt->execute();
+$dupCount = (int)($dupStmt->get_result()->fetch_assoc()["c"] ?? 0);
 
-    // Initialize date group if not exists
-    if (!isset($groupedData[$date])) {
-        $groupedData[$date] = [];
-        $dateTotals[$date] = [
-            'work_hours' => 0,
-            'overtime' => 0,
-            'undertime' => 0,
-            'late' => 0,
-            'pending' => 0
-        ];
-    }
+// ── First page of employee cards (rendered inline, no round trip) ────────────
+require_once "component/dtr_employee_card.php";
+define("DTR_EMP_PAGE_SIZE", 10);
 
-    // Initialize employee group if not exists
-    if (!isset($groupedData[$date][$employeeId])) {
-        $groupedData[$date][$employeeId] = [
-            'employee_info' => $row,
-            'entries' => []
-        ];
+$firstPage = [];
+$pageIds = [];
+$pi = $conn->prepare("
+    SELECT e.id
+    FROM DTR_details d
+    INNER JOIN employee e ON d.employee_id = e.id
+    WHERE d.ddtr_id = ?
+    GROUP BY e.id
+    ORDER BY e.lastname ASC, e.firstname ASC
+    LIMIT " . DTR_EMP_PAGE_SIZE . "
+");
+$pi->bind_param("i", $id);
+$pi->execute();
+$pr = $pi->get_result();
+while ($row = $pr->fetch_assoc()) $pageIds[] = (int)$row["id"];
 
-        // Initialize employee totals if not exists
-        if (!isset($employeeTotals[$employeeId])) {
-            $employeeTotals[$employeeId] = [
-                'employee_info' => $row,
-                'work_hours' => 0,
-                'overtime' => 0,
-                'undertime' => 0,
-                'late' => 0
-            ];
+$byEmployee = $employeeTotals = [];
+if ($pageIds) {
+    $idList = implode(",", $pageIds);
+    $fr = $conn->prepare("
+        SELECT a.*, e.employee_no, e.lastname, e.firstname, e.middlename,
+               dep.name AS department, p.name AS position,
+               DATE(a.date_time) AS attendance_date
+        FROM DTR_details a
+        INNER JOIN employee e ON a.employee_id = e.id
+        LEFT JOIN department dep ON e.department_id = dep.id
+        LEFT JOIN position p ON e.position_id = p.id
+        WHERE a.ddtr_id = ? AND a.employee_id IN ($idList)
+        ORDER BY a.date_time ASC
+    ");
+    $fr->bind_param("i", $id);
+    $fr->execute();
+    $frRes = $fr->get_result();
+    while ($row = $frRes->fetch_assoc()) {
+        $eid  = (int)$row["employee_id"];
+        $date = $row["attendance_date"];
+        if (!isset($byEmployee[$eid])) {
+            $byEmployee[$eid]     = ["employee_info" => $row, "dates" => []];
+            $employeeTotals[$eid] = ["work_hours" => 0, "overtime" => 0, "undertime" => 0, "late" => 0];
         }
-    }
-
-    // Add entry to the group
-    $groupedData[$date][$employeeId]['entries'][] = $row;
-
-    // Update totals
-    $workHours = floatval($row['work_hours']);
-    $overtime = floatval($row['overtime']);
-    $undertime = floatval($row['undertime']);
-    $late = floatval($row['late']);
-
-    $employeeTotals[$employeeId]['work_hours'] += $workHours;
-    $employeeTotals[$employeeId]['overtime'] += $overtime;
-    $employeeTotals[$employeeId]['undertime'] += $undertime;
-    $employeeTotals[$employeeId]['late'] += $late;
-
-    $dateTotals[$date]['work_hours'] += $workHours;
-    $dateTotals[$date]['overtime'] += $overtime;
-    $dateTotals[$date]['undertime'] += $undertime;
-    $dateTotals[$date]['late'] += $late;
-
-    $grandTotals['work_hours'] += $workHours;
-    $grandTotals['overtime'] += $overtime;
-    $grandTotals['undertime'] += $undertime;
-    $grandTotals['late'] += $late;
-
-    // Approval tracking (per DTR_details record): status 0=pending, 1=approved, 2=disapproved
-    $grandTotals['total']++;
-    $rec_status = (int)$row['status'];
-    if ($rec_status === 1) {
-        $grandTotals['approved']++;
-    } elseif ($rec_status === 2) {
-        $grandTotals['disapproved']++;
-    } else {
-        $grandTotals['pending']++;
-        $dateTotals[$date]['pending']++;
+        $byEmployee[$eid]["dates"][$date][] = $row;
+        $employeeTotals[$eid]["work_hours"] += floatval($row["work_hours"]);
+        $employeeTotals[$eid]["overtime"]   += floatval($row["overtime"]);
+        $employeeTotals[$eid]["undertime"]  += floatval($row["undertime"]);
+        $employeeTotals[$eid]["late"]       += floatval($row["late"]);
     }
 }
-
-// Build by-employee grouping: employee → date → entries
-$byEmployee = [];
-foreach ($groupedData as $date => $employees) {
-    foreach ($employees as $empId => $empData) {
-        if (!isset($byEmployee[$empId])) {
-            $byEmployee[$empId] = [
-                'employee_info' => $empData['employee_info'],
-                'dates' => [],
-            ];
-        }
-        $byEmployee[$empId]['dates'][$date] = $empData['entries'];
-    }
-}
-// Sort by employee lastname
-uasort($byEmployee, function($a, $b) {
-    return strcmp($a['employee_info']['lastname'], $b['employee_info']['lastname']);
-});
-
 // ── Employee review progress (whole-batch sign-off) ──
 $reviewTotalEmp = count($byEmployee);
 $reviewRows = [];
@@ -221,6 +200,20 @@ if ($rvq) while ($rv = $rvq->fetch_assoc()) {
     elseif ((int)$rv['status'] === 2) $reviewDisputed++;
 }
 $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
+
+// ── Period day count ──
+// $periodDays = calendar days covered by the batch (inclusive, e.g. Jul 1–13 = 13).
+// $daysLogged = days that actually have attendance records, so the view counter can
+// show "12 of 13 days" and make a missing day obvious at a glance.
+$periodDays = 0;
+if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
+    $dFrom = date_create($dtr['date_from']);
+    $dTo   = date_create($dtr['date_to']);
+    if ($dFrom && $dTo) {
+        $periodDays = (int)$dFrom->diff($dTo)->days + 1;
+    }
+}
+// $daysLogged comes from the aggregate query above (COUNT(DISTINCT date_time)).
 ?>
 
 <link rel="stylesheet" href="assets2/css/my-style.css">
@@ -526,6 +519,82 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
     background:#fff8e1 !important; color:#c98a00 !important; border:1px solid #ffe082;
 }
 
+/* ── DTR loading overlay ──────────────────────────────────────────────────────
+   Covers the whole attendance panel while the page boots and while
+   refreshDtrPanel() re-fetches the markup, so the table never flashes a
+   half-swapped state. Lives outside #dtr-panel-body so the innerHTML swap
+   can't blow it away mid-refresh. */
+#dtrDiv { position:relative; }
+.dtr-loader {
+    position:absolute; inset:0; z-index:60;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px;
+    background:rgba(255,255,255,0.86); backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
+    border-radius:inherit;
+    opacity:0; visibility:hidden; transition:opacity .18s ease, visibility .18s ease;
+}
+.dtr-loader.show { opacity:1; visibility:visible; }
+.dtr-loader-ring {
+    width:46px; height:46px; border-radius:50%;
+    border:4px solid #d7ece9; border-top-color:#219688;
+    animation:dtr-spin .8s linear infinite;
+}
+.dtr-loader-text {
+    font-size:12px; font-weight:700; color:#176358; letter-spacing:.3px;
+    display:flex; align-items:center; gap:2px;
+}
+.dtr-loader-text .dot { animation:dtr-blink 1.4s infinite both; }
+.dtr-loader-text .dot:nth-child(2) { animation-delay:.2s; }
+.dtr-loader-text .dot:nth-child(3) { animation-delay:.4s; }
+.dtr-loader-bar {
+    width:180px; height:4px; border-radius:4px; background:#e6f5f3; overflow:hidden;
+}
+.dtr-loader-bar::after {
+    content:''; display:block; width:40%; height:100%; border-radius:4px;
+    background:linear-gradient(90deg,#219688,#5fc9bb);
+    animation:dtr-slide 1.1s ease-in-out infinite;
+}
+@keyframes dtr-spin  { to { transform:rotate(360deg); } }
+@keyframes dtr-blink { 0%,80%,100% { opacity:.2; } 40% { opacity:1; } }
+@keyframes dtr-slide { 0% { transform:translateX(-100%); } 100% { transform:translateX(350%); } }
+/* Panel content dims + can't be clicked while a refresh is in flight */
+#dtr-panel-body.is-refreshing { opacity:.45; pointer-events:none; transition:opacity .18s ease; }
+@media (prefers-reduced-motion: reduce) {
+    .dtr-loader-ring, .dtr-loader-bar::after, .dtr-loader-text .dot { animation:none; }
+}
+
+/* Ribbon reload button — spins its icon while refreshing */
+.xl-btn.is-loading { pointer-events:none; opacity:.7; }
+.xl-btn.is-loading i { animation:dtr-spin .8s linear infinite; display:inline-block; }
+
+/* ── Employee list pager ── */
+.emp-pager {
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+    padding:10px 4px 16px; border-top:1px solid #eef2f0; margin-top:6px;
+}
+.emp-pager-size, .emp-pager-info { font-size:11.5px; color:#7a8f88; }
+.emp-pager-size select {
+    border:1px solid #d5e6e2; background:#fff; color:#176358; border-radius:6px;
+    padding:3px 22px 3px 8px; font-size:11.5px; font-weight:600; cursor:pointer; margin-left:2px;
+}
+.emp-pager-size select:focus { outline:none; border-color:#219688; box-shadow:0 0 0 2px rgba(33,150,136,.15); }
+.emp-pager-nav { display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
+.emp-page-btn {
+    min-width:30px; height:30px; padding:0 8px;
+    display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid #d5e6e2; background:#fff; color:#176358;
+    border-radius:7px; font-size:12px; font-weight:600; cursor:pointer;
+    transition:background .12s, border-color .12s, color .12s;
+}
+.emp-page-btn:hover:not(:disabled):not(.active) { background:#eef7f5; border-color:#aad5d0; }
+.emp-page-btn.active { background:#219688; border-color:#176358; color:#fff; cursor:default; }
+.emp-page-btn:disabled { opacity:.4; cursor:not-allowed; }
+.emp-page-gap { padding:0 3px; color:#a8b8b3; font-size:12px; user-select:none; }
+.emp-pager.is-loading { opacity:.55; pointer-events:none; }
+@media (max-width:575.98px) {
+    .emp-pager { justify-content:center; }
+    .emp-pager-info { width:100%; text-align:center; order:3; }
+}
+
 /* ── View counter chip ── */
 .dtr-count-chip {
     display:inline-flex; align-items:center; gap:5px;
@@ -680,6 +749,7 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                                 </div>
                                 <div class="dtr-meta-chips">
                                     <span class="dtr-meta-chip"><i class="ri-calendar-2-line"></i><?= date('M d', strtotime($dtr['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($dtr['date_to'])) ?></span>
+                                    <span class="dtr-meta-chip"><i class="ri-calendar-event-line"></i><?= $periodDays ?> day<?= $periodDays !== 1 ? 's' : '' ?></span>
                                     <span class="dtr-meta-chip"><i class="ri-building-line"></i><?= htmlspecialchars($dtr['site_name']) ?> (<?= htmlspecialchars($dtr['site_code']) ?>)</span>
                                     <span class="dtr-meta-chip"><i class="ri-user-2-line"></i><?= htmlspecialchars($dtr['employer_name']) ?></span>
                                     <span class="dtr-meta-chip"><i class="ri-shield-user-line"></i><?= htmlspecialchars($timekeeper_name) ?></span>
@@ -889,131 +959,11 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                     }
                 </style>
 
-                <!-- Add this hidden print table section at the bottom of your page, before the scripts -->
-                <div id="print-section" style="display: none;">
-                    <div class="print-header">
-                        <h2>Daily Time Record (DTR) Details</h2>
-                        <div class="print-info">
-                            <p><strong>Period:</strong> <?= date('F d', strtotime($dtr['date_from'])) ?> - <?= date('F d, Y', strtotime($dtr['date_to'])) ?></p>
-                            <p><strong>Site:</strong> <?= $dtr['site_name'] ?> (<?= $dtr['site_code'] ?>)</p>
-                            <p><strong>Employer:</strong> <?= $dtr['employer_name'] ?></p>
-                            <p><strong>Timekeeper:</strong> <?= $timekeeper_name ?></p>
-                        </div>
-                        <div class="print-summary">
-                            <div class="summary-item">
-                                <span class="label">Total Work Hours:</span>
-                                <span class="value"><?= number_format($grandTotals['work_hours'], 2) ?></span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="label">Total Overtime:</span>
-                                <span class="value"><?= number_format($grandTotals['overtime'], 2) ?></span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="label">Total Undertime:</span>
-                                <span class="value"><?= number_format($grandTotals['undertime'], 2) ?></span>
-                            </div>
-                            <div class="summary-item">
-                                <span class="label">Total Late:</span>
-                                <span class="value"><?= number_format($grandTotals['late'], 2) ?></span>
-                            </div>
-                        </div>
-                    </div>
+                <!-- Print target, filled on demand. The by-day print table used to be
+                     rendered into every page load (~4.3k rows) for markup that's only ever
+                     read when printing; dtr-employee-server.php?action=print builds it now. -->
+                <div id="print-section" style="display: none;"></div>
 
-                    <table class="print-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Employee Name</th>
-                                <th>Position</th>
-                                <th>Time In</th>
-                                <th>Time Out</th>
-                                <th>Hours Worked</th>
-                                <th>Overtime</th>
-                                <th>Undertime</th>
-                                <th>Late</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php
-                            $currentDate = null;
-                            $dateEmployeeCount = [];
-
-                            // First pass to count employees per date
-                            foreach ($groupedData as $date => $employees) {
-                                $dateEmployeeCount[$date] = count($employees);
-                            }
-
-                            foreach ($groupedData as $date => $employees):
-                                $dateTotal = $dateTotals[$date];
-                                $isNewDate = $currentDate !== $date;
-                                $currentDate = $date;
-                            ?>
-                                <?php if ($isNewDate): ?>
-                                    <tr class="date-separator">
-                                        <td colspan="9" class="date-header">
-                                            <strong><?= date("F j, Y", strtotime($date)) ?></strong>
-                                            <span class="employee-count">(<?= $dateEmployeeCount[$date] ?> employees)</span>
-                                            <span class="date-totals">
-                                                Hours: <?= number_format($dateTotal['work_hours'], 2) ?> |
-                                                OT: <?= number_format($dateTotal['overtime'], 2) ?> |
-                                                UT: <?= number_format($dateTotal['undertime'], 2) ?> |
-                                                Late: <?= number_format($dateTotal['late'], 2) ?>
-                                            </span>
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
-
-                                <?php
-                                $employeeCounter = 0;
-                                foreach ($employees as $employeeId => $employeeData):
-                                    $employeeTotal = $employeeTotals[$employeeId];
-                                    $employeeCounter++;
-                                    $entries = $employeeData['entries'];
-                                    $firstEntry = reset($entries);
-                                    $lastEntry = end($entries);
-
-                                    // Get time in and time out from logs
-                                    $timeIn = '';
-                                    $timeOut = '';
-                                    if (!empty($firstEntry['logs'])) {
-                                        $logs = json_decode($firstEntry['logs'], true);
-                                        if (is_array($logs) && count($logs) > 0) {
-                                            $timeIn = date("g:i A", strtotime($logs[0]['dateTime']));
-                                            $timeOut = count($logs) > 1 ? date("g:i A", strtotime(end($logs)['dateTime'])) : '';
-                                        }
-                                    }
-                                ?>
-                                    <tr class="employee-row">
-                                        <td><?= date("m/d/Y", strtotime($date)) ?></td>
-                                        <td class="employee-name">
-                                            <?= $firstEntry['lastname'] ?>, <?= $firstEntry['firstname'] ?> <?= $firstEntry['middlename'] ?>
-                                        </td>
-                                        <td><?= $firstEntry['position'] ?></td>
-                                        <td class="text-center"><?= $timeIn ?></td>
-                                        <td class="text-center"><?= $timeOut ?></td>
-                                        <td class="text-center"><?= number_format($employeeTotal['work_hours'], 2) ?></td>
-                                        <td class="text-center"><?= number_format($employeeTotal['overtime'], 2) ?></td>
-                                        <td class="text-center"><?= number_format($employeeTotal['undertime'], 2) ?></td>
-                                        <td class="text-center"><?= number_format($employeeTotal['late'], 2) ?></td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endforeach; ?>
-
-                            <!-- Grand Total Row -->
-                            <tr class="grand-total">
-                                <td colspan="5" class="text-end"><strong>Grand Total:</strong></td>
-                                <td class="text-center"><strong><?= number_format($grandTotals['work_hours'], 2) ?></strong></td>
-                                <td class="text-center"><strong><?= number_format($grandTotals['overtime'], 2) ?></strong></td>
-                                <td class="text-center"><strong><?= number_format($grandTotals['undertime'], 2) ?></strong></td>
-                                <td class="text-center"><strong><?= number_format($grandTotals['late'], 2) ?></strong></td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    <div class="print-footer">
-                        <p>Generated on: <?= date('F j, Y g:i A') ?></p>
-                    </div>
-                </div>
                 <!-- Attendance List panel -->
                 <div class="xl-panel" id="dtrDiv">
                     <div class="xl-ribbon">
@@ -1026,7 +976,7 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                                 <input id="myInput" type="text" placeholder="Search employee...">
                             </div>
                             <div class="xl-ribbon-sep"></div>
-                            <button id="btn-toggle-groups" onclick="toggleAllGroups()" class="xl-btn"><i class="ri-contract-up-down-line"></i> Collapse All</button>
+                            <button id="btn-dtr-reload" onclick="reloadDtr()" class="xl-btn" title="Reload DTR records"><i class="ri-refresh-line"></i> Reload</button>
                             <div class="xl-ribbon-sep"></div>
                             <button onclick="printDTRTable()" class="xl-btn"><i class="ri-printer-line"></i> Print</button>
                             <button onclick="toggleDtrFullscreen()" class="xl-btn" id="btn-dtr-fullscreen" title="Fullscreen table (Esc to exit)"><i class="ri-fullscreen-line"></i> Fullscreen</button>
@@ -1064,34 +1014,40 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                             <?php endif; ?>
                         </div>
                     </div>
+                    <!-- Loading overlay (shown on first paint + on every panel refresh) -->
+                    <div class="dtr-loader show" id="dtr-loader">
+                        <div class="dtr-loader-ring"></div>
+                        <div class="dtr-loader-text" id="dtr-loader-text">Loading DTR<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+                        <div class="dtr-loader-bar"></div>
+                    </div>
                     <div class="xl-panel-body" id="dtr-panel-body">
                         <!-- Summary stat cards -->
                         <div class="dtr-stats-row">
                             <div class="dtr-stat-box sb-wh">
                                 <div class="stat-icon" style="background:#e6f5f3;color:#219688;"><i class="ri-time-line"></i></div>
                                 <div>
-                                    <div class="stat-val" style="color:#219688;"><?= number_format($grandTotals['work_hours'], 2) ?></div>
+                                    <div class="stat-val" style="color:#219688;"><span id="stat-work-hours"><?= number_format($grandTotals['work_hours'], 2) ?></span></div>
                                     <div class="stat-lbl">Work Hours</div>
                                 </div>
                             </div>
                             <div class="dtr-stat-box sb-ot">
                                 <div class="stat-icon" style="background:#fff8e1;color:#f7b84b;"><i class="ri-sun-line"></i></div>
                                 <div>
-                                    <div class="stat-val" style="color:#c98a00;"><?= number_format($grandTotals['overtime'], 2) ?></div>
+                                    <div class="stat-val" style="color:#c98a00;"><span id="stat-overtime"><?= number_format($grandTotals['overtime'], 2) ?></span></div>
                                     <div class="stat-lbl">Overtime</div>
                                 </div>
                             </div>
                             <div class="dtr-stat-box sb-ut">
                                 <div class="stat-icon" style="background:#e3f2fd;color:#50a5f1;"><i class="ri-arrow-down-line"></i></div>
                                 <div>
-                                    <div class="stat-val" style="color:#1565c0;"><?= number_format($grandTotals['undertime'], 2) ?></div>
+                                    <div class="stat-val" style="color:#1565c0;"><span id="stat-undertime"><?= number_format($grandTotals['undertime'], 2) ?></span></div>
                                     <div class="stat-lbl">Undertime</div>
                                 </div>
                             </div>
                             <div class="dtr-stat-box sb-late">
                                 <div class="stat-icon" style="background:#fce4ec;color:#f06548;"><i class="ri-alarm-warning-line"></i></div>
                                 <div>
-                                    <div class="stat-val" style="color:#c62828;"><?= number_format($grandTotals['late'], 2) ?></div>
+                                    <div class="stat-val" style="color:#c62828;"><span id="stat-late"><?= number_format($grandTotals['late'], 2) ?></span></div>
                                     <div class="stat-lbl">Late (min)</div>
                                 </div>
                             </div>
@@ -1209,447 +1165,51 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
                             </div>
                         </div>
 
-                        <!-- ── Segment toggle ── -->
+
+                        <!-- ── Employee list header ── -->
                         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
-                            <div class="dtr-segment" id="dtr-segment">
-                                <button class="dtr-seg-btn active" data-view="day" onclick="switchDtrView('day',this)">
-                                    <i class="ri-calendar-line"></i> By Day
-                                </button>
-                                <button class="dtr-seg-btn" data-view="employee" onclick="switchDtrView('employee',this)">
-                                    <i class="ri-group-line"></i> By Employee
-                                </button>
-                            </div>
-                            <span class="dtr-count-chip"><i class="ri-list-check-2"></i><span id="dtr-view-count"></span></span>
+                            <span class="dtr-count-chip"><i class="ri-group-line"></i><span id="dtr-view-count"><?= $empCount ?> employee<?= $empCount !== 1 ? 's' : '' ?></span></span>
+                            <span class="dtr-count-chip"><i class="ri-calendar-2-line"></i><?= $daysLogged ?> of <?= $periodDays ?> day<?= $periodDays !== 1 ? 's' : '' ?> with records</span>
                         </div>
 
-                        <div class="table-responsive2" id="dtr-table-responsive">
-                            <table cellspacing="0" id="table-1">
-                                <thead>
-                                    <tr>
-                                        <th class="text-center primary-header"><i class="ri-calendar-2-line"></i>Date</th>
-                                        <th class="text-center primary-header"><i class="ri-user-3-line"></i>Employee</th>
-                                        <th class="text-center primary-header"><i class="ri-briefcase-4-line"></i>Position</th>
-                                        <th class="text-center primary-header"><i class="ri-login-circle-line"></i>Time In</th>
-                                        <th class="text-center primary-header"><i class="ri-logout-circle-line"></i>Time Out</th>
-                                        <th class="text-center primary-header"><i class="ri-time-line"></i>Hours</th>
-                                        <th class="text-center primary-header"><i class="ri-sun-line"></i>OT</th>
-                                        <th class="text-center primary-header"><i class="ri-arrow-down-line"></i>Undertime</th>
-                                        <th class="text-center primary-header"><i class="ri-alarm-warning-line"></i>Late</th>
-                                        <th class="text-center primary-header"><i class="ri-history-line"></i>Logs</th>
-                                        <th class="text-center primary-header"><i class="ri-settings-3-line"></i>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="tbody-by-day">
-                                    <?php foreach ($groupedData as $date => $employees):
-                                        $dateTotal = $dateTotals[$date];
-                                        $dateKey   = 'dg-' . md5($date);
-                                    ?>
-                                        <!-- Date header (collapsible) -->
-                                        <tr class="date-separator" data-toggle-group="<?= $dateKey ?>">
-                                            <td colspan="11">
-                                                <div class="d-flex justify-content-between align-items-center">
-                                                    <div class="d-flex align-items-center">
-                                                        <i class="ri-arrow-down-s-line dtr-chevron me-2"></i>
-                                                        <span class="dtr-date-label"><?= date("l, F j, Y", strtotime($date)) ?></span>
-                                                        <span class="dtr-emp-count"><?= count($employees) ?> employees</span>
-                                                    </div>
-                                                    <div class="dtr-date-totals">
-                                                        <span><i class="ri-time-line me-1"></i><?= number_format($dateTotal['work_hours'], 2) ?> hrs</span>
-                                                        <span class="dtr-date-ot">OT <?= number_format($dateTotal['overtime'], 2) ?></span>
-                                                        <span class="dtr-date-late">Late <?= number_format($dateTotal['late'], 2) ?></span>
-                                                        <?php if ($login_role !== 6 && $dateTotal['pending'] > 0): ?>
-                                                        <button type="button" class="btn btn-sm py-0 px-2 ms-2 approveday-btn"
-                                                            data-approveday-date="<?= $date ?>"
-                                                            title="Approve all pending records on this day"
-                                                            onclick="event.stopPropagation(); approveDay(<?= $id ?>, '<?= $date ?>')"
-                                                            style="font-size:11px;font-weight:600;">
-                                                            <i class="ri-check-double-line me-1"></i>Approve day (<span class="approveday-count"><?= (int)$dateTotal['pending'] ?></span>)
-                                                        </button>
-                                                        <?php endif; ?>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        </tr>
-
-                                        <?php
-                                        foreach ($employees as $employeeId => $employeeData):
-                                            $entries  = $employeeData['entries'];
-                                            $empWH = $empOT = $empUT = $empLate = 0;
-                                            foreach ($entries as $entry) {
-                                                $empWH   += floatval($entry['work_hours']);
-                                                $empOT   += floatval($entry['overtime']);
-                                                $empUT   += floatval($entry['undertime']);
-                                                $empLate += floatval($entry['late']);
-                                            }
-                                            $initials = strtoupper(
-                                                substr($employeeData['employee_info']['firstname'], 0, 1) .
-                                                substr($employeeData['employee_info']['lastname'],  0, 1)
-                                            );
-                                        ?>
-                                            <!-- Employee card row -->
-                                            <tr class="employee-header dtr-group-row" data-group="<?= $dateKey ?>">
-                                                <td colspan="11">
-                                                    <div class="dtr-emp-card">
-                                                        <div class="d-flex align-items-center gap-2">
-                                                            <div class="dtr-emp-init"><?= $initials ?></div>
-                                                            <div>
-                                                                <div>
-                                                                    <span class="dtr-emp-name"><?= $employeeData['employee_info']['lastname'] ?>, <?= $employeeData['employee_info']['firstname'] ?> <?= $employeeData['employee_info']['middlename'] ?></span>
-                                                                    <?php if (!empty($employeeData['employee_info']['notes'])): ?>
-                                                                        <span class="badge bg-warning text-dark ms-1" style="font-size:10px;cursor:pointer;"
-                                                                            onclick="showEmployeeNotes('<?= htmlspecialchars($employeeData['employee_info']['lastname'].', '.$employeeData['employee_info']['firstname'].' '.$employeeData['employee_info']['middlename']) ?>','<?= htmlspecialchars($employeeData['employee_info']['position'] ?? '') ?>','<?= htmlspecialchars($date) ?>',`<?= htmlspecialchars($employeeData['employee_info']['notes']) ?>`)">
-                                                                            <i class="ri-sticky-note-line"></i> Notes
-                                                                        </span>
-                                                                    <?php endif; ?>
-                                                                </div>
-                                                                <span class="dtr-emp-pos"><?= $employeeData['employee_info']['position'] ?></span>
-                                                            </div>
-                                                        </div>
-                                                        <div class="dtr-emp-totals">
-                                                            <div class="dtr-tot-item"><span class="tot-lbl">Hrs</span><span class="tot-val"><?= number_format($empWH, 2) ?></span></div>
-                                                            <div class="dtr-tot-item ot"><span class="tot-lbl">OT</span><span class="tot-val"><?= number_format($empOT, 2) ?></span></div>
-                                                            <div class="dtr-tot-item ut"><span class="tot-lbl">UT</span><span class="tot-val"><?= number_format($empUT, 2) ?></span></div>
-                                                            <div class="dtr-tot-item late"><span class="tot-lbl">Late</span><span class="tot-val"><?= number_format($empLate, 2) ?></span></div>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-
-                                            <!-- Individual entries -->
-                                            <?php foreach ($entries as $row):
-                                                $logs = json_decode($row['logs']);
-                                                $logs = isset($logs) ? $logs : [];
-                                                $date_check  = date("Y-m-d", strtotime($row['date_time']));
-                                                $employee_id = $row['employee_id'];
-                                                $check_duplicate = $conn->query("SELECT DTR.*, timekeeper.name AS timekeeper_name, uploaded.name AS uploaded_by
-                                                    FROM DTR_details
-                                                    LEFT JOIN DTR ON DTR_details.ddtr_id = DTR.id
-                                                    LEFT JOIN users AS timekeeper ON DTR.timekeeper_id = timekeeper.id
-                                                    LEFT JOIN users AS uploaded ON DTR.uploaded_by = uploaded.id
-                                                    WHERE date_time = '$date_check' AND employee_id = '$employee_id' AND ddtr_id != '$id'
-                                                    GROUP BY date_time");
-                                                $timekeeper_name = $device_id2 = $status = $site_id2 = $id_dtr = $site_name = '';
-                                                if ($check_duplicate->num_rows) {
-                                                    $is_duplicate = true;
-                                                    while ($row_check = $check_duplicate->fetch_assoc()) {
-                                                        $timekeeper_name = $row_check['timekeeper_name'];
-                                                        $device_id2 = $row_check['device_id'];
-                                                        $status     = $row_check['status'];
-                                                        $site_id2   = $row_check['site_id'];
-                                                        $id_dtr     = $row_check['id'];
-                                                        $site_name  = $row_check['site_id'];
-                                                    }
-                                                } else {
-                                                    $is_duplicate = false;
-                                                }
-                                                $timeIn = $timeOut = '';
-                                                if (!empty($logs) && count($logs) > 0) {
-                                                    $timeIn  = date("g:i A", strtotime($logs[0]->dateTime));
-                                                    $timeOut = count($logs) > 1 ? date("g:i A", strtotime(end($logs)->dateTime)) : 'N/A';
-                                                }
-                                            ?>
-                                           
-                                                <tr class="attendance-entry dtr-group-row <?= $is_duplicate ? 'duplicate-entry' : '' ?>" data-group="<?= $dateKey ?>"
-                                                    data-rec-id="<?= (int)$row['id'] ?>" data-rec-status="<?= (int)$row['status'] ?>" data-rec-date="<?= $date ?>">
-                                                    <td class="text-center">
-                                                        <?php if ($login_role !== 6): ?>
-                                                        <input type="checkbox" class="form-check-input rec-check mb-1" value="<?= (int)$row['id'] ?>" title="Select record" style="transform:scale(1.2);">
-                                                        <?php endif; ?>
-                                                        <div class="fw-semibold" style="font-size:11px;"><?= date("M j", strtotime($row['date_time'])) ?></div>
-                                                        <div class="text-muted" style="font-size:10px;"><?= date("D", strtotime($row['date_time'])) ?></div>
-                                                    </td>
-                                                    <td>
-                                                        <div class="fw-semibold" style="font-size:11px;"><?= $row['lastname'] ?>, <?= $row['firstname'] ?></div>
-                                                        <div class="text-muted" style="font-size:10px;"><?= $row['employee_no'] ?></div>
-                                                    </td>
-                                                    <td><span class="dtr-pos-chip"><?= $row['position'] ?></span></td>
-                                                    <td class="text-center"><span class="dtr-time-chip in"><?= $timeIn ?: '—' ?></span></td>
-                                                    <td class="text-center"><span class="dtr-time-chip <?= ($timeOut === 'N/A' || !$timeOut) ? 'na' : 'out' ?>"><?= $timeOut ?: '—' ?></span></td>
-                                                    <td class="text-center">
-                                                        <?php if ($login_role !== 6): ?>
-                                                            <div class="editable-field">
-                                                                <input type="text" value="<?= $row['work_hours'] ?>" class="form-control form-control-sm text-center" style="width:68px;">
-                                                                <button class="update-dtr-field" data-id="<?= $row['id'] ?>" data-field="work_hours"><i class="ri-save-line"></i></button>
-                                                            </div>
-                                                        <?php else: ?><span><?= $row['work_hours'] ?></span><?php endif; ?>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <?php
-                                                        $otReq = $otRequests[$employee_id . '|' . $date_check] ?? null;
-                                                        $otApproved = $otReq && (int)$otReq['status'] === 1;
-                                                        ?>
-                                                        <?php if ($otApproved): ?>
-                                                            <?php if ($login_role !== 6): ?>
-                                                                <div class="editable-field">
-                                                                    <input type="text" value="<?= $row['overtime'] ?>" class="form-control form-control-sm text-center" style="width:68px;">
-                                                                    <button class="update-dtr-field" data-id="<?= $row['id'] ?>" data-field="overtime"><i class="ri-save-line"></i></button>
-                                                                </div>
-                                                            <?php else: ?><span><?= $row['overtime'] ?></span><?php endif; ?>
-                                                        <?php else: ?>
-                                                            <span style="color:#ccc;font-size:11px;">—</span>
-                                                        <?php endif; ?>
-                                                        <?php if ($otReq):
-                                                            $otStatus = (int)$otReq['status'];
-                                                            $badgeClass = $otStatus === 1 ? 'success' : ($otStatus === 2 ? 'danger' : 'warning');
-                                                            $badgeIcon  = $otStatus === 1 ? 'ri-checkbox-circle-line' : ($otStatus === 2 ? 'ri-close-circle-line' : 'ri-time-line');
-                                                            $statusLabel = $otStatus === 1 ? 'Approved' : ($otStatus === 2 ? 'Rejected' : 'Pending');
-                                                            $otDetailHtml = '<div style="min-width:170px;max-width:230px;font-size:11px;">'
-                                                                . '<div><strong>Requested:</strong> ' . htmlspecialchars((string)$otReq['ot_hours_requested']) . ' hr(s)</div>'
-                                                                . '<div><strong>Reason:</strong> ' . nl2br(htmlspecialchars($otReq['reason'])) . '</div>'
-                                                                . '<div><strong>Status:</strong> ' . $statusLabel . '</div>'
-                                                                . ($otReq['reviewed_by'] ? '<div><strong>' . ($otStatus === 2 ? 'Rejected' : 'Reviewed') . ' by:</strong> ' . htmlspecialchars($otReq['reviewer_name'] ?? '') . '</div>' : '')
-                                                                . ($otReq['reviewed_at'] ? '<div><strong>On:</strong> ' . date('M j, Y g:i A', strtotime($otReq['reviewed_at'])) . '</div>' : '')
-                                                                . ($otReq['reviewer_remarks'] ? '<div><strong>Remarks:</strong> ' . nl2br(htmlspecialchars($otReq['reviewer_remarks'])) . '</div>' : '')
-                                                                . '</div>';
-                                                        ?>
-                                                            <div>
-                                                                <span class="badge bg-<?= $badgeClass ?>" style="cursor:pointer;font-size:9px;"
-                                                                    data-bs-toggle="popover" data-bs-trigger="click" data-bs-placement="top" data-bs-html="true"
-                                                                    data-bs-content="<?= htmlspecialchars($otDetailHtml) ?>" title="OT Request">
-                                                                    <i class="<?= $badgeIcon ?>"></i> OT Req
-                                                                </span>
-                                                            </div>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <?php if ($login_role !== 6): ?>
-                                                            <div class="editable-field">
-                                                                <input type="text" value="<?= $row['undertime'] ?>" class="form-control form-control-sm text-center" style="width:68px;">
-                                                                <button class="update-dtr-field" data-id="<?= $row['id'] ?>" data-field="undertime"><i class="ri-save-line"></i></button>
-                                                            </div>
-                                                        <?php else: ?><span><?= $row['undertime'] ?></span><?php endif; ?>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <?php if ($login_role !== 6): ?>
-                                                            <div class="editable-field">
-                                                                <input type="text" value="<?= $row['late'] ?>" class="form-control form-control-sm text-center" style="width:68px;">
-                                                                <button class="update-dtr-field" data-id="<?= $row['id'] ?>" data-field="late"><i class="ri-save-line"></i></button>
-                                                            </div>
-                                                        <?php else: ?><span><?= $row['late'] ?></span><?php endif; ?>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <?php
-                                                        $popLines = '';
-                                                        foreach ($logs as $li => $log) {
-                                                            $isBio = $log->type === 'bio';
-                                                            $chip  = $isBio ? 'bio' : 'manual';
-                                                            $icon  = $isBio ? 'ri-fingerprint-line' : 'ri-edit-line';
-                                                            $label = ($li === 0) ? 'IN' : (($li === count($logs)-1) ? 'OUT' : '#'.($li+1));
-                                                            $popLines .= '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">'
-                                                                . '<span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">' . $label . '</span>'
-                                                                . '<span class="dtr-log-chip ' . $chip . '"><i class="' . $icon . '"></i>' . date("g:i A", strtotime($log->dateTime)) . '</span>'
-                                                                . '</div>';
-                                                        }
-                                                        if (!$popLines) $popLines = '<span style="color:#aaa;font-size:11px;">No logs</span>';
-                                                        $popContent = htmlspecialchars('<div style="min-width:150px;">' . $popLines . '</div>');
-                                                        $totalLogs = count($logs);
-                                                        ?>
-                                                        <?php if ($totalLogs > 0): ?>
-                                                        <span class="dtr-logs-pill"
-                                                            data-bs-toggle="popover"
-                                                            data-bs-trigger="click"
-                                                            data-bs-placement="left"
-                                                            data-bs-html="true"
-                                                            data-bs-content="<?= $popContent ?>"
-                                                            title="Logs"
-                                                            style="cursor:pointer;">
-                                                            <?php if ($timeIn): ?><span style="color:#219688;font-weight:600;"><?= $timeIn ?></span><?php endif; ?>
-                                                            <?php if ($timeOut && $timeOut !== 'N/A'): ?><span style="color:#888;"> – </span><span style="color:#c62828;font-weight:600;"><?= $timeOut ?></span><?php endif; ?>
-                                                            <span class="dtr-logs-count"><?= $totalLogs ?> log<?= $totalLogs > 1 ? 's' : '' ?></span>
-                                                        </span>
-                                                        <?php else: ?>
-                                                            <span style="color:#ccc;font-size:11px;">—</span>
-                                                        <?php endif; ?>
-                                                    </td>
-                                                    <td class="text-center">
-                                                        <?php $recStatus = (int)$row['status']; ?>
-                                                        <div class="mb-1" id="cmpl-badge-<?= $row['id'] ?>" data-rec-badge="<?= $row['id'] ?>">
-                                                            <?php if ($recStatus === 1): ?>
-                                                                <span class="badge bg-success" style="font-size:10px;"><i class="ri-checkbox-circle-line me-1"></i>Approved</span>
-                                                            <?php elseif ($recStatus === 2): ?>
-                                                                <span class="badge bg-danger" style="font-size:10px;"><i class="ri-close-circle-line me-1"></i>Disapproved</span>
-                                                            <?php else: ?>
-                                                                <span class="badge bg-warning text-dark" style="font-size:10px;"><i class="ri-time-line me-1"></i>Pending</span>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                        <div class="btn-group btn-group-sm">
-                                                            <?php if ($login_role !== 6): ?>
-                                                                <button title="Approve" onclick="decideRecord(<?= $row['id'] ?>, 1)" class="btn btn-outline-success btn-rec-approve" <?= $recStatus === 1 ? 'disabled' : '' ?>><i class="ri-check-line"></i></button>
-                                                                <button title="Disapprove" onclick="decideRecord(<?= $row['id'] ?>, 2)" class="btn btn-outline-danger btn-rec-disapprove" <?= $recStatus === 2 ? 'disabled' : '' ?>><i class="ri-close-line"></i></button>
-                                                                <button title="Delete" onclick="deleteDTRLogs(<?= $row['id'] ?>)" class="btn btn-outline-secondary"><i class="ri-delete-bin-line"></i></button>
-                                                            <?php endif; ?>
-                                                            <?php if ($is_duplicate): ?>
-                                                                <a target="_blank" title="Duplicate"
-                                                                    href="index.php?page=dtr-details&id=<?= base64_encode($id_dtr) ?>&timekeeper_name=<?= base64_encode($timekeeper_name) ?>&device_id=<?= base64_encode($device_id2) ?>&site_id=<?= base64_encode($site_id2) ?>&status=<?= base64_encode($status) ?>"
-                                                                    class="btn btn-outline-warning"><i class="ri-alert-line"></i></a>
-                                                            <?php endif; ?>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        <?php endforeach; ?>
-                                    <?php endforeach; ?>
-
-                                    <!-- Grand Total Row -->
-                                    <tr class="grand-total-row">
-                                        <td colspan="5" class="text-end">GRAND TOTAL</td>
-                                        <td class="text-center"><?= number_format($grandTotals['work_hours'], 2) ?></td>
-                                        <td class="text-center"><?= number_format($grandTotals['overtime'], 2) ?></td>
-                                        <td class="text-center"><?= number_format($grandTotals['undertime'], 2) ?></td>
-                                        <td class="text-center"><?= number_format($grandTotals['late'], 2) ?></td>
-                                        <td colspan="3"></td>
-                                    </tr>
-                                </tbody>
-
-                            </table>
+                        <!-- ── By Employee list ──────────────────────────────────────────────
+                             Server-paginated: the first page is rendered inline below, every
+                             page after that (and every search) comes from
+                             dtr-employee-server.php. Nothing else of the batch is in the DOM. -->
+                        <div id="view-by-employee" style="padding:4px 2px 8px;">
+<?php dtr_trim_start(); ?>
+                        <?php // Emit in $pageIds order (lastname) — $byEmployee is keyed in
+                              // record order, which is not alphabetical. Must match the order
+                              // dtr-employee-server.php uses or page 2 won't follow on from page 1.
+                        foreach ($pageIds as $empId):
+                            if (!isset($byEmployee[$empId])) continue;
+                            render_dtr_employee_card($empId, $byEmployee[$empId], $employeeTotals[$empId], $login_role);
+                        endforeach; ?>
+<?php dtr_trim_end(); ?>
                         </div>
 
-                        <!-- ── By Employee Card View ── -->
-                        <div id="view-by-employee" style="display:none;padding:4px 2px 8px;">
-                        <?php foreach ($byEmployee as $empId => $empGroup):
-                            $info     = $empGroup['employee_info'];
-                            $empTotals = $employeeTotals[$empId];
-                            $empInitials = strtoupper(substr($info['firstname'],0,1).substr($info['lastname'],0,1));
-                            $totalDays = count($empGroup['dates']);
-                            $cardId = 'emp-card-' . $empId;
-                            $empName = $info['lastname'] . ', ' . $info['firstname'];
-                            // Per-employee approval summary (DTR_details.status: 0=pending, 1=approved, 2=disapproved)
-                            $empAppr = $empPend = $empDisa = 0;
-                            foreach ($empGroup['dates'] as $dEntries) {
-                                foreach ($dEntries as $e) {
-                                    $s = (int)$e['status'];
-                                    if ($s === 1) $empAppr++;
-                                    elseif ($s === 2) $empDisa++;
-                                    else $empPend++;
-                                }
-                            }
-                        ?>
-                        <div class="ecard">
-                            <!-- Card header -->
-                            <div class="ecard-header" onclick="toggleEmpCard('<?= $cardId ?>')">
-                                <div class="ecard-left">
-                                    <div class="dtr-emp-init"><?= $empInitials ?></div>
-                                    <div>
-                                        <div class="ecard-name"><?= htmlspecialchars($info['lastname'].', '.$info['firstname'].' '.($info['middlename']??'')) ?></div>
-                                        <div class="ecard-meta">
-                                            <span class="dtr-pos-chip"><?= htmlspecialchars($info['position']) ?></span>
-                                            <span class="ecard-days"><i class="ri-calendar-line"></i><?= $totalDays ?> day<?= $totalDays!=1?'s':'' ?></span>
-                                            <span class="ecard-sum-chip appr" title="Approved records"><i class="ri-checkbox-circle-line"></i><span class="emp-sum-appr"><?= $empAppr ?></span></span>
-                                            <span class="ecard-sum-chip pend" title="Pending records"><i class="ri-time-line"></i><span class="emp-sum-pend"><?= $empPend ?></span></span>
-                                            <span class="ecard-sum-chip disa" title="Disapproved records"><i class="ri-close-circle-line"></i><span class="emp-sum-disa"><?= $empDisa ?></span></span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="ecard-right">
-                                    <div class="dtr-emp-totals">
-                                        <div class="dtr-tot-item"><span class="tot-lbl">Hrs</span><span class="tot-val"><?= number_format($empTotals['work_hours'],2) ?></span></div>
-                                        <div class="dtr-tot-item ot"><span class="tot-lbl">OT</span><span class="tot-val"><?= number_format($empTotals['overtime'],2) ?></span></div>
-                                        <div class="dtr-tot-item ut"><span class="tot-lbl">UT</span><span class="tot-val"><?= number_format($empTotals['undertime'],2) ?></span></div>
-                                        <div class="dtr-tot-item late"><span class="tot-lbl">Late</span><span class="tot-val"><?= number_format($empTotals['late'],2) ?></span></div>
-                                    </div>
-                                    <?php if ($login_role !== 6): ?>
-                                    <button type="button" class="xl-btn xl-btn-save ecard-approve-all" style="<?= $empPend > 0 ? '' : 'display:none;' ?>"
-                                        onclick="event.stopPropagation(); approveEmployee(this, '<?= htmlspecialchars($empName, ENT_QUOTES) ?>');"
-                                        title="Approve all pending records of this employee">
-                                        <i class="ri-checkbox-circle-line"></i> Approve All (<span class="emp-appr-count"><?= $empPend ?></span>)
-                                    </button>
-                                    <?php endif; ?>
-                                    <i class="ri-arrow-down-s-line ecard-chevron"></i>
-                                </div>
-                            </div>
-
-                            <!-- Card body: date entries -->
-                            <div class="ecard-body" id="<?= $cardId ?>">
-                            <?php foreach ($empGroup['dates'] as $date => $entries):
-                                $dayWH = $dayOT = $dayLate = 0;
-                                foreach ($entries as $e) {
-                                    $dayWH   += floatval($e['work_hours']);
-                                    $dayOT   += floatval($e['overtime']);
-                                    $dayLate += floatval($e['late']);
-                                }
-                            ?>
-                                <div class="ecard-date-group">
-                                    <div class="ecard-date-header">
-                                        <span class="ecard-date-label">
-                                            <i class="ri-calendar-event-line"></i>
-                                            <?= date("D, M j", strtotime($date)) ?>
-                                        </span>
-                                        <div style="display:flex;gap:10px;font-size:10px;">
-                                            <span style="color:#219688;font-weight:600;"><?= number_format($dayWH,2) ?> hrs</span>
-                                            <?php if ($dayOT > 0): ?><span style="color:#c98a00;">OT <?= number_format($dayOT,2) ?></span><?php endif; ?>
-                                            <?php if ($dayLate > 0): ?><span style="color:#c62828;">Late <?= number_format($dayLate,2) ?></span><?php endif; ?>
-                                        </div>
-                                    </div>
-                                    <?php foreach ($entries as $row):
-                                        $logs2 = json_decode($row['logs']) ?: [];
-                                        $tIn = $tOut = '';
-                                        if (!empty($logs2)) {
-                                            $tIn  = date("g:i A", strtotime($logs2[0]->dateTime));
-                                            $tOut = count($logs2) > 1 ? date("g:i A", strtotime(end($logs2)->dateTime)) : '';
-                                        }
-                                        $logCount = count($logs2);
-                                        // popover
-                                        $pl = '';
-                                        foreach ($logs2 as $li => $lg) {
-                                            $iB = $lg->type==='bio';
-                                            $lbl3 = ($li===0)?'IN':(($li===count($logs2)-1)?'OUT':'#'.($li+1));
-                                            $pl .= '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;"><span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">'.$lbl3.'</span><span class="dtr-log-chip '.($iB?'bio':'manual').'"><i class="'.($iB?'ri-fingerprint-line':'ri-edit-line').'"></i>'.date("g:i A",strtotime($lg->dateTime)).'</span></div>';
-                                        }
-                                        if (!$pl) $pl = '<span style="color:#aaa;font-size:11px;">No logs</span>';
-                                        $pc = htmlspecialchars('<div style="min-width:150px;">'.$pl.'</div>');
-                                    ?>
-                                    <?php $recStatus2 = (int)$row['status']; ?>
-                                    <div class="ecard-entry <?= $recStatus2 === 1 ? 'is-approved' : ($recStatus2 === 2 ? 'is-disapproved' : '') ?>"
-                                        data-rec-id="<?= (int)$row['id'] ?>" data-rec-status="<?= $recStatus2 ?>" data-rec-date="<?= $date ?>">
-                                        <!-- Select + time in/out -->
-                                        <div class="ecard-times">
-                                            <?php if ($login_role !== 6): ?>
-                                            <input type="checkbox" class="form-check-input rec-check" value="<?= (int)$row['id'] ?>" title="Select record" style="margin-right:2px;">
-                                            <?php endif; ?>
-                                            <span class="dtr-time-chip in"><?= $tIn ?: '—' ?></span>
-                                            <span style="color:#ccc;font-size:10px;">→</span>
-                                            <span class="dtr-time-chip <?= $tOut?'out':'na' ?>"><?= $tOut ?: '—' ?></span>
-                                            <?php if ($logCount > 0): ?>
-                                            <span class="dtr-logs-pill"
-                                                data-bs-toggle="popover" data-bs-trigger="click"
-                                                data-bs-placement="top" data-bs-html="true"
-                                                data-bs-content="<?= $pc ?>" title="Logs" style="cursor:pointer;margin-left:4px;">
-                                                <span class="dtr-logs-count"><?= $logCount ?> log<?= $logCount>1?'s':'' ?></span>
-                                            </span>
-                                            <?php endif; ?>
-                                        </div>
-                                        <!-- Stats -->
-                                        <div class="ecard-entry-stats">
-                                            <span class="ecard-stat"><span class="ecard-stat-lbl">Hrs</span><span class="ecard-stat-val"><?= $row['work_hours'] ?></span></span>
-                                            <span class="ecard-stat ot"><span class="ecard-stat-lbl">OT</span><span class="ecard-stat-val"><?= $row['overtime'] ?></span></span>
-                                            <span class="ecard-stat ut"><span class="ecard-stat-lbl">UT</span><span class="ecard-stat-val"><?= $row['undertime'] ?></span></span>
-                                            <span class="ecard-stat late"><span class="ecard-stat-lbl">Late</span><span class="ecard-stat-val"><?= $row['late'] ?></span></span>
-                                        </div>
-                                        <!-- Approval status + actions -->
-                                        <div class="ecard-entry-status">
-                                            <span data-rec-badge="<?= (int)$row['id'] ?>">
-                                                <?php if ($recStatus2 === 1): ?>
-                                                    <span class="badge bg-success" style="font-size:10px;"><i class="ri-checkbox-circle-line me-1"></i>Approved</span>
-                                                <?php elseif ($recStatus2 === 2): ?>
-                                                    <span class="badge bg-danger" style="font-size:10px;"><i class="ri-close-circle-line me-1"></i>Disapproved</span>
-                                                <?php else: ?>
-                                                    <span class="badge bg-warning text-dark" style="font-size:10px;"><i class="ri-time-line me-1"></i>Pending</span>
-                                                <?php endif; ?>
-                                            </span>
-                                            <?php if ($login_role !== 6): ?>
-                                            <div class="btn-group btn-group-sm">
-                                                <button title="Approve" onclick="decideRecord(<?= (int)$row['id'] ?>, 1)" class="btn btn-outline-success btn-rec-approve" <?= $recStatus2 === 1 ? 'disabled' : '' ?>><i class="ri-check-line"></i></button>
-                                                <button title="Disapprove" onclick="decideRecord(<?= (int)$row['id'] ?>, 2)" class="btn btn-outline-danger btn-rec-disapprove" <?= $recStatus2 === 2 ? 'disabled' : '' ?>><i class="ri-close-line"></i></button>
-                                            </div>
-                                            <?php endif; ?>
-                                        </div>
-                                    </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endforeach; ?>
-                            </div>
+                        <div id="emp-empty" style="display:none;text-align:center;padding:26px 10px;color:#a19f9d;font-size:13px;">
+                            <i class="ri-user-search-line" style="font-size:26px;display:block;margin-bottom:6px;color:#c8c6c4;"></i>
+                            No employees match that search.
                         </div>
-                        <?php endforeach; ?>
+
+                        <!-- ── Pager ──────────────────────────────────────────────────────
+                             Page numbers rather than "Load more": with 361 employees,
+                             reaching the end of the list should not take 35 clicks. Every
+                             control here just re-queries dtr-employee-server.php. -->
+                        <div id="emp-pager" class="emp-pager">
+                            <div class="emp-pager-size">
+                                Show
+                                <select id="emp-page-size" onchange="setEmpPageSize(this.value)">
+                                    <option value="10" selected>10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                </select>
+                            </div>
+                            <nav class="emp-pager-nav" id="emp-pager-nav"></nav>
+                            <div class="emp-pager-info" id="emp-pager-info">
+                                1&ndash;<?= count($byEmployee) ?> of <?= $empCount ?>
+                            </div>
                         </div>
 
                     </div><!-- end xl-panel-body -->
@@ -1674,180 +1234,308 @@ function human_time_diff(int $ts): string {
 ?>
 <?php include 'component/add_attendance.php'; ?>
 <script>
-    // Fit table height to viewport
-    function fitDtrTable() {
-        const c = document.getElementById('dtr-table-responsive');
-        if (!c) return;
-        const top = c.getBoundingClientRect().top + window.scrollY;
-        const available = window.innerHeight - (top - window.scrollY) - 24;
-        c.style.height = Math.max(available, 200) + 'px';
-    }
-    document.addEventListener('DOMContentLoaded', fitDtrTable);
-    window.addEventListener('resize', fitDtrTable);
+    // ── DTR details — By Employee, server-paginated ─────────────────────────
+    // Everything below drives one list of employee cards. Page 1 is rendered
+    // inline by PHP; further pages, searches and the print table come from
+    // dtr-employee-server.php so the browser never holds the whole batch.
 
-    // ── Collapsible date groups ──
-    function setGroupVisible(key, visible) {
-        document.querySelectorAll('.dtr-group-row[data-group="' + key + '"]').forEach(function (row) {
-            row.style.display = visible ? '' : 'none';
+    var DTR_ID          = <?= (int)$id ?>;
+    var DTR_API         = 'dtr-employee-server.php';
+    var EMP_PAGE_SIZE   = <?= DTR_EMP_PAGE_SIZE ?>;
+    var DTR_EMP_COUNT   = <?= (int)$empCount ?>;   // employees in the whole batch
+
+    var _empPage     = 1;                  // 1-based, page 1 is rendered inline by PHP
+    var _empPageSize = EMP_PAGE_SIZE;
+    var _empTotal    = DTR_EMP_COUNT;      // rows matching the current search
+    var _empQuery    = '';
+    var _empLoading  = false;
+
+    // ── Loading overlay ──
+    function showDtrLoading(msg) {
+        var el = document.getElementById('dtr-loader');
+        if (!el) return;
+        if (msg) {
+            document.getElementById('dtr-loader-text').innerHTML =
+                msg + '<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>';
+        }
+        el.classList.add('show');
+        document.getElementById('dtr-panel-body')?.classList.add('is-refreshing');
+    }
+    function hideDtrLoading() {
+        document.getElementById('dtr-loader')?.classList.remove('show');
+        document.getElementById('dtr-panel-body')?.classList.remove('is-refreshing');
+    }
+    window.showDtrLoading = showDtrLoading;
+    window.hideDtrLoading = hideDtrLoading;
+    document.addEventListener('DOMContentLoaded', hideDtrLoading);
+    window.addEventListener('load', hideDtrLoading);
+
+    // ── Fetching a page of employees ────────────────────────────────────────
+    // One page replaces the list; the pager is the only way the list changes.
+    async function _loadEmpPage(page) {
+        if (_empLoading) return;
+        _empLoading = true;
+        document.getElementById('emp-pager')?.classList.add('is-loading');
+
+        var offset = (page - 1) * _empPageSize;
+        var url = DTR_API + '?action=list&id=' + DTR_ID +
+                  '&offset=' + offset + '&limit=' + _empPageSize +
+                  '&q=' + encodeURIComponent(_empQuery);
+        try {
+            var res  = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
+            var data = await res.json();
+            if (!data || !data.result) throw new Error(data && data.message || 'Request failed');
+
+            document.getElementById('view-by-employee').innerHTML = data.html || '';
+            _empPage  = page;
+            _empTotal = data.total;
+            _renderEmpPager();
+        } catch (e) {
+            console.error('Employee list failed', e);
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({ icon: 'error', title: 'Could not load employees',
+                            text: 'Check your connection and try again.' });
+            }
+        } finally {
+            _empLoading = false;
+            document.getElementById('emp-pager')?.classList.remove('is-loading');
+        }
+    }
+
+    function _empLastPage() {
+        return Math.max(1, Math.ceil(_empTotal / _empPageSize));
+    }
+
+    async function gotoEmpPage(page) {
+        page = parseInt(page, 10);
+        if (!page || page === _empPage || page < 1 || page > _empLastPage()) return;
+        await _loadEmpPage(page);
+        // Land at the top of the list rather than wherever the last page ended
+        var list = document.getElementById('view-by-employee');
+        if (list) {
+            var y = list.getBoundingClientRect().top + window.scrollY - 90;
+            window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+        }
+    }
+    window.gotoEmpPage = gotoEmpPage;
+
+    function setEmpPageSize(size) {
+        size = parseInt(size, 10);
+        if (!size || size === _empPageSize) return;
+        _empPageSize = size;
+        _loadEmpPage(1);
+    }
+    window.setEmpPageSize = setEmpPageSize;
+
+    // 1 … 4 5 [6] 7 8 … 37 — first and last always reachable, a window around
+    // the current page, ellipsis for the rest.
+    function _empPageList(cur, last) {
+        if (last <= 7) {
+            var all = [];
+            for (var i = 1; i <= last; i++) all.push(i);
+            return all;
+        }
+        var out = [1];
+        var start = Math.max(2, cur - 1);
+        var end   = Math.min(last - 1, cur + 1);
+        if (start > 2) out.push('…');
+        for (var j = start; j <= end; j++) out.push(j);
+        if (end < last - 1) out.push('…');
+        out.push(last);
+        return out;
+    }
+
+    function _renderEmpPager() {
+        var shown = document.querySelectorAll('#view-by-employee .ecard').length;
+        var last  = _empLastPage();
+        var el;
+
+        if ((el = document.getElementById('emp-empty'))) {
+            el.style.display = (shown === 0) ? '' : 'none';
+        }
+        if ((el = document.getElementById('dtr-view-count'))) {
+            el.textContent = _empQuery
+                ? _empTotal + ' match' + (_empTotal !== 1 ? 'es' : '')
+                : DTR_EMP_COUNT + ' employee' + (DTR_EMP_COUNT !== 1 ? 's' : '');
+        }
+
+        var pager = document.getElementById('emp-pager');
+        if (pager) pager.style.display = (_empTotal === 0) ? 'none' : '';
+
+        if ((el = document.getElementById('emp-pager-info'))) {
+            var from = _empTotal === 0 ? 0 : (_empPage - 1) * _empPageSize + 1;
+            var to   = from + shown - 1;
+            el.innerHTML = from + '&ndash;' + to + ' of ' + _empTotal;
+        }
+
+        var nav = document.getElementById('emp-pager-nav');
+        if (!nav) return;
+        var html = '<button type="button" class="emp-page-btn" title="Previous page"' +
+                   (_empPage <= 1 ? ' disabled' : '') +
+                   ' onclick="gotoEmpPage(' + (_empPage - 1) + ')"><i class="ri-arrow-left-s-line"></i></button>';
+        _empPageList(_empPage, last).forEach(function (p) {
+            if (p === '…') { html += '<span class="emp-page-gap">…</span>'; return; }
+            html += '<button type="button" class="emp-page-btn' + (p === _empPage ? ' active' : '') + '"' +
+                    (p === _empPage ? ' disabled' : '') +
+                    ' onclick="gotoEmpPage(' + p + ')">' + p + '</button>';
         });
+        html += '<button type="button" class="emp-page-btn" title="Next page"' +
+                (_empPage >= last ? ' disabled' : '') +
+                ' onclick="gotoEmpPage(' + (_empPage + 1) + ')"><i class="ri-arrow-right-s-line"></i></button>';
+        nav.innerHTML = html;
     }
 
-    function initDateSeparators() {
-        document.querySelectorAll('.date-separator').forEach(function (sep) {
-            sep.addEventListener('click', function () {
-                var key = sep.getAttribute('data-toggle-group');
-                var isCollapsed = sep.classList.toggle('collapsed');
-                setGroupVisible(key, !isCollapsed);
-                _syncToggleGroupsBtn();
-            });
-        });
-    }
-    document.addEventListener('DOMContentLoaded', initDateSeparators);
+    document.addEventListener('DOMContentLoaded', _renderEmpPager);
 
-    function _anyGroupExpanded() {
-        return Array.from(document.querySelectorAll('.date-separator')).some(function (sep) {
-            return !sep.classList.contains('collapsed');
-        });
-    }
-
-    function _syncToggleGroupsBtn() {
-        var btn = document.getElementById('btn-toggle-groups');
-        if (!btn) return;
-        btn.innerHTML = _anyGroupExpanded()
-            ? '<i class="ri-contract-up-down-line"></i> Collapse All'
-            : '<i class="ri-expand-up-down-line"></i> Expand All';
-    }
-
-    function toggleAllGroups(expand) {
-        // No argument → single-button toggle: collapse if anything is expanded, else expand
-        if (typeof expand === 'undefined') expand = !_anyGroupExpanded();
-        document.querySelectorAll('.date-separator').forEach(function (sep) {
-            var key = sep.getAttribute('data-toggle-group');
-            sep.classList.toggle('collapsed', !expand);
-            setGroupVisible(key, expand);
-        });
-        _syncToggleGroupsBtn();
-    }
-</script>
-
-
-<script>
-    // ── Segment switch ──
+    // ── Search (server-side) ────────────────────────────────────────────────
+    // Debounced so typing doesn't fire a request per keystroke. Searching resets
+    // to page 1 of the matches; "Load more" then pages through them.
     document.addEventListener('DOMContentLoaded', function () {
-        var days = document.querySelectorAll('#tbody-by-day tr.date-separator').length;
-        document.getElementById('dtr-view-count').textContent = days + ' day' + (days !== 1 ? 's' : '');
+        var input = document.getElementById('myInput');
+        if (!input) return;
+        var t = null;
+        input.addEventListener('keyup', function () {
+            var v = this.value.trim();
+            clearTimeout(t);
+            t = setTimeout(function () {
+                if (v === _empQuery) return;
+                _empQuery = v;
+                _loadEmpPage(1);   // a new search always starts at page 1
+            }, 300);
+        });
     });
 
-    function switchDtrView(view, btn) {
-        document.querySelectorAll('.dtr-seg-btn').forEach(function(b){ b.classList.remove('active'); });
-        btn.classList.add('active');
-
-        var tableWrap = document.getElementById('dtr-table-responsive');
-        var cardView  = document.getElementById('view-by-employee');
-        if (view === 'day') {
-            tableWrap.style.display = '';
-            cardView.style.display  = 'none';
-            var days = document.querySelectorAll('#tbody-by-day tr.date-separator').length;
-            document.getElementById('dtr-view-count').textContent = days + ' day' + (days !== 1 ? 's' : '');
-        } else {
-            tableWrap.style.display = 'none';
-            cardView.style.display  = '';
-            var emps = document.querySelectorAll('.ecard').length;
-            document.getElementById('dtr-view-count').textContent = emps + ' employee' + (emps !== 1 ? 's' : '');
-        }
-        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function(el){
-            if (!bootstrap.Popover.getInstance(el)) new bootstrap.Popover(el, { sanitize: false });
-        });
-    }
-
+    // ── Card expand / collapse ──────────────────────────────────────────────
     function toggleEmpCard(id) {
         var body = document.getElementById(id);
-        var card = body.closest('.ecard');
-        card.classList.toggle('open');
+        if (!body) return;
+        body.closest('.ecard').classList.toggle('open');
     }
+    window.toggleEmpCard = toggleEmpCard;
 
-    // ── Popovers ──
-    function initDtrPopovers() {
-        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
-            if (bootstrap.Popover.getInstance(el)) return;
-            var pop = new bootstrap.Popover(el, { sanitize: false });
-            // close other open popovers when a new one opens
-            el.addEventListener('shown.bs.popover', function () {
-                document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (other) {
-                    if (other !== el) bootstrap.Popover.getInstance(other)?.hide();
-                });
-            });
+    // ── Per-employee header chips ───────────────────────────────────────────
+    // A card carries all of that employee's entries, so its own DOM is the
+    // source of truth for its chips.
+    function _dtrRefreshCardSummary(card) {
+        var a = 0, p = 0, d = 0;
+        card.querySelectorAll('.ecard-entry[data-rec-id]').forEach(function (en) {
+            var s = parseInt(en.dataset.recStatus || '0', 10);
+            if (s === 1) a++; else if (s === 2) d++; else p++;
         });
+        var set = function (cls, v) { var el = card.querySelector(cls); if (el) el.textContent = v; };
+        set('.emp-sum-appr', a);
+        set('.emp-sum-pend', p);
+        set('.emp-sum-disa', d);
+        var btn = card.querySelector('.ecard-approve-all');
+        if (btn) {
+            btn.style.display = (p > 0) ? '' : 'none';
+            var n = btn.querySelector('.emp-appr-count');
+            if (n) n.textContent = p;
+        }
     }
-    document.addEventListener('DOMContentLoaded', function () {
-        initDtrPopovers();
-        // click outside closes all
-        document.addEventListener('click', function (e) {
-            if (!e.target.closest('[data-bs-toggle="popover"]')) {
-                document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
-                    bootstrap.Popover.getInstance(el)?.hide();
-                });
-            }
-        });
-    });
+    function _dtrRefreshAllCardSummaries() {
+        document.querySelectorAll('#view-by-employee .ecard[data-emp-id]').forEach(_dtrRefreshCardSummary);
+    }
+    window._dtrRefreshCardSummary     = _dtrRefreshCardSummary;
+    window._dtrRefreshAllCardSummaries = _dtrRefreshAllCardSummaries;
 
-    // ── Refresh the attendance panel after an edit (add / delete / field update) ──
-    // Re-fetches this same page and swaps in the fresh #dtr-panel-body markup so
-    // totals, stat cards, and rows all stay in sync — without a hard page reload.
-    async function refreshDtrPanel() {
-        var activeBtn  = document.querySelector('.dtr-seg-btn.active');
-        var activeView = activeBtn ? activeBtn.dataset.view : 'day';
+    // ── Batch summary cards ─────────────────────────────────────────────────
+    // Always from the server so the figures cover the whole batch, not the page
+    // currently loaded.
+    async function refreshDtrSummary() {
+        try {
+            var res  = await fetch(DTR_API + '?action=summary&id=' + DTR_ID,
+                                   { credentials: 'same-origin', cache: 'no-store' });
+            var data = await res.json();
+            if (!data || !data.result) return;
+            var s = data.summary, el;
+            var num = function (v) { return Number(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+            if ((el = document.getElementById('stat-work-hours'))) el.textContent = num(s.work_hours);
+            if ((el = document.getElementById('stat-overtime')))   el.textContent = num(s.overtime);
+            if ((el = document.getElementById('stat-undertime')))  el.textContent = num(s.undertime);
+            if ((el = document.getElementById('stat-late')))       el.textContent = num(s.late);
+            if ((el = document.getElementById('stat-approved')))    el.textContent = s.approved;
+            if ((el = document.getElementById('stat-disapproved'))) el.textContent = s.disapproved;
+            if ((el = document.getElementById('stat-pending')))     el.textContent = s.pending;
+            if ((el = document.getElementById('batch-pending-count'))) el.textContent = s.pending;
+            if ((el = document.getElementById('batch-pending-badge'))) el.style.display = s.pending > 0 ? '' : 'none';
+            var send = document.getElementById('btn-send-review');
+            if (send) send.disabled = (s.pending > 0);
+        } catch (e) {
+            console.error('Summary refresh failed', e);
+        }
+    }
+    window.refreshDtrSummary = refreshDtrSummary;
 
-        var res  = await fetch(window.location.href, { credentials: 'same-origin', cache: 'no-store' });
-        var html = await res.text();
-        var doc  = new DOMParser().parseFromString(html, 'text/html');
-        var fresh = doc.getElementById('dtr-panel-body');
-        var live  = document.getElementById('dtr-panel-body');
-        if (!fresh || !live) { location.reload(); return; }
-
-        live.innerHTML = fresh.innerHTML;
-
-        initDtrPopovers();
-        initDateSeparators();
-        _syncToggleGroupsBtn();
-        fitDtrTable();
-        if (typeof _resetRecSelection === 'function') _resetRecSelection();
-
-        // Restore whichever segment (By Day / By Employee) the user had open
-        document.querySelectorAll('.dtr-seg-btn').forEach(function (b) {
-            b.classList.toggle('active', b.dataset.view === activeView);
-        });
-        var tableWrap = document.getElementById('dtr-table-responsive');
-        var cardView  = document.getElementById('view-by-employee');
-        var days = document.querySelectorAll('#tbody-by-day tr.date-separator').length;
-        var emps = document.querySelectorAll('.ecard').length;
-        if (activeView === 'employee') {
-            tableWrap.style.display = 'none';
-            cardView.style.display  = '';
-            document.getElementById('dtr-view-count').textContent = emps + ' employee' + (emps !== 1 ? 's' : '');
-        } else {
-            tableWrap.style.display = '';
-            cardView.style.display  = 'none';
-            document.getElementById('dtr-view-count').textContent = days + ' day' + (days !== 1 ? 's' : '');
+    // ── Full panel refresh (after add / delete / field edit) ────────────────
+    // Stays on the current page so an edit doesn't throw the user back to the top
+    // of a 37-page list.
+    async function refreshDtrPanel(msg) {
+        showDtrLoading(msg || 'Refreshing DTR');
+        try {
+            await _loadEmpPage(_empPage);
+            await refreshDtrSummary();
+        } finally {
+            hideDtrLoading();
         }
     }
     window.refreshDtrPanel = refreshDtrPanel;
 
-    // ── Excel-like fullscreen (whole DTR Attendance card) ──
-    // Expands the entire panel — ribbon, search, stats, segment toggle, and
-    // whichever view is active — to the whole screen via the Fullscreen API,
-    // with a CSS fallback for browsers that don't support it.
-    function _dtrFsTarget() {
-        return document.getElementById('dtrDiv');
+    async function reloadDtr() {
+        var btn = document.getElementById('btn-dtr-reload');
+        btn?.classList.add('is-loading');
+        try { await refreshDtrPanel('Reloading DTR'); }
+        finally { btn?.classList.remove('is-loading'); }
     }
-    function _dtrFsEnsureExitBtn(el) {
-        // if (el.querySelector('.dtr-fs-exit')) return;
-        // var b = document.createElement('button');
-        // b.className = 'dtr-fs-exit';
-        // b.innerHTML = '<i class="ri-fullscreen-exit-line"></i> Exit Fullscreen';
-        // b.onclick = toggleDtrFullscreen;
-        // el.appendChild(b);
+    window.reloadDtr = reloadDtr;
+
+    // ── Popovers (lazy) ─────────────────────────────────────────────────────
+    // Triggers are marked data-dtr-pop rather than data-bs-toggle="popover"
+    // because assets/js/app.js instantiates every [data-bs-toggle="popover"] on
+    // page load; with hundreds of log pills that was pure waste. Built on first
+    // click instead, and only one is ever open.
+    var _dtrOpenPop = null;
+    function _dtrHidePop() {
+        if (!_dtrOpenPop) return;
+        try { _dtrOpenPop.hide(); } catch (e) {}
+        _dtrOpenPop = null;
     }
+    document.addEventListener('click', function (e) {
+        var trig = e.target.closest ? e.target.closest('[data-dtr-pop]') : null;
+        if (!trig) { _dtrHidePop(); return; }
+        var inst    = bootstrap.Popover.getInstance(trig);
+        var wasOpen = inst && inst === _dtrOpenPop;
+        _dtrHidePop();
+        if (wasOpen) return;
+        if (!inst) inst = new bootstrap.Popover(trig, { sanitize: false, trigger: 'manual' });
+        inst.show();
+        _dtrOpenPop = inst;
+    });
+    function initDtrPopovers() { _dtrHidePop(); }
+    window.initDtrPopovers = initDtrPopovers;
+
+    // ── Print ───────────────────────────────────────────────────────────────
+    // The by-day print table is built by the server on demand instead of being
+    // rendered into every page load.
+    var _printCache = null;
+    async function _getPrintHtml() {
+        if (_printCache !== null) return _printCache;
+        var res  = await fetch(DTR_API + '?action=print&id=' + DTR_ID,
+                               { credentials: 'same-origin', cache: 'no-store' });
+        var data = await res.json();
+        _printCache = (data && data.result) ? data.html : '';
+        return _printCache;
+    }
+    async function materializePrintSection() {
+        var host = document.getElementById('print-section');
+        if (!host || host.dataset.filled) return;
+        host.innerHTML = await _getPrintHtml();
+        host.dataset.filled = '1';
+    }
+    window.materializePrintSection = materializePrintSection;
+
+    // ── Excel-like fullscreen ───────────────────────────────────────────────
+    function _dtrFsTarget() { return document.getElementById('dtrDiv'); }
     function toggleDtrFullscreen() {
         var el = _dtrFsTarget();
         if (!el) return;
@@ -1857,79 +1545,55 @@ function human_time_diff(int $ts): string {
             else { _dtrFsOff(el); }
             return;
         }
-        _dtrFsEnsureExitBtn(el);
         var req = el.requestFullscreen || el.webkitRequestFullscreen;
-        if (req) {
-            req.call(el).catch(function () { _dtrFsFallbackOn(el); });
-        } else {
-            _dtrFsFallbackOn(el);
-        }
+        if (req) req.call(el).catch(function () { _dtrFsFallbackOn(el); });
+        else _dtrFsFallbackOn(el);
     }
     function _dtrFsFallbackOn(el) {
         el.classList.add('dtr-fs', 'dtr-fs-fallback');
         document.body.style.overflow = 'hidden';
-        setTimeout(fitDtrTable, 50);
     }
     function _dtrFsOff(el) {
         el.classList.remove('dtr-fs', 'dtr-fs-fallback');
         document.body.style.overflow = '';
-        setTimeout(fitDtrTable, 50);
     }
     ['fullscreenchange', 'webkitfullscreenchange'].forEach(function (evt) {
         document.addEventListener(evt, function () {
             var el = _dtrFsTarget();
             if (!el) return;
             var fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-            if (fsEl === el) {
-                el.classList.add('dtr-fs');
-                setTimeout(fitDtrTable, 50);
-            } else if (!el.classList.contains('dtr-fs-fallback')) {
-                _dtrFsOff(el);
-            }
+            if (fsEl === el) el.classList.add('dtr-fs');
+            else if (!el.classList.contains('dtr-fs-fallback')) _dtrFsOff(el);
         });
     });
-    // Esc exits the CSS fallback (native fullscreen already handles Esc itself)
     document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         var el = _dtrFsTarget();
         if (el && el.classList.contains('dtr-fs-fallback')) _dtrFsOff(el);
     });
     window.toggleDtrFullscreen = toggleDtrFullscreen;
-
-    // ── Search ──
-    document.addEventListener('DOMContentLoaded', function () {
-        const searchInput = document.getElementById('myInput');
-        if (!searchInput) return;
-        searchInput.addEventListener('keyup', function () {
-            const filter = this.value.toLowerCase().trim();
-            document.querySelectorAll('#table-1 tbody tr.attendance-entry').forEach(function (row) {
-                if (row.classList.contains('dtr-hidden')) return;
-                row.style.display = (filter === '' || row.textContent.toLowerCase().includes(filter)) ? '' : 'none';
-            });
-            // Show/hide emp headers and date rows based on visible entries
-            document.querySelectorAll('.date-separator').forEach(function (sep) {
-                var key = sep.getAttribute('data-toggle-group');
-                var hasVisible = Array.from(document.querySelectorAll('.attendance-entry[data-group="' + key + '"]'))
-                    .some(function (r) { return r.style.display !== 'none'; });
-                sep.style.display = hasVisible ? '' : 'none';
-                document.querySelectorAll('.employee-header[data-group="' + key + '"]').forEach(function (h) {
-                    h.style.display = hasVisible ? '' : 'none';
-                });
-            });
-            // By Employee tab — filter whole cards by name/position/employee no.
-            document.querySelectorAll('#view-by-employee .ecard').forEach(function (card) {
-                var hay = (card.querySelector('.ecard-name')?.textContent || '') + ' ' +
-                          (card.querySelector('.ecard-meta')?.textContent || '');
-                card.style.display = (filter === '' || hay.toLowerCase().includes(filter)) ? '' : 'none';
-            });
-        });
-    });
 </script>
 <script>
-    function printDTRTable() {
-        // Create a new window for printing
+    async function printDTRTable() {
+        // The print table is built by the server on demand — fetch it first, and
+        // open the print window only once we actually have content.
+        showDtrLoading('Preparing print view');
+        let printContent = '';
+        try {
+            await materializePrintSection();
+            printContent = document.getElementById('print-section').innerHTML;
+        } catch (e) {
+            console.error('Print build failed', e);
+        } finally {
+            hideDtrLoading();
+        }
+        if (!printContent.trim()) {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({ icon: 'error', title: 'Print failed', text: 'Could not build the print view. Please try again.' });
+            }
+            return;
+        }
         const printWindow = window.open('', '_blank');
-        const printContent = document.getElementById('print-section').innerHTML;
 
         // Write the print content to the new window
         printWindow.document.write(`

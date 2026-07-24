@@ -310,7 +310,9 @@ switch ($action) {
         $verb   = $decision === 1 ? 'confirmed' : 'disputed';
         $icon   = $decision === 1 ? 'ri-checkbox-circle-line' : 'ri-error-warning-line';
         $color  = $decision === 1 ? 'success' : 'danger';
-        $link   = 'index.php?page=dtr-details&id=' . base64_encode($ddtr_id) . '&timekeeper_name=' . base64_encode('') . '&device_id=' . base64_encode($dtr['device_id']) . '&site_id=' . base64_encode($dtr['site_id']) . '&status=' . base64_encode($dtr['status']);
+        // Link straight to the standalone paper-DTR workbench (dtr-documents.php),
+        // matching how dtr.php builds the view URL — not the old dtr-details page.
+        $link   = 'dtr-documents.php?id=' . base64_encode($ddtr_id) . '&timekeeper_name=' . base64_encode('') . '&device_id=' . base64_encode($dtr['device_id']) . '&site_id=' . base64_encode($dtr['site_id']) . '&status=' . base64_encode($dtr['status']);
         $msg = "$ename $verb their DTR for $period." . ($comment !== '' ? " Note: $comment" : '');
 
         $recipients = [];

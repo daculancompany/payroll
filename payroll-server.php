@@ -14,10 +14,8 @@ $orderDirection = $_POST['order'][0]['dir'];
 $p2 = $_POST['p2'];
 
 // Define column mappings (Period sorts by the actual start date, not the label).
-// Index 0 is the bulk-select checkbox column (not sortable).
-$columns = ["select", "ref_no", "date_from", "status"];
-$orderColumn = (isset($columns[$orderColumnIndex]) && $columns[$orderColumnIndex] !== "select")
-    ? $columns[$orderColumnIndex] : "date_from";
+$columns = ["ref_no", "date_from", "status"];
+$orderColumn = $columns[$orderColumnIndex] ?? "date_from";
 $orderDirection = strtoupper($orderDirection) === 'ASC' ? 'ASC' : 'DESC';
 
 // Query to count total records
@@ -47,9 +45,6 @@ $result = $conn->query($query);
 $data = array();
 while ($row = $result->fetch_assoc()) {
     $data[] = array(
-        "select" => ($row['status'] == 1)
-            ? '<input type="checkbox" class="pay-bulk-check" value="' . (int)$row['id'] . '">'
-            : '',
         "ref_no" => '<span class="payroll-ref">' . htmlspecialchars($row['ref_no']) . '</span>',
         "period" => '<span class="payroll-period"><i class="ri-calendar-2-line me-1 text-muted"></i>'
                   . date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M d, Y", strtotime($row['date_to'])) . '</span>',

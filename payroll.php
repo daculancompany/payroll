@@ -27,9 +27,6 @@
 							<i class="ri-money-dollar-circle-line me-2 text-success"></i>Payroll List
 						</h4>
 						<div class="flex-shrink-0 d-flex gap-2">
-							<button type="button" id="btn-bulk-send-pay" class="btn btn-info" onclick="bulkSendPayrollForReview()" disabled>
-								<i class="ri-user-received-2-line me-1"></i>Send Selected (<span id="pay-bulk-count">0</span>)
-							</button>
 							<button type="button" class="btn btn-success add-btn" data-bs-toggle="modal" id="create-btn" data-bs-target="#modal">
 								<i class="ri-add-circle-line align-bottom me-1"></i> Create Payroll
 							</button>
@@ -40,7 +37,6 @@
 							<table id="table" class="table table-hover table-bordered align-middle">
 								<thead class="table-dark">
 									<tr>
-										<th style="width:34px;" class="text-center"><input type="checkbox" id="pay-check-all" title="Select reviewable on this page"></th>
 										<th><i class="ri-hashtag me-1"></i>Payroll ID</th>
 										<th><i class="ri-calendar-range-line me-1"></i>Period</th>
 										<th><i class="ri-pulse-line me-1"></i>Status</th>

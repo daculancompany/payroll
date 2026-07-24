@@ -89,6 +89,28 @@ $canEdit      = ($login_role !== 6);
 $pendingRecs  = (int)($agg['pending'] ?? 0);
 $cleanPending = (int)($agg['clean_pending'] ?? 0);
 $excPending   = max(0, $pendingRecs - $cleanPending);
+
+// ── Employee review progress (whole-batch sign-off) — shown once a batch is
+// out for review (status 3) or approved (status 2). Same data the old
+// dtr-details.php surfaced, ported here so admins see confirm/dispute status.
+$reviewTotalEmp = (int)($agg['employees'] ?? 0);
+$reviewRows = [];
+$reviewConfirmed = $reviewDisputed = 0;
+if (in_array($batchStatus, [2, 3], true)) {
+    $rvq = $conn->query("SELECT r.id, r.employee_id, r.status, r.comment, r.reviewed_at,
+            r.resolved_at, r.admin_reply,
+            CONCAT(e.lastname, ', ', e.firstname) AS name
+        FROM dtr_employee_reviews r
+        INNER JOIN employee e ON e.id = r.employee_id
+        WHERE r.ddtr_id = " . (int)$id . "
+        ORDER BY r.status ASC, r.reviewed_at DESC");
+    if ($rvq) while ($rv = $rvq->fetch_assoc()) {
+        $reviewRows[$rv['employee_id']] = $rv;
+        if ((int)$rv['status'] === 1) $reviewConfirmed++;
+        elseif ((int)$rv['status'] === 2) $reviewDisputed++;
+    }
+}
+$reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -509,6 +531,38 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-chat-in button:hover { background:var(--brand-dark); }
 .ddv-mini-btn:hover:not(:disabled) { filter:brightness(.96); }
 .ddv-mini-btn:disabled { opacity:.4; cursor:not-allowed; }
+/* ── Employee Review Progress (ported from dtr-details.php) ── */
+.drp-body { padding:10px 13px; }
+.drp-counts { display:flex; gap:5px; flex-wrap:wrap; }
+.drp-chip { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:12px; }
+.drp-chip.appr { background:#eafaf0; color:#0f9d58; border:1px solid #b7e4c7; }
+.drp-chip.disp { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+.drp-chip.pend { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
+.drp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
+.drp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
+.drp-act-btn.export { background:#eef2fb; color:#394b7c; border-color:#c3c9e0; }
+.drp-act-btn.resolve { margin-top:5px; background:#e9f7ef; color:#0f9d58; border-color:#b7e4c7; }
+.drp-act-btn:hover { filter:brightness(.97); }
+.drp-disputes { margin-top:9px; display:flex; flex-direction:column; gap:6px; }
+.drp-disputes.is-scroll { max-height:300px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.drp-dispute-item { display:flex; gap:8px; align-items:flex-start; background:#fff5f5; border:1px solid #f3d3d3; border-radius:8px; padding:7px 10px; }
+.drp-dispute-item > i { color:#c62828; font-size:15px; margin-top:1px; flex-shrink:0; }
+.drp-emp { font-size:11.5px; font-weight:700; color:#333; }
+.drp-when { font-size:9.5px; color:#999; font-weight:400; margin-left:6px; }
+.drp-comment { font-size:11.5px; color:#555; margin-top:1px; word-break:break-word; }
+.drp-resolved { margin-top:5px; font-size:11px; color:#0f9d58; font-weight:600; background:#f0faf3; border:1px solid #cdeeda; border-radius:6px; padding:4px 8px; }
+.drp-names { margin-top:9px; }
+.drp-names > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:#0f9d58; user-select:none; }
+.drp-names > summary::-webkit-details-marker { display:none; }
+.drp-names > summary:hover .drp-names-hint { text-decoration:underline; }
+.drp-count-pill { background:#e9f7ef; border:1px solid #b7e4c7; color:#0f9d58; border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.drp-names-hint { font-weight:500; color:#8a8a8a; }
+.drp-names .lbl-hide, .drp-names[open] .lbl-show { display:none; }
+.drp-names[open] .lbl-hide { display:inline; }
+.drp-chip-wrap { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; max-height:132px; overflow-y:auto; padding:2px; }
+.drp-name-chip { background:#e9f7ef; border:1px solid #b7e4c7; color:#2f5d4a; border-radius:10px; padding:1px 7px; font-size:11px; white-space:nowrap; }
+.drp-empty { font-size:11px; color:#8aa39c; padding:2px; }
+
 .ddv-batch-rows { overflow-y:auto; }
 .ddv-batch-row { display:flex; justify-content:space-between; align-items:center; padding:5px 13px; font-size:11px; color:#5b6f68; border-bottom:1px dashed #eef2f0; }
 .ddv-batch-row:last-child { border-bottom:none; }
@@ -712,6 +766,61 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
                     <div style="font-size:11.5px;color:#8aa39c;padding:8px;">No employee selected.</div>
                 </div>
             </div>
+            <?php if (in_array($batchStatus, [2, 3], true)): ?>
+            <div class="ddv-panel" style="flex-shrink:0;">
+                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)">
+                    <span><i class="ri-user-received-2-line"></i> Employee Review</span>
+                    <?php if ($batchStatus === 3): ?><span class="ddv-status-badge st-rev" style="margin-left:6px;">In progress</span><?php else: ?><span class="ddv-status-badge st-appr" style="margin-left:6px;">Approved</span><?php endif; ?>
+                    <i class="ri-arrow-down-s-line ddv-collapse-ic"></i>
+                </div>
+                <div class="drp-body">
+                    <div class="drp-counts">
+                        <span class="drp-chip appr"><i class="ri-checkbox-circle-line"></i> <?= $reviewConfirmed ?> Confirmed</span>
+                        <span class="drp-chip disp"><i class="ri-error-warning-line"></i> <?= $reviewDisputed ?> Disputed</span>
+                        <span class="drp-chip pend"><i class="ri-time-line"></i> <?= $reviewPending ?> Awaiting</span>
+                        <?php if ($canEdit): ?>
+                            <?php if ($batchStatus === 3 && $reviewPending > 0): ?>
+                            <button type="button" class="drp-act-btn remind" onclick="remindDtrReview(<?= $id ?>)"><i class="ri-notification-badge-line"></i> Remind (<?= $reviewPending ?>)</button>
+                            <?php endif; ?>
+                            <a class="drp-act-btn export" href="ajax.php?action=export_dtr_reviews&id=<?= $id ?>"><i class="ri-download-2-line"></i> Export</a>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($reviewDisputed > 0): ?>
+                    <div class="drp-disputes<?= $reviewDisputed > 4 ? ' is-scroll' : '' ?>">
+                        <?php foreach ($reviewRows as $rv): if ((int)$rv['status'] !== 2) continue; ?>
+                        <div class="drp-dispute-item">
+                            <i class="ri-error-warning-line"></i>
+                            <div style="flex:1;min-width:0;">
+                                <div class="drp-emp"><?= htmlspecialchars($rv['name']) ?><span class="drp-when"><?= date('M j, g:i A', strtotime($rv['reviewed_at'])) ?></span></div>
+                                <div class="drp-comment"><?= htmlspecialchars($rv['comment']) ?></div>
+                                <?php if (!empty($rv['resolved_at'])): ?>
+                                    <div class="drp-resolved"><i class="ri-checkbox-circle-line"></i> Resolved — reply: <?= htmlspecialchars($rv['admin_reply']) ?></div>
+                                <?php elseif ($canEdit): ?>
+                                    <button type="button" class="drp-act-btn resolve" onclick="openResolveDispute('dtr', <?= (int)$rv['id'] ?>, <?= htmlspecialchars(json_encode($rv['name']), ENT_QUOTES) ?>)"><i class="ri-chat-check-line"></i> Resolve &amp; Reply</button>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php endif; ?>
+                    <?php if ($reviewConfirmed > 0): $cn = []; foreach ($reviewRows as $rv) if ((int)$rv['status'] === 1) $cn[] = $rv['name']; ?>
+                    <details class="drp-names"<?= count($cn) <= 12 ? ' open' : '' ?>>
+                        <summary>
+                            <span style="color:#0f9d58;font-weight:700;"><i class="ri-checkbox-circle-line"></i> Confirmed by</span>
+                            <span class="drp-count-pill"><?= count($cn) ?></span>
+                            <span class="drp-names-hint"><span class="lbl-show">show names</span><span class="lbl-hide">hide</span></span>
+                        </summary>
+                        <div class="drp-chip-wrap">
+                            <?php foreach ($cn as $n): ?><span class="drp-name-chip"><?= htmlspecialchars($n) ?></span><?php endforeach; ?>
+                        </div>
+                    </details>
+                    <?php endif; ?>
+                    <?php if ($reviewConfirmed === 0 && $reviewDisputed === 0): ?>
+                    <div class="drp-empty">No employees have reviewed yet.</div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
             <div class="ddv-panel" style="flex-shrink:0;">
                 <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)"><span><i class="ri-stack-line"></i> Batch Summary</span>
                     <button type="button" class="ddv-pg-btn" onclick="event.stopPropagation();toggleDrawer(false)" style="display:none;" id="ddv-drawer-close" title="Close"><i class="ri-close-line"></i></button>
@@ -1638,6 +1747,49 @@ document.querySelector('.ddv-paper-scroll').addEventListener('wheel', ev => {
     setZoom(zoom + (ev.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
 }, { passive: false });
 setZoom(zoom);
+
+// ── Employee Review Progress actions (ported from dtr-details.js) ────────────
+function remindDtrReview(id) {
+    Swal.fire({
+        title: 'Send reminder?',
+        text: "Only employees who haven't reviewed yet will be notified.",
+        icon: 'question', showCancelButton: true,
+        confirmButtonColor: '#f7b84b', confirmButtonText: 'Yes, remind them',
+    }).then(res => {
+        if (!res.isConfirmed) return;
+        Swal.fire({ title: 'Sending…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.ajax({
+            url: 'ajax.php?action=remind_dtr_review', method: 'POST', dataType: 'JSON', data: { id: id },
+            success: r => {
+                if (r && r.result) Swal.fire({ icon: 'success', title: 'Reminder sent', text: r.message });
+                else Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
+            },
+            error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
+        });
+    });
+}
+
+function openResolveDispute(type, reviewId, empName) {
+    Swal.fire({
+        title: 'Resolve dispute',
+        html: 'Reply to <b>' + esc(empName || 'employee') + '</b>. They will be notified.',
+        input: 'textarea', inputPlaceholder: 'Explain what was checked / corrected…',
+        showCancelButton: true, confirmButtonColor: '#0f9d58', confirmButtonText: 'Resolve & notify',
+        preConfirm: v => { if (!v || !v.trim()) { Swal.showValidationMessage('A reply is required.'); return false; } return v.trim(); },
+    }).then(res => {
+        if (!res.isConfirmed) return;
+        Swal.fire({ title: 'Saving…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.ajax({
+            url: 'ajax.php?action=resolve_review_dispute', method: 'POST', dataType: 'JSON',
+            data: { type: type, id: reviewId, reply: res.value },
+            success: r => {
+                if (r && r.result) Swal.fire({ icon: 'success', title: 'Resolved', text: r.message }).then(x => { if (x.isConfirmed) location.reload(); });
+                else Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
+            },
+            error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
+        });
+    });
+}
 
 // ── Collapsible right-column panels ──────────────────────────────────────────
 function togglePanel(head) {

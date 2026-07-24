@@ -2813,6 +2813,24 @@ class Action
                     }
                 }
 
+                // Preload declared-holiday dates (legal + special) in this period.
+                // A holiday is a paid non-working day, so a MONTHLY employee who
+                // didn't work it must NOT be counted absent for it. Keyed Y-m-d.
+                $holidayDates = [];
+                $hq = $this->db->prepare(
+                    "SELECT start_date, end_date FROM calendar_events
+                     WHERE type IN (1, 3) AND start_date <= ? AND COALESCE(end_date, start_date) >= ?"
+                );
+                $hq->bind_param('ss', $date_to, $date_from);
+                $hq->execute();
+                $hres = $hq->get_result();
+                while ($h = $hres->fetch_assoc()) {
+                    $hEnd = $h['end_date'] ?: $h['start_date'];
+                    for ($d = strtotime($h['start_date']); $d <= strtotime($hEnd); $d = strtotime('+1 day', $d)) {
+                        $holidayDates[date('Y-m-d', $d)] = true;
+                    }
+                }
+
                 foreach ($result as $row) {
                     $employee_id = $row["employee_id"];
                     $isAutoDeduct = $row["isAutoDeduct"];
@@ -3094,7 +3112,12 @@ class Action
                     if ($rate_type === 'monthly') {
                         $expected_days = 0;
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
-                            if (!$this->isRestDay($restMap[$employee_id] ?? [], date('Y-m-d', $d))) $expected_days++;
+                            $eymd = date('Y-m-d', $d);
+                            // Expected work days exclude rest days AND declared holidays
+                            // (a holiday is paid non-working — never an absence).
+                            if (!$this->isRestDay($restMap[$employee_id] ?? [], $eymd) && empty($holidayDates[$eymd])) {
+                                $expected_days++;
+                            }
                         }
                         // Paid leave is not an absence.
                         $absent = max(0, (int) round($expected_days - $present - $paid_leave));
@@ -5495,6 +5518,21 @@ class Action
         $rr = $rq->get_result();
         while ($rw = $rr->fetch_assoc()) $restMap[$rw['employee_id']][] = $rw;
 
+        // Declared holidays in the period — excluded from expected work days here
+        // too, so this sanity check agrees with the generation absent logic.
+        $holidayDates = [];
+        $hq = $this->db->prepare("SELECT start_date, end_date FROM calendar_events
+            WHERE type IN (1, 3) AND start_date <= ? AND COALESCE(end_date, start_date) >= ?");
+        $hq->bind_param('ss', $pay['date_to'], $pay['date_from']);
+        $hq->execute();
+        $hres = $hq->get_result();
+        while ($h = $hres->fetch_assoc()) {
+            $hEnd = $h['end_date'] ?: $h['start_date'];
+            for ($d = strtotime($h['start_date']); $d <= strtotime($hEnd); $d = strtotime('+1 day', $d)) {
+                $holidayDates[date('Y-m-d', $d)] = true;
+            }
+        }
+
         $negative = [];
         $zero = [];
         $swings = [];
@@ -5517,7 +5555,8 @@ class Action
             if (!$isFixed) {
                 $expected = 0;
                 for ($d = strtotime($pay['date_from']); $d <= strtotime($pay['date_to']); $d = strtotime('+1 day', $d)) {
-                    if (!$this->isRestDay($restMap[$eid] ?? [], date('Y-m-d', $d))) $expected++;
+                    $symd = date('Y-m-d', $d);
+                    if (!$this->isRestDay($restMap[$eid] ?? [], $symd) && empty($holidayDates[$symd])) $expected++;
                 }
                 $counted = (float) $r['present'] + (float) ($r['paid_leave'] ?? 0) + (float) $r['absent'];
                 $miss = $expected - $counted;

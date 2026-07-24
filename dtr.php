@@ -53,9 +53,6 @@ function dtr_status_badge($s) {
                         <h4 class="card-title mb-0 flex-grow-1">
                             <i class="ri-time-line me-2" style="color:#009688;"></i>DTR List
                         </h4>
-                        <button type="button" id="btn-bulk-send-dtr" class="btn btn-sm btn-info" onclick="bulkSendDTRForReview()" disabled>
-                            <i class="ri-user-received-2-line me-1"></i>Send Selected for Review (<span id="dtr-bulk-count">0</span>)
-                        </button>
                     </div>
 
                     <div class="card-body">
@@ -63,9 +60,6 @@ function dtr_status_badge($s) {
                             <table id="data-table" class="table table-hover table-bordered dt-responsive nowrap align-middle">
                                 <thead class="table-dark">
                                     <tr>
-                                        <th style="width:34px;" class="text-center" data-orderable="false">
-                                            <input type="checkbox" id="dtr-check-all" title="Select all reviewable">
-                                        </th>
                                         <th><i class="ri-calendar-range-line me-1"></i>Period</th>
                                         <th><i class="ri-map-pin-2-line me-1"></i>Site</th>
                                         <th><i class="ri-file-list-3-line me-1"></i>Attendance Summary</th>
@@ -102,11 +96,6 @@ function dtr_status_badge($s) {
                                             . "&status=" . base64_encode($row['status']);
                                     ?>
                                         <tr>
-                                            <td class="text-center">
-                                                <?php if ($status === 1): ?>
-                                                    <input type="checkbox" class="dtr-bulk-check" value="<?= (int)$row['id'] ?>">
-                                                <?php endif; ?>
-                                            </td>
                                             <td>
                                                 <div class="dtr-period">
                                                     <i class="ri-calendar-2-line me-1 text-muted"></i><?= $period ?>

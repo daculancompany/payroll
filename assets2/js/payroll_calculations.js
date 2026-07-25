@@ -33,15 +33,12 @@ window.addEventListener("load", () => {
 });
 
 $(function () {
-    $(".select2").select2();
+    if ($.fn.select2) $(".select2").select2();
 });
 $("#form-payroll").on("submit", function (event) {
     event.preventDefault();
 });
 $(document).ready(function () {
-    setTimeout(() =>{
-        $(".topnav-hamburger").click();
-    },1000)
     $('.net-class').each(function() {
         if (parseFloat($(this).val()) <= 0) {  // Check if value is ≤ 0
             $(`.name-${$(this).attr("did")}`).addClass('net-danger'); // Add class
@@ -60,35 +57,23 @@ $(document).ready(function () {
     updatePayroll();
 });
 
+// Payslip selection now lives in the payroll workbench's employee list, which
+// exposes the ticked ids via window.pcwSelectedPayslipIds(). The legacy
+// `.ps-row-chk` table checkboxes are the fallback for any page still using them.
+function selectedPayslipIds() {
+    if (typeof window.pcwSelectedPayslipIds === 'function') return window.pcwSelectedPayslipIds();
+    return Array.from(document.querySelectorAll('.ps-row-chk:checked')).map(function(c){ return c.value; });
+}
+
 function updatePayslipCount() {
-    var checked = document.querySelectorAll('.ps-row-chk:checked');
-    var cnt    = document.getElementById('ps-count');
-    var chkAll = document.getElementById('chk-all');
-    var total  = document.querySelectorAll('.ps-row-chk').length;
-    if (cnt) cnt.textContent = checked.length;
-    if (chkAll) {
-        chkAll.indeterminate = checked.length > 0 && checked.length < total;
-        chkAll.checked = checked.length === total && total > 0;
-    }
+    var cnt = document.getElementById('ps-count');
+    if (cnt) cnt.textContent = selectedPayslipIds().length;
 }
-
-function toggleAllPayslips(el) {
-    document.querySelectorAll('.ps-row-chk').forEach(function(chk) { chk.checked = el.checked; });
-    updatePayslipCount();
-}
-
-// Delegate checkbox events via jQuery so they work regardless of script load order
-$(document).on('change', '.ps-row-chk', function() {
-    updatePayslipCount();
-});
-$(document).on('change', '#chk-all', function() {
-    toggleAllPayslips(this);
-});
 
 function printSelectedPayslips() {
-    const ids = Array.from(document.querySelectorAll('.ps-row-chk:checked')).map(function(c){ return c.value; });
+    const ids = selectedPayslipIds();
     if (ids.length === 0) {
-        Swal.fire({ toast:true, position:'top-end', icon:'info', title:'Check at least one employee row first', showConfirmButton:false, timer:2500 });
+        Swal.fire({ toast:true, position:'top-end', icon:'info', title:'Tick at least one employee in the list first', showConfirmButton:false, timer:2500 });
         return;
     }
     // Preview inside the payslip modal instead of a print pop-up window.
@@ -181,10 +166,7 @@ async function updatePayroll() {
 function handleError(e) {
     $(".submitbutton").removeAttr("disabled");
     $(".fa-spinner-button").hide();
-    toastr["error"](
-        e ? e : "Someting went wrong. Please contact administrator.",
-        "Error Notification"
-    );
+    showToast(e ? e : "Something went wrong. Please contact administrator.", "error");
 }
 
 // ── Resolve a disputed review (shared shape with DTR page) ──
@@ -535,10 +517,15 @@ function fmtNum(v) {
 function recalcRowBasicRate(rowId) {
     const tr = document.querySelector(`tr[data-row-id="${rowId}"]`);
     if (!tr) return;
+    const cell = tr.querySelector('[data-computed="total_basic_rate"]');
+    if (!cell) return;
+    // Monthly/fixed basic is the fixed half-month salary — days present don't
+    // change it, so leave the server-rendered value untouched (daily only).
+    const rt = tr.getAttribute('data-rate-type') || 'daily';
+    if (rt === 'monthly' || rt === 'fixed') { recalcBasicRateFooter(); return; }
     const present = parseFloat(tr.querySelector('input[data-type="present"]')?.value) || 0;
     const perDay  = parseFloat(tr.querySelector('input[data-type="per_day"]')?.value) || 0;
-    const cell = tr.querySelector('[data-computed="total_basic_rate"]');
-    if (cell) cell.textContent = fmtNum(present * perDay);
+    cell.textContent = fmtNum(present * perDay);
     recalcBasicRateFooter();
 }
 

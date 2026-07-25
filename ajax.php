@@ -391,6 +391,10 @@ if ($action == "remind_payroll_review") {
 	echo json_encode($crud->remind_payroll_review());
 }
 
+if ($action == "notify_payroll_review_selected") {
+	echo json_encode($crud->notify_payroll_review_selected());
+}
+
 if ($action == "export_dtr_reviews") {
 	ob_end_clean();
 	$crud->export_dtr_reviews();

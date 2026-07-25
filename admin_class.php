@@ -3590,6 +3590,77 @@ class Action
         return $this->_remindReview('payroll');
     }
 
+    // Per-payroll-item review-request counters. Added on demand so existing
+    // databases pick them up without a manual migration.
+    private function ensureReviewSentColumns()
+    {
+        $has = $this->db->query("SHOW COLUMNS FROM payroll_items LIKE 'review_sent_count'");
+        if ($has && $has->num_rows > 0) return true;
+        $this->db->query("ALTER TABLE payroll_items
+            ADD COLUMN review_sent_count INT NOT NULL DEFAULT 0,
+            ADD COLUMN review_sent_at DATETIME NULL");
+        $chk = $this->db->query("SHOW COLUMNS FROM payroll_items LIKE 'review_sent_count'");
+        return $chk && $chk->num_rows > 0;
+    }
+
+    // Ask a SUBSET of a payroll's employees to review their payslip.
+    // Unlike send_payroll_for_review() this does NOT change the batch status —
+    // it only notifies the picked employees, so a reviewer can chase individual
+    // people while the batch is still being worked on. Repeatable: each send
+    // bumps that employee's review_sent_count.
+    function notify_payroll_review_selected()
+    {
+        $id  = isset($_POST['id']) ? (int) $_POST['id'] : 0;
+        $raw = $_POST['item_ids'] ?? '';
+        if (is_array($raw)) $raw = implode(',', $raw);
+        $itemIds = array_values(array_filter(array_map('intval', explode(',', (string) $raw))));
+        if (!$id || !$itemIds) return ['result' => false, 'message' => 'Select at least one employee first.'];
+
+        $payroll = $this->db->query("SELECT id, date_from, date_to, status FROM payroll WHERE id = $id")->fetch_assoc();
+        if (!$payroll) return ['result' => false, 'message' => 'Payroll not found.'];
+        if ((int) $payroll['status'] === 0) {
+            return ['result' => false, 'message' => 'Calculate this payroll before asking employees to review.'];
+        }
+
+        // Scope the ids to this payroll so a crafted request can't notify others.
+        $idList = implode(',', $itemIds);
+        $period = date('M j', strtotime($payroll['date_from'])) . ' – ' . date('M j, Y', strtotime($payroll['date_to']));
+        $count  = $this->notifyEmployeesFromQuery(
+            "SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $id AND id IN ($idList)",
+            'Please review your payslip',
+            "Your payslip for $period needs your review. Please check it and confirm.",
+            'ri-file-list-3-line',
+            'warning',
+            'employee-portal.php?tab=payslips'
+        );
+        if ($count <= 0) return ['result' => false, 'message' => 'No matching employees in this payroll.'];
+
+        // Bump the per-employee send counter and return the fresh values so the
+        // UI can update its badges without a reload.
+        $sent = [];
+        if ($this->ensureReviewSentColumns()) {
+            $this->db->query("UPDATE payroll_items
+                SET review_sent_count = review_sent_count + 1, review_sent_at = NOW()
+                WHERE payroll_id = $id AND id IN ($idList)");
+            $res = $this->db->query("SELECT id, review_sent_count, review_sent_at
+                FROM payroll_items WHERE payroll_id = $id AND id IN ($idList)");
+            if ($res) while ($r = $res->fetch_assoc()) {
+                $sent[(int) $r['id']] = [
+                    'n'  => (int) $r['review_sent_count'],
+                    'at' => $r['review_sent_at'] ? date('M j, g:i A', strtotime($r['review_sent_at'])) : '',
+                ];
+            }
+        }
+
+        // type 5 appends " Payroll" to the phrase (see save_payroll_history)
+        $this->save_payroll_history($id, 5, "Review Request Sent to $count Employee(s) —");
+        return [
+            'result'  => true,
+            'message' => "$count employee(s) notified to review their payslip.",
+            'sent'    => $sent,
+        ];
+    }
+
     private function _remindReview($type)
     {
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;

@@ -20,6 +20,12 @@ if (!isset($_SESSION['is_login']) || !$_SESSION['is_login']) {
     header('location:login.php');
     exit;
 }
+// Payroll details now lives on its own full-viewport page (like dtr-documents.php);
+// old index.php?page=payroll_calculations&id=N links land there.
+if (($_GET['page'] ?? '') === 'payroll_calculations') {
+    header('Location: payroll_calculations.php?id=' . (int)($_GET['id'] ?? 0));
+    exit;
+}
 ?>
 
 <?php include 'includes/header.php' ?>

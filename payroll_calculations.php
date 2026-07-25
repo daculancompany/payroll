@@ -73,6 +73,22 @@ if ($prvq) while ($prv = $prvq->fetch_assoc()) {
 }
 $payrollReviewPending = max(0, $payrollReviewTotalEmp - $payrollReviewConfirmed - $payrollReviewDisputed);
 
+// The sign-off conversation, keyed by employee: what the employee wrote when
+// they confirmed or disputed, and HR's reply if one was sent. The panel and
+// the left list show only a name + chat icon; this feeds the popup behind it.
+$pcwReviewConvo = [];
+foreach ($payrollReviewRows as $eid => $prv) {
+    $pcwReviewConvo[(int)$eid] = [
+        'id'     => (int)$prv['id'],
+        'st'     => (int)$prv['status'],
+        'name'   => $prv['name'],
+        'c'      => (string)($prv['comment'] ?? ''),
+        'at'     => !empty($prv['reviewed_at']) ? date('M j, Y g:i A', strtotime($prv['reviewed_at'])) : '',
+        'rep'    => (string)($prv['admin_reply'] ?? ''),
+        'rep_at' => !empty($prv['resolved_at']) ? date('M j, Y g:i A', strtotime($prv['resolved_at'])) : '',
+    ];
+}
+
 // Approved DTR_details entries behind each employee's "No. of Days" figure,
 // grouped by employee + site so the view popover mirrors calculate_payroll()'s source data.
 $dtrLogsByEmpSite = [];
@@ -566,6 +582,41 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
     max-height:132px; overflow-y:auto; padding:2px; }
 .prp-name-chip { background:#eef7f0; border:1px solid #cfe9d6; color:#2f5d3f;
     border-radius:10px; padding:1px 7px; font-size:11px; white-space:nowrap; }
+/* ── Name-only sign-off rows ───────────────────────────────────────────────
+   Both lists (disputed + confirmed) are one line per employee: icon, name,
+   and a chat button when they left a message. The message itself opens in
+   #modal-emp-review, so a long comment can never stretch this panel. */
+.prp-note-pill { display:inline-flex; align-items:center; gap:3px; background:#fff6e2; border:1px solid #f2dfae;
+    color:#a9700a; border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.prp-confirms { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+.prp-confirms.is-scroll { max-height:190px; overflow-y:auto; padding-right:4px; }
+.prp-row { display:flex; align-items:center; gap:6px; min-width:0; padding:4px 8px; border-radius:7px;
+    border:1px solid transparent; font-size:11.5px; }
+.prp-row.ok   { background:#f2faf4; border-color:#dceee2; }
+.prp-row.disp { background:#fff5f5; border-color:#f3d3d3; }
+.prp-row-ic { font-size:13px; flex-shrink:0; }
+.prp-row.ok   .prp-row-ic { color:#33a466; }
+.prp-row.disp .prp-row-ic { color:#c62828; }
+.prp-row-name { flex:1; min-width:0; font-weight:700; color:#33403c;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.prp-row-done { color:#107c41; font-size:12px; flex-shrink:0; }
+.prp-row-msg { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:20px; height:20px; border-radius:6px; background:#fff6e2; border:1px solid #f2dfae; color:#a9700a; font-size:11px; }
+.prp-row.has-msg { cursor:pointer; }
+.prp-row.has-msg:hover { filter:brightness(.97); }
+.prp-row.has-msg:hover .prp-row-msg,
+.prp-row.has-msg:focus-visible .prp-row-msg { background:#a9700a; border-color:#a9700a; color:#fff; }
+.prp-row.has-msg:focus-visible { outline:2px solid #107c41; outline-offset:1px; }
+
+/* ── The sign-off conversation popup ── */
+#modal-emp-review .mer-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#33403c; }
+.mer-badge { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800;
+    padding:2px 9px; border-radius:12px; border:1px solid; }
+.mer-badge.ok   { background:#eafaf0; color:#107c41; border-color:#b7e4c7; }
+.mer-badge.disp { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
+.mer-when { font-size:10.5px; color:#8aa39c; margin-left:auto; }
+.mer-empty { text-align:center; color:#8aa39c; font-size:12.5px; padding:22px 12px; }
 .prp-disputes.is-scroll { max-height:340px; overflow-y:auto; padding-right:4px; }
 .prp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
 .prp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
@@ -854,6 +905,19 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                     <button type="button" data-rv="3"><i class="ri-loader-4-line" style="color:#3f7fe0;"></i> Reviewing</button>
                                     <button type="button" data-rv="0"><i class="ri-checkbox-blank-circle-line" style="color:#9aa;"></i> No mark</button>
                                 </div>
+                                <?php if (in_array((int)$status, [2, 3], true)): ?>
+                                <?php /* The employees' own sign-off, separate from the reviewer's
+                                         colour mark above — lets HR pull up every disputed payslip
+                                         (or everyone still silent) in one click. */ ?>
+                                <div class="pcw-fp-lbl">Employee review</div>
+                                <div class="pcw-rv-chips" id="pcw-erv-chips">
+                                    <button type="button" data-erv="" class="on">All</button>
+                                    <button type="button" data-erv="2"><i class="ri-error-warning-fill" style="color:#c62828;"></i> Disputed</button>
+                                    <button type="button" data-erv="1"><i class="ri-checkbox-circle-fill" style="color:#33a466;"></i> Confirmed</button>
+                                    <button type="button" data-erv="0"><i class="ri-time-line" style="color:#c98a00;"></i> Awaiting</button>
+                                    <button type="button" data-erv="m"><i class="ri-chat-3-fill" style="color:#a9700a;"></i> With message</button>
+                                </div>
+                                <?php endif; ?>
                                 <div class="pcw-fp-lbl">Department</div>
                                 <select id="pcw-dept" class="pcw-select">
                                     <option value="">All Departments</option>
@@ -886,8 +950,11 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                             </div>
                             <div class="pcw-bulk-lbl">Actions</div>
                             <div class="pcw-bulk-act">
-                                <?php if ($status != 2): ?>
-                                <button type="button" class="pcw-btn good" onclick="pcwNotifySelected()" title="Ask only the selected employees to review their payslip (batch status is unchanged)">
+                                <?php if ($status == 3): ?>
+                                <?php /* Only offered once the batch is out for review (status 3): that is
+                                         the only state where employees can actually SEE and confirm their
+                                         payslip, so a chase notification can never point at a blank portal. */ ?>
+                                <button type="button" class="pcw-btn good" onclick="pcwNotifySelected()" title="Remind only the selected employees to confirm their payslip">
                                     <i class="ri-notification-badge-line"></i> Notify for review
                                 </button>
                                 <?php endif; ?>
@@ -973,42 +1040,56 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                         </a>
                                     </div>
                                 </div>
-                                <?php if ($payrollReviewDisputed > 0): ?>
-                                <div class="prp-disputes<?= $payrollReviewDisputed > 4 ? ' is-scroll' : '' ?>">
-                                    <?php foreach ($payrollReviewRows as $prv): if ((int)$prv['status'] !== 2) continue; ?>
-                                    <div class="prp-dispute-item">
-                                        <i class="ri-error-warning-line"></i>
-                                        <div style="flex:1;">
-                                            <div class="prp-emp"><?= htmlspecialchars($prv['name']) ?>
-                                                <span class="prp-when"><?= date('M j, g:i A', strtotime($prv['reviewed_at'])) ?></span>
-                                            </div>
-                                            <div class="prp-comment"><?= htmlspecialchars($prv['comment']) ?></div>
-                                            <?php if (!empty($prv['resolved_at'])): ?>
-                                                <div class="prp-resolved"><i class="ri-checkbox-circle-line"></i> Resolved — HR reply: <?= htmlspecialchars($prv['admin_reply']) ?></div>
-                                            <?php else: ?>
-                                                <button type="button" class="prp-act-btn resolve" onclick="openResolveDispute('payroll', <?= (int)$prv['id'] ?>, <?= htmlspecialchars(json_encode($prv['name']), ENT_QUOTES) ?>)">
-                                                    <i class="ri-chat-check-line"></i> Resolve &amp; Reply
-                                                </button>
-                                            <?php endif; ?>
-                                        </div>
+                                <?php
+                                // Name-only rows keep the panel readable on a 400-employee batch.
+                                // The comment itself lives one click away in the conversation popup
+                                // (pcwOpenReviewConvo), so nothing here wraps or scrolls sideways.
+                                $prpRow = function ($prv, $kind) {
+                                    $hasMsg = trim((string)$prv['comment']) !== '';
+                                    $eid    = (int)$prv['employee_id'];
+                                    ?>
+                                    <div class="prp-row <?= $kind ?><?= $hasMsg ? ' has-msg' : '' ?>"
+                                         <?= $hasMsg ? 'role="button" tabindex="0" onclick="pcwOpenReviewConvo(' . $eid . ')" title="View this employee\'s message"' : '' ?>>
+                                        <i class="prp-row-ic <?= $kind === 'disp' ? 'ri-error-warning-fill' : 'ri-checkbox-circle-fill' ?>"></i>
+                                        <span class="prp-row-name"><?= htmlspecialchars($prv['name']) ?></span>
+                                        <?php if (!empty($prv['resolved_at'])): ?>
+                                            <span class="prp-row-done" title="HR already replied"><i class="ri-check-double-line"></i></span>
+                                        <?php endif; ?>
+                                        <?php if ($hasMsg): ?>
+                                            <span class="prp-row-msg" title="Open the message"><i class="ri-chat-3-fill"></i></span>
+                                        <?php endif; ?>
                                     </div>
+                                    <?php
+                                };
+                                ?>
+                                <?php if ($payrollReviewDisputed > 0): ?>
+                                <div class="prp-disputes<?= $payrollReviewDisputed > 6 ? ' is-scroll' : '' ?>">
+                                    <?php foreach ($payrollReviewRows as $prv): if ((int)$prv['status'] !== 2) continue; ?>
+                                        <?php $prpRow($prv, 'disp'); ?>
                                     <?php endforeach; ?>
                                 </div>
                                 <?php endif; ?>
                                 <?php if ($payrollReviewConfirmed > 0): ?>
-                                <?php $pcn = [];
-                                    foreach ($payrollReviewRows as $prv) if ((int)$prv['status'] === 1) $pcn[] = $prv['name'];
+                                <?php
+                                    $pcnRows = [];
+                                    $pcnMsgs = 0;
+                                    foreach ($payrollReviewRows as $prv) {
+                                        if ((int)$prv['status'] !== 1) continue;
+                                        $pcnRows[] = $prv;
+                                        if (trim((string)$prv['comment']) !== '') $pcnMsgs++;
+                                    }
                                 ?>
-                                <details class="prp-names"<?= count($pcn) <= 12 ? ' open' : '' ?>>
+                                <details class="prp-names"<?= count($pcnRows) <= 12 || $pcnMsgs ? ' open' : '' ?>>
                                     <summary>
                                         <span class="prp-confirmed-lbl"><i class="ri-checkbox-circle-line"></i> Confirmed by</span>
-                                        <span class="prp-count-pill"><?= count($pcn) ?></span>
+                                        <span class="prp-count-pill"><?= count($pcnRows) ?></span>
+                                        <?php if ($pcnMsgs): ?>
+                                        <span class="prp-note-pill" title="Confirmed with a message"><i class="ri-chat-3-line"></i> <?= $pcnMsgs ?> with message</span>
+                                        <?php endif; ?>
                                         <span class="prp-names-hint"><span class="lbl-show">show names</span><span class="lbl-hide">hide</span></span>
                                     </summary>
-                                    <div class="prp-chip-wrap">
-                                        <?php foreach ($pcn as $n): ?>
-                                        <span class="prp-name-chip"><?= htmlspecialchars($n) ?></span>
-                                        <?php endforeach; ?>
+                                    <div class="prp-confirms<?= count($pcnRows) > 6 ? ' is-scroll' : '' ?>">
+                                        <?php foreach ($pcnRows as $prv): $prpRow($prv, 'ok'); endforeach; ?>
                                     </div>
                                 </details>
                                 <?php endif; ?>
@@ -2381,6 +2462,27 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
     <div class="offcanvas-body p-0" id="offcanvas-history-body" style="overflow-y:auto; background:#fff;"></div>
 </div>
 
+<!-- Payslip sign-off conversation — what the employee wrote when they confirmed
+     or disputed, plus HR's reply. Opened from the Employee Review panel and
+     from the chat button on a left-list card. -->
+<div class="modal fade" id="modal-emp-review" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header py-2" style="background:#107c41;">
+                <h6 class="modal-title text-white"><i class="ri-user-received-2-line me-2"></i>Payslip Review Message</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" style="background:#eef2f1;" id="mer-body"></div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-sm btn-success" id="mer-reply" style="display:none;">
+                    <i class="ri-chat-check-line me-1"></i>Resolve &amp; Reply
+                </button>
+                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Daily Time Record modal — the same Form 48 sheet dtr-documents.php renders,
      built from this payroll's approved DTR_details rows. -->
 <div class="modal fade" id="modal-att-logs" tabindex="-1" aria-hidden="true">
@@ -2426,9 +2528,18 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                     </div>
                 </div>
             </div>
-            <div class="modal-footer py-2">
-                <span class="text-muted small me-auto" id="al-days-count"></span>
-                <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+            <!-- Footer: the period's totals at a glance, so the numbers that
+                 feed the pay computation stay visible on every tab. -->
+            <div class="modal-footer py-2 al-foot">
+                <div class="al-foot-stats">
+                    <span class="al-fs days"><i class="ri-calendar-check-line"></i><b id="al-days-count">—</b></span>
+                    <span class="al-fs wh" title="Total work hours in this period"><i class="ri-time-line"></i><b id="al-tot-wh">0.00</b><em>hrs</em></span>
+                    <span class="al-fs ot" title="Total overtime hours"><i class="ri-flashlight-line"></i><b id="al-tot-ot">0.00</b><em>OT</em></span>
+                    <span class="al-fs ut" title="Total undertime hours"><i class="ri-arrow-down-circle-line"></i><b id="al-tot-ut">0.00</b><em>UT</em></span>
+                    <span class="al-fs late" title="Total tardiness"><i class="ri-alarm-warning-line"></i><b id="al-tot-late">0</b><em>late min</em></span>
+                    <span class="al-fs rv" id="al-emp-rv" style="display:none;"></span>
+                </div>
+                <button type="button" class="btn btn-sm btn-secondary ms-auto" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -3251,6 +3362,12 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-tag-cnt i { font-size:9.5px; }
 .pcw-tag-cnt.msg  { background:#fff6e2; color:#a9700a; border-color:#f2dfae; }
 .pcw-tag-cnt.note { background:#f2f0fb; color:#6b4fc4; border-color:#ded7f5; }
+/* Chat button on a card — the employee left a message with their sign-off */
+.pcw-item-msg { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; padding:0;
+  border-radius:6px; cursor:pointer; font-size:11px; background:#eafaf0; border:1px solid #b7e4c7; color:#107c41; }
+.pcw-item-msg.disp { background:#fdecea; border-color:#f5c6cb; color:#c62828; }
+.pcw-item-msg:hover { background:#107c41; border-color:#107c41; color:#fff; }
+.pcw-item-msg.disp:hover { background:#c62828; border-color:#c62828; color:#fff; }
 
 /* ── Bulk action panel (shown while employees are ticked) ── */
 .pcw-bulk { display:none; flex-shrink:0; border-top:1px solid #e1e8e4; background:#f7fbf8; padding:9px 11px 10px; }
@@ -3362,7 +3479,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 /* ── Right: summary + batch ── */
 .pcw-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
 .pcw-right .pcw-panel.grow { flex:1; min-height:0; }
-.pcw-sum-body { padding:11px 13px; max-height:42vh; overflow-y:auto; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.pcw-sum-body { padding:11px 13px; max-height:42vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
 /* ── Batch Insights panel ── */
 .pcw-ins-body { flex:1; min-height:0; overflow-y:auto; padding:11px 13px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
 .pcw-ins-sec { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#8aa39c; margin:2px 0 6px; }
@@ -3406,8 +3523,13 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-ins-mover .nm { flex:1; min-width:0; font-size:10.5px; font-weight:700; color:#33403c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pcw-ins-mover .pct { font-size:10.5px; font-weight:800; font-variant-numeric:tabular-nums; }
 .pcw-ins-mover .pct.up { color:#178a4e; } .pcw-ins-mover .pct.down { color:#c62828; }
-.pcw-sum-emp { font-size:12.5px; font-weight:800; color:#33403c; }
-.pcw-sum-sub { font-size:10.5px; color:#8aa39c; margin:1px 0 9px; }
+/* Name + "no. · position · department". Long department strings
+   (ADMINISTRATION/FINANCE/HR/BILLING/…) are clipped to one line so the panel
+   never scrolls sideways — the full text stays in the title tooltip. */
+.pcw-sum-emp { font-size:12.5px; font-weight:800; color:#33403c;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-sum-sub { font-size:10.5px; color:#8aa39c; margin:1px 0 9px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pcw-sum-sent { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; color:#3557b7;
   background:#eef2fd; border:1px solid #ccd9f7; border-radius:8px; padding:5px 9px; margin:-4px 0 9px; }
 .pcw-sum-sent b { font-weight:800; }
@@ -3443,6 +3565,27 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
    pane scrolls inside a constant-height body instead. */
 #modal-att-logs .modal-dialog { max-width:840px; }
 #modal-att-logs .modal-content { height:min(86vh, 900px); min-height:520px; }
+
+/* ── DTR modal footer — period totals beside the Close button ── */
+#modal-att-logs .al-foot { justify-content:flex-start; gap:8px; padding-left:14px; padding-right:14px;
+  border-top:1px solid #e1dfdd; background:#f7faf8; }
+.al-foot-stats { display:flex; flex-wrap:wrap; align-items:center; gap:5px; min-width:0; }
+.al-fs { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; line-height:1.35;
+  font-size:10.5px; font-weight:700; color:#5b6f62; background:#fff; border:1px solid #e1e8e4; }
+.al-fs i { font-size:12px; color:#107c41; }
+.al-fs b { font-weight:800; color:#33403c; font-variant-numeric:tabular-nums; }
+.al-fs em { font-style:normal; font-weight:700; font-size:9px; letter-spacing:.3px; text-transform:uppercase; color:#8aa39c; }
+.al-fs.days i, .al-fs.days b { color:#009688; }
+.al-fs.ot   i, .al-fs.ot   b { color:#c98a00; }
+.al-fs.ut   i, .al-fs.ut   b { color:#1565c0; }
+.al-fs.late i, .al-fs.late b { color:#c62828; }
+.al-fs.zero { opacity:.55; }
+.al-fs.rv.ok   { background:#e6f7ee; border-color:#b7e4c7; color:#178a4e; }
+.al-fs.rv.ok i { color:#178a4e; }
+.al-fs.rv.bad   { background:#fdece5; border-color:#f5c6b3; color:#c0491f; }
+.al-fs.rv.bad i { color:#c0491f; }
+.al-fs.rv.wait   { background:#fff6e2; border-color:#f2dfae; color:#a9700a; }
+.al-fs.rv.wait i { color:#a9700a; }
 
 /* ── Tabs inside the Daily Time Record modal (DTR · Logs · Messages · Notes) ── */
 .pcw-tabs { display:flex; gap:4px; border-bottom:2px solid #d5e6da; margin-bottom:12px; flex-wrap:wrap;
@@ -3520,6 +3663,8 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 
 <script>
 window.PCW_DATA = <?= json_encode($pcwEmployees, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?>;
+// employee_id → their payslip sign-off (decision, message, HR reply)
+window.PCW_REVIEWS = <?= json_encode($pcwReviewConvo, JSON_UNESCAPED_UNICODE) ?>;
 window.PCW_META = <?= json_encode([
     'id'         => (int)$id,
     'status'     => (int)$status,
@@ -3537,7 +3682,7 @@ window.PCW_META = <?= json_encode([
     var M = window.PCW_META || {};
     // S.ps holds the payslip selection ({id: true}) — the card list is the only
     // selection UI now that the table preview has no checkbox column.
-    var S = { q: '', dept: '', pos: '', rv: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
+    var S = { q: '', dept: '', pos: '', rv: '', erv: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
     // Exception predicates — reused by the Insights chips and the left-list filter.
     function excPred(key, e) {
         switch (key) {
@@ -3599,6 +3744,12 @@ window.PCW_META = <?= json_encode([
             if (S.dept && e.dept !== S.dept) return false;
             if (S.pos && e.pos !== S.pos) return false;
             if (S.rv !== '' && String(e.rv) !== S.rv) return false;
+            // Employee sign-off: '1'/'2'/'0' by decision, 'm' = left a message
+            if (S.erv !== '') {
+                var cv = (window.PCW_REVIEWS || {})[e.emp];
+                if (S.erv === 'm') { if (!cv || !cv.c) return false; }
+                else if (String(e.emp_rv || 0) !== S.erv) return false;
+            }
             if (S.exc && !excPred(S.exc, e)) return false;
             return true;
         });
@@ -3630,6 +3781,13 @@ window.PCW_META = <?= json_encode([
             var nMsg = (e.msgs || []).length, nNote = (e.notes || []).length;
             if (nMsg) tags += '<span class="pcw-tag-cnt msg" title="' + nMsg + ' record message(s)"><i class="ri-chat-3-fill"></i>' + nMsg + '</span>';
             if (nNote) tags += '<span class="pcw-tag-cnt note" title="' + nNote + ' internal note(s)"><i class="ri-sticky-note-fill"></i>' + nNote + '</span>';
+            // Chat button — only for employees who left a message with their
+            // payslip sign-off; opens the same popup as the review panel.
+            var conv = (window.PCW_REVIEWS || {})[e.emp];
+            var convBtn = (conv && conv.c)
+                ? '<button type="button" class="pcw-item-msg' + (conv.st === 2 ? ' disp' : '') + '" data-convo="' + e.emp + '"'
+                    + ' title="' + (conv.st === 2 ? 'Disputed' : 'Confirmed') + ' with a message — click to read"><i class="ri-chat-3-fill"></i></button>'
+                : '';
             html += '<div class="pcw-item' + (S.sel == e.id ? ' active' : '') + (rvm ? ' ' + rvm.cls : '') + '" data-eid="' + e.id + '">'
                 + '<input type="checkbox" data-ps="' + e.id + '"' + (chk && chk.checked ? ' checked' : '') + ' title="Select this employee for bulk actions">'
                 + '<div class="pcw-item-avwrap"><div class="pcw-item-av rv-' + e.rv + '">' + esc(initials(e)) + '</div>' + rvBadge + '</div>'
@@ -3638,7 +3796,7 @@ window.PCW_META = <?= json_encode([
                 + (tags ? '<div class="pcw-item-tags">' + tags + '</div>' : '')
                 + '</div>'
                 + '<div class="pcw-item-right"><div class="pcw-item-net' + (e.net <= 0 ? ' neg' : '') + '">' + fmt(e.net) + '</div>'
-                + '<div class="pcw-item-flags">' + dots + '</div></div>'
+                + '<div class="pcw-item-flags">' + convBtn + dots + '</div></div>'
                 + '</div>';
         });
         byId('pcw-list').innerHTML = html || '<div class="pcw-list-empty"><i class="ri-user-search-line" style="font-size:22px;opacity:.5;"></i><br>No employees match.</div>';
@@ -3865,8 +4023,10 @@ window.PCW_META = <?= json_encode([
             ? '<div class="pcw-sum-sent"><i class="ri-send-plane-fill"></i> Review request sent <b>' + e.sent_n + '×</b>'
               + (e.sent_at ? ' · last ' + esc(e.sent_at) : '') + '</div>'
             : '';
-        var h = '<div class="pcw-sum-emp">' + esc(e.name) + '</div>'
-            + '<div class="pcw-sum-sub">' + esc(e.no) + (e.pos ? ' · ' + esc(e.pos) : '') + (e.dept ? ' · ' + esc(e.dept) : '') + '</div>'
+        // One-line sub-caption; the untruncated text lives in the tooltip.
+        var sub = e.no + (e.pos ? ' · ' + e.pos : '') + (e.dept ? ' · ' + e.dept : '');
+        var h = '<div class="pcw-sum-emp" title="' + esc(e.name) + '">' + esc(e.name) + '</div>'
+            + '<div class="pcw-sum-sub" title="' + esc(sub) + '">' + esc(sub) + '</div>'
             + sentLine
             + '<div class="pcw-sum-grid">'
             + '<div class="pcw-sum-tile"><div class="v">' + fmt(e.gross) + '</div><div class="l">Gross</div></div>'
@@ -3991,6 +4151,56 @@ window.PCW_META = <?= json_encode([
         if (clr) clr.addEventListener('click', function () { S.exc = ''; buildList(); renderInsights(); });
     })();
 
+    // ── Payslip sign-off conversation ──
+    // Reads window.PCW_REVIEWS (employee_id → decision + message + HR reply)
+    // and shows it as a two-bubble thread. Global: the Employee Review rows and
+    // the left-list chat buttons both call it.
+    var EMP_RV_META = {
+        1: { cls: 'ok',   ic: 'ri-checkbox-circle-line', lbl: 'Confirmed' },
+        2: { cls: 'disp', ic: 'ri-error-warning-line',   lbl: 'Disputed' }
+    };
+    window.pcwOpenReviewConvo = function (empId) {
+        var r = (window.PCW_REVIEWS || {})[empId];
+        var box = byId('mer-body'), btn = byId('mer-reply');
+        if (!box) return;
+        if (!r) {
+            box.innerHTML = '<div class="mer-empty"><i class="ri-chat-off-line"></i> This employee has not reviewed their payslip yet.</div>';
+            btn.style.display = 'none';
+        } else {
+            var meta = EMP_RV_META[r.st] || EMP_RV_META[1];
+            var h = '<div class="mer-head">'
+                + '<span class="mer-name">' + esc(r.name) + '</span>'
+                + '<span class="mer-badge ' + meta.cls + '"><i class="' + meta.ic + '"></i>' + meta.lbl + '</span>'
+                + (r.at ? '<span class="mer-when">' + esc(r.at) + '</span>' : '')
+                + '</div>';
+            h += '<div class="pcw-chat">';
+            h += r.c
+                ? '<div class="pcw-bub them">' + esc(r.c) + '<span class="m">' + esc(r.name) + (r.at ? ' · ' + esc(r.at) : '') + '</span></div>'
+                : '<div class="mer-empty">' + meta.lbl + ' without a message.</div>';
+            if (r.rep) {
+                h += '<div class="pcw-bub me">' + esc(r.rep)
+                    + '<span class="m">HR reply' + (r.rep_at ? ' · ' + esc(r.rep_at) : '') + '</span></div>';
+            }
+            h += '</div>';
+            box.innerHTML = h;
+            // Only an unresolved dispute can be replied to — resolve_review_dispute()
+            // rejects anything else, so the button stays hidden for confirmations.
+            var canReply = r.st === 2 && !r.rep;
+            btn.style.display = canReply ? '' : 'none';
+            btn.onclick = canReply ? function () { openResolveDispute('payroll', r.id, r.name); } : null;
+        }
+        bootstrap.Modal.getOrCreateInstance(byId('modal-emp-review')).show();
+    };
+    // The review rows are role="button" divs, which browsers focus but do not
+    // activate on Enter/Space the way a real <button> does — wire that up.
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Enter' && ev.key !== ' ') return;
+        var row = ev.target.closest ? ev.target.closest('.prp-row.has-msg') : null;
+        if (!row) return;
+        ev.preventDefault();
+        row.click();
+    });
+
     // Daily Time Record modal — renders the shared Form 48 sheet from this
     // payroll's approved DTR rows (identical template to dtr-documents.php).
     window.pcwOpenDtr = function (itemId) {
@@ -4093,6 +4303,30 @@ window.PCW_META = <?= json_encode([
         document.getElementById('al-employee').textContent = e.name;
         document.getElementById('al-days-count').textContent = e.dtr_days
             ? e.dtr_days + ' approved day' + (e.dtr_days === 1 ? '' : 's') : 'No approved attendance';
+
+        // Footer totals — same figures the Form 48 TOTAL row shows, plus this
+        // employee's standing in the batch's review round.
+        var tot = (e.dtr && e.dtr.totals) || { wh: 0, ot: 0, ut: 0, late: 0 };
+        [['al-tot-wh', tot.wh, 2], ['al-tot-ot', tot.ot, 2],
+         ['al-tot-ut', tot.ut, 2], ['al-tot-late', tot.late, 0]].forEach(function (t) {
+            var el = byId(t[0]);
+            if (!el) return;
+            var v = Number(t[1]) || 0;
+            el.textContent = v.toFixed(t[2]);
+            el.parentNode.classList.toggle('zero', v === 0);
+        });
+        var rvChip = byId('al-emp-rv');
+        if (rvChip) {
+            var rvMap = {
+                1: ['ok',   'ri-checkbox-circle-line',  'Employee confirmed'],
+                2: ['bad',  'ri-error-warning-line',    'Employee disputed'],
+                0: ['wait', 'ri-time-line',             'Awaiting employee review']
+            };
+            var rv = (M.status === 2 || M.status === 3) ? (rvMap[e.emp_rv] || rvMap[0]) : null;
+            rvChip.className = 'al-fs rv' + (rv ? ' ' + rv[0] : '');
+            rvChip.style.display = rv ? '' : 'none';
+            if (rv) rvChip.innerHTML = '<i class="' + rv[1] + '"></i>' + rv[2];
+        }
         bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-att-logs')).show();
     };
     // Switch the active tab/pane inside the DTR Details modal.
@@ -4267,6 +4501,13 @@ window.PCW_META = <?= json_encode([
             ev.stopPropagation();
             return;
         }
+        // Chat button opens the sign-off message without selecting the card.
+        var cv = ev.target.closest('button[data-convo]');
+        if (cv) {
+            ev.stopPropagation();
+            window.pcwOpenReviewConvo(parseInt(cv.getAttribute('data-convo'), 10));
+            return;
+        }
         var it = ev.target.closest('.pcw-item');
         if (it) select(parseInt(it.getAttribute('data-eid'), 10));
     });
@@ -4294,13 +4535,24 @@ window.PCW_META = <?= json_encode([
         pcwUpdFilterCount();
     });
 
+    // Employee sign-off chips (only rendered once the batch is out for review)
+    var ervChips = byId('pcw-erv-chips');
+    if (ervChips) ervChips.addEventListener('click', function (ev) {
+        var b = ev.target.closest('button');
+        if (!b) return;
+        S.erv = b.getAttribute('data-erv');
+        this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+        buildList();
+        pcwUpdFilterCount();
+    });
+
     // Filter popover open/close + active-count badge (global — called from onclick)
     window.pcwToggleFilter = function () {
         var pop = byId('pcw-filter-pop'), btn = byId('pcw-filter-btn');
         var open = pop.classList.toggle('open');
         btn.classList.toggle('on', open);
     };
-    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rv !== '' ? 1 : 0); }
+    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0); }
     window.pcwUpdFilterCount = function () {
         var n = pcwActiveFilters();
         var badge = byId('pcw-filter-count'), btn = byId('pcw-filter-btn');
@@ -4309,10 +4561,11 @@ window.PCW_META = <?= json_encode([
         btn.classList.toggle('on', n > 0 || byId('pcw-filter-pop').classList.contains('open'));
     };
     window.pcwResetFilters = function () {
-        S.dept = ''; S.pos = ''; S.rv = '';
+        S.dept = ''; S.pos = ''; S.rv = ''; S.erv = '';
         byId('pcw-dept').value = '';
         byId('pcw-pos-filter').value = '';
         byId('pcw-rv-chips').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-rv') === ''); });
+        if (ervChips) ervChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-erv') === ''); });
         buildList();
         pcwUpdFilterCount();
     };

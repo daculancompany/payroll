@@ -9,6 +9,47 @@ if (!defined('APP_ENV')) {
     define('APP_ENV', 'dev');   // 'dev' | 'prod'
 }
 
+/* ──────────────────────────────────────────────────────────────
+ * Deployment role — lets ONE codebase serve two very different boxes.
+ *
+ *   'full'   → everything (default; unchanged behaviour for existing installs)
+ *   'local'  → the offline payroll machine kept off the internet:
+ *              ADMIN LOGIN ONLY, and the menu is limited to DTR + Payroll.
+ *              Employee portal logins are refused outright.
+ *   'portal' → the internet-facing box: employee portal only, no admin app.
+ *
+ * Set it per deployment — either edit this line on that machine, or export
+ * APP_ROLE in the web server environment (the env var wins).
+ * ────────────────────────────────────────────────────────────── */
+if (!defined('APP_ROLE')) {
+    $__role = getenv('APP_ROLE');
+    define('APP_ROLE', in_array($__role, ['full', 'local', 'portal'], true) ? $__role : 'full');
+}
+
+// Pages the admin app is allowed to route to when APP_ROLE = 'local'.
+// Everything else 404s / redirects, so a stray link can't open a screen that
+// has no business being on the payroll machine.
+if (!defined('LOCAL_ALLOWED_PAGES')) {
+    define('LOCAL_ALLOWED_PAGES', [
+        'dtr', 'dtr-details',                                   // DTR review
+        'payroll', 'payroll_items', 'payroll_calculations',     // Payroll
+        'profile',                                              // own account
+    ]);
+}
+
+// Guarded like the other helpers in this file so a double include can't
+// trigger a redeclare fatal.
+if (!function_exists('app_is_local')) {
+    /** True when this deployment is the offline payroll machine. */
+    function app_is_local() { return APP_ROLE === 'local'; }
+    /** True when this deployment is the public employee portal. */
+    function app_is_portal() { return APP_ROLE === 'portal'; }
+    /** Is $page reachable in this deployment role? */
+    function app_page_allowed($page) {
+        return app_is_local() ? in_array($page, LOCAL_ALLOWED_PAGES, true) : true;
+    }
+}
+
 // Application timezone — used by all PHP date()/DateTime calls.
 date_default_timezone_set('Asia/Manila');
 

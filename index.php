@@ -9,12 +9,16 @@ $clasification_array = ['bg-primary', 'bg-secondary', 'bg-warning', 'bg-danger',
 <?php include 'db_connect.php'; ?>
 <?php
 session_start();
-// Employees (employee portal session) must NOT reach admin pages.
-if ((!isset($_SESSION['is_login']) || !$_SESSION['is_login'])
-    && isset($_SESSION['emp_is_login']) && $_SESSION['emp_is_login']
-) {
-    header('location:employee-portal.php');
-    exit;
+// The offline payroll machine (APP_ROLE=local) is admin-only — it never serves
+// the employee portal, so an employee session here is meaningless.
+if (!app_is_local()) {
+    // Employees (employee portal session) must NOT reach admin pages.
+    if ((!isset($_SESSION['is_login']) || !$_SESSION['is_login'])
+        && isset($_SESSION['emp_is_login']) && $_SESSION['emp_is_login']
+    ) {
+        header('location:employee-portal.php');
+        exit;
+    }
 }
 if (!isset($_SESSION['is_login']) || !$_SESSION['is_login']) {
     header('location:login.php');
@@ -924,6 +928,12 @@ function getRole($login_role)
 
             if (!array_key_exists($page, $routes)) {
                 $page = 'home';
+            }
+
+            // APP_ROLE=local: only DTR review + Payroll exist on this machine.
+            // Anything else (including the default dashboard) lands on DTR.
+            if (app_is_local() && !app_page_allowed($page)) {
+                $page = 'dtr';
             }
 
             include $routes[$page] . '.php';

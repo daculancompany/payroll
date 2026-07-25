@@ -22,6 +22,25 @@
 
             <ul class="navbar-nav" id="navbar-nav">
 
+                <?php if (app_is_local()): ?>
+                <!-- ═══ OFFLINE PAYROLL MACHINE (APP_ROLE=local) ═══
+                     Admin-only box kept off the internet: the menu carries just
+                     the two screens that belong here — DTR review and Payroll. -->
+                <li class="menu-title"><span>Payroll Workstation</span></li>
+
+                <li class="nav-item">
+                    <a href="dtr" class="nav-link menu-link <?= in_array($page, ['dtr','dtr-details']) ? 'active' : '' ?>">
+                        <i class="ri-time-line"></i> <span>DTR Review</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="payroll?p2=false" class="nav-link menu-link <?= in_array($page, ['payroll','payroll_items','payroll_calculations']) ? 'active' : '' ?>">
+                        <i class="ri-calculator-line"></i> <span>Payroll</span>
+                    </a>
+                </li>
+
+                <?php else: ?>
+
                 <?php if ($login_role !== 6 && $login_role !== 7): ?>
 
                 <!-- ===== MENU ===== -->
@@ -311,6 +330,8 @@
                     </div>
                 </li>
                 <?php endif; ?>
+
+                <?php endif; /* APP_ROLE=local menu switch */ ?>
 
             </ul>
         </div>

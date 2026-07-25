@@ -3,7 +3,7 @@
    Loaded last so it can wrap the portal's global functions (switchTab,
    empRenderNotif). Adds:
      • per-screen header titles
-     • direction-aware screen transitions + light haptics
+     • instant (motionless) screen switching from the fixed bottom nav
      • swipe left/right to move between the primary bottom-nav screens
      • drag-to-dismiss on the More bottom sheet
      • swipe-to-dismiss on notifications (marks them read)
@@ -42,40 +42,19 @@
         if (navigator.vibrate) { try { navigator.vibrate(ms); } catch (e) { /* noop */ } }
     }
 
-    /* ── switchTab wrapper: title, slide direction, scroll-to-top, haptic ── */
+    /* ── switchTab wrapper: per-screen title + scroll-to-top only ─────────
+       Tab switching is deliberately motionless: no slide, no fade, no haptic. */
     var _origSwitchTab = window.switchTab;
-    var _pendingDir = 0;                 /* set by the swipe handler before switching */
     if (typeof _origSwitchTab === 'function') {
         window.switchTab = function (id, btn) {
-            var fromIdx = PRIMARY_TABS.indexOf(currentTabId());
             var changed = currentTabId() !== id;
             _origSwitchTab(id, btn);
             setScreenTitle(id);
             if (MOBILE_MQ.matches && changed) {
-                var panel = document.getElementById('tab-' + id);
-                if (panel) {
-                    var toIdx = PRIMARY_TABS.indexOf(id);
-                    var dir = _pendingDir;
-                    if (!dir && fromIdx > -1 && toIdx > -1 && fromIdx !== toIdx) {
-                        dir = toIdx > fromIdx ? 1 : -1;
-                    }
-                    panel.classList.remove('anim-left', 'anim-right');
-                    if (dir) {
-                        void panel.offsetWidth;   /* restart animation */
-                        panel.classList.add(dir > 0 ? 'anim-left' : 'anim-right');
-                    }
-                }
                 window.scrollTo(0, 0);           /* each screen opens at its top */
-                buzz(8);
             }
-            _pendingDir = 0;
         };
     }
-    document.addEventListener('animationend', function (e) {
-        if (e.target.classList && e.target.classList.contains('tab-panel')) {
-            e.target.classList.remove('anim-left', 'anim-right');
-        }
-    });
     setScreenTitle(currentTabId());
 
     /* ── Swipe left/right anywhere on a primary screen → adjacent screen ── */
@@ -111,7 +90,6 @@
             if (cur < 0) return;                       /* secondary screens: no swipe-nav */
             var next = cur + (dx < 0 ? 1 : -1);
             if (next < 0 || next >= PRIMARY_TABS.length) return;
-            _pendingDir = dx < 0 ? 1 : -1;
             window.switchTab(PRIMARY_TABS[next], null);
         }, { passive: true });
     })();

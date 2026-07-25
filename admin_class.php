@@ -99,6 +99,19 @@ class Action
         }
 
         // ── 2) EMPLOYEE (employee_portal_accounts) — sign in with employee_no OR account email ──
+        // The offline payroll machine (APP_ROLE=local) is ADMIN ONLY: skip the
+        // employee branch entirely so employee credentials can never open a
+        // session on the box that holds the salary data.
+        if (function_exists('app_is_local') && app_is_local()) {
+            $up = $this->db->prepare("
+                INSERT INTO login_attempts (identifier, ip, attempts, locked_until) VALUES (?, ?, 1, NULL)
+                ON DUPLICATE KEY UPDATE attempts = attempts + 1,
+                    locked_until = IF(attempts + 1 >= $MAX, DATE_ADD(NOW(), INTERVAL $LOCK MINUTE), locked_until)
+            ");
+            $up->bind_param('ss', $identity, $ip);
+            $up->execute();
+            return ['result' => false, 'message' => 'Invalid username or password.'];
+        }
         $acct_join = $has_acct ? "LEFT JOIN employee_portal_accounts a ON a.employee_id = e.id" : "";
         $acct_cols = $has_acct ? "a.password AS acct_pass, a.is_active AS acct_active" : "NULL AS acct_pass, 1 AS acct_active";
         // Employees may sign in with their employee_no OR the email stored as
@@ -3618,8 +3631,17 @@ class Action
 
         $payroll = $this->db->query("SELECT id, date_from, date_to, status FROM payroll WHERE id = $id")->fetch_assoc();
         if (!$payroll) return ['result' => false, 'message' => 'Payroll not found.'];
-        if ((int) $payroll['status'] === 0) {
-            return ['result' => false, 'message' => 'Calculate this payroll before asking employees to review.'];
+        // Employees can only SEE and confirm a payslip while the batch is out
+        // for review (status 3) — see employee-portal.php. Refuse to notify in
+        // any other state so a request can never point at an empty portal.
+        $pstatus = (int) $payroll['status'];
+        if ($pstatus !== 3) {
+            $why = [
+                0 => 'Calculate this payroll first, then send it for review.',
+                1 => 'Send this payroll for review first — employees cannot see their payslip yet.',
+                2 => 'This payroll is locked; the confirmation window is closed.',
+            ][$pstatus] ?? 'This payroll is not open for employee review.';
+            return ['result' => false, 'message' => $why];
         }
 
         // Scope the ids to this payroll so a crafted request can't notify others.

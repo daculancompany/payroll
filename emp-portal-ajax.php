@@ -395,6 +395,20 @@ switch ($action) {
         $mk->bind_param('iii', $autoMark, $payroll_id, $emp_id);
         $mk->execute();
 
+        // ── Close any per-employee edit window ────────────────────────────────
+        // An admin may have unlocked this row to correct a disputed figure. Now
+        // that the employee has signed off on the corrected payslip, re-freeze it
+        // automatically — otherwise the row would sit editable indefinitely and
+        // a later stray edit would silently void this very sign-off.
+        // Guarded: 2026_07_payroll_item_unlock.sql may not have run yet.
+        $hasUnlock = $conn->query("SHOW COLUMNS FROM payroll_items LIKE 'unlocked_at'");
+        if ($hasUnlock && $hasUnlock->num_rows) {
+            $conn->query("UPDATE payroll_items
+                          SET unlocked_at = NULL, unlocked_by = NULL, unlocked_reason = NULL
+                          WHERE payroll_id = $payroll_id AND employee_id = $emp_id
+                            AND unlocked_at IS NOT NULL");
+        }
+
         // Notify staff (Admin / Dept Head / HR).
         $emp = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
         $ename  = $emp['n'] ?? 'An employee';

@@ -118,8 +118,26 @@ $tax             = floatval($payroll['tax']);
 $jei_advances    = floatval($payroll['jei_advances']);
 $jcc_advances    = floatval($payroll['jcc_advances']);
 $sss_fund        = floatval($payroll['sss_fund']);
+// ── Named one-off items for this employee (payroll_item_extras) ──
+// kind 1 deducts, kind 2 adds. Printed as their own lines so the payslip says
+// what the money was for instead of burying it in a total. Guarded so a
+// database without the migration simply has none.
+$ps_extras = [];
+$ps_extra_add = $ps_extra_less = 0.0;
+if ($conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+    $xq = $conn->query("SELECT kind, label, amount FROM payroll_item_extras
+                        WHERE payroll_item_id = " . (int)$payroll['id'] . " ORDER BY id ASC");
+    if ($xq) while ($x = $xq->fetch_assoc()) {
+        $ps_extras[] = $x;
+        if ((int)$x['kind'] === 2) $ps_extra_add  += (float)$x['amount'];
+        else                       $ps_extra_less += (float)$x['amount'];
+    }
+}
+$gross_salary += $ps_extra_add;
+
 $total_all_deductions = $total_contributions + $total_deductions + $total_loans
-                      + $other_deduction + $tax + $jei_advances + $jcc_advances + $sss_fund;
+                      + $other_deduction + $tax + $jei_advances + $jcc_advances + $sss_fund
+                      + $ps_extra_less;
 $net_pay = $payroll['net'];
 
 // ── Employee Rate box ──
@@ -725,6 +743,14 @@ body.has-toolbar { padding-top: 50px; }
     <table class="item"><tr><td class="sub-lbl"><?= number_format($payroll['ot'], 2) ?> hrs × ₱<?= number_format($payroll['ot_rate'],2) ?>/hr</td><td class="sub-amt">₱ <?= number_format($overtime_amount, 2) ?></td></tr></table>
     <?php endif; ?>
 
+    <?php /* One-off allowances added for this employee alone */ ?>
+    <?php if ($ps_extra_add > 0): ?>
+    <div class="grp-lbl">One-off Allowances</div>
+    <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 2) continue; ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
+    <?php endforeach; ?>
+    <?php endif; ?>
+
     <?php if ($late_amount > 0 || $payroll['under_time'] > 0): ?>
     <div class="grp-lbl red">Adjustments</div>
     <?php if ($late_amount > 0): ?>
@@ -772,6 +798,14 @@ body.has-toolbar { padding-top: 50px; }
     <?php if ($jcc_advances > 0): ?><table class="item"><tr><td class="sub-lbl">JCC Advances</td><td class="sub-amt red">₱ <?= number_format($jcc_advances,2) ?></td></tr></table><?php endif; ?>
     <?php if ($tax > 0): ?><table class="item"><tr><td class="sub-lbl">Withholding Tax</td><td class="sub-amt red">₱ <?= number_format($tax,2) ?></td></tr></table><?php endif; ?>
     <?php if ($other_deduction > 0): ?><table class="item"><tr><td class="sub-lbl">Other Deduction</td><td class="sub-amt red">₱ <?= number_format($other_deduction,2) ?></td></tr></table><?php endif; ?>
+    <?php endif; ?>
+
+    <?php /* One-off deductions added for this employee alone */ ?>
+    <?php if ($ps_extra_less > 0): ?>
+    <div class="grp-lbl">One-off Items</div>
+    <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 1) continue; ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt red">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
+    <?php endforeach; ?>
     <?php endif; ?>
 </td>
 

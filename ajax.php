@@ -324,6 +324,26 @@ if ($action == "set_payroll_item_review") {
 	echo json_encode($save);
 }
 
+if ($action == "save_payroll_item_extra") {
+	echo json_encode($crud->save_payroll_item_extra());
+}
+
+if ($action == "delete_payroll_item_extra") {
+	echo json_encode($crud->delete_payroll_item_extra());
+}
+
+if ($action == "remittance_breakdown") {
+	echo json_encode($crud->remittance_breakdown());
+}
+
+if ($action == "unlock_payroll_item") {
+	echo json_encode($crud->unlock_payroll_item());
+}
+
+if ($action == "relock_payroll_item") {
+	echo json_encode($crud->relock_payroll_item());
+}
+
 if ($action == "save_fcm_token") {
 	$save = $crud->save_fcm_token();
 	echo json_encode($save);
@@ -373,6 +393,10 @@ if ($action == "send_payroll_for_review") {
 
 if ($action == "resolve_review_dispute") {
 	echo json_encode($crud->resolve_review_dispute());
+}
+
+if ($action == "mark_review_seen") {
+	echo json_encode($crud->mark_review_seen());
 }
 
 if ($action == "bulk_send_dtr_for_review") {

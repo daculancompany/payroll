@@ -153,6 +153,31 @@ $s2 = $conn->prepare("
 ");
 $s2->bind_param('ii', $emp_id, $emp_id); $s2->execute();
 $payslips = $s2->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// ── Named one-off items on these payslips (payroll_item_extras) ──
+// Ad-hoc lines an admin attached to this employee alone: kind 1 deducts,
+// kind 2 adds. Attached to each payslip so the breakdown below can name them
+// instead of silently folding them into the totals. Guarded — a database
+// without the migration simply has none.
+$ppExtrasHas = (bool)($conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows ?? 0);
+foreach ($payslips as &$__ps) { $__ps['extras'] = []; $__ps['extra_add'] = 0.0; $__ps['extra_less'] = 0.0; }
+unset($__ps);
+if ($ppExtrasHas && $payslips) {
+    $__ids = implode(',', array_map(function ($p) { return (int)$p['item_id']; }, $payslips));
+    $xq = $conn->query("SELECT payroll_item_id, kind, label, amount FROM payroll_item_extras
+                        WHERE payroll_item_id IN ($__ids) ORDER BY id ASC");
+    $__byItem = [];
+    if ($xq) while ($x = $xq->fetch_assoc()) $__byItem[(int)$x['payroll_item_id']][] = $x;
+    foreach ($payslips as &$__ps) {
+        foreach ($__byItem[(int)$__ps['item_id']] ?? [] as $x) {
+            $__ps['extras'][] = ['kind' => (int)$x['kind'], 'label' => $x['label'], 'amount' => (float)$x['amount']];
+            if ((int)$x['kind'] === 2) $__ps['extra_add']  += (float)$x['amount'];
+            else                       $__ps['extra_less'] += (float)$x['amount'];
+        }
+    }
+    unset($__ps);
+}
+
 $latest   = $payslips[0] ?? null;
 
 // Rate-aware pay math for a payslip row — mirrors admin get_payroll_rows_data so the
@@ -178,6 +203,17 @@ if (!function_exists('pp_pay')) {
         }
         $sub = $r['present'] * $r['per_day'];
         return ['sub' => $sub, 'gross' => $sub + $ot + $at - $la];
+    }
+}
+// Same figures with this payslip's one-off items folded in: allowance extras
+// raise gross, deduction extras are added to the deductions side. Keeps the
+// portal's breakdown matching the stored net the admin sheet produced.
+if (!function_exists('pp_pay_x')) {
+    function pp_pay_x($r)
+    {
+        $p = pp_pay($r);
+        $p['gross'] += (float)($r['extra_add'] ?? 0);
+        return $p;
     }
 }
 
@@ -208,10 +244,10 @@ foreach ($payslips as $ps) {
         $_lgl  = $ps['legal_holiday'] * $ps['per_day'];
         $_sun  = $ps['sunday_duty']   * $ps['per_day'];
         $_spc  = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
-        $_p    = pp_pay($ps);
+        $_p    = pp_pay_x($ps);
         $_sub  = $_p['sub'];
         $_gr   = $_p['gross'];
-        $_dd   = $ps['deduction_amount'] + $ps['other_deduction'] + $ps['tax'] + $ps['jei_advances'] + $ps['jcc_advances'] + $ps['sss_fund'];
+        $_dd   = $ps['deduction_amount'] + $ps['other_deduction'] + $ps['tax'] + $ps['jei_advances'] + $ps['jcc_advances'] + $ps['sss_fund'] + (float)($ps['extra_less'] ?? 0);
         $ytd_gross += $_gr;
         $ytd_ded   += $_dd;
         $ytd_net   += $ps['net'];
@@ -236,7 +272,7 @@ foreach ($chart_src as $cp) {
     $c_lgl = $cp['legal_holiday'] * $cp['per_day'];
     $c_sun = $cp['sunday_duty'] * $cp['per_day'];
     $c_spc = ($cp['per_day']/8*2.4) * $cp['special_holiday'];
-    $c_p   = pp_pay($cp);
+    $c_p   = pp_pay_x($cp);
     $c_sub = $c_p['sub'];
     $c_gr  = $c_p['gross'];
     $chart['labels'][]  = date('M d', strtotime($cp['date_to']));
@@ -260,12 +296,12 @@ foreach ($payslips as $cp) {
     $lgl = $cp['legal_holiday'] * $cp['per_day'];
     $sun = $cp['sunday_duty'] * $cp['per_day'];
     $spc = ($cp['per_day']/8*2.4) * $cp['special_holiday'];
-    $pp  = pp_pay($cp);
+    $pp  = pp_pay_x($cp);
     $sub = $pp['sub'];
     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
     $grs = $pp['gross'];
     $ded = $cp['deduction_amount'] + $cp['other_deduction'] + $cp['tax']
-         + $cp['jei_advances'] + $cp['jcc_advances'] + $cp['sss_fund'];
+         + $cp['jei_advances'] + $cp['jcc_advances'] + $cp['sss_fund'] + (float)($cp['extra_less'] ?? 0);
     $cmp_data[] = [
         'id'    => $cp['item_id'],
         'label' => date('M d', strtotime($cp['date_from'])).' – '.date('M d, Y', strtotime($cp['date_to'])),
@@ -396,12 +432,13 @@ if ($latest) {
     $lgl_amt  = $latest['legal_holiday'] * $latest['per_day'];
     $sun_amt  = $latest['sunday_duty']   * $latest['per_day'];
     $spc_amt  = ($latest['per_day'] / 8 * 2.4) * $latest['special_holiday'];
-    $_pp      = pp_pay($latest);
+    $_pp      = pp_pay_x($latest);
     $sub_tot  = $_pp['sub'];
     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
     $gross    = $_pp['gross'];
     $tot_ded  = $latest['deduction_amount'] + $latest['other_deduction']
-              + $latest['tax'] + $latest['jei_advances'] + $latest['jcc_advances'] + $latest['sss_fund'];
+              + $latest['tax'] + $latest['jei_advances'] + $latest['jcc_advances'] + $latest['sss_fund']
+              + (float)($latest['extra_less'] ?? 0);
 }
 
 // ── Deduction composition of the latest payslip (donut chart) ──
@@ -2359,6 +2396,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <?php if ($latest['under_time'] > 0): ?>
                     <div class="ps-row"><span class="ps-lbl dim">Undertime (<?= number_format($latest['under_time']) ?> min)</span><span class="ps-val dim">not deducted</span></div>
                     <?php endif; ?>
+                    <?php /* One-off allowances added for this employee alone */ ?>
+                    <?php foreach (($latest['extras'] ?? []) as $__x): if ($__x['kind'] !== 2) continue; ?>
+                    <div class="ps-row"><span class="ps-lbl"><?= htmlspecialchars($__x['label']) ?></span><span class="ps-val earn">₱<?= n2($__x['amount']) ?></span></div>
+                    <?php endforeach; ?>
                     <div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#219688;">Gross Pay</span><span class="ps-val earn" style="font-size:15px;font-weight:900;">₱<?= n2($gross) ?></span></div>
                 </div>
                 <!-- Deductions -->
@@ -2382,6 +2423,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <?php if ($latest['other_deduction'] > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Other Deductions</span><span class="ps-val ded">₱<?= n2($latest['other_deduction']) ?></span></div>
                     <?php endif; ?>
+                    <?php /* One-off deductions applied to this employee alone */ ?>
+                    <?php foreach (($latest['extras'] ?? []) as $__x): if ($__x['kind'] !== 1) continue; ?>
+                    <div class="ps-row"><span class="ps-lbl"><?= htmlspecialchars($__x['label']) ?></span><span class="ps-val ded">₱<?= n2($__x['amount']) ?></span></div>
+                    <?php endforeach; ?>
                     <?php if ($tot_ded == 0): ?>
                     <div class="ps-row"><span class="ps-lbl dim">No deductions</span></div>
                     <?php endif; ?>
@@ -2430,7 +2475,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     $sun2   = $ps['sunday_duty']   * $ps['per_day'];
                     $spc2   = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
                     $ut2    = $ps['under_time'] * $pm2;   // shown as info only; not part of gross
-                    $_pp2   = pp_pay($ps);
+                    $_pp2   = pp_pay_x($ps);
                     $sub2   = $_pp2['sub'];
                     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
                     $gr2    = $_pp2['gross'];

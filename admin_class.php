@@ -3475,6 +3475,33 @@ class Action
     // Admin resolves one disputed review (DTR or payroll) with a written reply,
     // and the filing employee is notified of the outcome.
     // Params: type = 'dtr'|'payroll', id = reviews-table PK, reply = admin note.
+    /**
+     * Mark an employee's sign-off message as read by staff. Fired when the
+     * message popup opens, so the UNREAD dot clears without needing a reply —
+     * reading a dispute is not the same as resolving it. First reader wins;
+     * later opens leave the original timestamp alone.
+     */
+    function mark_review_seen()
+    {
+        $type = ($_POST['type'] ?? '') === 'payroll' ? 'payroll' : 'dtr';
+        $id   = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+        if (!$id) return ['result' => false, 'message' => 'Missing review id'];
+
+        $table = $type === 'payroll' ? 'payroll_employee_reviews' : 'dtr_employee_reviews';
+        // Older databases may not have run 2026_07_review_seen.sql yet — the
+        // panels degrade to "everything read" rather than erroring.
+        $col = $this->db->query("SHOW COLUMNS FROM $table LIKE 'seen_at'");
+        if (!$col || !$col->num_rows) return ['result' => true, 'message' => 'skipped'];
+
+        $admin = (int) ($_SESSION['login_id'] ?? 0);
+        $stmt = $this->db->prepare("UPDATE $table SET seen_at = NOW(), seen_by = ?,
+                                    reviewed_at = reviewed_at WHERE id = ? AND seen_at IS NULL");
+        $stmt->bind_param('ii', $admin, $id);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        return ['result' => true, 'message' => 'seen', 'at' => date('M j, g:i A')];
+    }
+
     function resolve_review_dispute()
     {
         $type  = ($_POST['type'] ?? '') === 'payroll' ? 'payroll' : 'dtr';
@@ -3488,12 +3515,25 @@ class Action
 
         $rv = $this->db->query("SELECT * FROM $table WHERE id = $id")->fetch_assoc();
         if (!$rv) return ['result' => false, 'message' => 'Review not found'];
-        if ((int)$rv['status'] !== 2) return ['result' => false, 'message' => 'Only disputes can be resolved.'];
+        // Disputes AND confirmations can be answered: an employee who signs off
+        // with "correct, but move my loan to next cutoff" deserves a reply too.
+        // Only a sign-off that carries no message has nothing to respond to.
+        $rvStatus = (int)$rv['status'];
+        if ($rvStatus !== 1 && $rvStatus !== 2) return ['result' => false, 'message' => 'This employee has not reviewed yet.'];
+        $isDispute = $rvStatus === 2;
+        if (!$isDispute && trim((string)($rv['comment'] ?? '')) === '') {
+            return ['result' => false, 'message' => 'This employee confirmed without a message — there is nothing to reply to.'];
+        }
 
         // reviewed_at = reviewed_at guards against schemas where the column still
         // has ON UPDATE CURRENT_TIMESTAMP: resolving must not overwrite when the
         // employee actually signed off.
-        $stmt = $this->db->prepare("UPDATE $table SET resolved_at = NOW(), resolved_by = ?, admin_reply = ?, reviewed_at = reviewed_at WHERE id = ?");
+        // Replying implies reading, so clear the UNREAD marker in the same write
+        // (guarded — 2026_07_review_seen.sql may not have run yet).
+        $hasSeen = $this->db->query("SHOW COLUMNS FROM $table LIKE 'seen_at'");
+        $seenSet = ($hasSeen && $hasSeen->num_rows)
+            ? ", seen_at = COALESCE(seen_at, NOW()), seen_by = COALESCE(seen_by, $admin)" : '';
+        $stmt = $this->db->prepare("UPDATE $table SET resolved_at = NOW(), resolved_by = ?, admin_reply = ?$seenSet, reviewed_at = reviewed_at WHERE id = ?");
         $stmt->bind_param('isi', $admin, $reply, $id);
         if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
 
@@ -3511,14 +3551,21 @@ class Action
         $period = $b ? (date('M j', strtotime($b['date_from'])) . ' – ' . date('M j, Y', strtotime($b['date_to']))) : '';
         $this->notifyEmployee(
             (int) $rv['employee_id'],
-            'Your dispute was addressed',
-            "HR responded to your $what dispute for $period: $reply",
+            $isDispute ? 'Your dispute was addressed' : 'HR replied to your message',
+            $isDispute
+                ? "HR responded to your $what dispute for $period: $reply"
+                : "HR replied to your note on your $what for $period: $reply",
             'ri-chat-check-line',
             'info',
             $link
         );
 
-        return ['result' => true, 'message' => 'Dispute resolved and the employee has been notified.'];
+        return [
+            'result'  => true,
+            'message' => $isDispute
+                ? 'Dispute resolved and the employee has been notified.'
+                : 'Reply sent and the employee has been notified.',
+        ];
     }
 
     // Bulk-send several DTR batches for review (status 1 → 3). ids = array of DTR ids.
@@ -4939,8 +4986,449 @@ class Action
         return $stmt->execute() ? 1 : 0;
     }
 
+    /**
+     * May this payroll_item be written to right now?
+     *
+     * Until now the ONLY thing stopping an edit was whether the page happened to
+     * render an <input>, which meant a browser tab left open from before a batch
+     * was sent for review (or locked) could still silently save over figures
+     * employees were in the middle of confirming. The server decides now.
+     *
+     * Open payroll (status 1) → editable.
+     * Out for review (3)      → editable ONLY for a row an admin explicitly
+     *                           unlocked (see unlock_payroll_item).
+     * Locked (2) / New (0)    → never.
+     *
+     * Returns null when the write is allowed, or an error array to return as-is.
+     */
+    private function payroll_item_write_block($itemId)
+    {
+        $itemId = (int) $itemId;
+        if (!$itemId) return ['result' => false, 'message' => 'Missing payroll item.'];
+
+        // unlocked_at ships in 2026_07_payroll_item_unlock.sql — older databases
+        // simply have no per-row unlock, so treat every row as locked.
+        $hasUnlock = $this->db->query("SHOW COLUMNS FROM payroll_items LIKE 'unlocked_at'");
+        $unlockCol = ($hasUnlock && $hasUnlock->num_rows) ? 'i.unlocked_at' : 'NULL AS unlocked_at';
+
+        $row = $this->db->query("SELECT p.status, $unlockCol
+                FROM payroll_items i
+                INNER JOIN payroll p ON p.id = i.payroll_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+
+        $status = (int) $row['status'];
+        if ($status === 1) return null;
+        if ($status === 3 && !empty($row['unlocked_at'])) return null;
+
+        return ['result' => false, 'message' => $status === 2
+            ? 'This payroll is locked — reopen it before editing.'
+            : 'This payroll is out for employee review. Unlock the employee first to edit their figures.',
+            'reload' => true];
+    }
+
+    /**
+     * Add a named one-off line to ONE employee's payslip — "Uniform ₱500" as a
+     * deduction, "Transport ₱300" as an allowance — without recalculating the
+     * batch (which would rebuild payroll_items and discard manual corrections).
+     *
+     * Goes through the same payroll_item_write_block() gate as any other edit,
+     * so an in-review batch still requires that employee to be unlocked first.
+     */
+    function save_payroll_item_extra()
+    {
+        $itemId = (int)($_POST['item_id'] ?? 0);
+        if ($block = $this->payroll_item_write_block($itemId)) return $block;
+
+        $extraId = (int)($_POST['id'] ?? 0);          // >0 edits an existing line
+        $kind    = (int)($_POST['kind'] ?? 1) === 2 ? 2 : 1;   // 2 allowance, else deduction
+        $label   = trim((string)($_POST['label'] ?? ''));
+        $amount  = round((float)($_POST['amount'] ?? 0), 2);
+
+        if ($label === '')  return ['result' => false, 'message' => 'A label is required.'];
+        if (mb_strlen($label) > 120) $label = mb_substr($label, 0, 120);
+        if ($amount <= 0)   return ['result' => false, 'message' => 'Enter an amount greater than zero.'];
+
+        $row = $this->db->query("SELECT payroll_id, employee_id FROM payroll_items WHERE id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+
+        $uid = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        if ($extraId) {
+            $st = $this->db->prepare("UPDATE payroll_item_extras SET kind = ?, label = ?, amount = ?
+                                      WHERE id = ? AND payroll_item_id = ?");
+            $st->bind_param('isdii', $kind, $label, $amount, $extraId, $itemId);
+        } else {
+            $st = $this->db->prepare("INSERT INTO payroll_item_extras
+                    (payroll_item_id, payroll_id, employee_id, kind, label, amount, created_by)
+                    VALUES (?,?,?,?,?,?,?)");
+            $st->bind_param('iiiisdi', $itemId, $row['payroll_id'], $row['employee_id'], $kind, $label, $amount, $uid);
+        }
+        if (!$st->execute()) return ['result' => false, 'message' => $st->error];
+        if (!$extraId) $extraId = $this->db->insert_id;
+
+        $this->save_payroll_history((int)$row['payroll_id'], 5,
+            ($kind === 2 ? 'Added allowance "' : 'Added deduction "') . $label . '" ' . number_format($amount, 2) . ' —');
+
+        // The stored net is what the portal and payslips read — keep it true.
+        $this->resync_item_net($itemId);
+        // Changing what an employee is paid invalidates any sign-off they gave.
+        $this->void_signoff_for_item($itemId);
+
+        return ['result' => true, 'message' => 'Item saved.', 'id' => $extraId,
+                'extras' => $this->payroll_item_extras($itemId)];
+    }
+
+    /** Remove one extra line from an employee's payslip. */
+    function delete_payroll_item_extra()
+    {
+        $extraId = (int)($_POST['id'] ?? 0);
+        if (!$extraId) return ['result' => false, 'message' => 'Missing item.'];
+
+        $row = $this->db->query("SELECT payroll_item_id, payroll_id, kind, label, amount
+                                 FROM payroll_item_extras WHERE id = $extraId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Item not found.'];
+        if ($block = $this->payroll_item_write_block($row['payroll_item_id'])) return $block;
+
+        if (!$this->db->query("DELETE FROM payroll_item_extras WHERE id = $extraId")) {
+            return ['result' => false, 'message' => $this->db->error];
+        }
+        $this->save_payroll_history((int)$row['payroll_id'], 5,
+            'Removed ' . ((int)$row['kind'] === 2 ? 'allowance' : 'deduction') . ' "' . $row['label'] . '" —');
+        $this->resync_item_net($row['payroll_item_id']);
+        $this->void_signoff_for_item($row['payroll_item_id']);
+
+        return ['result' => true, 'message' => 'Item removed.',
+                'extras' => $this->payroll_item_extras($row['payroll_item_id'])];
+    }
+
+    /**
+     * Re-persist payroll_items.net for one row.
+     *
+     * The employee portal, payslip PDFs and reports read the STORED net rather
+     * than recomputing it, so an extra that only lived in payroll_item_extras
+     * would be invisible to all of them. Recomputed from the row's own figures
+     * plus its extras — never from a delta, so repeated saves cannot drift.
+     */
+    private function resync_item_net($itemId)
+    {
+        $itemId = (int)$itemId;
+        $row = $this->db->query("SELECT pi.*, pay.settings, pay.type AS payroll_type
+                FROM payroll_items pi INNER JOIN payroll pay ON pay.id = pi.payroll_id
+                WHERE pi.id = $itemId")->fetch_assoc();
+        if (!$row) return;
+
+        $perMinute = $row['per_day'] / (8 * 60);
+        $allowance = $row['allowance_amount'] * $row['allowance_days'];
+        $ot        = $row['ot'] * $row['ot_rate'];
+        $late      = $row['late'] * $perMinute;
+        $legal     = $row['legal_holiday'] * $row['per_day'];
+        $sunday    = $row['sunday_duty'] * $row['per_day'];
+        $special   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
+
+        // Same pay-basis split as get_payroll_rows_data().
+        $rt = $row['rate_type'] ?? 'daily';
+        $isMonthly = $rt === 'monthly' || $rt === 'fixed' || ((int)$row['payroll_type'] === 5);
+        if ($isMonthly) {
+            $absent = $row['absent'] * $row['per_day'];
+            $gross  = (($row['basic_pay'] + $allowance - $absent) / 2) + $ot + $legal + $sunday + $special - $late;
+        } else {
+            $gross  = ($row['present'] * $row['per_day']) + $ot + $allowance + $legal + $sunday + $special - $late;
+        }
+
+        $ded = 0.0;
+        foreach (['contributions', 'deductions', 'loans'] as $col) {
+            foreach ((json_decode($row[$col] ?? '', true) ?: []) as $c) $ded += (float)($c['amount'] ?? 0);
+        }
+        $ded += (float)$row['sss_fund'] + (float)$row['jei_advances']
+              + (float)$row['jcc_advances'] + (float)$row['tax'] + (float)$row['other_deduction'];
+
+        $ref = 0.0;
+        foreach ((json_decode($row['refunds'] ?? '', true) ?: []) as $r) $ref += (float)($r['amount'] ?? 0);
+
+        $xAdd = $xLess = 0.0;
+        foreach ($this->payroll_item_extras($itemId) as $x) {
+            if ($x['kind'] === 2) $xAdd += $x['amt']; else $xLess += $x['amt'];
+        }
+
+        $gross += $xAdd;               // allowance extras belong in gross
+        $net = $gross - $ded - $xLess + $ref + (float)($row['adjustment'] ?? 0);
+        $st = $this->db->prepare("UPDATE payroll_items SET net = ? WHERE id = ?");
+        $st->bind_param('di', $net, $itemId);
+        $st->execute();
+    }
+
+    /** Every extra line on one payroll item, oldest first. */
+    private function payroll_item_extras($itemId)
+    {
+        $itemId = (int)$itemId;
+        $out = [];
+        $q = $this->db->query("SELECT id, kind, label, amount FROM payroll_item_extras
+                               WHERE payroll_item_id = $itemId ORDER BY id ASC");
+        if ($q) while ($r = $q->fetch_assoc()) {
+            $out[] = ['id' => (int)$r['id'], 'kind' => (int)$r['kind'],
+                      'label' => $r['label'], 'amt' => (float)$r['amount']];
+        }
+        return $out;
+    }
+
+    /**
+     * Remittance breakdown — totals per contribution / deduction / loan / refund
+     * type for one payroll, recomputed from payroll_items on every call.
+     *
+     * The modal used to be PHP-rendered once at page load, so after saving an
+     * edit it still showed the figures from before the change (the workbench
+     * updates in place and never reloads). Fetching it fresh each time the modal
+     * opens keeps it honest no matter what moved the numbers — a save here, an
+     * unlocked correction, or another admin working the same batch.
+     */
+    function remittance_breakdown()
+    {
+        $id = (int)($_POST['id'] ?? $_GET['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing payroll id.'];
+
+        $payroll = $this->db->query("SELECT settings FROM payroll WHERE id = $id")->fetch_assoc();
+        if (!$payroll) return ['result' => false, 'message' => 'Payroll not found.'];
+
+        // settings lists every configured type; type 4 is refunds, the rest are
+        // deductions (1 contribution, 2 deduction, 3 loan).
+        $settings = json_decode($payroll['settings'] ?? '', true) ?: [];
+
+        // key "type-id" => ['type','id','total','employees']
+        $remit = [];
+        $add = function ($type, $ddId, $amount) use (&$remit) {
+            $key = $type . '-' . $ddId;
+            if (!isset($remit[$key])) {
+                $remit[$key] = ['type' => (int)$type, 'id' => (int)$ddId, 'total' => 0.0, 'employees' => 0];
+            }
+            $remit[$key]['total'] += (float)$amount;
+            if ((float)$amount > 0) $remit[$key]['employees']++;
+        };
+
+        // Which JSON column and which id key each configured type reads from —
+        // mirrors the table loops in payroll_calculations.php exactly.
+        $srcFor = [
+            1 => ['contributions', 'contribution_id'],
+            2 => ['deductions',    'deduction_id'],
+            3 => ['loans',         'deduction_id'],
+            4 => ['refunds',       'refund_id'],
+        ];
+
+        $rows = $this->db->query("SELECT contributions, deductions, loans, refunds
+                                  FROM payroll_items WHERE payroll_id = $id");
+        if ($rows) while ($row = $rows->fetch_assoc()) {
+            $decoded = [
+                'contributions' => json_decode($row['contributions'] ?? '', true) ?: [],
+                'deductions'    => json_decode($row['deductions'] ?? '', true) ?: [],
+                'loans'         => json_decode($row['loans'] ?? '', true) ?: [],
+                'refunds'       => json_decode($row['refunds'] ?? '', true) ?: [],
+            ];
+            foreach ($settings as $cfg) {
+                $type = (int)($cfg['type'] ?? 0);
+                if (!isset($srcFor[$type])) continue;
+                [$col, $idKey] = $srcFor[$type];
+                $amount = 0;
+                foreach ($decoded[$col] as $entry) {
+                    if (($entry[$idKey] ?? null) == $cfg['id']) $amount = $entry['amount'] ?? 0;
+                }
+                $add($type, $cfg['id'], $amount);
+            }
+        }
+
+        // Group for display, resolving each type's name from its source table.
+        $labels = [
+            1 => ['label' => 'Contributions', 'icon' => 'ri-hand-coin-line'],
+            2 => ['label' => 'Deductions',    'icon' => 'ri-subtract-line'],
+            3 => ['label' => 'Loans',         'icon' => 'ri-bank-card-line'],
+            4 => ['label' => 'Refunds',       'icon' => 'ri-refund-2-line'],
+        ];
+        $groups = [];
+        $dedTotal = $refTotal = 0.0;
+        foreach ($labels as $type => $meta) {
+            $items = [];
+            foreach ($remit as $rm) {
+                if ($rm['type'] !== $type) continue;
+                $items[] = [
+                    'name'      => $this->remit_type_label($type, $rm['id']),
+                    'employees' => (int)$rm['employees'],
+                    'total'     => round((float)$rm['total'], 2),
+                ];
+                if ($type === 4) $refTotal += $rm['total'];
+                else             $dedTotal += $rm['total'];
+            }
+            if ($items) $groups[] = ['label' => $meta['label'], 'icon' => $meta['icon'], 'items' => $items];
+        }
+
+        // ── Named one-off items (payroll_item_extras) ──
+        // Ad-hoc per-employee lines rather than configured types, so they get
+        // their own groups, collapsed by label. One-off DEDUCTIONS are money
+        // withheld and count toward Total Deductions; one-off ALLOWANCES are
+        // payouts, so they are totalled separately rather than muddling either.
+        $extraAddTotal = 0.0;
+        if ($this->db->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+            $byKind = [1 => [], 2 => []];
+            $xq = $this->db->query("SELECT kind, label, COUNT(*) AS employees, SUM(amount) AS total
+                                    FROM payroll_item_extras WHERE payroll_id = $id
+                                    GROUP BY kind, label ORDER BY label ASC");
+            if ($xq) while ($x = $xq->fetch_assoc()) {
+                $byKind[(int)$x['kind'] === 2 ? 2 : 1][] = [
+                    'name'      => $x['label'],
+                    'employees' => (int)$x['employees'],
+                    'total'     => round((float)$x['total'], 2),
+                ];
+            }
+            if ($byKind[1]) {
+                $groups[] = ['label' => 'One-off Deductions', 'icon' => 'ri-scissors-cut-line', 'items' => $byKind[1]];
+                foreach ($byKind[1] as $it) $dedTotal += $it['total'];
+            }
+            if ($byKind[2]) {
+                $groups[] = ['label' => 'One-off Allowances', 'icon' => 'ri-gift-line', 'items' => $byKind[2]];
+                foreach ($byKind[2] as $it) $extraAddTotal += $it['total'];
+            }
+        }
+
+        $emp = $this->db->query("SELECT COUNT(DISTINCT employee_id) AS c FROM payroll_items
+                                 WHERE payroll_id = $id")->fetch_assoc();
+
+        return [
+            'result'      => true,
+            'groups'      => $groups,
+            'ded_total'   => round($dedTotal, 2),
+            'ref_total'   => round($refTotal, 2),
+            'extra_add'   => round($extraAddTotal, 2),
+            'employees'   => (int)($emp['c'] ?? 0),
+        ];
+    }
+
+    /** Display name for one remittance type, from whichever table defines it. */
+    private function remit_type_label($type, $ddId)
+    {
+        $ddId = (int)$ddId;
+        $sql = [
+            1 => "SELECT contribution AS n FROM contributions WHERE id = $ddId",
+            2 => "SELECT deduction AS n FROM deductions WHERE id = $ddId",
+            3 => "SELECT loan_type AS n FROM contribution_loan_types WHERE clt_id = $ddId",
+            4 => "SELECT refunds AS n FROM refunds WHERE id = $ddId",
+        ][(int)$type] ?? null;
+        if (!$sql) return '#' . $ddId;
+        $r = $this->db->query($sql);
+        $row = $r ? $r->fetch_assoc() : null;
+        return $row['n'] ?? ('#' . $ddId);
+    }
+
+    /**
+     * Reopen ONE employee's row while the payroll is out for employee review, so
+     * a disputed figure can be corrected without recalling the whole batch and
+     * voiding everybody else's sign-off.
+     *
+     * Admin only: this rewrites money after employees have already seen it.
+     * Unlocking alone changes no figures and voids no sign-off — that happens
+     * only if an edit is actually saved (see void_signoff_for_item).
+     */
+    function unlock_payroll_item()
+    {
+        if ((int)($_SESSION['login_role'] ?? 0) !== 1) {
+            return ['result' => false, 'message' => 'Only an administrator can unlock an employee for editing.'];
+        }
+        $itemId = (int)($_POST['id'] ?? 0);
+        $reason = trim((string)($_POST['reason'] ?? ''));
+        if (!$itemId) return ['result' => false, 'message' => 'Missing payroll item.'];
+        if ($reason === '') return ['result' => false, 'message' => 'A reason is required to unlock an employee.'];
+        if (mb_strlen($reason) > 255) $reason = mb_substr($reason, 0, 255);
+
+        $row = $this->db->query("SELECT i.payroll_id, i.employee_id, p.status,
+                    CONCAT(e.lastname, ', ', e.firstname) AS name
+                FROM payroll_items i
+                INNER JOIN payroll p ON p.id = i.payroll_id
+                INNER JOIN employee e ON e.id = i.employee_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+        if ((int)$row['status'] !== 3) {
+            return ['result' => false, 'message' => (int)$row['status'] === 1
+                ? 'This payroll is already open — no unlock needed.'
+                : 'Only a payroll that is out for employee review can be unlocked per employee.'];
+        }
+
+        $uid = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $st = $this->db->prepare("UPDATE payroll_items
+                SET unlocked_at = NOW(), unlocked_by = ?, unlocked_reason = ? WHERE id = ?");
+        $st->bind_param('isi', $uid, $reason, $itemId);
+        if (!$st->execute()) return ['result' => false, 'message' => $st->error];
+
+        $this->save_payroll_history((int)$row['payroll_id'], 5,
+            'Unlocked ' . $row['name'] . ' for editing (' . $reason . ') —');
+
+        return [
+            'result'  => true,
+            'message' => $row['name'] . ' is now editable. Saving a change will void their review and ask them to confirm again.',
+            'name'    => $row['name'],
+        ];
+    }
+
+    /** Re-freeze a row that was unlocked (also called automatically on re-confirm). */
+    function relock_payroll_item()
+    {
+        if ((int)($_SESSION['login_role'] ?? 0) !== 1) {
+            return ['result' => false, 'message' => 'Only an administrator can lock an employee.'];
+        }
+        $itemId = (int)($_POST['id'] ?? 0);
+        if (!$itemId) return ['result' => false, 'message' => 'Missing payroll item.'];
+
+        $row = $this->db->query("SELECT i.payroll_id, CONCAT(e.lastname, ', ', e.firstname) AS name
+                FROM payroll_items i INNER JOIN employee e ON e.id = i.employee_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+
+        if (!$this->db->query("UPDATE payroll_items
+                SET unlocked_at = NULL, unlocked_by = NULL, unlocked_reason = NULL
+                WHERE id = $itemId")) {
+            return ['result' => false, 'message' => $this->db->error];
+        }
+        $this->save_payroll_history((int)$row['payroll_id'], 5, 'Locked ' . $row['name'] . ' —');
+
+        return ['result' => true, 'message' => $row['name'] . ' is locked again.', 'name' => $row['name']];
+    }
+
+    /**
+     * An unlocked row was actually edited, so whatever the employee signed off on
+     * no longer exists: drop their sign-off and ask them to review the corrected
+     * payslip. Without this the batch would report them as "Confirmed" against
+     * figures they never saw.
+     */
+    private function void_signoff_for_item($itemId)
+    {
+        $itemId = (int) $itemId;
+        $row = $this->db->query("SELECT i.payroll_id, i.employee_id, p.status, p.date_from, p.date_to
+                FROM payroll_items i
+                INNER JOIN payroll p ON p.id = i.payroll_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row || (int)$row['status'] !== 3) return;     // only meaningful mid-review
+
+        $pid = (int)$row['payroll_id'];
+        $eid = (int)$row['employee_id'];
+        $had = $this->db->query("SELECT id FROM payroll_employee_reviews
+                WHERE payroll_id = $pid AND employee_id = $eid")->fetch_assoc();
+        if (!$had) return;                                  // never reviewed — nothing to void
+
+        $this->db->query("DELETE FROM payroll_employee_reviews
+                WHERE payroll_id = $pid AND employee_id = $eid");
+        // The reviewer's colour mark came from that sign-off; clear it too.
+        $this->db->query("UPDATE payroll_items SET review_status = 0
+                WHERE payroll_id = $pid AND employee_id = $eid AND review_status IN (1,2)");
+
+        $period = date('M j', strtotime($row['date_from'])) . ' – ' . date('M j, Y', strtotime($row['date_to']));
+        $this->notifyEmployee(
+            $eid,
+            'Your payslip was corrected',
+            "Your payslip for $period was updated. Please review and confirm it again.",
+            'ri-refresh-line',
+            'warning',
+            'employee-portal.php?tab=payslips'
+        );
+    }
+
     function update_payroll_item()
     {
+        if ($block = $this->payroll_item_write_block($_POST['id'] ?? 0)) return $block;
         $this->db->begin_transaction();
         $id = $_POST['id'];
         $value = $_POST['value'];
@@ -5051,6 +5539,8 @@ class Action
 
             $this->save_payroll_history($payroll_r['payroll_id'], $type, [["value" => $value, "field" => $field, "employee_id" => $payroll_r['employee_id']]],  $field2, $value2);
             $this->db->commit();
+            // Editing an unlocked row invalidates what that employee confirmed.
+            $this->void_signoff_for_item($id);
             return ['result' => true, 'message' => 'save'];
         } catch (mysqli_sql_exception $e) {
             return ['result' => false, 'message' => $e->getMessage()];
@@ -5061,6 +5551,13 @@ class Action
     function update_payroll_item_new()
     {
         $items = $_POST['items'];
+        if (!is_array($items) || !$items) return ['result' => false, 'message' => 'Nothing to save.'];
+
+        // Every row in the batch has to be writable, checked before anything is
+        // written — a partial save would leave the sheet half-updated.
+        foreach ($items as $item) {
+            if ($block = $this->payroll_item_write_block($item['id'] ?? 0)) return $block;
+        }
 
         try {
             $this->db->begin_transaction();
@@ -5103,6 +5600,15 @@ class Action
             }
 
             $this->db->commit();
+            // Editing an unlocked row invalidates what that employee confirmed.
+            // Deduped: one sheet save can carry several fields for the same row.
+            $voided = [];
+            foreach ($items as $item) {
+                $iid = (int)($item['id'] ?? 0);
+                if (!$iid || isset($voided[$iid])) continue;
+                $voided[$iid] = true;
+                $this->void_signoff_for_item($iid);
+            }
             return ['result' => true, 'message' => 'save'];
         } catch (Exception $e) {
             $this->db->rollback();
@@ -5201,6 +5707,15 @@ class Action
         $t_absent = 0;
         $t_late = 0;
 
+        // Named one-off items per payroll_items row, if the feature's table exists.
+        $extrasByItem = [];
+        $hasExtras = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'");
+        if ($hasExtras && $hasExtras->num_rows) {
+            $xq = $this->db->query("SELECT payroll_item_id, kind, amount FROM payroll_item_extras
+                                    WHERE payroll_id = " . (int)$payroll_id);
+            if ($xq) while ($x = $xq->fetch_assoc()) $extrasByItem[(int)$x['payroll_item_id']][] = $x;
+        }
+
         while ($row = $result->fetch_assoc()) {
             $payroll_type     = isset($row['payroll_type']) ? (int) $row['payroll_type'] : 0;
             $perMinute        = $row['per_day'] / (8 * 60);
@@ -5245,6 +5760,16 @@ class Action
             foreach ($refunds_data as $r) $total_ref += floatval($r['amount'] ?? 0);
             // Manual signed adjustment (+ addition / − recovery) applied to net.
             $adjustment = floatval($row['adjustment'] ?? 0);
+            // Named one-off items for this employee (payroll_item_extras):
+            // kind 1 deducts, kind 2 adds. Folded in here so the figures this
+            // endpoint sends back after a save match the rendered sheet.
+            $xAdd = $xLess = 0.0;
+            foreach (($extrasByItem[(int)$row['id']] ?? []) as $x) {
+                if ((int)$x['kind'] === 2) $xAdd  += (float)$x['amount'];
+                else                       $xLess += (float)$x['amount'];
+            }
+            $gross     += $xAdd;        // allowance extras belong in gross
+            $total_ded += $xLess;
             $net = $gross - $total_ded + $total_ref + $adjustment;
 
             $t_gross      += $gross;

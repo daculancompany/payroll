@@ -187,8 +187,12 @@ if ($pageIds) {
 $reviewTotalEmp = count($byEmployee);
 $reviewRows = [];
 $reviewConfirmed = $reviewDisputed = 0;
+// seen_at ships in 2026_07_review_seen.sql — degrade to "all read" without it.
+$ddHasSeen = (bool)($conn->query("SHOW COLUMNS FROM dtr_employee_reviews LIKE 'seen_at'")->num_rows ?? 0);
+$ddReviewConvo = [];
+$ddUnreadMsgs  = 0;
 $rvq = $conn->query("SELECT r.id, r.employee_id, r.status, r.comment, r.reviewed_at,
-        r.resolved_at, r.admin_reply,
+        r.resolved_at, r.admin_reply, " . ($ddHasSeen ? "r.seen_at" : "NULL AS seen_at") . ",
         CONCAT(e.lastname, ', ', e.firstname) AS name
     FROM dtr_employee_reviews r
     INNER JOIN employee e ON e.id = r.employee_id
@@ -198,6 +202,20 @@ if ($rvq) while ($rv = $rvq->fetch_assoc()) {
     $reviewRows[$rv['employee_id']] = $rv;
     if ((int)$rv['status'] === 1) $reviewConfirmed++;
     elseif ((int)$rv['status'] === 2) $reviewDisputed++;
+
+    $hasMsg = trim((string)($rv['comment'] ?? '')) !== '';
+    $unread = $hasMsg && empty($rv['seen_at']);
+    if ($unread) $ddUnreadMsgs++;
+    $ddReviewConvo[(int)$rv['employee_id']] = [
+        'id'     => (int)$rv['id'],
+        'st'     => (int)$rv['status'],
+        'name'   => $rv['name'],
+        'c'      => (string)($rv['comment'] ?? ''),
+        'at'     => !empty($rv['reviewed_at']) ? date('M j, Y g:i A', strtotime($rv['reviewed_at'])) : '',
+        'rep'    => (string)($rv['admin_reply'] ?? ''),
+        'rep_at' => !empty($rv['resolved_at']) ? date('M j, Y g:i A', strtotime($rv['resolved_at'])) : '',
+        'new'    => $unread ? 1 : 0,
+    ];
 }
 $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 
@@ -269,14 +287,49 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .drp-chip.appr { background:#eafaf0; color:#0f9d58; border:1px solid #b7e4c7; }
 .drp-chip.disp { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
 .drp-chip.pend { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
-.drp-disputes { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
-.drp-dispute-item { display:flex; gap:8px; align-items:flex-start; background:#fff5f5; border:1px solid #f3d3d3; border-radius:8px; padding:7px 10px; }
-.drp-dispute-item > i { color:#c62828; font-size:15px; margin-top:1px; }
-.drp-emp { font-size:12px; font-weight:700; color:#333; }
-.drp-when { font-size:10px; color:#999; font-weight:400; margin-left:6px; }
-.drp-comment { font-size:12px; color:#555; margin-top:1px; }
-.drp-confirmed-names { margin-top:8px; font-size:11px; color:#4a6b5f; }
+.drp-chip.unread { background:#eef2fd; color:#3557b7; border:1px solid #ccd9f7; }
+.drp-disputes { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
 .drp-confirmed-lbl { font-weight:700; color:#0f9d58; margin-right:4px; }
+/* ── Name-only sign-off rows (mirrors payroll_calculations.php) ────────────
+   Icon, name, and a chat button when the employee left a message; the message
+   itself opens in #modal-emp-review. UNREAD until someone opens it. */
+.drp-note-pill { display:inline-flex; align-items:center; gap:3px; background:#fff6e2; border:1px solid #f2dfae;
+    color:#a9700a; border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.drp-confirms { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+.drp-confirms.is-scroll { max-height:190px; overflow-y:auto; padding-right:4px; }
+.drp-row { display:flex; align-items:center; gap:6px; min-width:0; padding:4px 8px; border-radius:7px;
+    border:1px solid transparent; font-size:11.5px; }
+.drp-row.ok   { background:#f2faf6; border-color:#dceee5; }
+.drp-row.disp { background:#fff5f5; border-color:#f3d3d3; }
+.drp-row-ic { font-size:13px; flex-shrink:0; }
+.drp-row.ok   .drp-row-ic { color:#0f9d58; }
+.drp-row.disp .drp-row-ic { color:#c62828; }
+.drp-row-name { flex:1; min-width:0; font-weight:700; color:#33403c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.drp-row-done { color:#0f9d58; font-size:12px; flex-shrink:0; }
+.drp-row-new { flex-shrink:0; font-size:8.5px; font-weight:800; letter-spacing:.4px; color:#fff;
+    background:#3557b7; border-radius:8px; padding:1px 5px; }
+.drp-row-msg { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:20px; height:20px; border-radius:6px; background:#fff6e2; border:1px solid #f2dfae; color:#a9700a; font-size:11px; }
+.drp-row.unread { border-color:#ccd9f7; box-shadow:0 0 0 1px #ccd9f7 inset; }
+.drp-row.unread .drp-row-name { color:#1f3a80; }
+.drp-row.unread .drp-row-msg { background:#eef2fd; border-color:#ccd9f7; color:#3557b7; }
+.drp-row.has-msg { cursor:pointer; }
+.drp-row.has-msg:hover { filter:brightness(.97); }
+.drp-row.has-msg:hover .drp-row-msg { background:#a9700a; border-color:#a9700a; color:#fff; }
+.drp-row.has-msg:focus-visible { outline:2px solid #219688; outline-offset:1px; }
+#modal-emp-review .mer-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#33403c; }
+.mer-badge { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800;
+    padding:2px 9px; border-radius:12px; border:1px solid; }
+.mer-badge.ok   { background:#eafaf0; color:#0f9d58; border-color:#b7e4c7; }
+.mer-badge.disp { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
+.mer-when { font-size:10.5px; color:#8aa39c; margin-left:auto; }
+.mer-empty { text-align:center; color:#8aa39c; font-size:12.5px; padding:22px 12px; }
+.mer-chat { display:flex; flex-direction:column; gap:6px; }
+.mer-bub { max-width:85%; padding:6px 10px; border-radius:11px; font-size:11.5px; line-height:1.4; word-break:break-word; }
+.mer-bub.them { align-self:flex-start; background:#f1f3f2; color:#33403c; border-bottom-left-radius:3px; }
+.mer-bub.me   { align-self:flex-end; background:#d7ece9; color:#116257; border-bottom-right-radius:3px; }
+.mer-bub .m { display:block; font-size:8.5px; opacity:.7; margin-top:3px; }
 /* ── Large batches ──────────────────────────────────────────────────────────
    Mirrors payroll_calculations.php: with hundreds of employees the confirmed
    names used to render as one runaway line and disputes stacked unbounded.
@@ -291,11 +344,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .drp-names-hint { font-weight:500; color:#8a8a8a; }
 .drp-names .lbl-hide, .drp-names[open] .lbl-show { display:none; }
 .drp-names[open] .lbl-hide { display:inline; }
-.drp-chip-wrap { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;
-    max-height:132px; overflow-y:auto; padding:2px; }
-.drp-name-chip { background:#e9f7ef; border:1px solid #b7e4c7; color:#2f5d4a;
-    border-radius:10px; padding:1px 7px; font-size:11px; white-space:nowrap; }
-.drp-disputes.is-scroll { max-height:340px; overflow-y:auto; padding-right:4px; }
+.drp-disputes.is-scroll { max-height:210px; overflow-y:auto; padding-right:4px; }
 .drp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
 .drp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
 .drp-act-btn.export { background:#eef2fb; color:#394b7c; border-color:#c3c9e0; }
@@ -1106,48 +1155,91 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
                                             <i class="ri-download-2-line"></i> Export
                                         </a>
                                     <?php endif; ?>
+                                    <?php if ($ddUnreadMsgs > 0): ?>
+                                    <span class="drp-chip unread" id="drp-unread-chip" title="Employee messages nobody has opened yet">
+                                        <i class="ri-mail-unread-line"></i> <span id="drp-unread-n"><?= $ddUnreadMsgs ?></span> unread
+                                    </span>
+                                    <?php endif; ?>
                                 </div>
                             </div>
-                            <?php if ($reviewDisputed > 0): ?>
-                            <div class="drp-disputes<?= $reviewDisputed > 4 ? ' is-scroll' : '' ?>">
-                                <?php foreach ($reviewRows as $rv): if ((int)$rv['status'] !== 2) continue; ?>
-                                <div class="drp-dispute-item">
-                                    <i class="ri-error-warning-line"></i>
-                                    <div style="flex:1;">
-                                        <div class="drp-emp"><?= htmlspecialchars($rv['name']) ?>
-                                            <span class="drp-when"><?= date('M j, g:i A', strtotime($rv['reviewed_at'])) ?></span>
-                                        </div>
-                                        <div class="drp-comment"><?= htmlspecialchars($rv['comment']) ?></div>
-                                        <?php if (!empty($rv['resolved_at'])): ?>
-                                            <div class="drp-resolved"><i class="ri-checkbox-circle-line"></i> Resolved — HR reply: <?= htmlspecialchars($rv['admin_reply']) ?></div>
-                                        <?php elseif ($login_role !== 6): ?>
-                                            <button type="button" class="drp-act-btn resolve" onclick="openResolveDispute('dtr', <?= (int)$rv['id'] ?>, <?= htmlspecialchars(json_encode($rv['name']), ENT_QUOTES) ?>)">
-                                                <i class="ri-chat-check-line"></i> Resolve &amp; Reply
-                                            </button>
-                                        <?php endif; ?>
-                                    </div>
+                            <?php
+                            // One line per employee — icon, name, and a chat button when
+                            // they left a message; the message opens in #modal-emp-review.
+                            $drpRow = function ($rv, $kind) {
+                                $hasMsg = trim((string)$rv['comment']) !== '';
+                                $unread = $hasMsg && empty($rv['seen_at']);
+                                $eid    = (int)$rv['employee_id'];
+                                ?>
+                                <div class="drp-row <?= $kind ?><?= $hasMsg ? ' has-msg' : '' ?><?= $unread ? ' unread' : '' ?>"
+                                     data-emp="<?= $eid ?>"
+                                     <?= $hasMsg ? 'role="button" tabindex="0" onclick="ddOpenReviewConvo(' . $eid . ')" title="View this employee\'s message"' : '' ?>>
+                                    <i class="drp-row-ic <?= $kind === 'disp' ? 'ri-error-warning-fill' : 'ri-checkbox-circle-fill' ?>"></i>
+                                    <span class="drp-row-name"><?= htmlspecialchars($rv['name']) ?></span>
+                                    <?php if ($unread): ?><span class="drp-row-new" title="Not yet read">NEW</span><?php endif; ?>
+                                    <?php if (!empty($rv['resolved_at'])): ?>
+                                        <span class="drp-row-done" title="Already replied"><i class="ri-check-double-line"></i></span>
+                                    <?php endif; ?>
+                                    <?php if ($hasMsg): ?>
+                                        <span class="drp-row-msg" title="Open the message"><i class="ri-chat-3-fill"></i></span>
+                                    <?php endif; ?>
                                 </div>
+                                <?php
+                            };
+                            ?>
+                            <?php if ($reviewDisputed > 0): ?>
+                            <div class="drp-disputes<?= $reviewDisputed > 6 ? ' is-scroll' : '' ?>">
+                                <?php foreach ($reviewRows as $rv): if ((int)$rv['status'] !== 2) continue; ?>
+                                    <?php $drpRow($rv, 'disp'); ?>
                                 <?php endforeach; ?>
                             </div>
                             <?php endif; ?>
-                            <?php if ($reviewConfirmed > 0): ?>
-                            <?php $cn = [];
-                                foreach ($reviewRows as $rv) if ((int)$rv['status'] === 1) $cn[] = $rv['name'];
+                            <?php if ($reviewConfirmed > 0):
+                                $cn = []; $cnMsgs = 0;
+                                foreach ($reviewRows as $rv) {
+                                    if ((int)$rv['status'] !== 1) continue;
+                                    $cn[] = $rv;
+                                    if (trim((string)$rv['comment']) !== '') $cnMsgs++;
+                                }
                             ?>
-                            <details class="drp-names"<?= count($cn) <= 12 ? ' open' : '' ?>>
+                            <details class="drp-names"<?= count($cn) <= 12 || $cnMsgs ? ' open' : '' ?>>
                                 <summary>
                                     <span class="drp-confirmed-lbl"><i class="ri-checkbox-circle-line"></i> Confirmed by</span>
                                     <span class="drp-count-pill"><?= count($cn) ?></span>
+                                    <?php if ($cnMsgs): ?>
+                                    <span class="drp-note-pill" title="Confirmed with a message"><i class="ri-chat-3-line"></i> <?= $cnMsgs ?> with message</span>
+                                    <?php endif; ?>
                                     <span class="drp-names-hint"><span class="lbl-show">show names</span><span class="lbl-hide">hide</span></span>
                                 </summary>
-                                <div class="drp-chip-wrap">
-                                    <?php foreach ($cn as $n): ?>
-                                    <span class="drp-name-chip"><?= htmlspecialchars($n) ?></span>
-                                    <?php endforeach; ?>
+                                <div class="drp-confirms<?= count($cn) > 6 ? ' is-scroll' : '' ?>">
+                                    <?php foreach ($cn as $rv): $drpRow($rv, 'ok'); endforeach; ?>
                                 </div>
                             </details>
                             <?php endif; ?>
                         </div>
+
+                        <!-- DTR sign-off conversation popup -->
+                        <div class="modal fade" id="modal-emp-review" tabindex="-1" aria-hidden="true">
+                            <div class="modal-dialog modal-dialog-centered">
+                                <div class="modal-content">
+                                    <div class="modal-header py-2" style="background:#0f9d58;">
+                                        <h6 class="modal-title text-white"><i class="ri-user-received-2-line me-2"></i>DTR Review Message</h6>
+                                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                                    </div>
+                                    <div class="modal-body" style="background:#f2f6f4;" id="mer-body"></div>
+                                    <div class="modal-footer py-2">
+                                        <button type="button" class="btn btn-sm btn-success" id="mer-reply" style="display:none;">
+                                            <i class="ri-chat-check-line me-1"></i>Resolve &amp; Reply
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <script>
+                        // employee_id → their DTR sign-off (decision, message, reply, unread)
+                        window.DD_REVIEWS = <?= json_encode($ddReviewConvo, JSON_UNESCAPED_UNICODE) ?>;
+                        window.DD_CAN_EDIT = <?= $login_role !== 6 ? 'true' : 'false' ?>;
+                        </script>
                         <?php endif; ?>
 
                         <!-- Employee Notes Modal -->

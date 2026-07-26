@@ -59,8 +59,11 @@ $status = $payroll['status'] ?? 0;
 $payrollReviewTotalEmp = (int) ($conn->query("SELECT COUNT(DISTINCT employee_id) AS c FROM payroll_items WHERE payroll_id = $id")->fetch_assoc()['c'] ?? 0);
 $payrollReviewRows = [];
 $payrollReviewConfirmed = $payrollReviewDisputed = 0;
+// seen_at ships in 2026_07_review_seen.sql — older databases fall back to
+// "everything read" instead of a fatal unknown-column error.
+$pcwHasSeen = (bool)($conn->query("SHOW COLUMNS FROM payroll_employee_reviews LIKE 'seen_at'")->num_rows ?? 0);
 $prvq = $conn->query("SELECT r.id, r.employee_id, r.status, r.comment, r.reviewed_at,
-        r.resolved_at, r.admin_reply,
+        r.resolved_at, r.admin_reply, " . ($pcwHasSeen ? "r.seen_at" : "NULL AS seen_at") . ",
         CONCAT(e.lastname, ', ', e.firstname) AS name
     FROM payroll_employee_reviews r
     INNER JOIN employee e ON e.id = r.employee_id
@@ -73,11 +76,29 @@ if ($prvq) while ($prv = $prvq->fetch_assoc()) {
 }
 $payrollReviewPending = max(0, $payrollReviewTotalEmp - $payrollReviewConfirmed - $payrollReviewDisputed);
 
+// Rows an admin reopened for correction while the batch is out for review.
+// Drives the Save button (hidden at status 3 otherwise) and the header banner.
+// Guarded: 2026_07_payroll_item_unlock.sql may not have run yet.
+$pcwHasUnlockCol = (bool)($conn->query("SHOW COLUMNS FROM payroll_items LIKE 'unlocked_at'")->num_rows ?? 0);
+$pcwUnlockedCount = $pcwHasUnlockCol
+    ? (int)($conn->query("SELECT COUNT(*) AS c FROM payroll_items
+            WHERE payroll_id = $id AND unlocked_at IS NOT NULL")->fetch_assoc()['c'] ?? 0)
+    : 0;
+// The Save button and the unlocked-count flag are rendered for any batch that
+// could become editable (Open, or in review where a row can be unlocked) and
+// simply stay hidden until they apply — so unlocking never needs a page reload
+// to bring them into existence.
+$pcwCanSave = in_array((int)$status, [1, 3], true);
+
 // The sign-off conversation, keyed by employee: what the employee wrote when
 // they confirmed or disputed, and HR's reply if one was sent. The panel and
 // the left list show only a name + chat icon; this feeds the popup behind it.
 $pcwReviewConvo = [];
+$pcwUnreadMsgs = 0;
 foreach ($payrollReviewRows as $eid => $prv) {
+    $hasMsg = trim((string)($prv['comment'] ?? '')) !== '';
+    $unread = $hasMsg && empty($prv['seen_at']);
+    if ($unread) $pcwUnreadMsgs++;
     $pcwReviewConvo[(int)$eid] = [
         'id'     => (int)$prv['id'],
         'st'     => (int)$prv['status'],
@@ -86,6 +107,7 @@ foreach ($payrollReviewRows as $eid => $prv) {
         'at'     => !empty($prv['reviewed_at']) ? date('M j, Y g:i A', strtotime($prv['reviewed_at'])) : '',
         'rep'    => (string)($prv['admin_reply'] ?? ''),
         'rep_at' => !empty($prv['resolved_at']) ? date('M j, Y g:i A', strtotime($prv['resolved_at'])) : '',
+        'new'    => $unread ? 1 : 0,
     ];
 }
 
@@ -153,6 +175,22 @@ if ($commaSeparatedSites !== '') {
             'date' => date('M j', strtotime($mr['rec_date'])),
         ];
     }
+}
+
+/**
+ * May this employee's row be edited right now?
+ *
+ * An Open payroll (status 1) is editable throughout. Once it is out for employee
+ * review (status 3) the batch freezes, EXCEPT for individual rows an admin has
+ * deliberately unlocked to correct a disputed figure — that way fixing three
+ * disputes does not void the sign-offs of everyone who already confirmed.
+ *
+ * Mirrors payroll_item_write_block() in admin_class.php, which enforces the same
+ * rule server-side; this one only decides whether to render an <input>.
+ */
+function pcw_row_editable($status, $row) {
+    if ((int)$status === 1) return true;
+    return (int)$status === 3 && !empty($row['unlocked_at']);
 }
 
 // Builds the Form 48 payload (days map + totals) for one employee+site from
@@ -238,6 +276,32 @@ function net_delta_badge($emp_id, $site_id, $net) {
     $cls .= abs($pct) >= 30 ? ' nd-warn' : '';
     $arrow = $pct > 0 ? '&#9650;' : '&#9660;';
     return '<div><span class="nd-badge ' . $cls . '" title="' . $title . '">' . $arrow . ' ' . number_format(abs($pct), 1) . '%</span></div>';
+}
+
+// ── Per-employee one-off items (payroll_item_extras) ────────────────────
+// Named ad-hoc lines attached to a single payslip: kind 1 deducts, 2 adds.
+// Keyed by payroll_items.id. Guarded so a database without the migration
+// simply has none.
+$pcwExtras = [];
+$pcwHasExtras = (bool)($conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows ?? 0);
+if ($pcwHasExtras) {
+    $exq = $conn->query("SELECT id, payroll_item_id, kind, label, amount
+                         FROM payroll_item_extras WHERE payroll_id = $id ORDER BY id ASC");
+    if ($exq) while ($ex = $exq->fetch_assoc()) {
+        $pcwExtras[(int)$ex['payroll_item_id']][] = [
+            'id' => (int)$ex['id'], 'kind' => (int)$ex['kind'],
+            'label' => $ex['label'], 'amt' => (float)$ex['amount'],
+        ];
+    }
+}
+/** Sum one item's extras: ['add' => allowances, 'less' => deductions]. */
+function pcw_extra_totals($extras) {
+    $t = ['add' => 0.0, 'less' => 0.0];
+    foreach ($extras ?: [] as $x) {
+        if ((int)$x['kind'] === 2) $t['add'] += (float)$x['amt'];
+        else                       $t['less'] += (float)$x['amt'];
+    }
+    return $t;
 }
 
 // ── Remittance breakdown accumulator ────────────────────────────────────
@@ -556,13 +620,8 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .prp-chip.appr { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
 .prp-chip.disp { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
 .prp-chip.pend { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
-.prp-disputes { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
-.prp-dispute-item { display:flex; gap:8px; align-items:flex-start; background:#fff5f5; border:1px solid #f3d3d3; border-radius:8px; padding:7px 10px; }
-.prp-dispute-item > i { color:#c62828; font-size:15px; margin-top:1px; }
-.prp-emp { font-size:12px; font-weight:700; color:#333; }
-.prp-when { font-size:10px; color:#999; font-weight:400; margin-left:6px; }
-.prp-comment { font-size:12px; color:#555; margin-top:1px; }
-.prp-confirmed-names { margin-top:8px; font-size:11px; color:#4a6b4a; }
+.prp-chip.unread { background:#eef2fd; color:#3557b7; border:1px solid #ccd9f7; }
+.prp-disputes { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
 .prp-confirmed-lbl { font-weight:700; color:#107c41; margin-right:4px; }
 /* ── Large batches ──────────────────────────────────────────────────────────
    A 500-employee payroll used to dump every confirmed name into one runaway
@@ -578,10 +637,6 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .prp-names-hint { font-weight:500; color:#8a8a8a; }
 .prp-names .lbl-hide, .prp-names[open] .lbl-show { display:none; }
 .prp-names[open] .lbl-hide { display:inline; }
-.prp-chip-wrap { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px;
-    max-height:132px; overflow-y:auto; padding:2px; }
-.prp-name-chip { background:#eef7f0; border:1px solid #cfe9d6; color:#2f5d3f;
-    border-radius:10px; padding:1px 7px; font-size:11px; white-space:nowrap; }
 /* ── Name-only sign-off rows ───────────────────────────────────────────────
    Both lists (disputed + confirmed) are one line per employee: icon, name,
    and a chat button when they left a message. The message itself opens in
@@ -600,6 +655,12 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .prp-row-name { flex:1; min-width:0; font-weight:700; color:#33403c;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .prp-row-done { color:#107c41; font-size:12px; flex-shrink:0; }
+/* Unread = nobody has opened this message yet (seen_at IS NULL) */
+.prp-row-new { flex-shrink:0; font-size:8.5px; font-weight:800; letter-spacing:.4px; color:#fff;
+    background:#3557b7; border-radius:8px; padding:1px 5px; }
+.prp-row.unread { border-color:#ccd9f7; box-shadow:0 0 0 1px #ccd9f7 inset; }
+.prp-row.unread .prp-row-name { color:#1f3a80; }
+.prp-row.unread .prp-row-msg { background:#eef2fd; border-color:#ccd9f7; color:#3557b7; }
 .prp-row-msg { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
     width:20px; height:20px; border-radius:6px; background:#fff6e2; border:1px solid #f2dfae; color:#a9700a; font-size:11px; }
 .prp-row.has-msg { cursor:pointer; }
@@ -852,10 +913,18 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                         </div>
                     </div>
                     <div class="pcw-h-actions">
-                        <?php if ($status == 1) { ?>
+                        <?php /* Also shown mid-review when at least one employee is unlocked —
+                                 otherwise their reopened row could be typed into but never saved. */ ?>
+                        <?php if ($pcwCanSave) { ?>
                             <button type="button" id="pcw-save" class="pcw-btn primary" style="display:none;" onclick="saveUnsaved()" title="Save the figures changed on the computation sheet">
                                 <i class="ri-save-3-line"></i> Save <span class="pcw-count-pill" id="pcw-unsaved-n" style="background:#fff;color:#0e6b37;">0</span>
                             </button>
+                        <?php } ?>
+                        <?php if ((int)$status === 3) { ?>
+                            <span class="pcw-unlock-flag" title="These employees can be edited; everyone else stays frozen"
+                                  <?= $pcwUnlockedCount > 0 ? '' : 'style="display:none;"' ?>>
+                                <i class="ri-lock-unlock-line"></i> <?= $pcwUnlockedCount ?> unlocked
+                            </span>
                         <?php } ?>
                         <button type="button" class="pcw-btn" data-bs-toggle="modal" data-bs-target="#modal-table-editor" title="Preview the whole payroll in classic table form (read-only)">
                             <i class="ri-table-line"></i> Table View
@@ -916,6 +985,16 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                     <button type="button" data-erv="1"><i class="ri-checkbox-circle-fill" style="color:#33a466;"></i> Confirmed</button>
                                     <button type="button" data-erv="0"><i class="ri-time-line" style="color:#c98a00;"></i> Awaiting</button>
                                     <button type="button" data-erv="m"><i class="ri-chat-3-fill" style="color:#a9700a;"></i> With message</button>
+                                </div>
+                                <?php endif; ?>
+                                <?php if ((int)$status === 3): ?>
+                                <?php /* Which rows an admin reopened for correction. Locked is the
+                                         norm mid-review, so this mostly answers "what is still open?" */ ?>
+                                <div class="pcw-fp-lbl">Edit lock</div>
+                                <div class="pcw-rv-chips" id="pcw-lock-chips">
+                                    <button type="button" data-lock="" class="on">All</button>
+                                    <button type="button" data-lock="u"><i class="ri-lock-unlock-line" style="color:#c98a00;"></i> Unlocked</button>
+                                    <button type="button" data-lock="l"><i class="ri-lock-line" style="color:#7a8f88;"></i> Locked</button>
                                 </div>
                                 <?php endif; ?>
                                 <div class="pcw-fp-lbl">Department</div>
@@ -1001,44 +1080,58 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                     <!-- RIGHT: summary + insights + review -->
                     <div class="pcw-right">
                         <div class="pcw-panel" style="flex-shrink:0;">
-                            <div class="pcw-panel-head"><span><i class="ri-user-3-line"></i> Employee Summary</span></div>
+                            <div class="pcw-panel-head pcw-ch" onclick="pcwTogglePanel(this)" title="Click to collapse / expand">
+                                <span><i class="ri-user-3-line"></i> Employee Summary</span>
+                                <i class="ri-arrow-down-s-line pcw-collapse-ic"></i>
+                            </div>
                             <div class="pcw-sum-body" id="pcw-sum">
                                 <div style="font-size:12px;color:#8aa39c;">No employee selected.</div>
                             </div>
                         </div>
                         <!-- ── Batch Insights ── -->
                         <div class="pcw-panel grow">
-                            <div class="pcw-panel-head">
+                            <div class="pcw-panel-head pcw-ch" onclick="pcwTogglePanel(this)" title="Click to collapse / expand">
                                 <span><i class="ri-lightbulb-flash-line"></i> Batch Insights</span>
-                                <span id="pcw-ins-clear" style="display:none;font-weight:600;color:#c62828;font-size:10px;cursor:pointer;"><i class="ri-close-circle-line"></i> clear filter</span>
+                                <span class="pcw-head-right">
+                                    <span id="pcw-ins-clear" style="display:none;font-weight:600;color:#c62828;font-size:10px;cursor:pointer;"><i class="ri-close-circle-line"></i> clear filter</span>
+                                    <i class="ri-arrow-down-s-line pcw-collapse-ic"></i>
+                                </span>
                             </div>
                             <div class="pcw-ins-body" id="pcw-insights"></div>
                         </div>
                         <?php if (in_array((int)$status, [2, 3], true)): ?>
-                        <!-- ── Employee Review Progress ── -->
-                        <div class="pcw-panel" style="flex-shrink:0;max-height:40%;overflow-y:auto;">
-                            <div class="pr-review-panel" style="border:none;border-radius:0;margin-bottom:0;">
-                                <div class="prp-head">
-                                    <span class="prp-title"><i class="ri-user-received-2-line"></i> Employee Review
-                                        <?php if ((int)$status === 3): ?>
-                                            <span class="badge bg-info text-dark ms-1">In progress</span>
-                                        <?php else: ?>
-                                            <span class="badge bg-success ms-1">Locked</span>
-                                        <?php endif; ?>
+                        <!-- ── Employee Review Progress — same card shell as Batch Insights:
+                             fixed head, body-only scroll, collapsible. ── -->
+                        <div class="pcw-panel pcw-rv-panel">
+                            <div class="pcw-panel-head pcw-ch" onclick="pcwTogglePanel(this)" title="Click to collapse / expand">
+                                <span><i class="ri-user-received-2-line"></i> Employee Review</span>
+                                <span class="pcw-head-right">
+                                    <?php if ((int)$status === 3): ?>
+                                        <span class="pcw-head-badge rev">In progress</span>
+                                    <?php else: ?>
+                                        <span class="pcw-head-badge lock">Locked</span>
+                                    <?php endif; ?>
+                                    <?php if ($pcwUnreadMsgs > 0): ?>
+                                    <span class="pcw-head-badge unread" id="prp-unread-chip" title="Employee messages nobody has opened yet">
+                                        <i class="ri-mail-unread-line"></i> <span id="prp-unread-n"><?= $pcwUnreadMsgs ?></span>
                                     </span>
-                                    <div class="prp-counts">
-                                        <span class="prp-chip appr"><i class="ri-checkbox-circle-line"></i> <?= $payrollReviewConfirmed ?> Confirmed</span>
-                                        <span class="prp-chip disp"><i class="ri-error-warning-line"></i> <?= $payrollReviewDisputed ?> Disputed</span>
-                                        <span class="prp-chip pend"><i class="ri-time-line"></i> <?= $payrollReviewPending ?> Awaiting</span>
-                                        <?php if ((int)$status === 3 && $payrollReviewPending > 0): ?>
-                                        <button type="button" class="prp-act-btn remind" onclick="remindPayrollReview(<?= $id ?>)" title="Remind employees who haven't reviewed">
-                                            <i class="ri-notification-badge-line"></i> Remind (<?= $payrollReviewPending ?>)
-                                        </button>
-                                        <?php endif; ?>
-                                        <a class="prp-act-btn export" href="ajax.php?action=export_payroll_reviews&id=<?= $id ?>" title="Download review log (CSV)">
-                                            <i class="ri-download-2-line"></i> Export
-                                        </a>
-                                    </div>
+                                    <?php endif; ?>
+                                    <i class="ri-arrow-down-s-line pcw-collapse-ic"></i>
+                                </span>
+                            </div>
+                            <div class="pcw-rv-body">
+                                <div class="prp-counts">
+                                    <span class="prp-chip appr"><i class="ri-checkbox-circle-line"></i> <?= $payrollReviewConfirmed ?> Confirmed</span>
+                                    <span class="prp-chip disp"><i class="ri-error-warning-line"></i> <?= $payrollReviewDisputed ?> Disputed</span>
+                                    <span class="prp-chip pend"><i class="ri-time-line"></i> <?= $payrollReviewPending ?> Awaiting</span>
+                                    <?php if ((int)$status === 3 && $payrollReviewPending > 0): ?>
+                                    <button type="button" class="prp-act-btn remind" onclick="remindPayrollReview(<?= $id ?>)" title="Remind employees who haven't reviewed">
+                                        <i class="ri-notification-badge-line"></i> Remind (<?= $payrollReviewPending ?>)
+                                    </button>
+                                    <?php endif; ?>
+                                    <a class="prp-act-btn export" href="ajax.php?action=export_payroll_reviews&id=<?= $id ?>" title="Download review log (CSV)">
+                                        <i class="ri-download-2-line"></i> Export
+                                    </a>
                                 </div>
                                 <?php
                                 // Name-only rows keep the panel readable on a 400-employee batch.
@@ -1046,12 +1139,17 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                 // (pcwOpenReviewConvo), so nothing here wraps or scrolls sideways.
                                 $prpRow = function ($prv, $kind) {
                                     $hasMsg = trim((string)$prv['comment']) !== '';
+                                    $unread = $hasMsg && empty($prv['seen_at']);
                                     $eid    = (int)$prv['employee_id'];
                                     ?>
-                                    <div class="prp-row <?= $kind ?><?= $hasMsg ? ' has-msg' : '' ?>"
+                                    <div class="prp-row <?= $kind ?><?= $hasMsg ? ' has-msg' : '' ?><?= $unread ? ' unread' : '' ?>"
+                                         data-emp="<?= $eid ?>"
                                          <?= $hasMsg ? 'role="button" tabindex="0" onclick="pcwOpenReviewConvo(' . $eid . ')" title="View this employee\'s message"' : '' ?>>
                                         <i class="prp-row-ic <?= $kind === 'disp' ? 'ri-error-warning-fill' : 'ri-checkbox-circle-fill' ?>"></i>
                                         <span class="prp-row-name"><?= htmlspecialchars($prv['name']) ?></span>
+                                        <?php if ($unread): ?>
+                                            <span class="prp-row-new" title="Not yet read">NEW</span>
+                                        <?php endif; ?>
                                         <?php if (!empty($prv['resolved_at'])): ?>
                                             <span class="prp-row-done" title="HR already replied"><i class="ri-check-double-line"></i></span>
                                         <?php endif; ?>
@@ -1123,6 +1221,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                 <!-- <button data-toggle="tooltip" title="Summary PDF" onclick="openPdfPreview('pdf-payroll.php?src=employer&id=<?= $id ?>&type=all', 'Payroll Summary PDF')" class="xl-btn"><i class="ri-printer-fill"></i> Summary</button> -->
                                 <!-- <button data-toggle="tooltip" title="Summary by Department PDF" onclick="openPdfPreview('pdf-payroll.php?src=dept&id=<?= $id ?>', 'Department Summary PDF')" class="xl-btn"><i class="ri-building-2-line"></i> Dept. Summary</button> -->
                             <?php } ?>
+                            <button data-toggle="tooltip" title="Download this table as a styled Excel workbook" onclick="pcwExportTableExcel(<?= $id ?>)" class="xl-btn" id="xl-export-btn"><i class="ri-file-excel-2-line"></i> Excel</button>
                             <!-- <button data-toggle="tooltip" title="Totals per contribution, deduction, loan, and refund type" onclick="openRemitModal()" class="xl-btn"><i class="ri-hand-coin-line"></i> Remittance</button>
                             <button id="btn-print-payslips" title="Check rows to select employees, then click to print their payslips" onclick="printSelectedPayslips()" class="xl-btn">
                                 <i class="ri-file-text-line"></i> Payslips <span id="ps-count" style="background:#c8e6e2;color:#176358;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:2px;font-weight:700;">0</span>
@@ -1383,7 +1482,12 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                 $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;
                                                 $t_total_amount += $total_amount;
+                                                // Named one-off items for this employee: allowances add to gross,
+                                                // deductions are applied with the other deductions below.
+                                                $rowExtras = $pcwExtras[(int)$row['id']] ?? [];
+                                                $rowExtraT = pcw_extra_totals($rowExtras);
                                                 $gross_salary =  ($total_amount +   $overtime_amount   +  $legal_holiday_amount + $sunday_duty_amount +  $special_holiday_amount - $late_amount);
+                                                $gross_salary += $rowExtraT['add'];
 
                                                 $contributions = json_decode($row['contributions'], true);
                                                 $deductions = json_decode($row['deductions'], true);
@@ -1428,8 +1532,16 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <?php
                                                     $rv = (int)($row['review_status'] ?? 0);
                                                     $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
+                                                    // Editable when the payroll is Open, or when this one row was
+                                                    // unlocked by an admin while the batch is out for review.
+                                                    $rowEditable = pcw_row_editable($status, $row);
+                                                    // Inputs are rendered for Open AND in-review batches so a row can be
+                                                    // unlocked without a page reload; readonly is what actually gates editing.
+                                                    $rowShowInputs = in_array((int)$status, [1, 3], true);
+                                                    $rowRO = $rowEditable ? '' : ' readonly';
                                                 ?>
                                                 <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>"
+                                                    data-unlocked="<?= !empty($row['unlocked_at']) ? '1' : '0' ?>"
                                                     data-rate-type="<?= htmlspecialchars($row['rate_type'] ?? 'daily', ENT_QUOTES) ?>"
                                                     data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
                                                     data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>"
@@ -1466,9 +1578,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
                                                     <!-- Late -->
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['allowance_days'] ?>" data-id="<?= $row['id'] ?>" data-type="allowance_days" class="form-control input-class" placeholder="Days" aria-label="Days" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['allowance_days'] ?>" data-id="<?= $row['id'] ?>" data-type="allowance_days" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Days" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'allowance_days')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1485,9 +1597,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
                                                     <!-- /Late -->
                                                     <!-- <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $allowance_amount ?>" class="form-control input-class" placeholder="Allowance" aria-label="Allowance" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $allowance_amount ?>" class="form-control input-class"<?= $rowRO ?> placeholder="Allowance" aria-label="Allowance" aria-describedby="basic-addon2">
                                                                 <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'allowance_amount')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div>
@@ -1506,9 +1618,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     <!-- Allowance Daily Rate -->
                                                     <!-- <td class="text-right"><?= number_format($allowance_amount / 26, 2) ?></td> -->
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['present'] ?>" data-id="<?= $row['id'] ?>" data-type="present" class="form-control input-class" placeholder="No. of Days" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['present'] ?>" data-id="<?= $row['id'] ?>" data-type="present" class="form-control input-class"<?= $rowRO ?> placeholder="No. of Days" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'present')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1519,9 +1631,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
 
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['absent'] ?>" data-id="<?= $row['id'] ?>" data-type="absent" class="form-control input-class" placeholder="absent" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['absent'] ?>" data-id="<?= $row['id'] ?>" data-type="absent" class="form-control input-class"<?= $rowRO ?> placeholder="absent" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'absent')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1539,9 +1651,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                         <b data-computed="total_amount"><?= number_format($total_amount, 2) ?></b>
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['legal_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="legal_holiday" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['legal_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="legal_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'legal_holiday')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1554,9 +1666,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                          <b data-computed="legal_amount"><?= number_format($legal_holiday_amount, 2) ?></b>
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['sunday_duty'] ?>" data-id="<?= $row['id'] ?>" data-type="sunday_duty" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['sunday_duty'] ?>" data-id="<?= $row['id'] ?>" data-type="sunday_duty" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'sunday_duty')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1569,9 +1681,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                         <b data-computed="sunday_amount"><?= number_format($sunday_duty_amount, 2) ?></b>
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['special_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="special_holiday" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['special_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="special_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'special_holiday')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1585,9 +1697,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
                                                     <!-- ot -->
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['ot'] ?>" data-id="<?= $row['id'] ?>" data-type="ot" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['ot'] ?>" data-id="<?= $row['id'] ?>" data-type="ot" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'ot')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1607,9 +1719,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     <!-- Late -->
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['late'] ?>" data-id="<?= $row['id'] ?>" data-type="late" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['late'] ?>" data-id="<?= $row['id'] ?>" data-type="late" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'late')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1663,9 +1775,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     ?>
                                                             <td style="min-width: 90px;" class="text-right">
-                                                                <?php if ($status === 1) { ?>
+                                                                <?php if ($rowShowInputs) { ?>
                                                                     <div class="input-group mb-3">
-                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class" placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
+                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
                                                                         <!-- <div class="input-group-append">
                                                                             <button
                                                                                 onclick="updateData(this, <?= $row['id'] ?>, '<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>', <?= $k['id'] ?>)"
@@ -1686,9 +1798,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     <?php } ?>
                                                     <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $sss_fund ?>" data-id="<?= $row['id'] ?>" data-type="sss_fund" class="form-control input-class" placeholder="Enter Amount" aria-label="sss_fund" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $sss_fund ?>" data-id="<?= $row['id'] ?>" data-type="sss_fund" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="sss_fund" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'sss_fund')"   class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1699,9 +1811,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $jei_advances ?>" data-id="<?= $row['id'] ?>" data-type="jei_advances" class="form-control input-class" placeholder="Enter Amount" aria-label="jei_advances" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $jei_advances ?>" data-id="<?= $row['id'] ?>" data-type="jei_advances" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="jei_advances" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'jei_advances')" class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1712,9 +1824,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $jcc_advances ?>" data-id="<?= $row['id'] ?>" data-type="jcc_advances" class="form-control input-class" placeholder="Enter Amount" aria-label="jcc_advances" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $jcc_advances ?>" data-id="<?= $row['id'] ?>" data-type="jcc_advances" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="jcc_advances" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'jcc_advances')" class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1726,9 +1838,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
 
                                                     <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $tax ?>" class="form-control input-class" data-id="<?= $row['id'] ?>" data-type="tax" placeholder="Enter Amount" aria-label="Other Deduction" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $tax ?>" class="form-control input-class"<?= $rowRO ?> data-id="<?= $row['id'] ?>" data-type="tax" placeholder="Enter Amount" aria-label="Other Deduction" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'tax')" class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -1762,9 +1874,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     ?>
                                                             <td style="min-width: 90px;" class="text-right">
-                                                                <?php if ($status === 1) { ?>
+                                                                <?php if ($rowShowInputs) { ?>
                                                                     <div class="input-group mb-3">
-                                                                        <input type="text" value="<?= $refund_amount ?>" data-id="<?= $row['id'] ?>" data-dd_id="<?= $kd['id'] ?>" data-type="refund" class="form-control input-class" placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
+                                                                        <input type="text" value="<?= $refund_amount ?>" data-id="<?= $row['id'] ?>" data-dd_id="<?= $kd['id'] ?>" data-type="refund" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
                                                                         <!-- <div class="input-group-append">
                                                                         <button
                                                                             onclick="updateData(this, <?= $row['id'] ?>, 'refund', <?= $kd['id'] ?>)"
@@ -1785,6 +1897,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     } ?>
                                                     <?php
 
+                                                    // One-off deductions for this employee (allowances already in gross).
+                                                    $total_deductions += $rowExtraT['less'];
+                                                    $t_deduction     += $rowExtraT['less'];
                                                     $net = $gross_salary -  $total_deductions + $total_refunds;
                                                     $t_net += $net;
                                                     $pcwEmployees[] = [
@@ -1817,6 +1932,14 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                         'sent_n' => (int)($row['review_sent_count'] ?? 0),
                                                         'sent_at' => !empty($row['review_sent_at']) ? date('M j, g:i A', strtotime($row['review_sent_at'])) : '',
                                                         'emp_rv' => (int)($payrollReviewRows[$row['employee_id']]['status'] ?? 0),
+                                                        // Per-row edit window (admin unlocked this employee mid-review)
+                                                        // Named one-off lines on this payslip
+                                                        'extras' => $rowExtras,
+                                                        'extra_add' => (float)$rowExtraT['add'],
+                                                        'extra_less' => (float)$rowExtraT['less'],
+                                                        'unlocked' => !empty($row['unlocked_at']) ? 1 : 0,
+                                                        'unlock_why' => (string)($row['unlocked_reason'] ?? ''),
+                                                        'editable' => pcw_row_editable($status, $row) ? 1 : 0,
                                                     ];
                                                     ?>
                                                     <td style="min-width: 90px;" class="text-right net-content">
@@ -2041,6 +2164,11 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     $total_basic_rate = $row['present'] * $row['per_day'];
                                                     $gross_salary = ($total_basic_rate + $overtime_amount + $total_allowance) - $late_amount;
                                                 }
+                                                // Named one-off items for this employee: allowances add to gross,
+                                                // deductions are applied with the other deductions below.
+                                                $rowExtras = $pcwExtras[(int)$row['id']] ?? [];
+                                                $rowExtraT = pcw_extra_totals($rowExtras);
+                                                $gross_salary += $rowExtraT['add'];
                                                 $total_amount = $total_basic_rate;
                                                 $t_total_amount += $total_amount;
 
@@ -2086,8 +2214,16 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <?php
                                                     $rv = (int)($row['review_status'] ?? 0);
                                                     $rvClass = [1 => 'review-ok', 2 => 'review-issue', 3 => 'review-checking'][$rv] ?? '';
+                                                    // Editable when the payroll is Open, or when this one row was
+                                                    // unlocked by an admin while the batch is out for review.
+                                                    $rowEditable = pcw_row_editable($status, $row);
+                                                    // Inputs are rendered for Open AND in-review batches so a row can be
+                                                    // unlocked without a page reload; readonly is what actually gates editing.
+                                                    $rowShowInputs = in_array((int)$status, [1, 3], true);
+                                                    $rowRO = $rowEditable ? '' : ' readonly';
                                                 ?>
                                                 <tr class="name-<?= $row['id'] ?> <?= $rvClass ?>" data-row-id="<?= $row['id'] ?>" data-review="<?= $rv ?>" data-review-comment="<?= htmlspecialchars($row['review_comment'] ?? '', ENT_QUOTES) ?>"
+                                                    data-unlocked="<?= !empty($row['unlocked_at']) ? '1' : '0' ?>"
                                                     data-rate-type="<?= htmlspecialchars($row['rate_type'] ?? 'daily', ENT_QUOTES) ?>"
                                                     data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
                                                     data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>"
@@ -2117,16 +2253,16 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                         <?= $row['position'] ?>
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['present'] ?>" data-id="<?= $row['id'] ?>" data-type="present" class="form-control input-class" placeholder="No. of Days" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['present'] ?>" data-id="<?= $row['id'] ?>" data-type="present" class="form-control input-class"<?= $rowRO ?> placeholder="No. of Days" aria-describedby="basic-addon2">
                                                             </div>
                                                         <?php } ?>
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['per_day'] ?>" data-id="<?= $row['id'] ?>" data-type="per_day" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['per_day'] ?>" data-id="<?= $row['id'] ?>" data-type="per_day" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                             </div>
                                                         <?php } else { ?>
                                                             <b><?= number_format($row['per_day'], 2) ?></b>
@@ -2137,9 +2273,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
                                                     <!-- Late -->
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['allowance_days'] ?>" data-id="<?= $row['id'] ?>" data-type="allowance_days" class="form-control input-class" placeholder="Days" aria-label="Days" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['allowance_days'] ?>" data-id="<?= $row['id'] ?>" data-type="allowance_days" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Days" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'allowance_days')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -2158,9 +2294,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     <!-- ot -->
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['ot'] ?>" data-id="<?= $row['id'] ?>" data-type="ot" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['ot'] ?>" data-id="<?= $row['id'] ?>" data-type="ot" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'ot')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -2180,9 +2316,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     <!-- Late -->
                                                     <td style="min-width: 90px;" class="text-center">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['late'] ?>" data-id="<?= $row['id'] ?>" data-type="late" class="form-control input-class" placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $row['late'] ?>" data-id="<?= $row['id'] ?>" data-type="late" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'late')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -2236,9 +2372,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     ?>
                                                             <td style="min-width: 90px;" class="text-right">
-                                                                <?php if ($status === 1) { ?>
+                                                                <?php if ($rowShowInputs) { ?>
                                                                     <div class="input-group mb-3">
-                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class" placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
+                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
                                                                         <!-- <div class="input-group-append">
                                                                             <button
                                                                                 onclick="updateData(this, <?= $row['id'] ?>, '<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>', <?= $k['id'] ?>)"
@@ -2274,9 +2410,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     ];
                                                     foreach ($fixed_ded_cells as $fd_field => $fd_val): ?>
                                                     <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $fd_val ?>" data-id="<?= $row['id'] ?>" data-type="<?= $fd_field ?>" class="form-control input-class" placeholder="Enter Amount" aria-label="<?= $fd_field ?>">
+                                                                <input type="text" value="<?= $fd_val ?>" data-id="<?= $row['id'] ?>" data-type="<?= $fd_field ?>" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="<?= $fd_field ?>">
                                                             </div>
                                                         <?php } else { ?>
                                                             <b><?= number_format($fd_val, 2) ?></b>
@@ -2303,9 +2439,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     ?>
                                                             <td style="min-width: 90px;" class="text-right">
-                                                                <?php if ($status === 1) { ?>
+                                                                <?php if ($rowShowInputs) { ?>
                                                                     <div class="input-group mb-3">
-                                                                        <input type="text" value="<?= $refund_amount ?>" data-id="<?= $row['id'] ?>" data-dd_id="<?= $kd['id'] ?>" data-type="refund" class="form-control input-class" placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
+                                                                        <input type="text" value="<?= $refund_amount ?>" data-id="<?= $row['id'] ?>" data-dd_id="<?= $kd['id'] ?>" data-type="refund" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
                                                                     <?php } else { ?>
                                                                         <b><?= number_format($refund_amount, 2) ?></b>
                                                                     <?php } ?>
@@ -2320,11 +2456,11 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     $t_adjust = ($t_adjust ?? 0) + $adjustment;
                                                     ?>
                                                     <td style="min-width: 130px;" class="text-right">
-                                                        <?php if ($status === 1) { ?>
+                                                        <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-1">
-                                                                <input type="text" value="<?= $adjustment ?>" data-id="<?= $row['id'] ?>" data-type="adjustment" class="form-control input-class" placeholder="+/− Amount" aria-label="Adjustment" title="Positive adds to net pay, negative deducts">
+                                                                <input type="text" value="<?= $adjustment ?>" data-id="<?= $row['id'] ?>" data-type="adjustment" class="form-control input-class"<?= $rowRO ?> placeholder="+/− Amount" aria-label="Adjustment" title="Positive adds to net pay, negative deducts">
                                                             </div>
-                                                            <input type="text" value="<?= htmlspecialchars($adj_remarks, ENT_QUOTES) ?>" data-id="<?= $row['id'] ?>" data-type="adjustment_remarks" class="form-control input-class" placeholder="Remarks" aria-label="Adjustment Remarks" style="font-size:10px;">
+                                                            <input type="text" value="<?= htmlspecialchars($adj_remarks, ENT_QUOTES) ?>" data-id="<?= $row['id'] ?>" data-type="adjustment_remarks" class="form-control input-class"<?= $rowRO ?> placeholder="Remarks" aria-label="Adjustment Remarks" style="font-size:10px;">
                                                         <?php } else { ?>
                                                             <b class="<?= $adjustment < 0 ? 'text-danger' : '' ?>"><?= number_format($adjustment, 2) ?></b>
                                                             <?php if ($adj_remarks !== ''): ?><div class="text-muted" style="font-size:10px;"><?= htmlspecialchars($adj_remarks) ?></div><?php endif; ?>
@@ -2332,6 +2468,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
                                                     <?php
 
+                                                    // One-off deductions for this employee (allowances already in gross).
+                                                    $total_deductions += $rowExtraT['less'];
+                                                    $t_deduction     += $rowExtraT['less'];
                                                     $net = $gross_salary -  $total_deductions + $total_refunds + $adjustment;
                                                     $t_net += $net;
                                                     $pcwEmployees[] = [
@@ -2364,6 +2503,14 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                         'sent_n' => (int)($row['review_sent_count'] ?? 0),
                                                         'sent_at' => !empty($row['review_sent_at']) ? date('M j, g:i A', strtotime($row['review_sent_at'])) : '',
                                                         'emp_rv' => (int)($payrollReviewRows[$row['employee_id']]['status'] ?? 0),
+                                                        // Per-row edit window (admin unlocked this employee mid-review)
+                                                        // Named one-off lines on this payslip
+                                                        'extras' => $rowExtras,
+                                                        'extra_add' => (float)$rowExtraT['add'],
+                                                        'extra_less' => (float)$rowExtraT['less'],
+                                                        'unlocked' => !empty($row['unlocked_at']) ? 1 : 0,
+                                                        'unlock_why' => (string)($row['unlocked_reason'] ?? ''),
+                                                        'editable' => pcw_row_editable($status, $row) ? 1 : 0,
                                                     ];
                                                     ?>
                                                     <td style="min-width: 90px;" class="text-right net-content">
@@ -2581,56 +2728,9 @@ foreach ($remit as $rm) {
                 <h6 class="modal-title"><i class="ri-hand-coin-line me-2"></i>Remittance Breakdown</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
-                    <div>
-                        <div class="al-meta-label"><i class="ri-calendar-range-line me-1"></i>Payroll Period</div>
-                        <div class="al-meta-value" style="color:#107c41;"><?= date('M j, Y', strtotime($payroll['date_from'])) ?> &ndash; <?= date('M j, Y', strtotime($payroll['date_to'])) ?></div>
-                    </div>
-                    <div class="text-end">
-                        <div class="al-meta-label"><i class="ri-group-line me-1"></i>Employees</div>
-                        <div class="al-meta-value" style="color:#107c41;"><?= number_format($summary['emp_count']) ?></div>
-                    </div>
-                </div>
-                <?php foreach ($remit_groups as $rg_type => $rg):
-                    $rows = array_filter($remit, function ($rm) use ($rg_type) { return $rm['type'] == $rg_type; });
-                    if (empty($rows)) continue; ?>
-                    <div class="rm-section-title"><i class="<?= $rg['icon'] ?>"></i><?= $rg['label'] ?></div>
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered align-middle mb-0">
-                            <thead class="table-dark"><tr>
-                                <th>Type</th>
-                                <th class="text-center" style="width:100px;">Employees</th>
-                                <th class="text-end" style="width:130px;">Total</th>
-                            </tr></thead>
-                            <tbody>
-                                <?php foreach ($rows as $rm): ?>
-                                <tr>
-                                    <td class="fw-semibold"><?= htmlspecialchars(remit_type_name($conn, $rm['type'], $rm['id'])) ?></td>
-                                    <td class="text-center"><?= number_format($rm['employees']) ?></td>
-                                    <td class="text-end fw-semibold">&#8369; <?= number_format($rm['total'], 2) ?></td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php endforeach; ?>
-                <div class="table-responsive mt-3">
-                    <table class="table table-sm table-bordered align-middle mb-0">
-                        <tbody>
-                            <tr class="rm-grand">
-                                <td>Total Deductions (contributions + deductions + loans)</td>
-                                <td class="text-end" style="width:130px;">&#8369; <?= number_format($remit_deduction_total, 2) ?></td>
-                            </tr>
-                            <tr class="rm-grand">
-                                <td>Total Refunds</td>
-                                <td class="text-end">&#8369; <?= number_format($remit_refund_total, 2) ?></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-                <small class="text-muted" style="font-size:11px;">Amounts reflect this payroll's configured deduction settings as currently displayed.</small>
-            </div>
+            <!-- Filled by renderRemittance() on open, straight from the saved
+                 figures, so an edit made in this session is reflected. -->
+            <div class="modal-body" id="rm-body"></div>
             <div class="modal-footer py-2">
                 <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
@@ -2638,8 +2738,74 @@ foreach ($remit as $rm) {
     </div>
 </div>
 <script>
+// The breakdown is rebuilt from the database every time the modal opens. It used
+// to be PHP-rendered once at page load, so after saving an edit it still showed
+// the pre-change figures — the workbench updates in place and never reloads.
 function openRemitModal() {
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-remit')).show();
+    var modal = document.getElementById('modal-remit');
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+    renderRemittance();
+}
+
+function renderRemittance() {
+    var box = document.getElementById('rm-body');
+    if (!box) return;
+    box.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm"></div> Loading…</div>';
+    $.ajax({
+        url: 'ajax.php?action=remittance_breakdown', method: 'POST', dataType: 'JSON',
+        data: { id: <?= (int)$id ?> },
+        error: function () { box.innerHTML = '<div class="text-center text-danger py-4">Could not load the breakdown.</div>'; },
+        success: function (res) {
+            if (!res || !res.result) {
+                box.innerHTML = '<div class="text-center text-danger py-4">' + ((res && res.message) || 'Failed.') + '</div>';
+                return;
+            }
+            var esc = function (s) {
+                return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            };
+            var peso = function (n) {
+                return '&#8369; ' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            };
+            var h = '<div class="d-flex justify-content-between flex-wrap gap-2 mb-3">'
+                + '<div><div class="al-meta-label"><i class="ri-calendar-range-line me-1"></i>Payroll Period</div>'
+                + '<div class="al-meta-value" style="color:#107c41;"><?= date('M j, Y', strtotime($payroll['date_from'])) ?> &ndash; <?= date('M j, Y', strtotime($payroll['date_to'])) ?></div></div>'
+                + '<div class="text-end"><div class="al-meta-label"><i class="ri-group-line me-1"></i>Employees</div>'
+                + '<div class="al-meta-value" style="color:#107c41;">' + (res.employees || 0).toLocaleString('en-US') + '</div></div>'
+                + '</div>';
+
+            (res.groups || []).forEach(function (g) {
+                h += '<div class="rm-section-title"><i class="' + esc(g.icon) + '"></i>' + esc(g.label) + '</div>'
+                    + '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0">'
+                    + '<thead class="table-dark"><tr><th>Type</th>'
+                    + '<th class="text-center" style="width:100px;">Employees</th>'
+                    + '<th class="text-end" style="width:130px;">Total</th></tr></thead><tbody>';
+                g.items.forEach(function (it) {
+                    h += '<tr><td class="fw-semibold">' + esc(it.name) + '</td>'
+                        + '<td class="text-center">' + (it.employees || 0).toLocaleString('en-US') + '</td>'
+                        + '<td class="text-end fw-semibold">' + peso(it.total) + '</td></tr>';
+                });
+                h += '</tbody></table></div>';
+            });
+
+            if (!(res.groups || []).length) {
+                h += '<div class="text-center text-muted py-4">No contributions, deductions, loans or refunds configured for this payroll.</div>';
+            }
+
+            h += '<div class="table-responsive mt-3"><table class="table table-sm table-bordered align-middle mb-0"><tbody>'
+                + '<tr class="rm-grand"><td>Total Deductions (contributions + deductions + loans)</td>'
+                + '<td class="text-end" style="width:130px;">' + peso(res.ded_total) + '</td></tr>'
+                + '<tr class="rm-grand"><td>Total Refunds</td><td class="text-end">' + peso(res.ref_total) + '</td></tr>'
+                + (res.extra_add > 0
+                    ? '<tr class="rm-grand"><td>Total One-off Allowances (paid out, not remitted)</td>'
+                      + '<td class="text-end">' + peso(res.extra_add) + '</td></tr>'
+                    : '')
+                + '</tbody></table></div>'
+                + '<small class="text-muted" style="font-size:11px;">Rebuilt from the saved payroll figures each time this opens.</small>';
+            box.innerHTML = h;
+        }
+    });
 }
 </script>
 
@@ -3035,6 +3201,11 @@ function applyReviewToRow(itemId, status, comment) {
 
 // Green = verified: freeze the row's inputs so figures can't be changed by accident.
 function setReviewInputLock(tr, locked) {
+    // A row an admin deliberately unlocked stays editable whatever its review
+    // mark says. The green freeze is a guard rail against stray edits to
+    // verified rows; an explicit unlock is the admin overriding that on purpose
+    // (and an employee re-confirming re-locks the row anyway).
+    if (tr.dataset.unlocked === '1') locked = false;
     tr.querySelectorAll('.input-class').forEach(function (inp) { inp.readOnly = locked; });
 }
 
@@ -3284,6 +3455,22 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
   border-bottom:1px solid #eef2f0; background:#f4faf5; font-size:12px; font-weight:800; color:#0e6b37; }
 .pcw-panel-head i { color:#107c41; }
 #pcw-total { font-weight:600; color:#7a8f88; font-size:10.5px; }
+/* ── Collapsible right-column panels ──────────────────────────────────────
+   The head stays put and only the body scrolls; clicking the head folds the
+   panel away so a long batch can be given the whole column. */
+.pcw-panel-head.pcw-ch { cursor:pointer; user-select:none; }
+.pcw-panel-head.pcw-ch:hover { background:#eaf6ee; }
+.pcw-head-right { display:inline-flex; align-items:center; gap:6px; }
+.pcw-collapse-ic { font-size:15px; transition:transform .15s; }
+.pcw-panel.collapsed > :not(.pcw-panel-head) { display:none; }
+.pcw-panel.collapsed { flex:0 0 auto !important; }
+.pcw-panel.collapsed .pcw-collapse-ic { transform:rotate(-90deg); }
+.pcw-head-badge { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:800;
+  padding:1px 7px; border-radius:10px; border:1px solid; letter-spacing:.2px; }
+.pcw-head-badge.rev    { background:#e8f1fb; color:#2c62c0; border-color:#bcd3f5; }
+.pcw-head-badge.lock   { background:#e6f7ee; color:#178a4e; border-color:#b7e4c7; }
+.pcw-head-badge.unread { background:#eef2fd; color:#3557b7; border-color:#ccd9f7; }
+.pcw-head-badge.unread i { color:#3557b7; font-size:11px; }
 
 /* ── Left: employee previews ── */
 .pcw-left { min-height:0; }
@@ -3362,12 +3549,20 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-tag-cnt i { font-size:9.5px; }
 .pcw-tag-cnt.msg  { background:#fff6e2; color:#a9700a; border-color:#f2dfae; }
 .pcw-tag-cnt.note { background:#f2f0fb; color:#6b4fc4; border-color:#ded7f5; }
+/* Row reopened for correction while the batch is out for review */
+.pcw-tag-open { display:inline-flex; align-items:center; gap:3px; margin-left:4px; font-size:9px; font-weight:800;
+  padding:1px 7px; border-radius:20px; background:#fff8e1; color:#8a6100; border:1px solid #ffe082; }
+.pcw-tag-open i { font-size:9.5px; }
 /* Chat button on a card — the employee left a message with their sign-off */
 .pcw-item-msg { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; padding:0;
   border-radius:6px; cursor:pointer; font-size:11px; background:#eafaf0; border:1px solid #b7e4c7; color:#107c41; }
 .pcw-item-msg.disp { background:#fdecea; border-color:#f5c6cb; color:#c62828; }
 .pcw-item-msg:hover { background:#107c41; border-color:#107c41; color:#fff; }
 .pcw-item-msg.disp:hover { background:#c62828; border-color:#c62828; color:#fff; }
+/* Unread sign-off message — blue dot in the corner until someone opens it */
+.pcw-item-msg.new { position:relative; }
+.pcw-item-msg.new::after { content:''; position:absolute; top:-3px; right:-3px; width:7px; height:7px;
+  border-radius:50%; background:#3557b7; border:1.5px solid #fff; }
 
 /* ── Bulk action panel (shown while employees are ticked) ── */
 .pcw-bulk { display:none; flex-shrink:0; border-top:1px solid #e1e8e4; background:#f7fbf8; padding:9px 11px 10px; }
@@ -3446,6 +3641,17 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pp-table tr.subtotal td { border-top:1px solid #c9c5b8; font-weight:700; }
 .pp-table tr.totalrow td { border-top:2px solid #1a1a1a; border-bottom:3px double #1a1a1a; font-weight:800; font-size:13px; }
 .pp-note { font-size:11px; color:#666; font-style:italic; margin-top:3px; }
+/* One-off items: inline edit / remove, and the add button */
+.pp-x-act { margin-left:7px; white-space:nowrap; opacity:0; transition:opacity .12s; }
+.pp-table tr:hover .pp-x-act { opacity:1; }
+.pp-x-btn { border:none; background:transparent; cursor:pointer; color:#8aa39c; font-size:12px; padding:0 3px; }
+.pp-x-btn:hover { color:#107c41; }
+.pp-x-btn.del:hover { color:#c62828; }
+.pp-x-add { display:inline-flex; align-items:center; gap:4px; border:1px dashed #b8d8c2; background:#f7fbf8;
+  color:#0e6b37; border-radius:7px; padding:3px 10px; font-size:11px; font-weight:700; cursor:pointer;
+  font-family:system-ui, -apple-system, "Segoe UI", sans-serif; }
+.pp-x-add:hover { background:#eaf6ef; border-style:solid; }
+@media print { .pp-x-act, .pp-x-add { display:none !important; } }
 .pp-net { margin-top:17px; display:flex; align-items:center; justify-content:space-between; border:2px solid #1a1a1a; padding:9px 14px; background:#f7f5ec; }
 .pp-net .lbl { font-size:12px; font-weight:700; letter-spacing:2px; }
 .pp-net .amt { font-size:21px; font-weight:800; font-variant-numeric:tabular-nums; }
@@ -3479,6 +3685,13 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 /* ── Right: summary + batch ── */
 .pcw-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
 .pcw-right .pcw-panel.grow { flex:1; min-height:0; }
+/* Employee Review shares Batch Insights' shell: fixed head, body-only scroll. */
+.pcw-rv-panel { flex:0 1 auto; min-height:0; max-height:42%; }
+.pcw-rv-body { flex:1; min-height:0; overflow-y:auto; padding:10px 13px;
+  scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+/* The body is the only scroller — the inner lists must not scroll inside it. */
+.pcw-rv-body .prp-disputes.is-scroll,
+.pcw-rv-body .prp-confirms.is-scroll { max-height:none; overflow:visible; padding-right:0; }
 .pcw-sum-body { padding:11px 13px; max-height:42vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
 /* ── Batch Insights panel ── */
 .pcw-ins-body { flex:1; min-height:0; overflow-y:auto; padding:11px 13px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
@@ -3539,6 +3752,15 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-sum-tile .l { font-size:8.5px; color:#8aa39c; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
 .pcw-sum-tile.ded .v { color:#c62828; } .pcw-sum-tile.net .v { color:#1e50a0; }
 .pcw-sum-tile.abs .v { color:#c98a00; } .pcw-sum-tile.lt .v { color:#e2574c; }
+/* ── Per-employee unlock (mid-review editing) ── */
+.pcw-unlock-note { display:flex; gap:7px; align-items:flex-start; margin:9px 0 0; padding:7px 9px;
+  background:#fff8e1; border:1px solid #ffe082; border-radius:8px; font-size:11px; color:#8a6100; line-height:1.4; }
+.pcw-unlock-note i { font-size:14px; color:#c98a00; flex-shrink:0; margin-top:1px; }
+.pcw-unlock-note .why { font-style:italic; opacity:.85; }
+.pcw-btn.warn { background:#fff8e1; border-color:#ffe082; color:#8a6100; }
+.pcw-btn.warn:hover { background:#ffefc2; }
+.pcw-unlock-flag { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700;
+  padding:3px 10px; border-radius:20px; background:#fff8e1; border:1px solid #ffe082; color:#8a6100; }
 .pcw-sum-actions { display:flex; flex-wrap:wrap; gap:5px; margin-top:10px; }
 .pcw-sum-actions .pcw-btn { padding:5px 10px; font-size:11px; flex:1 1 45%; justify-content:center; white-space:nowrap; }
 /* Internal admin notes — read-only list, same content and style as
@@ -3682,7 +3904,7 @@ window.PCW_META = <?= json_encode([
     var M = window.PCW_META || {};
     // S.ps holds the payslip selection ({id: true}) — the card list is the only
     // selection UI now that the table preview has no checkbox column.
-    var S = { q: '', dept: '', pos: '', rv: '', erv: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
+    var S = { q: '', dept: '', pos: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
     // Exception predicates — reused by the Insights chips and the left-list filter.
     function excPred(key, e) {
         switch (key) {
@@ -3750,6 +3972,9 @@ window.PCW_META = <?= json_encode([
                 if (S.erv === 'm') { if (!cv || !cv.c) return false; }
                 else if (String(e.emp_rv || 0) !== S.erv) return false;
             }
+            // Edit lock: u = reopened for correction, l = still frozen
+            if (S.lock === 'u' && !e.unlocked) return false;
+            if (S.lock === 'l' && e.unlocked) return false;
             if (S.exc && !excPred(S.exc, e)) return false;
             return true;
         });
@@ -3778,16 +4003,28 @@ window.PCW_META = <?= json_encode([
                 tags += '<span class="pcw-tag-sent" title="Review request sent ' + e.sent_n + '×'
                     + (e.sent_at ? ' — last ' + esc(e.sent_at) : '') + '"><i class="ri-send-plane-fill"></i>' + e.sent_n + '× sent</span>';
             }
+            // Reopened for correction — without this the "Unlocked" filter would
+            // return rows you cannot tell apart from the frozen ones.
+            if (e.unlocked) {
+                tags += '<span class="pcw-tag-open" title="Unlocked for editing'
+                    + (e.unlock_why ? ' — ' + esc(e.unlock_why) : '') + '"><i class="ri-lock-unlock-line"></i>open</span>';
+            }
             var nMsg = (e.msgs || []).length, nNote = (e.notes || []).length;
-            if (nMsg) tags += '<span class="pcw-tag-cnt msg" title="' + nMsg + ' record message(s)"><i class="ri-chat-3-fill"></i>' + nMsg + '</span>';
+            // Attendance-record messages (calendar icon) vs the payslip sign-off
+            // message (speech bubble, below) — two different conversations, so
+            // they get two clearly different icons.
+            if (nMsg) tags += '<span class="pcw-tag-cnt msg" title="' + nMsg + ' attendance-record message(s)"><i class="ri-calendar-2-line"></i>' + nMsg + '</span>';
             if (nNote) tags += '<span class="pcw-tag-cnt note" title="' + nNote + ' internal note(s)"><i class="ri-sticky-note-fill"></i>' + nNote + '</span>';
             // Chat button — only for employees who left a message with their
             // payslip sign-off; opens the same popup as the review panel.
             var conv = (window.PCW_REVIEWS || {})[e.emp];
-            var convBtn = (conv && conv.c)
-                ? '<button type="button" class="pcw-item-msg' + (conv.st === 2 ? ' disp' : '') + '" data-convo="' + e.emp + '"'
-                    + ' title="' + (conv.st === 2 ? 'Disputed' : 'Confirmed') + ' with a message — click to read"><i class="ri-chat-3-fill"></i></button>'
-                : '';
+            var convBtn = '';
+            if (conv && conv.c) {
+                var cCls = 'pcw-item-msg' + (conv.st === 2 ? ' disp' : '') + (conv.new ? ' new' : '');
+                convBtn = '<button type="button" class="' + cCls + '" data-convo="' + e.emp + '" title="'
+                    + (conv.new ? 'UNREAD — ' : '') + (conv.st === 2 ? 'Disputed' : 'Confirmed')
+                    + ' their payslip with a message — click to read"><i class="ri-chat-3-fill"></i></button>';
+            }
             html += '<div class="pcw-item' + (S.sel == e.id ? ' active' : '') + (rvm ? ' ' + rvm.cls : '') + '" data-eid="' + e.id + '">'
                 + '<input type="checkbox" data-ps="' + e.id + '"' + (chk && chk.checked ? ' checked' : '') + ' title="Select this employee for bulk actions">'
                 + '<div class="pcw-item-avwrap"><div class="pcw-item-av rv-' + e.rv + '">' + esc(initials(e)) + '</div>' + rvBadge + '</div>'
@@ -3868,6 +4105,99 @@ window.PCW_META = <?= json_encode([
             + '<td class="amt' + (neg ? ' neg' : '') + '"' + (idAttr ? ' id="' + idAttr + '"' : '') + '>' + amtHtml + '</td></tr>';
     }
 
+    // ── Named one-off items on a single payslip ───────────────────────────────
+    // kind 1 deducts (section C), kind 2 adds (section B). Unlimited per
+    // employee, applied without recalculating the batch.
+    function extrasOfKind(e, kind) {
+        return (e.extras || []).filter(function (x) { return x.kind === kind; });
+    }
+    function extraRow(e, x, neg) {
+        var editable = canEditRow(e);
+        var act = editable
+            ? '<span class="pp-x-act">'
+              + '<button type="button" class="pp-x-btn" title="Edit this item" onclick="pcwEditExtra(' + e.id + ',' + x.id + ')"><i class="ri-pencil-line"></i></button>'
+              + '<button type="button" class="pp-x-btn del" title="Remove this item" onclick="pcwDeleteExtra(' + e.id + ',' + x.id + ')"><i class="ri-delete-bin-line"></i></button>'
+              + '</span>'
+            : '';
+        return '<tr><td>' + esc(x.label) + act + '</td><td class="qty">one-off</td>'
+            + '<td class="amt' + (neg ? ' neg' : '') + '">' + (neg ? '(' + fmt(x.amt) + ')' : fmt(x.amt)) + '</td></tr>';
+    }
+    function addExtraRow(e, kind) {
+        return '<tr><td colspan="3" style="padding-top:5px;">'
+            + '<button type="button" class="pp-x-add" onclick="pcwAddExtra(' + e.id + ',' + kind + ')">'
+            + '<i class="ri-add-line"></i> Add ' + (kind === 2 ? 'allowance' : 'deduction') + '</button></td></tr>';
+    }
+
+    // Add / edit share one dialog; the server upserts on the id.
+    window.pcwAddExtra  = function (itemId, kind) { extraDialog(itemId, kind, null); };
+    window.pcwEditExtra = function (itemId, xid) {
+        var e = empById(itemId);
+        var x = (e && (e.extras || []).find(function (i) { return i.id === xid; })) || null;
+        if (x) extraDialog(itemId, x.kind, x);
+    };
+    function extraDialog(itemId, kind, existing) {
+        var isAllow = kind === 2;
+        Swal.fire({
+            title: (existing ? 'Edit ' : 'Add ') + (isAllow ? 'allowance' : 'deduction'),
+            html: '<div style="text-align:left;font-size:12.5px;color:#555;margin-bottom:8px;">'
+                + 'Applies to <b>this employee only</b> and shows as its own line on their payslip.</div>'
+                + '<input id="x-label" class="swal2-input" maxlength="120" placeholder="Label — e.g. Uniform, Transport allowance" value="' + (existing ? esc(existing.label) : '') + '">'
+                + '<input id="x-amount" class="swal2-input" type="number" step="0.01" min="0.01" placeholder="Amount" value="' + (existing ? existing.amt : '') + '">',
+            showCancelButton: true,
+            confirmButtonColor: isAllow ? '#107c41' : '#c62828',
+            confirmButtonText: existing ? 'Save changes' : 'Add item',
+            didOpen: function () { document.getElementById('x-label').focus(); },
+            preConfirm: function () {
+                var label = (document.getElementById('x-label').value || '').trim();
+                var amt = parseFloat(document.getElementById('x-amount').value);
+                if (!label) { Swal.showValidationMessage('A label is required.'); return false; }
+                if (!(amt > 0)) { Swal.showValidationMessage('Enter an amount greater than zero.'); return false; }
+                return { label: label, amount: amt };
+            }
+        }).then(function (r) {
+            if (!r.isConfirmed) return;
+            pcwPostExtra('save_payroll_item_extra', {
+                item_id: itemId, id: existing ? existing.id : 0,
+                kind: kind, label: r.value.label, amount: r.value.amount
+            }, itemId);
+        });
+    }
+    window.pcwDeleteExtra = function (itemId, xid) {
+        Swal.fire({
+            title: 'Remove this item?', text: 'It will disappear from the payslip and the net pay recomputes.',
+            icon: 'warning', showCancelButton: true, confirmButtonColor: '#c62828', confirmButtonText: 'Remove'
+        }).then(function (r) {
+            if (r.isConfirmed) pcwPostExtra('delete_payroll_item_extra', { id: xid }, itemId);
+        });
+    };
+    // One round trip: save, then pull the row's recomputed figures back so the
+    // sheet, the card list and the batch totals all agree — without a reload.
+    function pcwPostExtra(action, data, itemId) {
+        Swal.fire({ title: 'Saving…', allowOutsideClick: false, didOpen: function () { Swal.showLoading(); } });
+        $.ajax({
+            url: 'ajax.php?action=' + action, method: 'POST', dataType: 'JSON', data: data,
+            error: function () { Swal.fire({ icon: 'error', title: 'Error', text: 'Request failed.' }); },
+            success: function (res) {
+                if (!res || !res.result) {
+                    Swal.fire({ icon: 'error', title: 'Error', text: (res && res.message) || 'Failed.' });
+                    return;
+                }
+                var e = empById(itemId);
+                if (e) e.extras = res.extras || [];
+                // refreshPayrollRows repaints the table from server-computed
+                // figures (which now include extras); syncRow pulls the row's
+                // new gross / deductions / net back into the payload object.
+                refreshPayrollRows(M.id).then(function () {
+                    var fresh = empById(itemId);
+                    if (fresh) { syncRow(fresh); renderPaper(fresh); renderSum(fresh); }
+                    buildList(); renderInsights();
+                    Swal.fire({ toast: true, position: 'top-end', icon: 'success',
+                        title: res.message, showConfirmButton: false, timer: 2400 });
+                });
+            }
+        });
+    }
+
     function renderPaper(e) {
         var isMonthlyBatch = M.type === 5;
         var monthlyRate = e.rate_type === 'monthly' || e.rate_type === 'fixed';
@@ -3915,6 +4245,11 @@ window.PCW_META = <?= json_encode([
         if (ed || e.spc_amt) h += earnRow('Special Holiday Pay', fld(e, 'special_holiday', e.spc) + ' day(s)', e.spc_amt, false);
         if (ed || e.ot_amt) h += earnRow('Overtime', fld(e, 'ot', e.ot_hrs) + ' hr(s) × ' + fmt(e.ot_rate), e.ot_amt, false);
         if (e.late_amt) h += earnRow('Less: Late', Math.round(e.late_min) + ' min', e.late_amt, true);
+        // Named one-off allowances for this employee only.
+        extrasOfKind(e, 2).forEach(function (x) {
+            h += extraRow(e, x, false);
+        });
+        if (ed) h += addExtraRow(e, 2);
         h += '<tr class="totalrow"><td>GROSS PAY</td><td class="qty"></td><td class="amt" id="pp-gross-amt">' + fmt(e.gross) + '</td></tr>';
         h += '</table></div>';
 
@@ -3946,6 +4281,13 @@ window.PCW_META = <?= json_encode([
             h += earnRow(fd[0], '', edAmt(e, fd[1], fd[2]), fd[2] > 0);
         });
         h += '<tr class="subtotal"><td>Subtotal — Company Advances &amp; Tax</td><td class="qty"></td><td class="amt neg" id="pp-sub-fx">(' + fmt(fsub) + ')</td></tr>';
+        // Named one-off deductions for this employee only.
+        var xDed = extrasOfKind(e, 1);
+        if (xDed.length || ed) {
+            h += '<tr class="subgroup"><td colspan="3">One-off Items</td></tr>';
+            xDed.forEach(function (x) { h += extraRow(e, x, true); });
+            if (ed) h += addExtraRow(e, 1);
+        }
         h += '<tr class="totalrow"><td>TOTAL DEDUCTIONS</td><td class="qty"></td><td class="amt neg" id="pp-totded-amt">(' + fmt(e.total_ded) + ')</td></tr>';
         h += '</table></div>';
 
@@ -4017,6 +4359,126 @@ window.PCW_META = <?= json_encode([
             + list + '</div>';
     }
 
+    // ── Per-employee unlock while the batch is out for employee review ────────
+    // Correcting one disputed payslip should not mean recalling the whole batch
+    // and voiding everyone else's sign-off, so a single row can be reopened.
+    // Admin only; the server enforces the same rule in payroll_item_write_block().
+    var PCW_IS_ADMIN = <?= ((int)($_SESSION['login_role'] ?? 0) === 1) ? 'true' : 'false' ?>;
+
+    function unlockBanner(e) {
+        if (M.status !== 3 || !e.unlocked) return '';
+        return '<div class="pcw-unlock-note"><i class="ri-lock-unlock-line"></i>'
+            + '<span><b>Open for editing.</b> Saving a change voids this employee’s review and asks them to confirm again.'
+            + (e.unlock_why ? '<br><span class="why">Reason: ' + esc(e.unlock_why) + '</span>' : '')
+            + '</span></div>';
+    }
+    function unlockButton(e) {
+        if (M.status !== 3 || !PCW_IS_ADMIN) return '';
+        return e.unlocked
+            ? '<button type="button" class="pcw-btn warn" onclick="pcwRelockEmployee(' + e.id + ')" title="Freeze this employee again"><i class="ri-lock-line"></i> Lock</button>'
+            : '<button type="button" class="pcw-btn" onclick="pcwUnlockEmployee(' + e.id + ')" title="Reopen just this employee so their figures can be corrected"><i class="ri-lock-unlock-line"></i> Unlock</button>';
+    }
+
+    window.pcwUnlockEmployee = function (itemId) {
+        var e = empById(itemId);
+        if (!e) return;
+        // Unlocking someone who already confirmed is the risky case — say so.
+        var warn = e.emp_rv === 1
+            ? '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12.5px;color:#8a6100;text-align:left;">'
+              + '<b>' + esc(e.name) + ' has already confirmed this payslip.</b><br>'
+              + 'Saving any change will void that confirmation and ask them to review again.</div>'
+            : '';
+        Swal.fire({
+            title: 'Unlock ' + esc(e.name) + '?',
+            html: warn + '<div style="font-size:12.5px;color:#555;text-align:left;">'
+                + 'Only this employee becomes editable — the rest of the batch stays frozen.<br>'
+                + 'Give a reason for the audit log.</div>',
+            input: 'text',
+            inputPlaceholder: 'e.g. Missing OT for Jun 8–9, per their dispute',
+            inputAttributes: { maxlength: 255 },
+            showCancelButton: true,
+            confirmButtonColor: '#107c41',
+            confirmButtonText: 'Unlock for editing',
+            preConfirm: function (v) {
+                if (!v || !v.trim()) { Swal.showValidationMessage('A reason is required.'); return false; }
+                return v.trim();
+            }
+        }).then(function (r) {
+            if (!r.isConfirmed) return;
+            pcwPostLock('unlock_payroll_item', { id: itemId, reason: r.value }, true, r.value);
+        });
+    };
+
+    window.pcwRelockEmployee = function (itemId) {
+        var e = empById(itemId);
+        if (!e) return;
+        Swal.fire({
+            title: 'Lock ' + esc(e.name) + '?',
+            text: 'Their figures become read-only again. Unsaved edits are lost.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#c98a00',
+            confirmButtonText: 'Lock'
+        }).then(function (r) {
+            if (r.isConfirmed) pcwPostLock('relock_payroll_item', { id: itemId }, false);
+        });
+    };
+
+    // Applied in place — no page reload. The row's inputs are always in the DOM
+    // while a batch is Open or in review; readonly is what gates editing, so
+    // flipping it is all that is needed. Selection, filters and scroll survive.
+    function pcwPostLock(action, data, unlocking, reason) {
+        Swal.fire({ title: 'Saving…', allowOutsideClick: false, didOpen: function () { Swal.showLoading(); } });
+        $.ajax({
+            url: 'ajax.php?action=' + action, method: 'POST', dataType: 'JSON', data: data,
+            success: function (res) {
+                if (!res || !res.result) {
+                    Swal.fire({ icon: 'error', title: 'Error', text: (res && res.message) || 'Failed.' });
+                    return;
+                }
+                pcwApplyLockState(data.id, unlocking, reason);
+                Swal.fire({
+                    toast: true, position: 'top-end', icon: 'success',
+                    title: res.message, showConfirmButton: false, timer: 3200, timerProgressBar: true
+                });
+            },
+            error: function () { Swal.fire({ icon: 'error', title: 'Error', text: 'Request failed.' }); }
+        });
+    }
+
+    // Flip one row between editable and frozen, and refresh everything that
+    // reflects that state.
+    function pcwApplyLockState(itemId, unlocked, reason) {
+        var e = empById(itemId);
+        if (!e) return;
+        e.unlocked = unlocked ? 1 : 0;
+        e.unlock_why = unlocked ? (reason || '') : '';
+        e.editable = e.unlocked;
+
+        var tr = document.querySelector('tr[data-row-id="' + itemId + '"]');
+        if (tr) {
+            tr.dataset.unlocked = unlocked ? '1' : '0';
+            // setReviewInputLock honours the unlock, so a green row unfreezes too.
+            setReviewInputLock(tr, !unlocked && tr.classList.contains('review-ok'));
+            if (!unlocked) {
+                tr.querySelectorAll('.input-class').forEach(function (i) { i.readOnly = true; });
+            }
+        }
+
+        // Header count + Save button follow the number of open rows.
+        var open = D.filter(function (x) { return x.unlocked; }).length;
+        var flag = document.querySelector('.pcw-unlock-flag');
+        if (flag) {
+            flag.innerHTML = '<i class="ri-lock-unlock-line"></i> ' + open + ' unlocked';
+            flag.style.display = open ? '' : 'none';
+        }
+        var save = byId('pcw-save');
+        if (save && !open && M.status === 3) save.style.display = 'none';
+
+        if (S.sel == itemId) { renderPaper(e); renderSum(e); }
+        buildList();
+    }
+
     // ── Right: employee summary ──
     function renderSum(e) {
         var sentLine = e.sent_n > 0
@@ -4036,10 +4498,12 @@ window.PCW_META = <?= json_encode([
             + '<div class="pcw-sum-tile abs"><div class="v">' + e.absent + '</div><div class="l">Absent</div></div>'
             + '<div class="pcw-sum-tile lt"><div class="v">' + Math.round(e.late_min) + '</div><div class="l">Late (min)</div></div>'
             + '</div>'
+            + unlockBanner(e)
             + '<div class="pcw-sum-actions">'
             + '<button type="button" class="pcw-btn" onclick="openPayslipPreview(' + e.id + ')"><i class="ri-file-pdf-2-line"></i> Payslip PDF</button>'
             + '<button type="button" class="pcw-btn" onclick="pcwOpenDtr(' + e.id + ')"><i class="ri-calendar-check-line"></i> DTR Details (' + e.dtr_days + ')</button>'
             + '<button type="button" class="pcw-btn" onclick="openReviewMark(' + e.id + ')"><i class="ri-checkbox-multiple-line"></i> Review Mark</button>'
+            + unlockButton(e)
             + '<a class="pcw-btn" href="index.php?page=employee-details&id=' + e.emp + '" target="_blank"><i class="ri-user-3-line"></i> Profile</a>'
             + '</div>';
         byId('pcw-sum').innerHTML = h;
@@ -4151,6 +4615,277 @@ window.PCW_META = <?= json_encode([
         if (clr) clr.addEventListener('click', function () { S.exc = ''; buildList(); renderInsights(); });
     })();
 
+    // ── Excel export of the Table View ──────────────────────────────────────
+    // PhpSpreadsheet's HTML reader understands inline style attributes only —
+    // not classes or <style> blocks — so the page palette is stamped onto the
+    // clone here, cell by cell. Exporting the rendered DOM (rather than redoing
+    // ~40 columns of arithmetic server-side) keeps the workbook and the screen
+    // permanently in agreement.
+    var XL_FILL = {
+        // group band (header row 1) → [background, text]
+        head1: {
+            'primary-header': ['#d7ece9', '#116257'],
+            'info-header':    ['#dde9f8', '#1e50a0'],
+            'success-header': ['#d9eedd', '#107c41'],
+            'danger-header':  ['#fbe3e6', '#b02a37']
+        },
+        // column labels (header row 2) — lighter tint of the same family
+        head2: {
+            'primary-header': ['#ebf5f3', '#116257'],
+            'info-header':    ['#eef4fc', '#1e50a0'],
+            'success-header': ['#ebf7ee', '#107c41'],
+            'danger-header':  ['#fdf0f1', '#b02a37']
+        },
+        // reviewer colour marks carried over as row tints
+        row: { 'review-ok': '#e9f7ee', 'review-issue': '#fff4e2', 'review-checking': '#e8f1fb' }
+    };
+    function xlHeadStyle(th, map) {
+        var key = ['primary-header', 'info-header', 'success-header', 'danger-header']
+            .find(function (c) { return th.classList.contains(c); }) || 'primary-header';
+        var c = map[key];
+        return 'background-color:' + c[0] + ';color:' + c[1] + ';font-weight:bold;'
+            + 'border:1px solid #c2ddd8;text-align:center;';
+    }
+    window.pcwExportTableExcel = function (payrollId) {
+        var src = document.getElementById('table-1');
+        if (!src) { Swal.fire({ icon: 'error', title: 'Nothing to export', text: 'Open Table View first.' }); return; }
+        Swal.fire({ title: 'Building workbook…', allowOutsideClick: false, didOpen: function () { Swal.showLoading(); } });
+
+        // Let the spinner paint before the (synchronous) DOM walk on a big batch.
+        setTimeout(function () {
+            try {
+                // cloneNode copies an input's ATTRIBUTE, not its live value, so an
+                // open payroll the user has just edited would export stale figures.
+                // Stamp the live values onto the attributes first — harmless on the
+                // page, since a dirty input keeps showing its own value.
+                src.querySelectorAll('input').forEach(function (inp) {
+                    if (inp.type !== 'checkbox') inp.setAttribute('value', inp.value);
+                });
+
+                var t = src.cloneNode(true);
+
+                // Inputs are the live data store — replace each with its value so
+                // the export carries figures, not empty form controls.
+                t.querySelectorAll('input').forEach(function (inp) {
+                    if (inp.type === 'checkbox') { inp.parentNode.removeChild(inp); return; }
+                    var span = document.createElement('span');
+                    span.textContent = (inp.value || '').replace(/,/g, '');   // raw number → Excel parses it
+                    inp.parentNode.replaceChild(span, inp);
+                });
+                // Buttons / icons / avatars / badges carry no meaning in a
+                // spreadsheet, and their text would run into the real content
+                // ("QAABAD, QUERWIN" from the avatar initials).
+                t.querySelectorAll('button, .review-mark-btn, i, svg, .rv-dot, .emp-avatar, .pcw-fdot, .nd-badge, .pp-delta, .pay-badge, [data-badges]')
+                    .forEach(function (el) { el.parentNode && el.parentNode.removeChild(el); });
+
+                // The Name cell stacks name + employee no. In one flat Excel cell
+                // those would concatenate ("ABAD, QUERWIN2026-00062"), so keep the
+                // name here and move the number to its own column.
+                var splitNo = t.querySelector('td .emp-cell') !== null;
+                t.querySelectorAll('td .emp-cell').forEach(function (cell) {
+                    var nm = cell.querySelector('.emp-name-link');
+                    var no = cell.querySelector('.emp-no');
+                    var td = cell.closest('td');
+                    td.textContent = nm ? nm.textContent.trim() : cell.textContent.trim();
+                    if (no) {
+                        var extra = document.createElement('td');
+                        extra.textContent = no.textContent.trim();
+                        td.parentNode.insertBefore(extra, td.nextSibling);
+                    }
+                });
+                // …and give that column a header in both header rows.
+                if (splitNo) {
+                    var hrows = t.querySelectorAll('thead tr');
+                    if (hrows[0]) {
+                        var th = document.createElement('th');
+                        th.textContent = 'Employee No.';
+                        th.setAttribute('rowspan', '2');
+                        th.className = 'primary-header';
+                        th.setAttribute('style', xlHeadStyle(th, XL_FILL.head1));
+                        hrows[0].insertBefore(th, hrows[0].children[2] || null);
+                    }
+                    // tfoot's TOTAL cell spans No.+Name — widen it over the new column.
+                    var tot = t.querySelector('tfoot .tfoot-total-cell');
+                    if (tot) tot.setAttribute('colspan', String((parseInt(tot.getAttribute('colspan'), 10) || 2) + 1));
+                }
+                // The Adjustment cell stacks the amount over its remark ("1,000.00"
+                // / "For other payment"). Flattened they concatenate and the column
+                // stops being numeric, so the remark moves to its own column.
+                // Pass 1: locate the column (only some rows carry a remark).
+                var adjIdx = -1;
+                t.querySelectorAll('tbody tr').forEach(function (tr) {
+                    if (adjIdx !== -1) return;
+                    for (var i = 0; i < tr.children.length; i++) {
+                        if (tr.children[i].querySelector('.text-muted') && tr.children[i].querySelector('b')) { adjIdx = i; return; }
+                    }
+                });
+                // Pass 2: split it on EVERY row — a row with no remark still needs
+                // the placeholder cell, or the columns after it shift left.
+                if (adjIdx !== -1) {
+                    t.querySelectorAll('tbody tr').forEach(function (tr) {
+                        var cell = tr.children[adjIdx];
+                        if (!cell) return;
+                        var note = cell.querySelector('.text-muted');
+                        var amt = cell.querySelector('b');
+                        var extra = document.createElement('td');
+                        extra.textContent = note ? note.textContent.trim() : '';
+                        cell.textContent = (amt ? amt.textContent : cell.textContent).trim().replace(/,/g, '');
+                        tr.insertBefore(extra, cell.nextSibling);
+                    });
+                }
+                if (adjIdx !== -1) {
+                    // Header: the Adjustment th spans both header rows, so the new
+                    // label only needs inserting into row 1.
+                    var h0 = t.querySelectorAll('thead tr')[0];
+                    if (h0) {
+                        var col = 0, at = null;
+                        for (var k = 0; k < h0.children.length; k++) {
+                            if (col === adjIdx) { at = h0.children[k]; break; }
+                            col += h0.children[k].colSpan || 1;
+                        }
+                        var rth = document.createElement('th');
+                        rth.textContent = 'Adjustment Remark';
+                        rth.setAttribute('rowspan', '2');
+                        rth.className = 'primary-header';
+                        rth.setAttribute('style', xlHeadStyle(rth, XL_FILL.head1));
+                        if (at) h0.insertBefore(rth, at.nextSibling); else h0.appendChild(rth);
+                    }
+                    // tfoot: walk colspans to the same column, then pad it.
+                    t.querySelectorAll('tfoot tr').forEach(function (tr) {
+                        var col = 0;
+                        for (var k = 0; k < tr.children.length; k++) {
+                            var span = tr.children[k].colSpan || 1;
+                            if (col + span > adjIdx) {
+                                tr.insertBefore(document.createElement('th'), tr.children[k].nextSibling);
+                                return;
+                            }
+                            col += span;
+                        }
+                    });
+                }
+
+                // The table repeats the row number in a trailing "No." column so
+                // the index stays visible when scrolled far right. A spreadsheet
+                // has row numbers of its own, so drop that last column entirely.
+                var lastHead = t.querySelectorAll('thead tr')[0];
+                var lastTh = lastHead && lastHead.lastElementChild;
+                if (lastTh && lastTh.textContent.trim() === 'No.' && lastTh.rowSpan === 2) {
+                    lastTh.parentNode.removeChild(lastTh);
+                    t.querySelectorAll('tbody tr, tfoot tr').forEach(function (tr) {
+                        if (tr.lastElementChild) tr.removeChild(tr.lastElementChild);
+                    });
+                }
+
+                // One-off items are already inside the Gross / Total Deduction /
+                // Net figures, but nothing in the workbook says WHAT they were.
+                // Append a trailing annotation column naming them per employee.
+                if (D.some(function (x) { return (x.extras || []).length; })) {
+                    var h0x = t.querySelectorAll('thead tr')[0];
+                    if (h0x) {
+                        var xth = document.createElement('th');
+                        xth.textContent = 'One-off Items';
+                        xth.setAttribute('rowspan', '2');
+                        xth.className = 'primary-header';
+                        xth.setAttribute('style', xlHeadStyle(xth, XL_FILL.head1));
+                        h0x.appendChild(xth);
+                    }
+                    t.querySelectorAll('tbody tr').forEach(function (tr) {
+                        var emp = empById(parseInt(tr.getAttribute('data-row-id'), 10));
+                        var td = document.createElement('td');
+                        td.textContent = ((emp && emp.extras) || []).map(function (x) {
+                            return x.label + ' ' + (x.kind === 2 ? '+' : '−') + fmt(x.amt);
+                        }).join('; ');
+                        tr.appendChild(td);
+                    });
+                    t.querySelectorAll('tfoot tr').forEach(function (tr) {
+                        tr.appendChild(document.createElement('th'));
+                    });
+                }
+
+                // Leading text columns (No., Name, [Employee No.], Position) — the
+                // server needs the count to know where the money columns begin.
+                var identityCols = splitNo ? 4 : 3;
+
+                // Header rows: group band, then column labels.
+                var headRows = t.querySelectorAll('thead tr');
+                if (headRows[0]) headRows[0].querySelectorAll('th').forEach(function (th) {
+                    th.setAttribute('style', xlHeadStyle(th, XL_FILL.head1));
+                });
+                if (headRows[1]) headRows[1].querySelectorAll('th').forEach(function (th) {
+                    th.setAttribute('style', xlHeadStyle(th, XL_FILL.head2));
+                });
+
+                // Body: reviewer mark tint + strip thousands separators so the
+                // server can format the columns as real numbers.
+                t.querySelectorAll('tbody tr').forEach(function (tr) {
+                    var tint = Object.keys(XL_FILL.row).find(function (c) { return tr.classList.contains(c); });
+                    tr.querySelectorAll('td').forEach(function (td) {
+                        var txt = td.textContent.trim();
+                        if (/^\(?-?[\d,]+\.?\d*\)?$/.test(txt) && txt.indexOf(',') !== -1) {
+                            td.textContent = txt.replace(/,/g, '');
+                        }
+                        td.setAttribute('style', 'border:1px solid #e4e7e5;'
+                            + (tint ? 'background-color:' + XL_FILL.row[tint] + ';' : ''));
+                    });
+                });
+
+                // Totals row — bold on the same green the screen uses.
+                t.querySelectorAll('tfoot th').forEach(function (th) {
+                    th.textContent = th.textContent.trim().replace(/,/g, '');
+                    th.setAttribute('style', 'background-color:#d9eedd;color:#0e6b37;font-weight:bold;border:1px solid #c0e0c8;');
+                });
+
+                // A plain form post lets the browser handle the download itself —
+                // no blob juggling, and the file lands with the server's filename.
+                var f = document.createElement('form');
+                f.method = 'POST';
+                f.action = 'export-payroll-table.php';
+                f.style.display = 'none';
+                [['id', payrollId], ['identity', identityCols], ['html', t.outerHTML]].forEach(function (kv) {
+                    var i = document.createElement('input');
+                    i.type = 'hidden'; i.name = kv[0]; i.value = kv[1];
+                    f.appendChild(i);
+                });
+                document.body.appendChild(f);
+                f.submit();
+                setTimeout(function () { document.body.removeChild(f); Swal.close(); }, 1500);
+            } catch (err) {
+                Swal.fire({ icon: 'error', title: 'Export failed', text: err.message || 'Could not build the workbook.' });
+            }
+        }, 60);
+    };
+
+    // ── Collapsible right-column panels ──
+    // Which panels are folded is remembered per browser, so an admin who works
+    // with Batch Insights closed does not have to close it every page load.
+    var PCW_FOLD_KEY = 'pcw-folded-panels';
+    window.pcwTogglePanel = function (head) {
+        var panel = head.closest('.pcw-panel');
+        if (!panel) return;
+        panel.classList.toggle('collapsed');
+        try {
+            var folded = [];
+            document.querySelectorAll('.pcw-right .pcw-panel').forEach(function (p, i) {
+                if (p.classList.contains('collapsed')) folded.push(i);
+            });
+            localStorage.setItem(PCW_FOLD_KEY, JSON.stringify(folded));
+        } catch (e) { /* private mode — collapsing still works, just not remembered */ }
+    };
+    (function () {
+        var folded = [];
+        try { folded = JSON.parse(localStorage.getItem(PCW_FOLD_KEY) || '[]'); } catch (e) { folded = []; }
+        if (!folded.length) return;
+        document.querySelectorAll('.pcw-right .pcw-panel').forEach(function (p, i) {
+            if (folded.indexOf(i) !== -1) p.classList.add('collapsed');
+        });
+    })();
+
+    // The "clear filter" link sits inside the collapsible head — don't fold on it.
+    (function () {
+        var clr = byId('pcw-ins-clear');
+        if (clr) clr.addEventListener('click', function (ev) { ev.stopPropagation(); });
+    })();
+
     // ── Payslip sign-off conversation ──
     // Reads window.PCW_REVIEWS (employee_id → decision + message + HR reply)
     // and shows it as a two-bubble thread. Global: the Employee Review rows and
@@ -4183,14 +4918,45 @@ window.PCW_META = <?= json_encode([
             }
             h += '</div>';
             box.innerHTML = h;
-            // Only an unresolved dispute can be replied to — resolve_review_dispute()
-            // rejects anything else, so the button stays hidden for confirmations.
-            var canReply = r.st === 2 && !r.rep;
+            // Anything with a message and no reply yet can be answered — a
+            // dispute to resolve, or a confirmation that asked something.
+            var canReply = !r.rep && (r.st === 2 || (r.st === 1 && !!r.c));
+            var isDisp = r.st === 2;
             btn.style.display = canReply ? '' : 'none';
-            btn.onclick = canReply ? function () { openResolveDispute('payroll', r.id, r.name); } : null;
+            btn.innerHTML = isDisp
+                ? '<i class="ri-chat-check-line me-1"></i>Resolve &amp; Reply'
+                : '<i class="ri-chat-1-line me-1"></i>Reply';
+            btn.onclick = canReply ? function () { openResolveDispute('payroll', r.id, r.name, isDisp); } : null;
+            if (r.new) pcwMarkReviewSeen(empId, r);
         }
         bootstrap.Modal.getOrCreateInstance(byId('modal-emp-review')).show();
     };
+
+    // Opening a message clears its UNREAD state — server first, then the badges
+    // in the panel, the card list and the header count, without a reload.
+    function pcwMarkReviewSeen(empId, r) {
+        r.new = 0;
+        var url = 'ajax.php?action=mark_review_seen';
+        var body = 'type=payroll&id=' + encodeURIComponent(r.id);
+        fetch(url, {
+            method: 'POST', credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: body
+        }).catch(function () { /* the badge still clears locally */ });
+
+        var row = document.querySelector('.prp-row[data-emp="' + empId + '"]');
+        if (row) {
+            row.classList.remove('unread');
+            var tag = row.querySelector('.prp-row-new');
+            if (tag) tag.remove();
+        }
+        var n = byId('prp-unread-n'), chip = byId('prp-unread-chip');
+        if (n) {
+            var left = Math.max(0, (parseInt(n.textContent, 10) || 0) - 1);
+            n.textContent = left;
+            if (!left && chip) chip.style.display = 'none';
+        }
+        buildList();
+    }
     // The review rows are role="button" divs, which browsers focus but do not
     // activate on Enter/Space the way a real <button> does — wire that up.
     document.addEventListener('keydown', function (ev) {
@@ -4437,7 +5203,7 @@ window.PCW_META = <?= json_encode([
                             if (cls) tr.classList.add(cls);
                             tr.setAttribute('data-review', statusVal);
                             tr.setAttribute('data-review-comment', comment);
-                            tr.querySelectorAll('.input-class').forEach(function (inp) { inp.readOnly = (statusVal === 1); });
+                            setReviewInputLock(tr, statusVal === 1);   // honours an admin unlock
                         }
                     }
                     done++;
@@ -4536,6 +5302,17 @@ window.PCW_META = <?= json_encode([
     });
 
     // Employee sign-off chips (only rendered once the batch is out for review)
+    // Edit-lock chips (only rendered while the batch is out for review)
+    var lockChips = byId('pcw-lock-chips');
+    if (lockChips) lockChips.addEventListener('click', function (ev) {
+        var b = ev.target.closest('button');
+        if (!b) return;
+        S.lock = b.getAttribute('data-lock');
+        this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+        buildList();
+        pcwUpdFilterCount();
+    });
+
     var ervChips = byId('pcw-erv-chips');
     if (ervChips) ervChips.addEventListener('click', function (ev) {
         var b = ev.target.closest('button');
@@ -4552,7 +5329,7 @@ window.PCW_META = <?= json_encode([
         var open = pop.classList.toggle('open');
         btn.classList.toggle('on', open);
     };
-    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0); }
+    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0) + (S.lock !== '' ? 1 : 0); }
     window.pcwUpdFilterCount = function () {
         var n = pcwActiveFilters();
         var badge = byId('pcw-filter-count'), btn = byId('pcw-filter-btn');
@@ -4561,11 +5338,12 @@ window.PCW_META = <?= json_encode([
         btn.classList.toggle('on', n > 0 || byId('pcw-filter-pop').classList.contains('open'));
     };
     window.pcwResetFilters = function () {
-        S.dept = ''; S.pos = ''; S.rv = ''; S.erv = '';
+        S.dept = ''; S.pos = ''; S.rv = ''; S.erv = ''; S.lock = '';
         byId('pcw-dept').value = '';
         byId('pcw-pos-filter').value = '';
         byId('pcw-rv-chips').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-rv') === ''); });
         if (ervChips) ervChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-erv') === ''); });
+        if (lockChips) lockChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-lock') === ''); });
         buildList();
         pcwUpdFilterCount();
     };

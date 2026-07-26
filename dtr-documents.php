@@ -96,9 +96,15 @@ $excPending   = max(0, $pendingRecs - $cleanPending);
 $reviewTotalEmp = (int)($agg['employees'] ?? 0);
 $reviewRows = [];
 $reviewConfirmed = $reviewDisputed = 0;
+// The sign-off conversation keyed by employee (message + reply), and how many
+// of those messages nobody has opened yet. Mirrors payroll_calculations.php.
+$ddvReviewConvo = [];
+$ddvUnreadMsgs  = 0;
 if (in_array($batchStatus, [2, 3], true)) {
+    // seen_at ships in 2026_07_review_seen.sql — degrade to "all read" without it.
+    $ddvHasSeen = (bool)($conn->query("SHOW COLUMNS FROM dtr_employee_reviews LIKE 'seen_at'")->num_rows ?? 0);
     $rvq = $conn->query("SELECT r.id, r.employee_id, r.status, r.comment, r.reviewed_at,
-            r.resolved_at, r.admin_reply,
+            r.resolved_at, r.admin_reply, " . ($ddvHasSeen ? "r.seen_at" : "NULL AS seen_at") . ",
             CONCAT(e.lastname, ', ', e.firstname) AS name
         FROM dtr_employee_reviews r
         INNER JOIN employee e ON e.id = r.employee_id
@@ -108,6 +114,20 @@ if (in_array($batchStatus, [2, 3], true)) {
         $reviewRows[$rv['employee_id']] = $rv;
         if ((int)$rv['status'] === 1) $reviewConfirmed++;
         elseif ((int)$rv['status'] === 2) $reviewDisputed++;
+
+        $hasMsg = trim((string)($rv['comment'] ?? '')) !== '';
+        $unread = $hasMsg && empty($rv['seen_at']);
+        if ($unread) $ddvUnreadMsgs++;
+        $ddvReviewConvo[(int)$rv['employee_id']] = [
+            'id'     => (int)$rv['id'],
+            'st'     => (int)$rv['status'],
+            'name'   => $rv['name'],
+            'c'      => (string)($rv['comment'] ?? ''),
+            'at'     => !empty($rv['reviewed_at']) ? date('M j, Y g:i A', strtotime($rv['reviewed_at'])) : '',
+            'rep'    => (string)($rv['admin_reply'] ?? ''),
+            'rep_at' => !empty($rv['resolved_at']) ? date('M j, Y g:i A', strtotime($rv['resolved_at'])) : '',
+            'new'    => $unread ? 1 : 0,
+        ];
     }
 }
 $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
@@ -543,14 +563,58 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 .drp-act-btn.export { background:#eef2fb; color:#394b7c; border-color:#c3c9e0; }
 .drp-act-btn.resolve { margin-top:5px; background:#e9f7ef; color:#0f9d58; border-color:#b7e4c7; }
 .drp-act-btn:hover { filter:brightness(.97); }
-.drp-disputes { margin-top:9px; display:flex; flex-direction:column; gap:6px; }
-.drp-disputes.is-scroll { max-height:300px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
-.drp-dispute-item { display:flex; gap:8px; align-items:flex-start; background:#fff5f5; border:1px solid #f3d3d3; border-radius:8px; padding:7px 10px; }
-.drp-dispute-item > i { color:#c62828; font-size:15px; margin-top:1px; flex-shrink:0; }
-.drp-emp { font-size:11.5px; font-weight:700; color:#333; }
-.drp-when { font-size:9.5px; color:#999; font-weight:400; margin-left:6px; }
-.drp-comment { font-size:11.5px; color:#555; margin-top:1px; word-break:break-word; }
-.drp-resolved { margin-top:5px; font-size:11px; color:#0f9d58; font-weight:600; background:#f0faf3; border:1px solid #cdeeda; border-radius:6px; padding:4px 8px; }
+.drp-disputes { margin-top:9px; display:flex; flex-direction:column; gap:3px; }
+.drp-disputes.is-scroll { max-height:210px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+/* ── Name-only sign-off rows (mirrors payroll_calculations.php) ────────────
+   Icon, name, and a chat button when the employee left a message; the message
+   itself opens in #modal-emp-review. UNREAD until someone opens it. */
+.drp-chip.unread { background:#eef2fd; color:#3557b7; border:1px solid #ccd9f7; }
+.drp-note-pill { display:inline-flex; align-items:center; gap:3px; background:#fff6e2; border:1px solid #f2dfae;
+    color:#a9700a; border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.drp-confirms { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+.drp-confirms.is-scroll { max-height:190px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.drp-row { display:flex; align-items:center; gap:6px; min-width:0; padding:4px 8px; border-radius:7px;
+    border:1px solid transparent; font-size:11.5px; }
+.drp-row.ok   { background:#f2faf6; border-color:#dceee5; }
+.drp-row.disp { background:#fff5f5; border-color:#f3d3d3; }
+.drp-row-ic { font-size:13px; flex-shrink:0; }
+.drp-row.ok   .drp-row-ic { color:#0f9d58; }
+.drp-row.disp .drp-row-ic { color:#c62828; }
+.drp-row-name { flex:1; min-width:0; font-weight:700; color:#33403c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.drp-row-done { color:#0f9d58; font-size:12px; flex-shrink:0; }
+.drp-row-new { flex-shrink:0; font-size:8.5px; font-weight:800; letter-spacing:.4px; color:#fff;
+    background:#3557b7; border-radius:8px; padding:1px 5px; }
+.drp-row-msg { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:20px; height:20px; border-radius:6px; background:#fff6e2; border:1px solid #f2dfae; color:#a9700a; font-size:11px; }
+.drp-row.unread { border-color:#ccd9f7; box-shadow:0 0 0 1px #ccd9f7 inset; }
+.drp-row.unread .drp-row-name { color:#1f3a80; }
+.drp-row.unread .drp-row-msg { background:#eef2fd; border-color:#ccd9f7; color:#3557b7; }
+.drp-row.has-msg { cursor:pointer; }
+.drp-row.has-msg:hover { filter:brightness(.97); }
+.drp-row.has-msg:hover .drp-row-msg { background:#a9700a; border-color:#a9700a; color:#fff; }
+.drp-row.has-msg:focus-visible { outline:2px solid var(--brand); outline-offset:1px; }
+
+/* ── The sign-off conversation popup (plain overlay — no Bootstrap JS here) ── */
+.ddv-rvm { display:none; position:fixed; inset:0; z-index:1200; background:rgba(20,40,35,.45);
+    align-items:center; justify-content:center; padding:20px; }
+.ddv-rvm.open { display:flex; }
+.ddv-rvm-card { width:min(520px, 100%); background:#fff; border-radius:12px; overflow:hidden;
+    box-shadow:0 18px 50px rgba(10,40,30,.3); display:flex; flex-direction:column; max-height:90vh; }
+.ddv-rvm-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+    padding:10px 14px; background:#0f9d58; color:#fff; font-size:12.5px; font-weight:800; }
+.ddv-rvm-head i { color:#fff; }
+.ddv-rvm-head button { border:none; background:transparent; color:#fff; cursor:pointer; font-size:17px; line-height:1; padding:0; }
+.ddv-rvm-body { padding:14px; background:#f2f7f5; overflow-y:auto; }
+.ddv-rvm-foot { display:flex; justify-content:flex-end; gap:6px; padding:9px 14px; border-top:1px solid #eef2f0; background:#fff; }
+#modal-emp-review .mer-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#33403c; }
+.mer-badge { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800;
+    padding:2px 9px; border-radius:12px; border:1px solid; }
+.mer-badge.ok   { background:#eafaf0; color:#0f9d58; border-color:#b7e4c7; }
+.mer-badge.disp { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
+.mer-when { font-size:10.5px; color:#8aa39c; margin-left:auto; }
+.mer-empty { text-align:center; color:#8aa39c; font-size:12.5px; padding:22px 12px; }
+.mer-chat { display:flex; flex-direction:column; gap:6px; }
 .drp-names { margin-top:9px; }
 .drp-names > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:#0f9d58; user-select:none; }
 .drp-names > summary::-webkit-details-marker { display:none; }
@@ -559,9 +623,16 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
 .drp-names-hint { font-weight:500; color:#8a8a8a; }
 .drp-names .lbl-hide, .drp-names[open] .lbl-show { display:none; }
 .drp-names[open] .lbl-hide { display:inline; }
-.drp-chip-wrap { margin-top:6px; display:flex; flex-wrap:wrap; gap:4px; max-height:132px; overflow-y:auto; padding:2px; }
-.drp-name-chip { background:#e9f7ef; border:1px solid #b7e4c7; color:#2f5d4a; border-radius:10px; padding:1px 7px; font-size:11px; white-space:nowrap; }
 .drp-empty { font-size:11px; color:#8aa39c; padding:2px; }
+/* Chat button on an employee card — they left a message with their sign-off */
+.ddv-item-msg { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:20px; height:20px; border-radius:6px; cursor:pointer; font-size:11px;
+    background:#eafaf0; border:1px solid #b7e4c7; color:#0f9d58; position:relative; }
+.ddv-item-msg.disp { background:#fdecea; border-color:#f5c6cb; color:#c62828; }
+.ddv-item-msg:hover { background:#0f9d58; border-color:#0f9d58; color:#fff; }
+.ddv-item-msg.disp:hover { background:#c62828; border-color:#c62828; color:#fff; }
+.ddv-item-msg.new::after { content:''; position:absolute; top:-3px; right:-3px; width:7px; height:7px;
+    border-radius:50%; background:#3557b7; border:1.5px solid #fff; }
 
 .ddv-batch-rows { overflow-y:auto; }
 .ddv-batch-row { display:flex; justify-content:space-between; align-items:center; padding:5px 13px; font-size:11px; color:#5b6f68; border-bottom:1px dashed #eef2f0; }
@@ -704,6 +775,17 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
                         <button type="button" data-ac="notes"><i class="ri-sticky-note-line"></i> Has notes</button>
                         <button type="button" data-ac="msgs"><i class="ri-chat-3-line"></i> Has messages</button>
                     </div>
+                    <?php if (in_array($batchStatus, [2, 3], true)): ?>
+                    <?php /* The employees' own sign-off — pull up every disputed DTR,
+                             or everyone still silent, in one click. */ ?>
+                    <div class="ddv-fp-lbl">Employee review</div>
+                    <div class="ddv-act-chips" id="ddv-erv-chips" title="Click again to clear">
+                        <button type="button" data-erv="2"><i class="ri-error-warning-fill" style="color:#c62828;"></i> Disputed</button>
+                        <button type="button" data-erv="1"><i class="ri-checkbox-circle-fill" style="color:#0f9d58;"></i> Confirmed</button>
+                        <button type="button" data-erv="0"><i class="ri-time-line" style="color:#c98a00;"></i> Awaiting</button>
+                        <button type="button" data-erv="m"><i class="ri-chat-3-fill" style="color:#a9700a;"></i> With message</button>
+                    </div>
+                    <?php endif; ?>
                     <div class="ddv-fp-lbl">Employee</div>
                     <select id="ddv-f-dep" class="ddv-fp-select" onchange="filterSel('dep', this.value)"><option value="">Department: All</option></select>
                     <select id="ddv-f-pos" class="ddv-fp-select" onchange="filterSel('pos', this.value)"><option value="">Position: All</option></select>
@@ -778,6 +860,11 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
                         <span class="drp-chip appr"><i class="ri-checkbox-circle-line"></i> <?= $reviewConfirmed ?> Confirmed</span>
                         <span class="drp-chip disp"><i class="ri-error-warning-line"></i> <?= $reviewDisputed ?> Disputed</span>
                         <span class="drp-chip pend"><i class="ri-time-line"></i> <?= $reviewPending ?> Awaiting</span>
+                        <?php if ($ddvUnreadMsgs > 0): ?>
+                        <span class="drp-chip unread" id="drp-unread-chip" title="Employee messages nobody has opened yet">
+                            <i class="ri-mail-unread-line"></i> <span id="drp-unread-n"><?= $ddvUnreadMsgs ?></span> unread
+                        </span>
+                        <?php endif; ?>
                         <?php if ($canEdit): ?>
                             <?php if ($batchStatus === 3 && $reviewPending > 0): ?>
                             <button type="button" class="drp-act-btn remind" onclick="remindDtrReview(<?= $id ?>)"><i class="ri-notification-badge-line"></i> Remind (<?= $reviewPending ?>)</button>
@@ -785,33 +872,57 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
                             <a class="drp-act-btn export" href="ajax.php?action=export_dtr_reviews&id=<?= $id ?>"><i class="ri-download-2-line"></i> Export</a>
                         <?php endif; ?>
                     </div>
-                    <?php if ($reviewDisputed > 0): ?>
-                    <div class="drp-disputes<?= $reviewDisputed > 4 ? ' is-scroll' : '' ?>">
-                        <?php foreach ($reviewRows as $rv): if ((int)$rv['status'] !== 2) continue; ?>
-                        <div class="drp-dispute-item">
-                            <i class="ri-error-warning-line"></i>
-                            <div style="flex:1;min-width:0;">
-                                <div class="drp-emp"><?= htmlspecialchars($rv['name']) ?><span class="drp-when"><?= date('M j, g:i A', strtotime($rv['reviewed_at'])) ?></span></div>
-                                <div class="drp-comment"><?= htmlspecialchars($rv['comment']) ?></div>
-                                <?php if (!empty($rv['resolved_at'])): ?>
-                                    <div class="drp-resolved"><i class="ri-checkbox-circle-line"></i> Resolved — reply: <?= htmlspecialchars($rv['admin_reply']) ?></div>
-                                <?php elseif ($canEdit): ?>
-                                    <button type="button" class="drp-act-btn resolve" onclick="openResolveDispute('dtr', <?= (int)$rv['id'] ?>, <?= htmlspecialchars(json_encode($rv['name']), ENT_QUOTES) ?>)"><i class="ri-chat-check-line"></i> Resolve &amp; Reply</button>
-                                <?php endif; ?>
-                            </div>
+                    <?php
+                    // One line per employee — icon, name, and a chat button when they
+                    // left a message. The message opens in #modal-emp-review so a long
+                    // comment can never stretch this panel (mirrors the payroll page).
+                    $drpRow = function ($rv, $kind) {
+                        $hasMsg = trim((string)$rv['comment']) !== '';
+                        $unread = $hasMsg && empty($rv['seen_at']);
+                        $eid    = (int)$rv['employee_id'];
+                        ?>
+                        <div class="drp-row <?= $kind ?><?= $hasMsg ? ' has-msg' : '' ?><?= $unread ? ' unread' : '' ?>"
+                             data-emp="<?= $eid ?>"
+                             <?= $hasMsg ? 'role="button" tabindex="0" onclick="ddvOpenReviewConvo(' . $eid . ')" title="View this employee\'s message"' : '' ?>>
+                            <i class="drp-row-ic <?= $kind === 'disp' ? 'ri-error-warning-fill' : 'ri-checkbox-circle-fill' ?>"></i>
+                            <span class="drp-row-name"><?= htmlspecialchars($rv['name']) ?></span>
+                            <?php if ($unread): ?><span class="drp-row-new" title="Not yet read">NEW</span><?php endif; ?>
+                            <?php if (!empty($rv['resolved_at'])): ?>
+                                <span class="drp-row-done" title="Already replied"><i class="ri-check-double-line"></i></span>
+                            <?php endif; ?>
+                            <?php if ($hasMsg): ?>
+                                <span class="drp-row-msg" title="Open the message"><i class="ri-chat-3-fill"></i></span>
+                            <?php endif; ?>
                         </div>
+                        <?php
+                    };
+                    ?>
+                    <?php if ($reviewDisputed > 0): ?>
+                    <div class="drp-disputes<?= $reviewDisputed > 6 ? ' is-scroll' : '' ?>">
+                        <?php foreach ($reviewRows as $rv): if ((int)$rv['status'] !== 2) continue; ?>
+                            <?php $drpRow($rv, 'disp'); ?>
                         <?php endforeach; ?>
                     </div>
                     <?php endif; ?>
-                    <?php if ($reviewConfirmed > 0): $cn = []; foreach ($reviewRows as $rv) if ((int)$rv['status'] === 1) $cn[] = $rv['name']; ?>
-                    <details class="drp-names"<?= count($cn) <= 12 ? ' open' : '' ?>>
+                    <?php if ($reviewConfirmed > 0):
+                        $cn = []; $cnMsgs = 0;
+                        foreach ($reviewRows as $rv) {
+                            if ((int)$rv['status'] !== 1) continue;
+                            $cn[] = $rv;
+                            if (trim((string)$rv['comment']) !== '') $cnMsgs++;
+                        }
+                    ?>
+                    <details class="drp-names"<?= count($cn) <= 12 || $cnMsgs ? ' open' : '' ?>>
                         <summary>
                             <span style="color:#0f9d58;font-weight:700;"><i class="ri-checkbox-circle-line"></i> Confirmed by</span>
                             <span class="drp-count-pill"><?= count($cn) ?></span>
+                            <?php if ($cnMsgs): ?>
+                            <span class="drp-note-pill" title="Confirmed with a message"><i class="ri-chat-3-line"></i> <?= $cnMsgs ?> with message</span>
+                            <?php endif; ?>
                             <span class="drp-names-hint"><span class="lbl-show">show names</span><span class="lbl-hide">hide</span></span>
                         </summary>
-                        <div class="drp-chip-wrap">
-                            <?php foreach ($cn as $n): ?><span class="drp-name-chip"><?= htmlspecialchars($n) ?></span><?php endforeach; ?>
+                        <div class="drp-confirms<?= count($cn) > 6 ? ' is-scroll' : '' ?>">
+                            <?php foreach ($cn as $rv): $drpRow($rv, 'ok'); endforeach; ?>
                         </div>
                     </details>
                     <?php endif; ?>
@@ -863,7 +974,29 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI',system-ui,Arial,sans
     </div>
 </div>
 
+<!-- DTR sign-off conversation — what the employee wrote when they confirmed or
+     disputed this batch, plus HR's reply. Opened from the Employee Review panel.
+     A hand-rolled overlay, not a Bootstrap modal: this page loads Bootstrap's
+     CSS but not its JS, so bootstrap.Modal does not exist here. -->
+<div class="ddv-rvm" id="modal-emp-review" role="dialog" aria-modal="true" aria-label="DTR review message">
+    <div class="ddv-rvm-card">
+        <div class="ddv-rvm-head">
+            <span><i class="ri-user-received-2-line"></i> DTR Review Message</span>
+            <button type="button" onclick="ddvCloseReviewConvo()" title="Close"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="ddv-rvm-body" id="mer-body"></div>
+        <div class="ddv-rvm-foot">
+            <button type="button" class="ddv-btn primary" id="mer-reply" style="display:none;">
+                <i class="ri-chat-check-line"></i> Resolve &amp; Reply
+            </button>
+            <button type="button" class="ddv-btn" onclick="ddvCloseReviewConvo()">Close</button>
+        </div>
+    </div>
+</div>
+
 <script>
+// employee_id → their DTR sign-off (decision, message, HR reply, unread flag)
+window.DDV_REVIEWS = <?= json_encode($ddvReviewConvo, JSON_UNESCAPED_UNICODE) ?>;
 const root      = document.getElementById('ddv-root');
 const DDTR_ID   = root.dataset.id;
 const DATE_FROM = root.dataset.from;
@@ -875,7 +1008,7 @@ const OT_HOURS  = <?= (float)DTR_HIGH_OT_HOURS ?>;
 const MIN_DAYS  = <?= (int)$minDays ?>;
 const ME        = <?= json_encode($loginName) ?>;         // for instant audit lines
 
-const st = { page: 0, size: 20, q: '', flag: '', status: '', dep: '', pos: '', act: '', total: 0, emps: [], sel: -1, seq: 0, chatRec: null };
+const st = { page: 0, size: 20, q: '', flag: '', status: '', dep: '', pos: '', act: '', erv: '', total: 0, emps: [], sel: -1, seq: 0, chatRec: null };
 
 const $id = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -891,7 +1024,8 @@ async function loadPage(keepSel) {
             + (st.status ? '&status=' + st.status : '')
             + (st.dep ? '&dep=' + st.dep : '')
             + (st.pos ? '&pos=' + st.pos : '')
-            + (st.act ? '&act=' + st.act : '');
+            + (st.act ? '&act=' + st.act : '')
+            + (st.erv !== '' ? '&erv=' + st.erv : '');
         const r = await fetch(u);
         const j = await r.json();
         if (seq !== st.seq) return;
@@ -951,6 +1085,13 @@ function renderList() {
             const top = order.find(l => e.notes.some(n => n.level === l)) || 'info';
             marks.push(`<i class="ri-sticky-note-fill" style="color:${NC[top]};font-size:13px;flex-shrink:0;" title="${e.notes.length} internal note(s)"></i>`);
         }
+        // Chat button for employees who left a message with their DTR sign-off —
+        // a span, not a button, since the card itself is already a <button>.
+        const cv = (window.DDV_REVIEWS || {})[e.id];
+        if (cv && cv.c) {
+            marks.push(`<span role="button" tabindex="0" class="ddv-item-msg${cv.st === 2 ? ' disp' : ''}${cv.new ? ' new' : ''}"
+                data-convo="${e.id}" title="${cv.new ? 'UNREAD — ' : ''}${cv.st === 2 ? 'Disputed' : 'Confirmed'} their DTR with a message — click to read"><i class="ri-chat-3-fill"></i></span>`);
+        }
         return `<button type="button" class="ddv-item ${i === st.sel ? 'active' : ''}" data-i="${i}">
             <span class="ddv-thumb ${dot}"><span></span><span></span><span></span><span></span></span>
             <span style="min-width:0;">
@@ -962,6 +1103,13 @@ function renderList() {
     }).join('');
 }
 $id('ddv-list').addEventListener('click', ev => {
+    // Chat button opens the sign-off message without selecting the card.
+    const cv = ev.target.closest('[data-convo]');
+    if (cv) {
+        ev.stopPropagation();
+        ddvOpenReviewConvo(parseInt(cv.dataset.convo, 10));
+        return;
+    }
     const btn = ev.target.closest('.ddv-item');
     if (!btn) return;
     st.sel = parseInt(btn.dataset.i, 10);
@@ -1625,7 +1773,7 @@ document.addEventListener('click', ev => {
 
 // Active-filter badge on the funnel icon
 function updateFilterCount() {
-    const n = [st.status, st.flag, st.dep, st.pos, st.act].filter(Boolean).length;
+    const n = [st.status, st.flag, st.dep, st.pos, st.act].filter(Boolean).length + (st.erv !== '' ? 1 : 0);
     const b = $id('ddv-filter-count');
     b.style.display = n ? 'flex' : 'none';
     b.textContent = n;
@@ -1641,10 +1789,10 @@ function filterSel(key, val) {
 }
 
 function resetFilters() {
-    st.status = st.flag = st.dep = st.pos = st.act = '';
+    st.status = st.flag = st.dep = st.pos = st.act = st.erv = '';
     document.querySelectorAll('#ddv-status-seg button').forEach(x => x.classList.toggle('on', x.dataset.st === ''));
     document.querySelectorAll('#ddv-flag-chips button').forEach(x => x.classList.remove('on'));
-    document.querySelectorAll('#ddv-act-chips button').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('#ddv-act-chips button, #ddv-erv-chips button').forEach(x => x.classList.remove('on'));
     ['ddv-f-dep', 'ddv-f-pos'].forEach(i => { $id(i).value = ''; });
     st.page = 0;
     loadPage();
@@ -1657,6 +1805,18 @@ $id('ddv-act-chips').addEventListener('click', ev => {
     if (!b) return;
     st.act = (st.act === b.dataset.ac) ? '' : b.dataset.ac;
     document.querySelectorAll('#ddv-act-chips button').forEach(x => x.classList.toggle('on', x.dataset.ac === st.act));
+    st.page = 0;
+    loadPage();
+    updateFilterCount();
+});
+
+// ── Employee sign-off chips (single-select; only when out for review) ───────
+const ervChips = $id('ddv-erv-chips');
+if (ervChips) ervChips.addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    st.erv = (st.erv === b.dataset.erv) ? '' : b.dataset.erv;
+    document.querySelectorAll('#ddv-erv-chips button').forEach(x => x.classList.toggle('on', x.dataset.erv === st.erv));
     st.page = 0;
     loadPage();
     updateFilterCount();
@@ -1769,12 +1929,17 @@ function remindDtrReview(id) {
     });
 }
 
-function openResolveDispute(type, reviewId, empName) {
+// isDispute=false is a confirmation that carried a message — same endpoint,
+// softer wording, since there is no problem to "resolve".
+function openResolveDispute(type, reviewId, empName, isDispute) {
+    const disp = isDispute !== false;
     Swal.fire({
-        title: 'Resolve dispute',
+        title: disp ? 'Resolve dispute' : 'Reply to employee',
         html: 'Reply to <b>' + esc(empName || 'employee') + '</b>. They will be notified.',
-        input: 'textarea', inputPlaceholder: 'Explain what was checked / corrected…',
-        showCancelButton: true, confirmButtonColor: '#0f9d58', confirmButtonText: 'Resolve & notify',
+        input: 'textarea',
+        inputPlaceholder: disp ? 'Explain what was checked / corrected…' : 'Answer their question or note…',
+        showCancelButton: true, confirmButtonColor: '#0f9d58',
+        confirmButtonText: disp ? 'Resolve & notify' : 'Send reply',
         preConfirm: v => { if (!v || !v.trim()) { Swal.showValidationMessage('A reply is required.'); return false; } return v.trim(); },
     }).then(res => {
         if (!res.isConfirmed) return;
@@ -1783,13 +1948,93 @@ function openResolveDispute(type, reviewId, empName) {
             url: 'ajax.php?action=resolve_review_dispute', method: 'POST', dataType: 'JSON',
             data: { type: type, id: reviewId, reply: res.value },
             success: r => {
-                if (r && r.result) Swal.fire({ icon: 'success', title: 'Resolved', text: r.message }).then(x => { if (x.isConfirmed) location.reload(); });
+                if (r && r.result) Swal.fire({ icon: 'success', title: disp ? 'Resolved' : 'Reply sent', text: r.message }).then(x => { if (x.isConfirmed) location.reload(); });
                 else Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
             },
             error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
         });
     });
 }
+
+// ── DTR sign-off conversation popup ──────────────────────────────────────────
+// Reads window.DDV_REVIEWS (employee_id → decision + message + HR reply) and
+// shows it as a two-bubble thread; opening it clears the UNREAD marker.
+const DDV_RV_META = {
+    1: { cls: 'ok',   ic: 'ri-checkbox-circle-line', lbl: 'Confirmed' },
+    2: { cls: 'disp', ic: 'ri-error-warning-line',   lbl: 'Disputed' },
+};
+function ddvOpenReviewConvo(empId) {
+    const r = (window.DDV_REVIEWS || {})[empId];
+    const box = $id('mer-body'), btn = $id('mer-reply');
+    if (!box) return;
+    if (!r) {
+        box.innerHTML = '<div class="mer-empty"><i class="ri-chat-off-line"></i> This employee has not reviewed yet.</div>';
+        btn.style.display = 'none';
+    } else {
+        const meta = DDV_RV_META[r.st] || DDV_RV_META[1];
+        let h = '<div class="mer-head">'
+            + '<span class="mer-name">' + esc(r.name) + '</span>'
+            + '<span class="mer-badge ' + meta.cls + '"><i class="' + meta.ic + '"></i>' + meta.lbl + '</span>'
+            + (r.at ? '<span class="mer-when">' + esc(r.at) + '</span>' : '')
+            + '</div><div class="mer-chat">';
+        h += r.c
+            ? '<div class="ddv-bub them">' + esc(r.c) + '<div class="m">' + esc(r.name) + (r.at ? ' · ' + esc(r.at) : '') + '</div></div>'
+            : '<div class="mer-empty">' + meta.lbl + ' without a message.</div>';
+        if (r.rep) h += '<div class="ddv-bub me">' + esc(r.rep) + '<div class="m">Reply' + (r.rep_at ? ' · ' + esc(r.rep_at) : '') + '</div></div>';
+        h += '</div>';
+        box.innerHTML = h;
+        // Anything with a message and no reply yet can be answered.
+        const canReply = CAN_EDIT && !r.rep && (r.st === 2 || (r.st === 1 && !!r.c));
+        const isDisp = r.st === 2;
+        btn.style.display = canReply ? '' : 'none';
+        btn.innerHTML = isDisp
+            ? '<i class="ri-chat-check-line me-1"></i>Resolve &amp; Reply'
+            : '<i class="ri-chat-1-line me-1"></i>Reply';
+        btn.onclick = canReply ? () => openResolveDispute('dtr', r.id, r.name, isDisp) : null;
+        if (r.new) ddvMarkReviewSeen(empId, r);
+    }
+    $id('modal-emp-review').classList.add('open');
+}
+function ddvCloseReviewConvo() { $id('modal-emp-review').classList.remove('open'); }
+// Backdrop click + Esc close it, the way a real dialog would.
+$id('modal-emp-review').addEventListener('click', ev => {
+    if (ev.target === ev.currentTarget) ddvCloseReviewConvo();
+});
+document.addEventListener('keydown', ev => {
+    if (ev.key === 'Escape' && $id('modal-emp-review').classList.contains('open')) ddvCloseReviewConvo();
+});
+
+// Opening a message clears its UNREAD state, server first then the badges.
+function ddvMarkReviewSeen(empId, r) {
+    r.new = 0;
+    fetch('ajax.php?action=mark_review_seen', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'type=dtr&id=' + encodeURIComponent(r.id),
+    }).catch(() => { /* the badge still clears locally */ });
+
+    const row = document.querySelector('.drp-row[data-emp="' + empId + '"]');
+    if (row) {
+        row.classList.remove('unread');
+        const tag = row.querySelector('.drp-row-new');
+        if (tag) tag.remove();
+    }
+    const n = $id('drp-unread-n'), chip = $id('drp-unread-chip');
+    if (n) {
+        const left = Math.max(0, (parseInt(n.textContent, 10) || 0) - 1);
+        n.textContent = left;
+        if (!left && chip) chip.style.display = 'none';
+    }
+}
+
+// role="button" divs need Enter/Space wired up by hand.
+document.addEventListener('keydown', ev => {
+    if (ev.key !== 'Enter' && ev.key !== ' ') return;
+    const row = ev.target.closest ? ev.target.closest('.drp-row.has-msg') : null;
+    if (!row) return;
+    ev.preventDefault();
+    row.click();
+});
 
 // ── Collapsible right-column panels ──────────────────────────────────────────
 function togglePanel(head) {

@@ -230,6 +230,24 @@ if ($action === 'docs') {
         }
     }
 
+    // Employee sign-off filter (erv): 1 confirmed, 2 disputed, 0 not yet
+    // reviewed, m = left a message with their sign-off. Mirrors the payroll
+    // workbench's "Employee review" chips.
+    $ervF = (string)($_GET['erv'] ?? '');
+    if ($ervF !== '') {
+        $hasRv = $conn->query("SHOW TABLES LIKE 'dtr_employee_reviews'");
+        if ($hasRv && $hasRv->num_rows) {
+            $sub = "SELECT employee_id FROM dtr_employee_reviews WHERE ddtr_id = $idInt";
+            if ($ervF === 'm') {
+                $where .= " AND e.id IN ($sub AND comment IS NOT NULL AND TRIM(comment) <> '')";
+            } elseif ($ervF === '0') {
+                $where .= " AND e.id NOT IN ($sub AND status IN (1,2))";
+            } elseif ($ervF === '1' || $ervF === '2') {
+                $where .= " AND e.id IN ($sub AND status = " . (int)$ervF . ")";
+            }
+        }
+    }
+
     // flag=<key> → employees with a specific exception on a still-pending
     // record (mirrors the client's recFlags rules); low_att is per-employee.
     $flagF = (string)($_GET['flag'] ?? '');

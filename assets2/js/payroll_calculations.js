@@ -169,16 +169,19 @@ function handleError(e) {
     showToast(e ? e : "Something went wrong. Please contact administrator.", "error");
 }
 
-// ── Resolve a disputed review (shared shape with DTR page) ──
-function openResolveDispute(type, reviewId, empName) {
+// ── Answer an employee's sign-off (shared shape with DTR page) ──
+// isDispute=false is a confirmation that carried a message — same endpoint,
+// softer wording, since there is no problem to "resolve".
+function openResolveDispute(type, reviewId, empName, isDispute) {
+    var disp = isDispute !== false;
     Swal.fire({
-        title: "Resolve dispute",
+        title: disp ? "Resolve dispute" : "Reply to employee",
         html: 'Reply to <b>' + (empName || 'employee') + '</b>. They will be notified.',
         input: "textarea",
-        inputPlaceholder: "Explain what was checked / corrected…",
+        inputPlaceholder: disp ? "Explain what was checked / corrected…" : "Answer their question or note…",
         showCancelButton: true,
         confirmButtonColor: "#107c41",
-        confirmButtonText: "Resolve & notify",
+        confirmButtonText: disp ? "Resolve & notify" : "Send reply",
         preConfirm: (val) => {
             if (!val || !val.trim()) {
                 Swal.showValidationMessage("A reply is required.");
@@ -197,7 +200,7 @@ function openResolveDispute(type, reviewId, empName) {
             error: (xhr, status, error) => { Swal.close(); handleError(error || ""); },
             success: function (res) {
                 if (res?.result) {
-                    Swal.fire({ icon: "success", title: "Resolved", text: res.message })
+                    Swal.fire({ icon: "success", title: disp ? "Resolved" : "Reply sent", text: res.message })
                         .then((r) => { if (r.isConfirmed) location.reload(); });
                 } else {
                     Swal.close(); handleError(res?.message || "");
@@ -672,6 +675,18 @@ async function saveUnsaved() {
                     timer: 2500,
                     timerProgressBar: true,
                 });
+            } else if (res?.reload) {
+                // The batch was sent for review / locked (or the row re-locked)
+                // while this tab was open, so the server refused the write. The
+                // page is stale — reload rather than leave editable-looking
+                // fields that can never save.
+                Swal.fire({
+                    icon: "warning",
+                    title: "This payroll changed",
+                    text: res.message || "It is no longer open for editing.",
+                    confirmButtonText: "Reload",
+                    allowOutsideClick: false,
+                }).then(() => location.reload());
             } else {
                 Swal.close();
                 handleError(res?.message || "");

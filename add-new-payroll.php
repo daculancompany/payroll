@@ -49,7 +49,10 @@
                               
 					?>
                     <tr>
-                        <td><?php echo $row['firstname']?> <?php echo $row['middlename']?>. <?php echo $row['lastname']?></td>
+                        <td><?php
+                            $mi = $row['middlename'] ? ' ' . strtoupper(substr($row['middlename'], 0, 1)) . '.' : '';
+                            echo htmlspecialchars($row['firstname'] . $mi . ' ' . $row['lastname']);
+                        ?></td>
                         
                     </tr>
                     <?php }?>

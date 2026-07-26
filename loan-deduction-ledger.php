@@ -13,7 +13,8 @@ $rows = [];
 if ($f_kind !== 'deduction') {
     $lq = $conn->query("
         SELECT l.loan_id, l.employee_id, l.loan_amount AS original, l.damount AS per_period,
-               l.loan_balance AS balance, l.loan_status AS status, l.loan_date AS start_date,
+               l.loan_balance AS balance, l.loan_status AS status,
+               COALESCE(l.effective_date, l.loan_date) AS start_date,
                clt.loan_type AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
         FROM loans l
         INNER JOIN contribution_loan_types clt ON clt.clt_id = l.loan_type

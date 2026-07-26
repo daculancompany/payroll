@@ -1893,6 +1893,8 @@ class Action
         try {
             $this->db->query("DELETE FROM loan_history WHERE payroll_id = $id");
             $this->db->query("DELETE FROM deduction_history WHERE payroll_id = $id");
+            // One-off items belong to the payroll — don't leave them orphaned.
+            $this->db->query("DELETE FROM payroll_item_extras WHERE payroll_id = $id");
             $this->db->query("DELETE FROM payroll_items WHERE payroll_id = $id");
             $this->db->query("DELETE FROM payroll_employee_reviews WHERE payroll_id = $id");
             $this->db->query("DELETE FROM payroll_logs WHERE payroll_id = $id");
@@ -3056,8 +3058,10 @@ class Action
                             $stmt->execute();
                             $result = $stmt->get_result();
                             while ($row = $result->fetch_assoc()) {
-                                // Skip loans not yet started (before loan_date) or fully paid.
-                                if (!empty($row['loan_date']) && date('Y-m-d', strtotime($row['loan_date'])) > $date_to) {
+                                // Skip loans not yet started or fully paid. Deductions begin on
+                                // effective_date when set, else on loan_date (the grant date).
+                                $loan_start = !empty($row['effective_date']) ? $row['effective_date'] : $row['loan_date'];
+                                if (!empty($loan_start) && date('Y-m-d', strtotime($loan_start)) > $date_to) {
                                     continue;
                                 }
                                 if ((int) $row['loan_status'] === 1) continue;
@@ -3214,6 +3218,10 @@ class Action
                 $upd = $this->db->prepare("UPDATE payroll SET status = 1 WHERE id = ?");
                 $upd->bind_param("i", $id);
                 $upd->execute();
+                // Recalculating DELETEs and re-INSERTs payroll_items, so every
+                // named one-off item is now pointing at a row id that no longer
+                // exists. Re-attach them by employee before committing.
+                $this->relink_payroll_extras($id);
                 $this->db->commit();
                 return ['result' => true, 'message' => 'save'];
             }
@@ -3316,7 +3324,9 @@ class Action
                     $s->execute();
                     $r = $s->get_result();
                     while ($row = $r->fetch_assoc()) {
-                        if (!empty($row['loan_date']) && date('Y-m-d', strtotime($row['loan_date'])) > $date_to) continue;
+                        // Deductions begin on effective_date when set, else on loan_date.
+                        $loan_start = !empty($row['effective_date']) ? $row['effective_date'] : $row['loan_date'];
+                        if (!empty($loan_start) && date('Y-m-d', strtotime($loan_start)) > $date_to) continue;
                         if ((int) $row['loan_status'] === 1) continue;
                         $balance = (float) $row['loan_balance'];
                         if ($balance <= 0) continue;
@@ -5102,6 +5112,51 @@ class Action
     }
 
     /**
+     * Re-attach a payroll's one-off items after its payroll_items rows were
+     * rebuilt (recalculation DELETEs and re-INSERTs them, so every stored
+     * payroll_item_id is stale). Extras carry payroll_id + employee_id exactly
+     * so they can be found again.
+     *
+     * An employee who dropped out of the recalculated batch has their extras
+     * removed rather than left dangling — otherwise the lines would silently
+     * reappear the next time that employee turned up in the payroll.
+     * Finally each touched row's stored net is recomputed to include them.
+     */
+    private function relink_payroll_extras($payrollId)
+    {
+        $payrollId = (int) $payrollId;
+        $has = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'");
+        if (!$has || !$has->num_rows) return;
+
+        $any = $this->db->query("SELECT COUNT(*) AS c FROM payroll_item_extras
+                                 WHERE payroll_id = $payrollId")->fetch_assoc();
+        if (!$any || !(int)$any['c']) return;
+
+        // One target row per employee (an employee can hold several items when a
+        // payroll spans sites — the lowest id is the stable, repeatable choice).
+        $this->db->query("
+            UPDATE payroll_item_extras x
+            INNER JOIN (
+                SELECT employee_id, MIN(id) AS item_id
+                FROM payroll_items WHERE payroll_id = $payrollId
+                GROUP BY employee_id
+            ) pick ON pick.employee_id = x.employee_id
+            SET x.payroll_item_id = pick.item_id
+            WHERE x.payroll_id = $payrollId");
+
+        // Employees no longer in the batch: drop their now-meaningless extras.
+        $this->db->query("
+            DELETE x FROM payroll_item_extras x
+            LEFT JOIN payroll_items i ON i.id = x.payroll_item_id AND i.payroll_id = x.payroll_id
+            WHERE x.payroll_id = $payrollId AND i.id IS NULL");
+
+        // Stored net must include the re-attached items.
+        $ids = $this->db->query("SELECT DISTINCT payroll_item_id FROM payroll_item_extras
+                                 WHERE payroll_id = $payrollId");
+        if ($ids) while ($r = $ids->fetch_assoc()) $this->resync_item_net((int)$r['payroll_item_id']);
+    }
+
+    /**
      * Re-persist payroll_items.net for one row.
      *
      * The employee portal, payslip PDFs and reports read the STORED net rather
@@ -6055,6 +6110,10 @@ class Action
         $loan_status = isset($_POST['loan_status']) ? 1 : 0;
         $data = " employee_id=$employee_id ";
         $data .= ", loan_date='$loan_date' ";
+        // Optional deduction start date; blank falls back to loan_date at calc time.
+        $eff = trim($_POST['effective_date'] ?? '');
+        $eff_ok = $eff !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $eff);
+        $data .= ", effective_date=" . ($eff_ok ? "'" . $this->db->real_escape_string($eff) . "'" : "NULL") . " ";
         $data .= ", loan_amount = $loan_amount ";
         $data .= ", loan_status = $loan_status ";
         $data .= ", loan_type = $loan_type ";

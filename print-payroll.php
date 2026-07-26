@@ -170,6 +170,13 @@ LEFT JOIN sites f ON f.id = a.site_id
         WHERE  a.payroll_id = $id $custom_query ORDER BY lastname ASC
     ");
 
+    // Named one-off items per employee (payroll_item_extras): kind 1 deducts,
+    // kind 2 adds. Without these the register's net disagrees with the payslip.
+    $ppExtras = [];
+    if ($conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+        $xq = $conn->query("SELECT payroll_item_id, kind, label, amount FROM payroll_item_extras WHERE payroll_id = $id ORDER BY id ASC");
+        if ($xq) while ($x = $xq->fetch_assoc()) $ppExtras[(int)$x['payroll_item_id']][] = $x;
+    }
     $contributions_settings = json_decode($payroll['settings'], true) ?: [];
 
     $refunds_settings  = array_filter($contributions_settings, function ($item) {
@@ -573,6 +580,12 @@ LEFT JOIN sites f ON f.id = a.site_id
                             </td>
                             <?php
 
+                            // Fold this employee's one-off items into the printed figures.
+                            $rowX = $ppExtras[(int)$row['id']] ?? [];
+                            $xAdd = $xLess = 0;
+                            foreach ($rowX as $x) { if ((int)$x['kind'] === 2) $xAdd += (float)$x['amount']; else $xLess += (float)$x['amount']; }
+                            $gross_salary     += $xAdd;
+                            $total_deductions += $xLess;
                             $net = $gross_salary -  $total_deductions + $total_refunds + $adjustment;
                             $t_net += $net;
                             ?>

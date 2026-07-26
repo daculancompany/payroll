@@ -843,6 +843,7 @@ function editLoan(e) {
     $("#loan_employee_id").val($(e).attr("employee_id"));
     $("#loan-select").val($(e).attr("loan_type"));
     $("#loan_date").val($(e).attr("loan_date"));
+    $("#loan_effective_date").val($(e).attr("effective_date") || "");
     $("#damount").val($(e).attr("damount"));
     $("#loan_balance").val($(e).attr("loan_balance"));
     $("#loan_amount").val($(e).attr("loan_amount"));

@@ -1,6 +1,6 @@
 <?php
 /**
- * DTR seeder (CLEAN) — one semi-monthly batch, Jun 1–15 only, all "good" rows.
+ * DTR seeder (CLEAN) — two semi-monthly batches, Jun 1–15 and Jun 16–30, all "good" rows.
  *
  * Every working day for every active employee gets a perfect record:
  *   - on-time punch in, on-time punch out (exactly on schedule)
@@ -22,8 +22,11 @@ if (php_sapi_name() !== 'cli') {
 require __DIR__ . '/db_connect.php';
 header('Content-Type: text/plain; charset=utf-8');
 
-$YEAR   = 2026;
-$period = ['from' => "$YEAR-06-01", 'to' => "$YEAR-06-15"];
+$YEAR    = 2026;
+$periods = [
+    ['from' => "$YEAR-06-01", 'to' => "$YEAR-06-15"],
+    ['from' => "$YEAR-06-16", 'to' => "$YEAR-06-30"],
+];
 
 // ── Resolve site + responsible users ─────────────────────────────────────────
 $site = $conn->query("SELECT id, employer_id, timekeeper_id FROM sites WHERE status = 1 ORDER BY id ASC LIMIT 1")->fetch_assoc();
@@ -68,75 +71,85 @@ $detSql = "INSERT INTO DTR_details
 $detStmt = $conn->prepare($detSql);
 if (!$detStmt) exit("Prepare failed: " . $conn->error . "\n");
 
-$totalBatches = 0; $totalDetails = 0;
+$totalBatches = 0; $totalDetails = 0; $batchSummaries = [];
 
 // Parent DTR batch (Pending approval, biometric-style)
 $b = $conn->prepare("INSERT INTO DTR
     (local_id, site_id, timekeeper_id, employer_id, date_from, date_to, device_id,
      uploaded_by, approved_by, file, note, status, ptype, date_created)
     VALUES (0, ?, ?, ?, ?, ?, 0, ?, NULL, 'biometric', 'SEED', 1, 0, NOW())");
-$b->bind_param('iiissi', $site_id, $timekeeper_id, $employer_id, $period['from'], $period['to'], $admin_id);
-$b->execute();
-$ddtr_id = $conn->insert_id;
-$totalBatches++;
+$b->bind_param('iiissi', $site_id, $timekeeper_id, $employer_id, $pFrom, $pTo, $admin_id);
 
-// Days in the period
-$days = [];
-for ($d = strtotime($period['from']); $d <= strtotime($period['to']); $d = strtotime('+1 day', $d)) $days[] = $d;
+foreach ($periods as $period) {
+    $pFrom = $period['from'];
+    $pTo   = $period['to'];
+    $b->execute();
+    $ddtr_id = $conn->insert_id;
+    $totalBatches++;
+    $periodDetails = 0;
 
-foreach ($emps as $emp) {
-    $schedIn  = $emp['time_in']  ?: '08:00:00';
-    $schedOut = $emp['time_out'] ?: '17:00:00';
-    $restDays = array_map('intval', array_filter(explode(',', $emp['rest_days']), fn($x) => $x !== ''));
+    // Days in the period
+    $days = [];
+    for ($d = strtotime($pFrom); $d <= strtotime($pTo); $d = strtotime('+1 day', $d)) $days[] = $d;
 
-    foreach ($days as $dts) {
-        $ymd = date('Y-m-d', $dts);
-        $dow = (int)date('w', $dts); // 0=Sun … 6=Sat, matches rest_days
+    foreach ($emps as $emp) {
+        $schedIn  = $emp['time_in']  ?: '08:00:00';
+        $schedOut = $emp['time_out'] ?: '17:00:00';
+        $restDays = array_map('intval', array_filter(explode(',', $emp['rest_days']), fn($x) => $x !== ''));
 
-        // Skip rest days and holidays — no work expected, so no row to flag.
-        if (in_array($dow, $restDays, true)) continue;
-        if (isset($holidays[$ymd])) continue;
+        foreach ($days as $dts) {
+            $ymd = date('Y-m-d', $dts);
+            $dow = (int)date('w', $dts); // 0=Sun … 6=Sat, matches rest_days
 
-        $schedInTs  = strtotime("$ymd $schedIn");
-        $schedOutTs = strtotime("$ymd $schedOut");
+            // Skip rest days and holidays — no work expected, so no row to flag.
+            if (in_array($dow, $restDays, true)) continue;
+            if (isset($holidays[$ymd])) continue;
 
-        // Perfect 4-punch day: in, lunch out 12:00, lunch in 13:00, out — exactly on schedule.
-        $lunchOut = strtotime("$ymd 12:00:00");
-        $lunchIn  = strtotime("$ymd 13:00:00");
-        $logs = [
-            ['dateTime' => date('Y-m-d H:i:s', $schedInTs),  'type' => 'bio'],
-            ['dateTime' => date('Y-m-d H:i:s', $lunchOut),   'type' => 'bio'],
-            ['dateTime' => date('Y-m-d H:i:s', $lunchIn),    'type' => 'bio'],
-            ['dateTime' => date('Y-m-d H:i:s', $schedOutTs), 'type' => 'bio'],
-        ];
+            $schedInTs  = strtotime("$ymd $schedIn");
+            $schedOutTs = strtotime("$ymd $schedOut");
 
-        $work_hours  = round(max(0, ($schedOutTs - $schedInTs) / 3600 - 1), 2); // minus 1h lunch
-        $overtime    = 0;
-        $undertime   = 0;
-        $late_h      = 0;
-        $nsd_hours   = 0;
-        $is_complete = 1;
-        $day_type    = 'regular';
-        $attendance  = 'biometric';
-        $notes       = '';
-        $status      = 0; // pending / unflagged
-        $logsJson    = json_encode($logs);
-        $empId       = (int)$emp['id'];
+            // Perfect 4-punch day: in, lunch out 12:00, lunch in 13:00, out — exactly on schedule.
+            $lunchOut = strtotime("$ymd 12:00:00");
+            $lunchIn  = strtotime("$ymd 13:00:00");
+            $logs = [
+                ['dateTime' => date('Y-m-d H:i:s', $schedInTs),  'type' => 'bio'],
+                ['dateTime' => date('Y-m-d H:i:s', $lunchOut),   'type' => 'bio'],
+                ['dateTime' => date('Y-m-d H:i:s', $lunchIn),    'type' => 'bio'],
+                ['dateTime' => date('Y-m-d H:i:s', $schedOutTs), 'type' => 'bio'],
+            ];
 
-        $detStmt->bind_param(
-            'iisddddsssdisi',
-            $ddtr_id, $empId, $ymd, $work_hours, $overtime, $undertime, $late_h,
-            $logsJson, $attendance, $day_type, $nsd_hours, $is_complete, $notes, $status
-        );
-        $detStmt->execute();
-        $totalDetails++;
+            $work_hours  = round(max(0, ($schedOutTs - $schedInTs) / 3600 - 1), 2); // minus 1h lunch
+            $overtime    = 0;
+            $undertime   = 0;
+            $late_h      = 0;
+            $nsd_hours   = 0;
+            $is_complete = 1;
+            $day_type    = 'regular';
+            $attendance  = 'biometric';
+            $notes       = '';
+            $status      = 0; // pending / unflagged
+            $logsJson    = json_encode($logs);
+            $empId       = (int)$emp['id'];
+
+            $detStmt->bind_param(
+                'iisddddsssdisi',
+                $ddtr_id, $empId, $ymd, $work_hours, $overtime, $undertime, $late_h,
+                $logsJson, $attendance, $day_type, $nsd_hours, $is_complete, $notes, $status
+            );
+            $detStmt->execute();
+            $periodDetails++;
+            $totalDetails++;
+        }
     }
+
+    $batchSummaries[] = "  batch #$ddtr_id  $pFrom → $pTo  ... $periodDetails rows";
 }
 
 echo "✔ Clean seed complete\n";
 echo "  Site id ............ $site_id (employer $employer_id, timekeeper $timekeeper_id)\n";
 echo "  Employees .......... " . count($emps) . "\n";
-echo "  DTR batches ........ $totalBatches  (Jun 1–15 $YEAR, status = Pending)\n";
+echo "  DTR batches ........ $totalBatches  (semi-monthly, June $YEAR, status = Pending)\n";
+echo implode("\n", $batchSummaries) . "\n";
 echo "  DTR_details rows ... $totalDetails  (all complete, no late/UT/OT, no flags)\n";
 echo "  Holidays skipped ... " . count($holidays) . "\n";
 echo "\nOpen DTR Review (index.php?page=dtr) to review & approve.\n";

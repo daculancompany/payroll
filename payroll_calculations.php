@@ -332,6 +332,14 @@ $pos_q = $conn->query("SELECT DISTINCT p.name FROM payroll_items a
     WHERE a.payroll_id = $id ORDER BY p.name ASC");
 if ($pos_q) while ($pq = $pos_q->fetch_assoc()) if (trim($pq['name']) !== '') $pay_positions[] = $pq['name'];
 
+// Rate types present in this payroll — feeds the rate-type filters (table + card view).
+// Read off payroll_items (not employee) so the list matches what was actually paid,
+// even if the employee's rate type has changed since the run was calculated.
+$pay_rate_types = [];
+$rt_q = $conn->query("SELECT DISTINCT rate_type FROM payroll_items
+    WHERE payroll_id = $id AND rate_type <> '' ORDER BY rate_type ASC");
+if ($rt_q) while ($rq2 = $rt_q->fetch_assoc()) $pay_rate_types[] = $rq2['rate_type'];
+
 $i = 0;
 $query = $conn->query("SELECT  a.*, f.site_code,f.site_name,f.site_address, e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay, d.name as department, p.name as position
 FROM payroll_items a 
@@ -584,7 +592,8 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .pay-search-box input { border:none; outline:none; font-size:12px; flex:1; background:transparent; min-width:160px; }
 .pay-search-box button { border:none; background:none; color:#999; cursor:pointer; padding:0 2px; font-size:14px; line-height:1; }
 #pay-dept-filter,
-#pay-pos-filter { border:1px solid #cfe3e0; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; max-width:230px; }
+#pay-pos-filter,
+#pay-rate-filter { border:1px solid #cfe3e0; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; max-width:230px; }
 .pay-anomaly-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .pay-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; border:1px solid; cursor:pointer; user-select:none; background:#fff; transition:box-shadow .1s; }
 .pay-chip:hover { box-shadow:0 1px 4px rgba(0,0,0,.12); }
@@ -1011,6 +1020,13 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                         <option value="<?= htmlspecialchars($pp, ENT_QUOTES) ?>"><?= htmlspecialchars($pp) ?></option>
                                     <?php endforeach; ?>
                                 </select>
+                                <div class="pcw-fp-lbl">Rate type</div>
+                                <select id="pcw-rate-filter" class="pcw-select">
+                                    <option value="">All Rate Types</option>
+                                    <?php foreach ($pay_rate_types as $prt): ?>
+                                        <option value="<?= htmlspecialchars($prt, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($prt)) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
                             </div>
                         </div>
                         <div class="pcw-list" id="pcw-list"></div>
@@ -1309,6 +1325,12 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                 <option value="">All Positions</option>
                                 <?php foreach ($pay_positions as $pp): ?>
                                     <option value="<?= htmlspecialchars($pp, ENT_QUOTES) ?>"><?= htmlspecialchars($pp) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <select id="pay-rate-filter" title="Filter by rate type">
+                                <option value="">All Rate Types</option>
+                                <?php foreach ($pay_rate_types as $prt): ?>
+                                    <option value="<?= htmlspecialchars($prt, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($prt)) ?></option>
                                 <?php endforeach; ?>
                             </select>
                             <div class="pay-anomaly-chips" id="pay-anomaly-chips"></div>
@@ -1840,7 +1862,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     <td style="min-width: 90px;" class="text-right">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $tax ?>" class="form-control input-class"<?= $rowRO ?> data-id="<?= $row['id'] ?>" data-type="tax" placeholder="Enter Amount" aria-label="Other Deduction" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= $tax ?>" class="form-control input-class"<?= $rowRO ?> data-id="<?= $row['id'] ?>" data-type="tax" placeholder="Enter Amount" aria-label="Tax" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'tax')" class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
@@ -2017,7 +2039,8 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th colspan="3" class="text-center info-header">Overtime</th>
                                                 <th colspan="3" class="text-center info-header">Late</th>
                                                 <th rowspan="2" class="text-center success-header">GROSS SALARY</th>
-                                                <th colspan="<?= count($contributions_settings) + 5 ?>" class="text-center danger-header">Deduction</th>
+                                                <?php /* configured types + SSS Fund, JEI, JCC, Tax (Other Deduction retired) */ ?>
+                                                <th colspan="<?= count($contributions_settings) + 4 ?>" class="text-center danger-header">Deduction</th>
                                                 <th rowspan="2" class="text-center danger-header">Total Deduction</th>
                                                 <?php if (count($refunds_settings) > 0) { ?>
                                                     <th colspan="<?= count($refunds_settings) ?>" class="text-center primary-header">Refunds</th>
@@ -2079,7 +2102,6 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th class="text-center  danger-header">JEI Advance</th>
                                                 <th class="text-center  danger-header">JCC Advances</th>
                                                 <th class="text-center  danger-header">Tax</th>
-                                                <th class="text-center  danger-header">Other Deduction</th>
                                                 <?php if (count($refunds_settings) > 0) {
                                                     foreach ($refunds_settings as $k) {
                                                         $query_con = "SELECT * FROM refunds   WHERE id = ?";
@@ -2398,15 +2420,15 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                          Deduction — all subtracted from net, mirroring the monthly table
                                                          and get_payroll_rows_data(). -->
                                                     <?php
-                                                    $other_deduction = (float) ($row['other_deduction'] ?? 0);
-                                                    $total_deductions += $sss_fund + $jei_advances + $jcc_advances + $tax + $other_deduction;
-                                                    $t_other_ded = ($t_other_ded ?? 0) + $other_deduction;
+                                                    // Other Deduction retired — replaced by named one-off items
+                                                    // (payroll_item_extras). Kept at 0 for legacy reports only.
+                                                    $other_deduction = 0.0;
+                                                    $total_deductions += $sss_fund + $jei_advances + $jcc_advances + $tax;
                                                     $fixed_ded_cells = [
                                                         'sss_fund'        => $sss_fund,
                                                         'jei_advances'    => $jei_advances,
                                                         'jcc_advances'    => $jcc_advances,
                                                         'tax'             => $tax,
-                                                        'other_deduction' => $other_deduction,
                                                     ];
                                                     foreach ($fixed_ded_cells as $fd_field => $fd_val): ?>
                                                     <td style="min-width: 90px;" class="text-right">
@@ -2552,7 +2574,6 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th class="text-right"><?= number_format($t_jei, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_jcc, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_tax, 2) ?></th>
-                                                <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
                                                 <th class="text-right" id="tfoot-deduct"><?= number_format($t_deduction, 2) ?></th>
                                                 <?php foreach ($refunds_settings as $kd): ?>
                                                 <th class="text-right"><?= number_format($t_refund[$kd['id']] ?? 0, 2) ?></th>
@@ -3309,7 +3330,7 @@ function printPayslipPreview() {
         if (deduct && sDeduct) sDeduct.textContent = '₱ ' + deduct.textContent.trim();
 
         // ── Search / department / anomaly-flag filtering ──
-        var payFilter = { q: '', dept: '', pos: '', chip: '' };
+        var payFilter = { q: '', dept: '', pos: '', rate: '', chip: '' };
         var payAnom = {};
         var CHIP_DEFS = [
             { key: 'negative', cls: 'negative', icon: 'ri-error-warning-line',  label: 'negative net' },
@@ -3360,14 +3381,15 @@ function printPayslipPreview() {
                 var okQ = !payFilter.q || (tr.getAttribute('data-name') || '').indexOf(payFilter.q) !== -1;
                 var okD = !payFilter.dept || tr.getAttribute('data-dept') === payFilter.dept;
                 var okP = !payFilter.pos || tr.getAttribute('data-pos') === payFilter.pos;
+                var okR = !payFilter.rate || tr.getAttribute('data-rate-type') === payFilter.rate;
                 var okC = !payFilter.chip || payAnom[payFilter.chip].indexOf(tr) !== -1;
-                var show = okQ && okD && okP && okC;
+                var show = okQ && okD && okP && okR && okC;
                 tr.style.display = show ? '' : 'none';
                 tr.classList.toggle('pay-row-hit', show && !!payFilter.chip);
                 if (show) shown++;
             });
             var counter = document.getElementById('pay-filter-count');
-            if (counter) counter.textContent = (payFilter.q || payFilter.dept || payFilter.pos || payFilter.chip)
+            if (counter) counter.textContent = (payFilter.q || payFilter.dept || payFilter.pos || payFilter.rate || payFilter.chip)
                 ? shown + ' of ' + total + ' employees' : '';
             var clearBtn = document.getElementById('pay-search-clear');
             if (clearBtn) clearBtn.style.display = payFilter.q ? '' : 'none';
@@ -3391,6 +3413,10 @@ function printPayslipPreview() {
             });
             document.getElementById('pay-pos-filter').addEventListener('change', function () {
                 payFilter.pos = this.value;
+                payApplyFilter();
+            });
+            document.getElementById('pay-rate-filter').addEventListener('change', function () {
+                payFilter.rate = this.value;
                 payApplyFilter();
             });
             document.getElementById('pay-anomaly-chips').addEventListener('click', function (e) {
@@ -3904,7 +3930,7 @@ window.PCW_META = <?= json_encode([
     var M = window.PCW_META || {};
     // S.ps holds the payslip selection ({id: true}) — the card list is the only
     // selection UI now that the table preview has no checkbox column.
-    var S = { q: '', dept: '', pos: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
+    var S = { q: '', dept: '', pos: '', rate: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
     // Exception predicates — reused by the Insights chips and the left-list filter.
     function excPred(key, e) {
         switch (key) {
@@ -3965,6 +3991,7 @@ window.PCW_META = <?= json_encode([
             if (S.q && (e.name + ' ' + e.no + ' ' + e.pos).toLowerCase().indexOf(S.q) === -1) return false;
             if (S.dept && e.dept !== S.dept) return false;
             if (S.pos && e.pos !== S.pos) return false;
+            if (S.rate && e.rate_type !== S.rate) return false;
             if (S.rv !== '' && String(e.rv) !== S.rv) return false;
             // Employee sign-off: '1'/'2'/'0' by decision, 'm' = left a message
             if (S.erv !== '') {
@@ -4273,7 +4300,6 @@ window.PCW_META = <?= json_encode([
             ['JCC Advances', 'jcc_advances', e.jcc],
             ['Tax', 'tax', e.tax]
         ];
-        if (!isMonthlyBatch) fixed.push(['Other Deduction', 'other_deduction', e.other_ded]);
         var fsub = 0;
         h += '<tr class="subgroup"><td colspan="3">Company Advances &amp; Tax</td></tr>';
         fixed.forEach(function (fd) {
@@ -5290,6 +5316,7 @@ window.PCW_META = <?= json_encode([
     byId('pcw-q').addEventListener('input', function () { S.q = this.value.trim().toLowerCase(); buildList(); });
     byId('pcw-dept').addEventListener('change', function () { S.dept = this.value; buildList(); pcwUpdFilterCount(); });
     byId('pcw-pos-filter').addEventListener('change', function () { S.pos = this.value; buildList(); pcwUpdFilterCount(); });
+    byId('pcw-rate-filter').addEventListener('change', function () { S.rate = this.value; buildList(); pcwUpdFilterCount(); });
 
     // Review-mark chips
     byId('pcw-rv-chips').addEventListener('click', function (ev) {
@@ -5329,7 +5356,7 @@ window.PCW_META = <?= json_encode([
         var open = pop.classList.toggle('open');
         btn.classList.toggle('on', open);
     };
-    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0) + (S.lock !== '' ? 1 : 0); }
+    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rate ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0) + (S.lock !== '' ? 1 : 0); }
     window.pcwUpdFilterCount = function () {
         var n = pcwActiveFilters();
         var badge = byId('pcw-filter-count'), btn = byId('pcw-filter-btn');
@@ -5338,9 +5365,10 @@ window.PCW_META = <?= json_encode([
         btn.classList.toggle('on', n > 0 || byId('pcw-filter-pop').classList.contains('open'));
     };
     window.pcwResetFilters = function () {
-        S.dept = ''; S.pos = ''; S.rv = ''; S.erv = ''; S.lock = '';
+        S.dept = ''; S.pos = ''; S.rate = ''; S.rv = ''; S.erv = ''; S.lock = '';
         byId('pcw-dept').value = '';
         byId('pcw-pos-filter').value = '';
+        byId('pcw-rate-filter').value = '';
         byId('pcw-rv-chips').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-rv') === ''); });
         if (ervChips) ervChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-erv') === ''); });
         if (lockChips) lockChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-lock') === ''); });

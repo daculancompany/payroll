@@ -4314,10 +4314,12 @@ class Action
         $employee_id = intval($_POST['employee_id'] ?? 0);
         $scan_time   = trim($_POST['scan_time'] ?? '');
 
-        $site_id = intval($_POST['site_id'] ?? 0);
+        // Single-site deployment: every scan belongs to site 1, so a missing or
+        // zero site_id from the scanner app must not reject the punch.
+        $site_id = intval($_POST['site_id'] ?? 0) ?: 1;
 
-        if (!$employee_id || !$scan_time || !$site_id) {
-            return ['result' => false, 'message' => 'Missing employee_id, scan_time or site_id'];
+        if (!$employee_id || !$scan_time) {
+            return ['result' => false, 'message' => 'Missing employee_id or scan_time'];
         }
 
         // Validate scan_time format

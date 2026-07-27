@@ -7,6 +7,7 @@ $request = $_REQUEST;
 $status        = isset($request['status'])        && $request['status']        !== '' ? (int)$request['status']        : 2;
 $position_id   = isset($request['position_id'])   && $request['position_id']   !== '' ? (int)$request['position_id']   : null;
 $department_id = isset($request['department_id']) && $request['department_id'] !== '' ? (int)$request['department_id'] : null;
+$fingerprint   = isset($request['fingerprint'])   && $request['fingerprint']   !== '' ? (int)$request['fingerprint']   : null;
 
 // Department Heads are locked to their own department regardless of the UI filter.
 if (dept_scope_id() > 0) {
@@ -39,13 +40,20 @@ $filter_department = '';
 if ($department_id) {
     $filter_department = " AND e.department_id = $department_id";
 }
+// Fingerprint enrollment: 1 = has at least one template, 0 = none
+$filter_fingerprint = '';
+if ($fingerprint === 1) {
+    $filter_fingerprint = " AND EXISTS (SELECT 1 FROM employee_fingerprints f WHERE f.employee_id = e.id)";
+} elseif ($fingerprint === 0) {
+    $filter_fingerprint = " AND NOT EXISTS (SELECT 1 FROM employee_fingerprints f WHERE f.employee_id = e.id)";
+}
 
 
 
 $sql = "SELECT e.id, e.loan, e.employee_no, e.firstname, e.middlename, e.lastname, e.salary, e.basic_pay, e.ot_rate, e.status, e.rate_type, d.name AS department, p.name AS position, cl.clasification AS clasification FROM employee e
         LEFT JOIN department d ON e.department_id = d.id
         LEFT JOIN position p ON e.position_id = p.id
-        LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department";
+        LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department $filter_fingerprint";
 
 if (!empty($request['search']['value'])) {
     $searchValue = mysqli_real_escape_string($conn, $request['search']['value']);

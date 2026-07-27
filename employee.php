@@ -133,6 +133,14 @@
 									<?php endwhile; ?>
 								</select>
 							</div>
+							<div class="col-sm-2">
+								<div class="filter-label"><i class="ri-fingerprint-line me-1"></i>Fingerprint</div>
+								<select class="form-control form-control-sm" id="filter-fingerprint" data-placeholder="All">
+									<option value="">ALL</option>
+									<option value="1">Enrolled</option>
+									<option value="0">Not enrolled</option>
+								</select>
+							</div>
 						</div>
 
 						<div class="table-responsive mt-1 mb-1">

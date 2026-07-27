@@ -32,6 +32,7 @@ $(document).ready(function () {
                 d.status = $("#filter-status").val();
                 d.position_id = $("#filter-position").val();
                 d.department_id = $("#filter-department").val();
+                d.fingerprint = $("#filter-fingerprint").val();
             },
         },
         columns: [
@@ -90,6 +91,14 @@ $(document).ready(function () {
     });
 
     $("#filter-department").select2({
+        allowClear: true,
+        width: "resolve",
+        dropdownParent: $("body"),
+    }).on("change", function () {
+        oTable.draw();
+    });
+
+    $("#filter-fingerprint").select2({
         allowClear: true,
         width: "resolve",
         dropdownParent: $("body"),

@@ -207,4 +207,30 @@
             swiping = false;
         });
     })();
+
+    /* ── Portrait lock ────────────────────────────────────────────────
+       manifest.webmanifest declares "orientation": "portrait", but an app
+       installed before that field was added keeps its old manifest until
+       Chrome rebuilds the WebAPK, so ask the Screen Orientation API too.
+       It only works from an installed (standalone/fullscreen) window and
+       rejects everywhere else — including plain browser tabs, where taking
+       over rotation would be hostile anyway. If it's refused, the CSS
+       rotate guard in portal-mobile.css catches the landscape case. */
+    (function () {
+        var so = window.screen && window.screen.orientation;
+        if (!so || typeof so.lock !== 'function') return;
+
+        var installed = window.matchMedia('(display-mode: standalone)').matches
+            || window.matchMedia('(display-mode: fullscreen)').matches
+            || window.navigator.standalone === true;
+        if (!installed) return;
+
+        try {
+            var res = so.lock('portrait');
+            /* Rejects on iOS and when the OS forbids it — swallow it, the
+               guard overlay is the fallback. An unhandled rejection here
+               would surface as a console error on every launch. */
+            if (res && typeof res.catch === 'function') { res.catch(function () {}); }
+        } catch (e) { /* unsupported */ }
+    })();
 })();

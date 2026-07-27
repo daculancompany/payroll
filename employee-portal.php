@@ -457,6 +457,16 @@ if ($latest) {
     }
 }
 
+// Cache-bust local assets by mtime. A hand-maintained "?v=1" froze the
+// installed app on an old portal-mobile.css for as long as the browser kept
+// its copy — the payslip viewer and other sheets rendered with stale rules.
+// filemtime moves on every edit, so a deploy can never serve a stale asset.
+function av($path)
+{
+    $t = @filemtime(__DIR__ . '/' . $path);
+    return $path . '?v=' . ($t ?: '1');
+}
+
 function n2($v) { return number_format((float)$v, 2); }
 function n0($v) { return number_format((float)$v, 0); }
 function nd($v) { return rtrim(rtrim(number_format((float)$v, 1), '0'), '.'); } // trim trailing .0
@@ -495,7 +505,7 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datetimepicker/4.17.47/css/bootstrap-datetimepicker.min.css">
 <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <link href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap.min.css" rel="stylesheet">
-<link href="assets2/css/modal-stacking.css" rel="stylesheet">
+<link href="<?= av('assets2/css/modal-stacking.css') ?>" rel="stylesheet">
 <!-- Clock-face timepicker web component (File a Request claimed times) — https://github.com/loebi-ch/clock-timepicker -->
 <script type="module" src="assets2/vendor/clock-timepicker.js"></script>
 <style>
@@ -1048,6 +1058,11 @@ body{
     #tab-loans .loan-meta .lm-i b{font-size:12px;}
     #tab-loans .loan-est{
         margin-top:10px;padding-top:9px;border-top:1px solid #f2f6f5;font-size:11.5px;}
+    /* Bigger chevron + hint on touch — the card is the tap target for the
+       deduction-history sheet. */
+    #tab-loans .loan-chev{font-size:23px;}
+    #tab-loans .loan-tap-hint{font-size:11px;}
+    #tab-loans .loan-est + .loan-tap-hint{margin-top:6px;}
 
     /* ── Contributions — same chip + total-band language as the loan item
        and the payslip review sheet, so the three tabs read as one system ── */
@@ -1457,6 +1472,43 @@ clock-timepicker{
 .loan-meta .lm-i b{font-size:12.5px;font-weight:800;color:#2b3330;}
 .loan-est{font-size:11px;color:#219688;font-weight:700;margin-top:9px;}
 
+/* Tap-to-open affordance — the whole card is the hit target, matching the
+   payslip / leave / attendance lists. The chevron sits beside the balance so
+   the head row still reads type-left / money-right. */
+.loan-c.loan-tap{cursor:pointer;-webkit-tap-highlight-color:transparent;
+    transition:box-shadow .15s, transform .12s, border-color .15s;}
+.loan-c.loan-tap:hover{border-color:#cfe3df;box-shadow:0 1px 2px rgba(16,55,50,.06), 0 12px 26px -12px rgba(16,55,50,.26);}
+.loan-c.loan-tap:active{transform:scale(.995);}
+.loan-c.loan-tap:focus-visible{outline:2px solid #219688;outline-offset:2px;}
+.loan-bal-wrap{display:flex;align-items:center;gap:6px;}
+.loan-chev{font-size:20px;color:#c2d3cf;line-height:1;flex:0 0 auto;margin-right:-4px;}
+.loan-tap-hint{font-size:10.5px;color:#a4b0ad;font-weight:700;margin-top:9px;
+    display:flex;align-items:center;gap:4px;}
+
+/* ── Loan details modal: per-payroll deduction history ── */
+.lnh-sum{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;}
+.lnh-sum .lnh-box{background:#f7fbfa;border:1px solid #eef3f2;border-radius:10px;padding:9px 12px;}
+.lnh-sum .lnh-box em{font-style:normal;display:block;font-size:9px;font-weight:800;color:#a4b0ad;
+    text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;}
+.lnh-sum .lnh-box b{font-size:14px;font-weight:900;color:#2b3330;}
+.lnh-sum .lnh-box.bal b{color:#e83e8c;}
+.lnh-hd{font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;
+    display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px;}
+.lnh-list{display:flex;flex-direction:column;gap:7px;}
+.lnh-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e9f0ee;
+    border-radius:10px;padding:9px 12px;}
+.lnh-row .lnh-l{flex:1 1 auto;min-width:0;}
+.lnh-row .lnh-per{font-size:12.5px;font-weight:800;color:#2b3330;line-height:1.25;}
+.lnh-row .lnh-ref{font-size:10.5px;color:#a4b0ad;font-weight:700;margin-top:1px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.lnh-row .lnh-r{flex:0 0 auto;text-align:right;}
+.lnh-row .lnh-amt{font-size:13px;font-weight:900;color:#176358;}
+.lnh-row .lnh-bal{font-size:10px;color:#8a9794;font-weight:700;margin-top:1px;}
+.lnh-empty,.lnh-load{text-align:center;color:#a4b0ad;font-size:12px;padding:18px 10px;}
+.lnh-empty i,.lnh-load i{display:block;font-size:24px;margin-bottom:6px;color:#cfdad7;}
+.lnh-load i{animation:ptop-spin .8s linear infinite;}
+.lnh-err{background:#fff0f0;color:#dc3545;border-radius:10px;padding:9px 12px;font-size:12px;}
+
 /* DTR time chips — matches dtr-details.php */
 .dtr-time-chip{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;font-family:'Segoe UI',Arial,sans-serif;white-space:nowrap;}
 .dtr-time-chip.in {background:#e6f5f3;color:#219688;border:1px solid #aad5d0;}
@@ -1818,10 +1870,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 @keyframes ptrSpin { to { transform: rotate(360deg); } }
 </style>
 <!-- Mobile-first native-app layer — must load AFTER the inline styles it refines -->
-<link href="assets2/css/portal-mobile.css?v=1" rel="stylesheet">
+<link href="<?= av('assets2/css/portal-mobile.css') ?>" rel="stylesheet">
 <!-- Global DTR (Form 48) template — shared with the admin DTR Documents page -->
-<link href="assets2/css/dtr-form48.css" rel="stylesheet">
-<script src="assets2/js/dtr-form48.js"></script>
+<link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
+<script src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
 <script>window.DTR_LOG_MODE = <?= json_encode(defined('DTR_LOG_MODE') ? DTR_LOG_MODE : 'single') ?>;</script>
 </head>
 <body>
@@ -2683,15 +2735,20 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             $pct  = $loan['loan_amount'] > 0 ? round($paid / $loan['loan_amount'] * 100, 1) : 0;
             $periods_left = $loan['damount'] > 0 ? ceil($loan['loan_balance'] / $loan['damount']) : '?';
         ?>
-        <div class="loan-c">
+        <div class="loan-c loan-tap" role="button" tabindex="0" title="Tap to view payment history"
+             onclick="openLoanDetail(<?= (int)$loan['loan_id'] ?>)"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openLoanDetail(<?= (int)$loan['loan_id'] ?>);}">
             <div class="loan-head">
                 <div>
                     <div class="loan-type-lbl"><?= htmlspecialchars($loan['type_name']) ?></div>
                     <div style="font-size:11px;color:#aaa;margin-top:2px;">Since <?= date('M d, Y', strtotime($loan['loan_date'])) ?></div>
                 </div>
-                <div style="text-align:right;">
-                    <div style="font-size:10px;color:#888;">Remaining Balance</div>
-                    <div class="loan-bal-val">₱<?= n2($loan['loan_balance']) ?></div>
+                <div class="loan-bal-wrap">
+                    <div style="text-align:right;">
+                        <div style="font-size:10px;color:#888;">Remaining Balance</div>
+                        <div class="loan-bal-val">₱<?= n2($loan['loan_balance']) ?></div>
+                    </div>
+                    <i class="ri-arrow-right-s-line loan-chev"></i>
                 </div>
             </div>
             <div class="loan-progwrap">
@@ -2706,6 +2763,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <?php if (is_numeric($periods_left) && $periods_left > 0): ?>
             <div class="loan-est"><i class="ri-time-line me-1"></i>~<?= $periods_left ?> payroll period<?= $periods_left>1?'s':'' ?> remaining</div>
             <?php endif; ?>
+            <div class="loan-tap-hint"><i class="ri-history-line"></i>Tap to see every deduction for this loan</div>
         </div>
         <?php endforeach; ?>
         <!-- Loan total -->
@@ -4479,16 +4537,134 @@ function openPayslipDetails(payrollId) {
     }
 }
 
-// ── Payslip preview: dompdf PDF inside the modal. A server-side PDF cache
-// makes repeat views instant; only the first view after a data change renders. ──
+// ── Payslip preview: the payslip's own HTML page inside the modal ────────────
+// It used to embed pdf-payroll.php, but Android has no in-page PDF viewer: an
+// <iframe> pointed at a PDF renders a grey "Open" placeholder instead of the
+// document, so the installed app showed no payslip at all. view_payslip.php is
+// the same document dompdf renders from, it carries a phone layout of its own,
+// and ?preview=1 drops its toolbar + auto-print. PDF stays on Download, where
+// the platform's own viewer handles it.
 function openPayslipPreview(itemId) {
     var frame = document.getElementById('payslip-preview-frame');
     if (!frame) return;
-    var url = 'pdf-payroll.php?src=payslip&id=' + encodeURIComponent(itemId);
-    frame.src = url;
+    var id = encodeURIComponent(itemId);
+    frame.src = 'view_payslip.php?preview=1&id=' + id;
     var dl = document.getElementById('payslip-preview-download');
-    if (dl) dl.href = url + '&download=1';
+    if (dl) {
+        dl.href = 'pdf-payroll.php?src=payslip&id=' + id + '&download=1';
+        // Standalone PWAs have no address bar to fall back on — marking the link
+        // as a download sends the tap to the download manager instead of a blank
+        // view. Left valueless on purpose: the server's Content-Disposition name
+        // (surname + pay period, see pdf-payroll.php) then wins.
+        dl.setAttribute('download', '');
+    }
     new bootstrap.Modal(document.getElementById('modal-payslip-preview')).show();
+}
+
+// ── Loans: tap a loan card → details + per-payroll deduction history ─────────
+// The card only shows the running balance; the history answers "where did my
+// money actually go?" by listing every payroll that deducted this loan.
+// Fetched on demand (the loans tab would otherwise carry every ledger row on
+// page load) and cached per loan, so re-opening the same card is instant.
+var LOAN_HIST_CACHE = {};
+
+function loanBox(label, value, cls) {
+    return '<div class="lnh-box' + (cls ? ' ' + cls : '') + '"><em>' + label + '</em><b>' + value + '</b></div>';
+}
+
+function loanDetailHtml(d) {
+    var L = d.loan;
+    // "Paid" is derived from the loan itself so it always agrees with the card;
+    // the posted total below the list is the sum of the ledger rows, which can
+    // differ if a balance was ever corrected by hand.
+    var paid = Math.max(0, L.loan_amount - L.loan_balance);
+    var pct  = L.loan_amount > 0 ? Math.round(paid / L.loan_amount * 1000) / 10 : 0;
+    var rows = d.rows || [];
+
+    var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
+        + '<span style="font-weight:800;color:#176358;font-size:15px;">' + escapeHtml(L.type_name) + '</span>'
+        + (L.settled
+            ? '<span style="background:#e8f7f5;color:#176358;border-radius:10px;padding:3px 12px;font-size:11px;font-weight:700;">Settled</span>'
+            : '<span style="background:#fff8e8;color:#fd7e14;border-radius:10px;padding:3px 12px;font-size:11px;font-weight:700;">Active</span>')
+        + '</div>';
+
+    h += '<div class="loan-progwrap" style="margin-bottom:12px;">'
+        + '<div class="loan-prog"><div class="loan-prog-bar" style="width:' + pct + '%;"></div></div>'
+        + '<span class="loan-pct">' + pct + '% paid</span></div>';
+
+    h += '<div class="lnh-sum">'
+        + loanBox('Loan amount', peso(L.loan_amount))
+        + loanBox('Remaining balance', peso(L.loan_balance), 'bal')
+        + loanBox('Paid so far', peso(paid))
+        + loanBox('Per period', peso(L.damount))
+        + loanBox('Granted', escapeHtml(L.loan_date || '—'))
+        + loanBox('First deduction', escapeHtml(L.effective_date || L.loan_date || '—'))
+        + '</div>';
+
+    h += '<div class="lnh-hd"><span><i class="ri-history-line me-1"></i>Deduction history</span>'
+        + '<span>' + rows.length + ' payroll' + (rows.length === 1 ? '' : 's') + '</span></div>';
+
+    if (!rows.length) {
+        h += '<div class="lnh-empty"><i class="ri-inbox-line"></i>'
+            + 'No deductions posted yet. Amortization appears here once a payroll that '
+            + 'includes this loan is processed.</div>';
+        return h;
+    }
+
+    h += '<div class="lnh-list">' + rows.map(function (r) {
+        return '<div class="lnh-row">'
+            + '<div class="lnh-l">'
+            + '<div class="lnh-per">' + escapeHtml(r.period) + '</div>'
+            + '<div class="lnh-ref">' + (r.ref_no ? 'Ref ' + escapeHtml(r.ref_no) : 'No reference') + '</div>'
+            + '</div>'
+            + '<div class="lnh-r">'
+            + '<div class="lnh-amt">−' + peso(r.amount) + '</div>'
+            + '<div class="lnh-bal">balance ' + peso(r.after) + '</div>'
+            + '</div>'
+            + '</div>';
+    }).join('') + '</div>';
+
+    h += '<div class="lnh-hd" style="margin-bottom:0;"><span>Total posted</span>'
+        + '<span style="color:#176358;font-size:12px;">' + peso(d.paid_posted) + '</span></div>';
+    return h;
+}
+
+function openLoanDetail(loanId) {
+    loanId = parseInt(loanId, 10);
+    if (!loanId) return;
+    var body  = document.getElementById('loan-detail-body');
+    var title = document.getElementById('loan-detail-title');
+    var cached = LOAN_HIST_CACHE[loanId];
+
+    body.innerHTML = cached
+        ? loanDetailHtml(cached)
+        : '<div class="lnh-load"><i class="ri-loader-4-line"></i>Loading your deduction history…</div>';
+    if (title) title.textContent = cached ? cached.loan.type_name : 'Loan Details';
+    new bootstrap.Modal(document.getElementById('modal-loan-detail')).show();
+
+    // Always refetch: a payroll processed since the last open would otherwise
+    // leave a stale ledger behind the cached view.
+    fetch('emp-portal-ajax.php?action=loan_payment_history', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'loan_id=' + encodeURIComponent(loanId)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        if (!res || !res.result || !res.loan) {
+            if (!cached) {
+                body.innerHTML = '<div class="lnh-err"><i class="ri-information-line me-1"></i>'
+                    + escapeHtml((res && res.message) || 'Could not load this loan.') + '</div>';
+            }
+            return;
+        }
+        LOAN_HIST_CACHE[loanId] = res;
+        body.innerHTML = loanDetailHtml(res);
+        if (title) title.textContent = res.loan.type_name;
+    }).catch(function () {
+        if (!cached) {
+            body.innerHTML = '<div class="lnh-err"><i class="ri-information-line me-1"></i>'
+                + 'Request failed. Please check your connection and try again.</div>';
+        }
+    });
 }
 
 // ── Payroll charts (ApexCharts) ──────────────────────────────
@@ -5324,12 +5500,12 @@ jQuery(function ($) {
                     <button type="button" class="btn" style="background:linear-gradient(135deg,#107c41,#0e6b37);color:#fff;font-weight:700;border-radius:10px;"
                         onclick="submitPayrollReview(1)"><i class="ri-checkbox-circle-line me-1"></i>Confirm<span class="prv-btn-long"> — Looks Correct</span></button>
                 </div>
-                <!-- Read-only view (locked payroll): no decision, just the PDF -->
+                <!-- Read-only view (locked payroll): no decision, just the payslip -->
                 <div id="prv-readonly" class="d-flex gap-2 justify-content-between align-items-center prv-hide">
                     <span style="font-size:11.5px;color:#8a9a95;"><i class="ri-lock-2-line me-1"></i>This payroll is closed — view only.</span>
                     <button type="button" id="prv-pdf" class="btn btn-sm"
                         style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;border-radius:10px;">
-                        <i class="ri-file-pdf-2-line me-1"></i>View PDF
+                        <i class="ri-file-text-line me-1"></i>View Payslip
                     </button>
                 </div>
             </div>
@@ -5345,11 +5521,18 @@ jQuery(function ($) {
                 <h5 class="modal-title mb-0" style="color:#176358;"><i class="ri-file-text-line me-1" style="color:#219688;"></i>Payslip Preview</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" style="background:#525659;padding:0;">
-                <iframe id="payslip-preview-frame" title="Payslip preview" style="width:100%;height:70vh;border:0;display:block;background:#525659;"></iframe>
+            <!-- Light backdrop: the frame holds the payslip's own HTML page now,
+                 not a PDF viewer, so the old dark PDF-chrome grey just flashed. -->
+            <div class="modal-body" style="background:#e8e8e8;padding:0;">
+                <iframe id="payslip-preview-frame" title="Payslip preview" loading="lazy"
+                        style="width:100%;height:70vh;border:0;display:block;background:#e8e8e8;"></iframe>
             </div>
-            <div class="modal-footer" style="background:#fff;">
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            <!-- Centered action bar. Bootstrap right-aligns modal footers, which
+                 left Download hugging the edge; and the footer Close is dropped
+                 (phones already hid it — portal-mobile.css) so the one real
+                 action sits dead center at every width. The header ✕ and Esc
+                 still dismiss. -->
+            <div class="modal-footer" style="background:#fff;justify-content:center;">
                 <a id="payslip-preview-download" href="#" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
                     <i class="ri-download-2-line me-1"></i>Download PDF
                 </a>
@@ -5370,6 +5553,24 @@ jQuery(function ($) {
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="leave-detail-body"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loan Details Modal (opened by tapping a loan card in the Loans tab) -->
+<div class="modal fade" id="modal-loan-detail" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                    <i class="ri-bank-line me-2"></i><span id="loan-detail-title">Loan Details</span>
+                </h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="loan-detail-body"></div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
             </div>
@@ -5741,8 +5942,17 @@ jQuery(function ($) {
     });
 })();
 </script>
+<!-- Portrait-only guard. Shown by CSS only on a short landscape phone — the
+     last line of defence when the manifest's "orientation": "portrait" isn't
+     honoured (see assets2/css/portal-mobile.css). Inert at every other size. -->
+<div id="rotate-guard" aria-hidden="true">
+    <i class="ri-phone-lock-line"></i>
+    <div class="rg-t">Please rotate your phone upright</div>
+    <div class="rg-s">The portal is designed for portrait — turn your device back and it will pick up right where you left off.</div>
+</div>
+
 <!-- Native-app interactions: swipe tab navigation, bottom-sheet drag, notification
      swipe-to-dismiss, per-screen titles. Loads last so it can wrap switchTab & co. -->
-<script src="assets2/js/portal-mobile.js?v=1"></script>
+<script src="<?= av('assets2/js/portal-mobile.js') ?>"></script>
 </body>
 </html>

@@ -115,6 +115,25 @@ $cacheOk = is_dir($dompdfCache) && is_writable($dompdfCache);
 
 $filename = 'payroll-' . $src . '-' . (int)$_GET['id'] . '.pdf';
 
+// A payslip saved as "payroll-payslip-4221.pdf" tells the employee nothing —
+// name it after the pay period instead. view_payslip.php was included at this
+// scope above, so its $payroll row (period + employee) is already here; fall
+// back to the id-based name if that ever stops being true.
+if ($isPayslip && !empty($payroll['date_from']) && !empty($payroll['date_to'])) {
+    $from = strtotime($payroll['date_from']);
+    $to   = strtotime($payroll['date_to']);
+    if ($from && $to) {
+        // Surname first so a folder of payslips groups per employee, then an
+        // ISO period so they sort chronologically. Hyphens only — spaces and
+        // commas get mangled by some Android download managers.
+        $who = trim((string)($payroll['lastname'] ?? ''));
+        $who = preg_replace('/[^A-Za-z0-9]+/', '-', $who);
+        $who = trim($who, '-');
+        $filename = ($who !== '' ? $who . '-' : '')
+            . 'payslip-' . date('Y-m-d', $from) . '-to-' . date('Y-m-d', $to) . '.pdf';
+    }
+}
+
 // ── PDF result cache ────────────────────────────────────────────────────
 // dompdf's layout pass is the slow step (seconds for the wide sheets); the
 // HTML render above is milliseconds. Hash the HTML — minus volatile
@@ -159,6 +178,42 @@ if ($cacheFile !== null) {
     // Drop superseded versions of this document, then store the fresh one.
     foreach (glob($cachePrefix . '*.pdf') ?: [] as $old) { @unlink($old); }
     @file_put_contents($cacheFile, $pdfOut);
+    pdf_cache_gc($dompdfCache);
+}
+
+// ── Cache housekeeping ──────────────────────────────────────────────────
+// The prune above only supersedes ONE document's older renders, so the
+// directory still grew by a file per payslip/register ever opened (~56KB a
+// payslip, ~330KB a register) — unbounded over years of pay periods. Cap it
+// by age and total size, oldest first. Runs only on the slow path (a fresh
+// render), so a cache hit still costs nothing. Font caches (*.json) are
+// never touched. Set PDF_CACHE_MAX_BYTES to 0 to disable the size cap.
+function pdf_cache_gc($dir)
+{
+    $maxAge   = defined('PDF_CACHE_MAX_AGE') ? PDF_CACHE_MAX_AGE : 60 * 60 * 24 * 30; // 30 days
+    $maxBytes = defined('PDF_CACHE_MAX_BYTES') ? PDF_CACHE_MAX_BYTES : 200 * 1024 * 1024; // 200 MB
+
+    $files = [];
+    $total = 0;
+    foreach (glob($dir . '/*.pdf') ?: [] as $f) {
+        $mt = @filemtime($f);
+        $sz = @filesize($f);
+        if ($mt === false || $sz === false) continue;
+        // Anything past the age limit goes regardless of how much room is left:
+        // a payslip nobody has opened in a month is not worth keeping warm.
+        if ($maxAge > 0 && (time() - $mt) > $maxAge) { @unlink($f); continue; }
+        $files[] = ['path' => $f, 'mtime' => $mt, 'size' => $sz];
+        $total += $sz;
+    }
+
+    if ($maxBytes <= 0 || $total <= $maxBytes) return;
+
+    // Over budget — evict least-recently-written until back under.
+    usort($files, function ($a, $b) { return $a['mtime'] <=> $b['mtime']; });
+    foreach ($files as $f) {
+        if ($total <= $maxBytes) break;
+        if (@unlink($f['path'])) $total -= $f['size'];
+    }
 }
 
 header('Content-Type: application/pdf');

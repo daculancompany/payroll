@@ -225,6 +225,12 @@
         border-radius: 14px;
         font-size: 14.5px;
         font-weight: 700;
+        /* min-height alone only grows the box downward — a .btn lays its label
+           out from the top with padding, so the text sat high (6px above,
+           25px below in a 48px button). Center it in the thumb target. */
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     .modal .modal-footer .btn-outline-secondary { max-width: 34%; }
 
@@ -393,4 +399,58 @@
         animation: none !important;
         transition: none !important;
     }
+}
+
+/* ── Portrait-only guard ──────────────────────────────────────────────────
+   manifest.webmanifest already asks for "orientation": "portrait", but that
+   alone can't be relied on: a WebAPK installed before the field existed keeps
+   its old manifest until Chrome refreshes it (days), iOS ignores the field
+   outright, and OEM "force rotation" / accessibility settings override it.
+   This layer assumes an upright phone throughout — bottom nav, sheets glued to
+   the bottom edge, 100dvh full-screen viewers — so rather than render a broken
+   landscape screen, ask for portrait back. portal-mobile.js also attempts a
+   real Screen Orientation lock; this is the fallback when that is refused.
+   Only a SHORT landscape viewport matches: tablets in landscape are ≥600px
+   tall and desktop is never pointer:coarse, so neither ever sees this. */
+#rotate-guard { display: none; }
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+    #rotate-guard {
+        display: flex;
+        position: fixed;
+        inset: 0;
+        z-index: 100000;          /* over .modal (1055) and the FCM banner (99999) */
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 18px 34px;
+        text-align: center;
+        background: linear-gradient(140deg, #219688, #176358);
+        color: #fff;
+    }
+    #rotate-guard i {
+        font-size: 34px;
+        margin-bottom: 2px;
+        animation: rgTilt 2.4s ease-in-out infinite;
+    }
+    #rotate-guard .rg-t { font-size: 15px; font-weight: 800; }
+    #rotate-guard .rg-s {
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.45;
+        color: rgba(255, 255, 255, .82);
+        max-width: 30em;
+    }
+    /* The portal behind it must not scroll or keep a sheet open under the guard */
+    body { overflow: hidden !important; }
+}
+
+@keyframes rgTilt {
+    0%, 55%, 100% { transform: rotate(0deg); }
+    25%, 40%      { transform: rotate(-90deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #rotate-guard i { animation: none; }
 }

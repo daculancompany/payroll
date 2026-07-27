@@ -653,6 +653,78 @@ switch ($action) {
         break;
     }
 
+    // ── Loans: per-payroll deduction history for ONE of the employee's loans ──
+    // Mirrors the admin loan-deduction-ledger, scoped to the session employee so
+    // a crafted loan_id can never read someone else's amortization.
+    case 'loan_payment_history': {
+        $loan_id = (int) ($_POST['loan_id'] ?? $_GET['loan_id'] ?? 0);
+        if ($loan_id <= 0) { echo json_encode(['result' => false, 'message' => 'Invalid loan']); break; }
+
+        $ls = $conn->prepare(
+            "SELECT l.loan_id, l.loan_amount, l.loan_balance, l.damount, l.loan_date,
+                    l.effective_date, l.loan_status, COALESCE(clt.loan_type, 'Loan') AS type_name
+             FROM loans l
+             LEFT JOIN contribution_loan_types clt ON clt.clt_id = l.loan_type
+             WHERE l.loan_id = ? AND l.employee_id = ?"
+        );
+        $ls->bind_param('ii', $loan_id, $emp_id);
+        $ls->execute();
+        $loan = $ls->get_result()->fetch_assoc();
+        if (!$loan) { echo json_encode(['result' => false, 'message' => 'Loan not found']); break; }
+
+        // Newest payment first — the employee cares about the latest deduction.
+        // employee_id is matched too so a mis-keyed history row can't leak across.
+        $hs = $conn->prepare(
+            "SELECT lh.loan_his_id, lh.amount, lh.current_bal, lh.new_bal,
+                    p.ref_no, p.date_from, p.date_to
+             FROM loan_history lh
+             LEFT JOIN payroll p ON p.id = lh.payroll_id
+             WHERE lh.loan_id = ? AND lh.employee_id = ?
+             ORDER BY p.date_to DESC, lh.loan_his_id DESC"
+        );
+        $hs->bind_param('ii', $loan_id, $emp_id);
+        $hs->execute();
+        $res = $hs->get_result();
+
+        $rows = [];
+        $paid_total = 0.0;
+        while ($r = $res->fetch_assoc()) {
+            $paid_total += (float) $r['amount'];
+            $period = ($r['date_from'] && $r['date_to'])
+                ? date('M j', strtotime($r['date_from'])) . ' – ' . date('M j, Y', strtotime($r['date_to']))
+                : 'Unlinked payroll';
+            $rows[] = [
+                'id'      => (int) $r['loan_his_id'],
+                'period'  => $period,
+                'ref_no'  => $r['ref_no'] ?: '',
+                'amount'  => (float) $r['amount'],
+                'before'  => (float) $r['current_bal'],
+                'after'   => (float) $r['new_bal'],
+            ];
+        }
+
+        echo json_encode([
+            'result' => true,
+            'loan'   => [
+                // Some loan-type names carry stray newlines from the setup form;
+                // HTML collapses them on the card, so collapse here too and the
+                // modal title matches what the card shows.
+                'type_name'      => trim(preg_replace('/\s+/', ' ', $loan['type_name'])),
+                'loan_amount'    => (float) $loan['loan_amount'],
+                'loan_balance'   => (float) $loan['loan_balance'],
+                'damount'        => (float) $loan['damount'],
+                'loan_date'      => $loan['loan_date'] ? date('M d, Y', strtotime($loan['loan_date'])) : '',
+                'effective_date' => $loan['effective_date'] ? date('M d, Y', strtotime($loan['effective_date'])) : '',
+                'settled'        => (int) $loan['loan_status'] === 1,
+            ],
+            // Sum of the ledger rows — may differ from (amount - balance) when a
+            // balance was adjusted by hand, so the modal labels it as "posted".
+            'paid_posted' => $paid_total,
+            'rows'        => $rows,
+        ]);
+        break;
+    }
+
     default:
         echo json_encode(['result' => false, 'message' => 'Unknown action']);
 }

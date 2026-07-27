@@ -63,8 +63,14 @@
     /* Pull-to-refresh spinner clears the (possibly taller) safe-area header */
     #ptr-indicator { top: calc(60px + env(safe-area-inset-top, 0px)); }
 
-    /* ── Bottom navigation bar — frosted, pill highlight, safe-area ─── */
+    /* ── Bottom navigation bar — fixed, frosted, static (no motion) ───
+       The bar is pinned to the viewport bottom and never animates: no
+       transitions, no keyframes, no press transforms. Tapping an item just
+       repaints the active state. */
     .tab-strip {
+        position: fixed;
+        left: 0; right: 0; bottom: 0; top: auto;
+        margin: 0;
         border-radius: 0;
         background: rgba(255, 255, 255, .95);
         -webkit-backdrop-filter: saturate(1.6) blur(16px);
@@ -74,6 +80,9 @@
         padding: 6px max(6px, env(safe-area-inset-left))
                  calc(6px + env(safe-area-inset-bottom, 0px))
                  max(6px, env(safe-area-inset-right));
+        transform: none;
+        transition: none;
+        animation: none;
     }
     .tab-btn {
         position: relative;
@@ -82,11 +91,12 @@
         gap: 4px;
         padding: 8px 2px 6px;
         border-radius: 14px;
-        transition: color .18s;
+        transition: none;
+        animation: none;
     }
-    .tab-btn i { font-size: 22px; }
+    .tab-btn i { font-size: 22px; transition: none; transform: none; }
     .tab-btn span.tab-label { font-size: 9.5px; }
-    /* Active: Material-You pill behind the icon instead of a filled block */
+    /* Active: static pill behind the icon instead of a filled block */
     .tab-btn.active { background: transparent; color: #176358; box-shadow: none; }
     .tab-btn.active::before {
         content: '';
@@ -97,18 +107,15 @@
         background: #d8efe9;
         transform: translateX(-50%);
         z-index: -1;
-        animation: navPill .28s cubic-bezier(.34, 1.45, .64, 1);
+        transition: none;
+        animation: none;
     }
-    @keyframes navPill { from { transform: translateX(-50%) scaleX(.55); opacity: .3; } to { transform: translateX(-50%) scaleX(1); opacity: 1; } }
-    .tab-btn:active i { transform: scale(.86); }
+    .tab-btn:active, .tab-btn:active i { transform: none; }
     .tab-btn .badge-count { top: 2px; right: 8px; min-width: 15px; height: 15px; line-height: 15px; padding: 0 4px; border-radius: 8px; }
 
-    /* ── Screen transitions — panel slides in the direction of travel ── */
-    .tab-panel.active > * { animation: none; }        /* one panel-level anim beats N child anims */
-    .tab-panel.anim-left  { animation: tpLeft  .26s cubic-bezier(.3, .7, .4, 1); }
-    .tab-panel.anim-right { animation: tpRight .26s cubic-bezier(.3, .7, .4, 1); }
-    @keyframes tpLeft  { from { opacity: 0; transform: translateX(40px);  } to { opacity: 1; transform: none; } }
-    @keyframes tpRight { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+    /* ── Screen switches are instant — no slide/fade on the panels ───── */
+    .tab-panel.active,
+    .tab-panel.active > * { animation: none; transform: none; }
 
     /* ── Cards & sections — softer, rounder, tactile ────────────────── */
     .emp-hdr, .ps-card, .trend-card, .today-att, .info-section, .empty-state,
@@ -220,8 +227,79 @@
         font-weight: 700;
     }
     .modal .modal-footer .btn-outline-secondary { max-width: 34%; }
-    /* Payslip preview PDF frame fills the sheet */
-    #payslip-preview-frame { height: calc(100dvh - 200px) !important; }
+
+    /* ── Drop the footer Close / Cancel buttons on phones ─────────────────
+       The header ✕ (and swiping the sheet away) already dismisses, so a
+       second dismiss control just steals thumb room from the real action.
+       Detail sheets whose footer held nothing else lose the footer entirely;
+       form sheets keep only their submit button, now full width. */
+    .modal .modal-footer .btn[data-bs-dismiss="modal"] { display: none; }
+    .modal .modal-footer:not(:has(.btn:not([data-bs-dismiss="modal"]))) { display: none; }
+    .modal .modal-footer .btn:not([data-bs-dismiss="modal"]) { max-width: none; }
+
+    /* ── Payslip PDF preview → full-screen viewer ─────────────────────────
+       A PDF in a rounded bottom sheet wastes most of the screen; give the
+       document the whole viewport with a compact action bar underneath. */
+    #modal-payslip-preview .modal-dialog { align-items: stretch; height: 100dvh; }
+    #modal-payslip-preview .modal-content {
+        height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0 !important;
+    }
+    #modal-payslip-preview .modal-content::before { display: none; }  /* no grab handle on a full page */
+    #modal-payslip-preview .modal-header { padding-top: calc(14px + env(safe-area-inset-top, 0px)); }
+    #modal-payslip-preview .modal-body { padding: 0 !important; display: flex; }
+    #payslip-preview-frame { flex: 1 1 auto; height: 100% !important; }
+    /* Bootstrap's outline-secondary reads blue against the portal palette */
+    #modal-payslip-preview .modal-footer .btn-outline-secondary {
+        color: #5c6b67;
+        background: #fff;
+        border-color: #d6e2df;
+    }
+
+    /* ── DTR messages → floating portal ───────────────────────────────────
+       Inset from the screen edges with no overlay, so the DTR sheet stays
+       visible around the floating header, cards and composer. */
+    /* Undo the generic bottom-sheet positioning — this one is an inset
+       floating panel, not a sheet glued to the viewport bottom (which would
+       leave the composer under the keyboard when the portal shrinks). */
+    #modal-dtr-messages .modal-dialog {
+        position: relative;
+        left: auto; right: auto; bottom: auto;
+        transform: none;
+        align-items: stretch;
+        height: calc(100dvh - 20px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+        margin: calc(10px + env(safe-area-inset-top, 0px)) 10px calc(10px + env(safe-area-inset-bottom, 0px));
+        width: auto;
+        max-width: none;
+    }
+    #modal-dtr-messages .modal-content {
+        height: 100%;
+        max-height: 100%;
+        border-radius: 18px !important;
+    }
+    #modal-dtr-messages .modal-content::before { display: none; }   /* no grab handle */
+    #modal-dtr-messages .modal-header { padding: 12px 12px 12px 16px; }
+    /* The composer clears the panel's own bottom edge, not the home indicator
+       (the panel is already inset above it) */
+    #modal-dtr-messages .drev-composer { padding-bottom: 10px; }
+    /* Keyboard up: shrink the portal by its height (--kb comes from
+       visualViewport) so the composer rides on top of the keyboard. */
+    #modal-dtr-messages.kb-open .modal-dialog {
+        height: calc(100dvh - var(--kb, 0px) - 20px - env(safe-area-inset-top, 0px));
+        margin-bottom: 10px;
+    }
+    #modal-dtr-messages.kb-open .drev-composer-hint { display: none; }
+    /* Conversations breathe: taller bubble lists, thumb-sized composer */
+    #modal-dtr-messages .drev-thread { border-radius: 16px; padding: 12px 13px; }
+    #modal-dtr-messages .drev-thread-list { max-height: none; }
+    #modal-dtr-messages .drev-bub { font-size: 13px; padding: 8px 12px; }
+    #modal-dtr-messages .drev-thread-in input { min-height: 44px; font-size: 16px; }  /* 16px = no iOS focus-zoom */
+    #modal-dtr-messages .drev-thread-in button { width: 44px; height: 44px; }
+
+    /* Keep the floating button clear of the sheet's sticky action bar */
+    .drev-fab-wrap { bottom: 10px; }
+    .drev-fab { width: 54px; height: 54px; font-size: 24px; }
 
     /* ── Forms — 16px inputs (no iOS focus-zoom), 48px touch height ─── */
     .modal .form-control,
@@ -282,6 +360,10 @@
         border-radius: 16px !important;
     }
     #fcm-enable-banner button { min-height: 42px; }
+    /* While a dialog is open (e.g. the payslip details sheet) the banner would
+       sit on top of its action buttons — Bootstrap adds .modal-open to <body>,
+       so stand the banner down until the sheet is dismissed. */
+    body.modal-open #fcm-enable-banner { display: none !important; }
 
     /* ── Misc mobile polish ──────────────────────────────────────────── */
     .portal-foot { margin-top: 22px; padding-bottom: 4px; }
@@ -306,8 +388,7 @@
 
 /* Respect users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
-    .tab-panel.anim-left, .tab-panel.anim-right,
-    .tab-btn.active::before, .ptop-screen-title,
+    .ptop-screen-title,
     .more-sheet, .modal.fade .modal-dialog, .emp-notif-panel {
         animation: none !important;
         transition: none !important;

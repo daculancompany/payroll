@@ -118,9 +118,74 @@ $tax             = floatval($payroll['tax']);
 $jei_advances    = floatval($payroll['jei_advances']);
 $jcc_advances    = floatval($payroll['jcc_advances']);
 $sss_fund        = floatval($payroll['sss_fund']);
+// ── Named one-off items for this employee (payroll_item_extras) ──
+// kind 1 deducts, kind 2 adds. Printed as their own lines so the payslip says
+// what the money was for instead of burying it in a total. Guarded so a
+// database without the migration simply has none.
+$ps_extras = [];
+$ps_extra_add = $ps_extra_less = 0.0;
+if ($conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+    $xq = $conn->query("SELECT kind, label, amount FROM payroll_item_extras
+                        WHERE payroll_item_id = " . (int)$payroll['id'] . " ORDER BY id ASC");
+    if ($xq) while ($x = $xq->fetch_assoc()) {
+        $ps_extras[] = $x;
+        if ((int)$x['kind'] === 2) $ps_extra_add  += (float)$x['amount'];
+        else                       $ps_extra_less += (float)$x['amount'];
+    }
+}
+$gross_salary += $ps_extra_add;
+
 $total_all_deductions = $total_contributions + $total_deductions + $total_loans
-                      + $other_deduction + $tax + $jei_advances + $jcc_advances + $sss_fund;
+                      + $other_deduction + $tax + $jei_advances + $jcc_advances + $sss_fund
+                      + $ps_extra_less;
 $net_pay = $payroll['net'];
+
+// ── Employee Rate box ──
+$hourly_rate = $payroll['per_day'] / 8;
+
+// ── Year-to-Date Taxable Pay (option 1: accumulated gross earnings) ──
+// Gross isn't stored, so recompute it per payroll item with the same rate-type
+// formula, summed over the employee's payrolls this year up to this period
+// (adjustments/bonuses included, matching the client's "gross" definition).
+$eid  = (int)$payroll['employee_id'];
+$yy   = (int)date('Y', strtotime($payroll['date_from']));
+$curTo = $conn->real_escape_string($payroll['date_to']);
+$ytd_taxable = 0;
+$ytdq = $conn->query("SELECT pi.present, pi.paid_leave, pi.basic_pay, pi.allowance_amount, pi.allowance_days,
+        pi.absent, pi.per_day, pi.ot, pi.ot_rate, pi.late, pi.legal_holiday, pi.sunday_duty,
+        pi.special_holiday, pi.rate_type, pi.adjustment
+    FROM payroll_items pi INNER JOIN payroll p ON p.id = pi.payroll_id
+    WHERE pi.employee_id = $eid AND YEAR(p.date_from) = $yy AND p.date_to <= '$curTo'");
+if ($ytdq) while ($yr = $ytdq->fetch_assoc()) {
+    $yPerDay  = (float)$yr['per_day'];
+    $yAllow   = (float)$yr['allowance_amount'] * (float)$yr['allowance_days'];
+    $yAbsent  = (float)$yr['absent'] * $yPerDay;
+    $yOt      = (float)$yr['ot'] * (float)$yr['ot_rate'];
+    $yLate    = (float)$yr['late'] * ($yPerDay / 480);
+    $yLegal   = (float)$yr['legal_holiday'] * $yPerDay;
+    $ySunday  = (float)$yr['sunday_duty'] * $yPerDay;
+    $ySpecial = (($yPerDay / 8) * 2.4) * (float)$yr['special_holiday'];
+    if (in_array($yr['rate_type'] ?? 'daily', ['monthly', 'fixed'], true)) {
+        $yGross = (($yr['basic_pay'] + $yAllow - $yAbsent) / 2) + $yOt + $yLegal + $ySunday + $ySpecial - $yLate;
+    } else {
+        $yGross = (($yr['present'] + (float)($yr['paid_leave'] ?? 0)) * $yPerDay) + $yOt + $yAllow - $yLate;
+    }
+    $ytd_taxable += $yGross + (float)($yr['adjustment'] ?? 0);
+}
+
+// ── Leave balances (LEAVES box): credits, used, remaining for the year ──
+$leave_rows = [];
+$lq = $conn->query("SELECT lt.id AS ltid, lt.name, COALESCE(c.credits, 0) AS credits
+    FROM leave_types lt
+    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $eid AND c.year = $yy
+    WHERE lt.status = 1 ORDER BY lt.name");
+if ($lq) while ($lr = $lq->fetch_assoc()) {
+    $used = (float)($conn->query("SELECT COALESCE(SUM(duration),0) AS u FROM leave_requests
+        WHERE employee_id = $eid AND leave_type_id = {$lr['ltid']} AND status = 1 AND YEAR(date_from) = $yy")->fetch_assoc()['u'] ?? 0);
+    $cr = (float)$lr['credits'];
+    if ($cr > 0 || $used > 0) $leave_rows[] = ['name' => $lr['name'], 'used' => $used, 'bal' => max(0, $cr - $used)];
+}
+$nsd_hours = (float)($payroll['nsd_hours'] ?? 0);
 
 // ── Net pay amount in words (Philippine Peso) ──
 // Guarded so this page can be include()'d multiple times (bulk payslip printing).
@@ -553,9 +618,11 @@ body.has-toolbar { padding-top: 50px; }
 <tr>
     <td>Pay Period: <strong><?= date('M d', strtotime($payroll['date_from'])) ?> – <?= date('M d, Y', strtotime($payroll['date_to'])) ?></strong></td>
     <td class="sep">|</td>
-    <td>Site: <strong><?= htmlspecialchars($payroll['site_name'] ?? '—') ?></strong></td>
+    <td>Pay Basis: <strong><?= $is_monthly ? ucfirst($rate_type) : 'Daily' ?></strong></td>
+    <?php if (!empty($payroll['ref_no'])): ?>
     <td class="sep">|</td>
-    <td>Code: <strong><?= htmlspecialchars($payroll['site_code'] ?? '—') ?></strong></td>
+    <td>Ref No: <strong><?= htmlspecialchars($payroll['ref_no']) ?></strong></td>
+    <?php endif; ?>
 </tr>
 </table>
 
@@ -584,7 +651,44 @@ body.has-toolbar { padding-top: 50px; }
     <td><div class="sum-val warn"><?= number_format($payroll['late']) ?></div><div class="sum-lbl">Late (min)</div></td>
     <td><div class="sum-val warn"><?= number_format($payroll['under_time']) ?></div><div class="sum-lbl">Undertime (min)</div></td>
     <td><div class="sum-val"><?= number_format($payroll['legal_holiday'] + $payroll['sunday_duty'] + $payroll['special_holiday'], 0) ?></div><div class="sum-lbl">Holiday/Special</div></td>
+    <?php if ($is_monthly): ?>
+    <td><div class="sum-val">₱<?= number_format($monthly_basic, 0) ?></div><div class="sum-lbl">Monthly Rate</div></td>
+    <?php else: ?>
     <td><div class="sum-val">₱<?= number_format($payroll['per_day'], 0) ?></div><div class="sum-lbl">Daily Rate</div></td>
+    <?php endif; ?>
+</tr>
+</table>
+
+<!-- ══ EMPLOYEE RATE · YEAR TO DATE · LEAVES ══ -->
+<table class="ps-info" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed;">
+<tr style="vertical-align:top;">
+    <td style="width:33.33%;border:1px solid #d8e6e2;background:#fafdfc;padding:8px 11px;">
+        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#176358;border-bottom:2px solid #219688;padding-bottom:3px;margin-bottom:6px;">EMPLOYEE RATE</div>
+        <?php if ($is_monthly): ?>
+        <table style="width:100%;font-size:9.5pt;"><tr><td>Monthly Rate</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($monthly_basic, 2) ?></td></tr></table>
+        <?php else: ?>
+        <table style="width:100%;font-size:9.5pt;"><tr><td>Daily Rate</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($payroll['per_day'], 2) ?></td></tr></table>
+        <table style="width:100%;font-size:9.5pt;"><tr><td>Hourly Rate</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($hourly_rate, 2) ?></td></tr></table>
+        <?php endif; ?>
+    </td>
+    <td style="width:33.33%;border:1px solid #d8e6e2;background:#fafdfc;padding:8px 11px;">
+        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#176358;border-bottom:2px solid #219688;padding-bottom:3px;margin-bottom:6px;">YEAR TO DATE</div>
+        <table style="width:100%;font-size:9.5pt;"><tr><td>Taxable Pay</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($ytd_taxable, 2) ?></td></tr></table>
+        <table style="width:100%;font-size:9.5pt;"><tr><td>Tax</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($tax, 2) ?></td></tr></table>
+    </td>
+    <td style="width:33.34%;border:1px solid #d8e6e2;background:#fafdfc;padding:8px 11px;">
+        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#176358;border-bottom:2px solid #219688;padding-bottom:3px;margin-bottom:6px;">LEAVES</div>
+        <?php if (!empty($leave_rows)): ?>
+        <table style="width:100%;font-size:8.5pt;border-collapse:collapse;">
+            <tr style="color:#999;"><td>Type</td><td style="text-align:right;">Used</td><td style="text-align:right;">Bal</td></tr>
+            <?php foreach ($leave_rows as $lv): $f = fn($n) => rtrim(rtrim(number_format($n, 2), '0'), '.'); ?>
+            <tr><td><?= htmlspecialchars($lv['name']) ?></td><td style="text-align:right;"><?= $f($lv['used']) ?></td><td style="text-align:right;font-weight:700;"><?= $f($lv['bal']) ?></td></tr>
+            <?php endforeach; ?>
+        </table>
+        <?php else: ?>
+        <div style="font-size:8.5pt;color:#999;">No leave credits.</div>
+        <?php endif; ?>
+    </td>
 </tr>
 </table>
 
@@ -639,6 +743,14 @@ body.has-toolbar { padding-top: 50px; }
     <table class="item"><tr><td class="sub-lbl"><?= number_format($payroll['ot'], 2) ?> hrs × ₱<?= number_format($payroll['ot_rate'],2) ?>/hr</td><td class="sub-amt">₱ <?= number_format($overtime_amount, 2) ?></td></tr></table>
     <?php endif; ?>
 
+    <?php /* One-off allowances added for this employee alone */ ?>
+    <?php if ($ps_extra_add > 0): ?>
+    <div class="grp-lbl">One-off Allowances</div>
+    <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 2) continue; ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
+    <?php endforeach; ?>
+    <?php endif; ?>
+
     <?php if ($late_amount > 0 || $payroll['under_time'] > 0): ?>
     <div class="grp-lbl red">Adjustments</div>
     <?php if ($late_amount > 0): ?>
@@ -686,6 +798,14 @@ body.has-toolbar { padding-top: 50px; }
     <?php if ($jcc_advances > 0): ?><table class="item"><tr><td class="sub-lbl">JCC Advances</td><td class="sub-amt red">₱ <?= number_format($jcc_advances,2) ?></td></tr></table><?php endif; ?>
     <?php if ($tax > 0): ?><table class="item"><tr><td class="sub-lbl">Withholding Tax</td><td class="sub-amt red">₱ <?= number_format($tax,2) ?></td></tr></table><?php endif; ?>
     <?php if ($other_deduction > 0): ?><table class="item"><tr><td class="sub-lbl">Other Deduction</td><td class="sub-amt red">₱ <?= number_format($other_deduction,2) ?></td></tr></table><?php endif; ?>
+    <?php endif; ?>
+
+    <?php /* One-off deductions added for this employee alone */ ?>
+    <?php if ($ps_extra_less > 0): ?>
+    <div class="grp-lbl">One-off Items</div>
+    <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 1) continue; ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt red">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
+    <?php endforeach; ?>
     <?php endif; ?>
 </td>
 

@@ -324,6 +324,26 @@ if ($action == "set_payroll_item_review") {
 	echo json_encode($save);
 }
 
+if ($action == "save_payroll_item_extra") {
+	echo json_encode($crud->save_payroll_item_extra());
+}
+
+if ($action == "delete_payroll_item_extra") {
+	echo json_encode($crud->delete_payroll_item_extra());
+}
+
+if ($action == "remittance_breakdown") {
+	echo json_encode($crud->remittance_breakdown());
+}
+
+if ($action == "unlock_payroll_item") {
+	echo json_encode($crud->unlock_payroll_item());
+}
+
+if ($action == "relock_payroll_item") {
+	echo json_encode($crud->relock_payroll_item());
+}
+
 if ($action == "save_fcm_token") {
 	$save = $crud->save_fcm_token();
 	echo json_encode($save);
@@ -375,6 +395,10 @@ if ($action == "resolve_review_dispute") {
 	echo json_encode($crud->resolve_review_dispute());
 }
 
+if ($action == "mark_review_seen") {
+	echo json_encode($crud->mark_review_seen());
+}
+
 if ($action == "bulk_send_dtr_for_review") {
 	echo json_encode($crud->bulk_send_dtr_for_review());
 }
@@ -389,6 +413,10 @@ if ($action == "remind_dtr_review") {
 
 if ($action == "remind_payroll_review") {
 	echo json_encode($crud->remind_payroll_review());
+}
+
+if ($action == "notify_payroll_review_selected") {
+	echo json_encode($crud->notify_payroll_review_selected());
 }
 
 if ($action == "export_dtr_reviews") {
@@ -560,6 +588,18 @@ if ($action == 'finalize_dtr_bulk') {
 }
 if ($action == 'decide_dtr_details') {
     echo json_encode($crud->decide_dtr_details());
+}
+if ($action == 'recompute_dtr') {
+    echo json_encode($crud->recompute_dtr());
+}
+if ($action == 'message_dtr_record') {
+    echo json_encode($crud->message_dtr_record());
+}
+if ($action == 'save_dtr_note') {
+    echo json_encode($crud->save_dtr_note());
+}
+if ($action == 'delete_dtr_note') {
+    echo json_encode($crud->delete_dtr_note());
 }
 if ($action == 'delete_dtr_record') {
     echo json_encode($crud->delete_dtr_record());

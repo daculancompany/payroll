@@ -41,7 +41,7 @@
                                 <?php endwhile; ?>
                             </select>
                         </div>
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
                                 First Name <span class="text-danger">*</span>
                             </label>
@@ -50,15 +50,15 @@
                                 placeholder="e.g. Juan"
                                 data-parsley-required-message="First name is required." required>
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-4">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
-                                M.I.
+                                Middle Name
                             </label>
-                            <input type="text" class="form-control" name="middlename" maxlength="1"
+                            <input type="text" class="form-control" name="middlename" maxlength="225"
                                 value="<?= isset($employee_no) ? htmlspecialchars($middlename) : '' ?>"
-                                placeholder="A">
+                                placeholder="e.g. Santos">
                         </div>
-                        <div class="col-md-5">
+                        <div class="col-md-4">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
                                 Last Name <span class="text-danger">*</span>
                             </label>
@@ -594,6 +594,19 @@
                                     data-parsley-type="number"
                                     data-parsley-required-message="Amount is required." required>
                             </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                                Start of Deduction
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="ri-calendar-check-line"></i></span>
+                                <input type="text" id="loan_effective_date" class="form-control datetimepicker"
+                                    name="effective_date" autocomplete="off" placeholder="YYYY-MM-DD">
+                            </div>
+                            <small class="text-muted" style="font-size:10px;">
+                                Leave blank to start on the loan date. Payrolls ending before this date skip the deduction.
+                            </small>
                         </div>
                         <div class="col-12">
                             <div style="border:1px solid #e8eaf6;border-radius:4px;padding:8px 12px;background:#f9f9ff;">

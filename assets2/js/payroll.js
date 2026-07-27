@@ -49,7 +49,7 @@ $(document).ready(function () {
     $("#table").DataTable({
         processing: true,
         serverSide: true,
-        order: [[2, "desc"]], // Default sort: Period (date) newest first (col 0 = select)
+        order: [[1, "desc"]], // Default sort: Period (date) newest first
         ajax: {
             url: "payroll-server.php",
             type: "POST",
@@ -58,7 +58,6 @@ $(document).ready(function () {
             },
         },
         columns: [
-            { data: "select", orderable: false, className: "text-center" },
             { data: "ref_no" },
             { data: "period" },
             { data: "status" },

@@ -84,12 +84,22 @@ function buildPayslip($conn, $id) {
     $jei    = floatval($p['jei_advances']);
     $jcc    = floatval($p['jcc_advances']);
     $sss    = floatval($p['sss_fund']);
-    $total_all_ded = $total_cont + $total_ded + $total_loan + $other + $tax + $jei + $jcc + $sss;
+    // Named one-off items for this employee: kind 1 deducts, kind 2 adds.
+    $ps_extras = []; $ps_x_add = $ps_x_less = 0.0;
+    if ($conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+        $xq = $conn->query("SELECT kind, label, amount FROM payroll_item_extras WHERE payroll_item_id = " . (int)$p['id'] . " ORDER BY id ASC");
+        if ($xq) while ($x = $xq->fetch_assoc()) {
+            $ps_extras[] = $x;
+            if ((int)$x['kind'] === 2) $ps_x_add += (float)$x['amount']; else $ps_x_less += (float)$x['amount'];
+        }
+    }
+    $gross += $ps_x_add;
+    $total_all_ded = $total_cont + $total_ded + $total_loan + $other + $tax + $jei + $jcc + $sss + $ps_x_less;
     // Manual signed adjustment (+ addition / − recovery), applied to net pay.
     $adjustment  = floatval($p['adjustment'] ?? 0);
     $adj_remarks = trim((string) ($p['adjustment_remarks'] ?? ''));
 
-    return compact('p','gross','allowance_amount','total_basic_rate','absent_amount',
+    return compact('ps_extras','ps_x_add','ps_x_less','p','gross','allowance_amount','total_basic_rate','absent_amount',
                    'overtime_amount','late_amount','undertime_amount',
                    'legal_amt','sunday_amt','special_amt',
                    'contributions_list','deductions_list','loans_list',
@@ -205,6 +215,10 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
 
 <?php foreach ($payslips as $ps):
     $p = $ps['p'];
+    // Named one-off items for this employee (see buildPayslip)
+    $ps_extras = $ps['ps_extras'];
+    $ps_x_add  = $ps['ps_x_add'];
+    $ps_x_less = $ps['ps_x_less'];
     $gross            = $ps['gross'];
     $allowance_amount = $ps['allowance_amount'];
     $total_basic_rate = $ps['total_basic_rate'];
@@ -290,6 +304,12 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <div class="grp-lbl">Overtime</div>
     <table class="item"><tr><td class="sub-lbl"><?= number_format($p['ot'], 2) ?> hrs × ₱<?= number_format($p['ot_rate'],2) ?>/hr</td><td class="sub-amt">₱ <?= number_format($overtime_amount, 2) ?></td></tr></table>
     <?php endif; ?>
+    <?php /* One-off allowances added for this employee alone */ ?>
+    <?php if ($ps_x_add > 0): ?>
+    <div class="grp-lbl">One-off Allowances</div>
+    <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 2) continue; ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
+    <?php endforeach; endif; ?>
     <?php if ($p['absent'] > 0 || $late_amount > 0 || $undertime_amount > 0): ?>
     <div class="grp-lbl">Adjustments (deducted)</div>
     <?php if ($p['absent'] > 0): ?>
@@ -316,6 +336,12 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <div class="grp-lbl">Loans</div>
     <?php foreach ($loans_list as $c): ?>
     <table class="item" style="<?= $c['amount']==0?'opacity:.45':'' ?>"><tr><td class="sub-lbl"><?= htmlspecialchars($c['name']) ?></td><td class="sub-amt">₱ <?= number_format($c['amount'], 2) ?></td></tr></table>
+    <?php endforeach; endif; ?>
+    <?php /* One-off items added for this employee alone */ ?>
+    <?php if ($ps_x_less > 0): ?>
+    <div class="grp-lbl">One-off Items</div>
+    <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 1) continue; ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
     <?php endforeach; endif; ?>
     <?php if ($sss > 0 || $jei > 0 || $jcc > 0 || $tax > 0 || $other > 0): ?>
     <div class="grp-lbl">Miscellaneous</div>

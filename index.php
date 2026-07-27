@@ -9,15 +9,25 @@ $clasification_array = ['bg-primary', 'bg-secondary', 'bg-warning', 'bg-danger',
 <?php include 'db_connect.php'; ?>
 <?php
 session_start();
-// Employees (employee portal session) must NOT reach admin pages.
-if ((!isset($_SESSION['is_login']) || !$_SESSION['is_login'])
-    && isset($_SESSION['emp_is_login']) && $_SESSION['emp_is_login']
-) {
-    header('location:employee-portal.php');
-    exit;
+// The offline payroll machine (APP_ROLE=local) is admin-only — it never serves
+// the employee portal, so an employee session here is meaningless.
+if (!app_is_local()) {
+    // Employees (employee portal session) must NOT reach admin pages.
+    if ((!isset($_SESSION['is_login']) || !$_SESSION['is_login'])
+        && isset($_SESSION['emp_is_login']) && $_SESSION['emp_is_login']
+    ) {
+        header('location:employee-portal.php');
+        exit;
+    }
 }
 if (!isset($_SESSION['is_login']) || !$_SESSION['is_login']) {
     header('location:login.php');
+    exit;
+}
+// Payroll details now lives on its own full-viewport page (like dtr-documents.php);
+// old index.php?page=payroll_calculations&id=N links land there.
+if (($_GET['page'] ?? '') === 'payroll_calculations') {
+    header('Location: payroll_calculations.php?id=' . (int)($_GET['id'] ?? 0));
     exit;
 }
 ?>
@@ -920,6 +930,12 @@ function getRole($login_role)
                 $page = 'home';
             }
 
+            // APP_ROLE=local: only DTR review + Payroll exist on this machine.
+            // Anything else (including the default dashboard) lands on DTR.
+            if (app_is_local() && !app_page_allowed($page)) {
+                $page = 'dtr';
+            }
+
             include $routes[$page] . '.php';
             ?>
         </div>
@@ -1284,7 +1300,7 @@ function getRole($login_role)
     <?php } ?>
 
     <?php if ($page == 'employee' || $page == 'employee-details') { ?>
-        <script src="assets2/js/employee.js?v=6"></script>
+        <script src="assets2/js/employee.js?v=7"></script>
     <?php } ?>
     <?php if ($page == 'schedule-roster') { ?>
         <script src="assets2/js/schedule-roster.js?v=1"></script>

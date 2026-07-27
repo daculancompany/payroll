@@ -9,6 +9,47 @@ if (!defined('APP_ENV')) {
     define('APP_ENV', 'dev');   // 'dev' | 'prod'
 }
 
+/* ──────────────────────────────────────────────────────────────
+ * Deployment role — lets ONE codebase serve two very different boxes.
+ *
+ *   'full'   → everything (default; unchanged behaviour for existing installs)
+ *   'local'  → the offline payroll machine kept off the internet:
+ *              ADMIN LOGIN ONLY, and the menu is limited to DTR + Payroll.
+ *              Employee portal logins are refused outright.
+ *   'portal' → the internet-facing box: employee portal only, no admin app.
+ *
+ * Set it per deployment — either edit this line on that machine, or export
+ * APP_ROLE in the web server environment (the env var wins).
+ * ────────────────────────────────────────────────────────────── */
+if (!defined('APP_ROLE')) {
+    $__role = getenv('APP_ROLE');
+    define('APP_ROLE', in_array($__role, ['full', 'local', 'portal'], true) ? $__role : 'full');
+}
+
+// Pages the admin app is allowed to route to when APP_ROLE = 'local'.
+// Everything else 404s / redirects, so a stray link can't open a screen that
+// has no business being on the payroll machine.
+if (!defined('LOCAL_ALLOWED_PAGES')) {
+    define('LOCAL_ALLOWED_PAGES', [
+        'dtr', 'dtr-details',                                   // DTR review
+        'payroll', 'payroll_items', 'payroll_calculations',     // Payroll
+        'profile',                                              // own account
+    ]);
+}
+
+// Guarded like the other helpers in this file so a double include can't
+// trigger a redeclare fatal.
+if (!function_exists('app_is_local')) {
+    /** True when this deployment is the offline payroll machine. */
+    function app_is_local() { return APP_ROLE === 'local'; }
+    /** True when this deployment is the public employee portal. */
+    function app_is_portal() { return APP_ROLE === 'portal'; }
+    /** Is $page reachable in this deployment role? */
+    function app_page_allowed($page) {
+        return app_is_local() ? in_array($page, LOCAL_ALLOWED_PAGES, true) : true;
+    }
+}
+
 // Application timezone — used by all PHP date()/DateTime calls.
 date_default_timezone_set('Asia/Manila');
 
@@ -18,6 +59,18 @@ date_default_timezone_set('Asia/Manila');
 // Change this ONE line to adjust who can have leave app-wide.
 if (!defined('LEAVE_ELIGIBLE_CLASSIFICATIONS')) {
     define('LEAVE_ELIGIBLE_CLASSIFICATIONS', ['REGULAR', 'EXECUTIVE']);
+}
+
+// ── Employee portal defaults (GLOBAL) ───────────────────────────────────
+// Every newly created employee gets a portal login automatically. The account
+// starts on this default password with must_change = 1, so the employee is
+// forced to set their own on first sign-in. Change these two lines to adjust.
+if (!defined('PORTAL_DEFAULT_PASSWORD')) {
+    define('PORTAL_DEFAULT_PASSWORD', 'password');
+}
+// Used to build a username when the employee has no real email address.
+if (!defined('PORTAL_DEFAULT_EMAIL_DOMAIN')) {
+    define('PORTAL_DEFAULT_EMAIL_DOMAIN', 'hospital.local');
 }
 
 // ── Payroll exclusions (GLOBAL) ─────────────────────────────────────────
@@ -49,6 +102,16 @@ if (!defined('DTR_HIGH_OT_HOURS')) {
 if (!defined('DTR_LOW_ATTENDANCE_PCT')) {
     define('DTR_LOW_ATTENDANCE_PCT', 60);
 }
+// Default work schedule auto-assigned to every employee that has none —
+// applied to new employees (save_employee) and imports (import_employee).
+// Matched by work_schedules.description.
+if (!defined('DTR_DEFAULT_SHIFT')) {
+    define('DTR_DEFAULT_SHIFT', 'Day Shift');
+}
+// Default rest days for auto-assigned schedules: 0=Sun … 6=Sat.
+if (!defined('DTR_DEFAULT_REST_DAYS')) {
+    define('DTR_DEFAULT_REST_DAYS', '0,6');
+}
 
 // Minimum logged days for an employee to count as "normal attendance"
 // in a batch covering $periodDays calendar days.
@@ -79,6 +142,63 @@ if (!function_exists('dtr_clean_condition_sql')) {
                   . ") dtr_att_ok)";
         }
         return $sql;
+    }
+}
+
+// ── DTR day math (GLOBAL) ───────────────────────────────────────────────
+// Single source of truth for computing one DTR_details row's figures from
+// its raw log timestamps + the employee's effective schedule + the holiday
+// calendar. Used by the manual time edit, the incident-report repair and
+// batch recompute so the three can never drift apart.
+//   $log_ts: unix timestamps of the record's logs, any order.
+// Returns [work_hours, overtime, undertime, late, nsd_hours, day_type, is_complete].
+if (!function_exists('dtr_compute_day')) {
+    function dtr_compute_day(mysqli $db, int $employee_id, string $date, array $log_ts): array
+    {
+        sort($log_ts);
+        $n      = count($log_ts);
+        $in_ts  = $n ? $log_ts[0] : null;
+        $out_ts = $n >= 2 ? $log_ts[$n - 1] : null;
+        if ($in_ts && $out_ts && $out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
+
+        $dateEsc  = $db->real_escape_string($date);
+        $day_type = 'regular';
+        $hol = $db->query("SELECT type FROM calendar_events WHERE '$dateEsc' BETWEEN start_date AND COALESCE(end_date,'$dateEsc') AND type IN (1,3) LIMIT 1")->fetch_assoc();
+        if ($hol) $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
+
+        $schedule = $db->query("
+            SELECT ws.* FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = $employee_id AND es.effective_from <= '$dateEsc'
+              AND (es.effective_to IS NULL OR es.effective_to >= '$dateEsc')
+            ORDER BY es.effective_from DESC LIMIT 1
+        ")->fetch_assoc();
+
+        $raw_hours  = ($in_ts && $out_ts) ? ($out_ts - $in_ts) / 3600 : 0;
+        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
+        $work_hours = $out_ts ? round(max(0, $raw_hours - $break_hrs), 2) : 0;
+        $overtime = $late = $undertime = $nsd_hours = 0;
+        if ($out_ts && $schedule) {
+            $sched_start = strtotime($date . ' ' . $schedule['start_time']);
+            $sched_end   = strtotime($date . ' ' . $schedule['end_time']);
+            if ($schedule['is_graveyard']) $sched_end = strtotime('+1 day', $sched_end);
+            $late       = round(max(0, ($in_ts - $sched_start) / 3600), 2);
+            $undertime  = round(max(0, ($sched_end - $out_ts) / 3600), 2);
+            $overtime   = round(max(0, ($out_ts - $sched_end) / 3600), 2);
+            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+            foreach ([[$date . ' 22:00:00', $date . ' 23:59:59'], [$date . ' 00:00:00', $date . ' 06:00:00']] as $w) {
+                $nsd_hours += max(0, min($out_ts, strtotime($w[1])) - max($in_ts, strtotime($w[0]))) / 3600;
+            }
+            $nsd_hours = round($nsd_hours, 2);
+        } elseif ($out_ts) {
+            $work_hours = round(min(8, $work_hours), 2);
+        }
+
+        return [
+            'work_hours' => $work_hours, 'overtime' => $overtime, 'undertime' => $undertime,
+            'late' => $late, 'nsd_hours' => $nsd_hours, 'day_type' => $day_type,
+            'is_complete' => $out_ts ? 1 : 0,
+        ];
     }
 }
 

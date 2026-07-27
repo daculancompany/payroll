@@ -413,17 +413,20 @@ $(document).ready(function () {
 // it both fought the other handler and doubled the per-keystroke work on a
 // 4k-row batch. Removed.
 
-// ── Resolve a disputed review (shared shape with payroll page) ──
-function openResolveDispute(type, reviewId, empName) {
+// ── Answer an employee's sign-off (shared shape with payroll page) ──
+// isDispute=false is a confirmation that carried a message — same endpoint,
+// softer wording, since there is no problem to "resolve".
+function openResolveDispute(type, reviewId, empName, isDispute) {
+    var disp = isDispute !== false;
     Swal.fire({
-        title: "Resolve dispute",
+        title: disp ? "Resolve dispute" : "Reply to employee",
         html: 'Reply to <b>' + (empName || 'employee') + '</b>. They will be notified.',
         input: "textarea",
-        inputPlaceholder: "Explain what was checked / corrected…",
+        inputPlaceholder: disp ? "Explain what was checked / corrected…" : "Answer their question or note…",
         inputAttributes: { "aria-label": "Reply" },
         showCancelButton: true,
         confirmButtonColor: "#0f9d58",
-        confirmButtonText: "Resolve & notify",
+        confirmButtonText: disp ? "Resolve & notify" : "Send reply",
         preConfirm: (val) => {
             if (!val || !val.trim()) {
                 Swal.showValidationMessage("A reply is required.");
@@ -442,7 +445,7 @@ function openResolveDispute(type, reviewId, empName) {
             error: (xhr, status, error) => { Swal.close(); handleError(error || ""); },
             success: function (res) {
                 if (res?.result) {
-                    Swal.fire({ icon: "success", title: "Resolved", text: res.message })
+                    Swal.fire({ icon: "success", title: disp ? "Resolved" : "Reply sent", text: res.message })
                         .then((r) => { if (r.isConfirmed) location.reload(); });
                 } else {
                     Swal.close(); handleError(res?.message || "");
@@ -451,6 +454,83 @@ function openResolveDispute(type, reviewId, empName) {
         });
     });
 }
+
+// ── DTR sign-off conversation popup ─────────────────────────────────────────
+// Reads window.DD_REVIEWS (employee_id → decision + message + HR reply) and
+// shows it as a two-bubble thread; opening it clears the UNREAD marker.
+var DD_RV_META = {
+    1: { cls: "ok",   ic: "ri-checkbox-circle-line", lbl: "Confirmed" },
+    2: { cls: "disp", ic: "ri-error-warning-line",   lbl: "Disputed" },
+};
+function ddEsc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+        return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+}
+function ddOpenReviewConvo(empId) {
+    var r = (window.DD_REVIEWS || {})[empId];
+    var box = document.getElementById("mer-body"), btn = document.getElementById("mer-reply");
+    if (!box) return;
+    if (!r) {
+        box.innerHTML = '<div class="mer-empty"><i class="ri-chat-off-line"></i> This employee has not reviewed yet.</div>';
+        btn.style.display = "none";
+    } else {
+        var meta = DD_RV_META[r.st] || DD_RV_META[1];
+        var h = '<div class="mer-head">'
+            + '<span class="mer-name">' + ddEsc(r.name) + "</span>"
+            + '<span class="mer-badge ' + meta.cls + '"><i class="' + meta.ic + '"></i>' + meta.lbl + "</span>"
+            + (r.at ? '<span class="mer-when">' + ddEsc(r.at) + "</span>" : "")
+            + '</div><div class="mer-chat">';
+        h += r.c
+            ? '<div class="mer-bub them">' + ddEsc(r.c) + '<span class="m">' + ddEsc(r.name) + (r.at ? " · " + ddEsc(r.at) : "") + "</span></div>"
+            : '<div class="mer-empty">' + meta.lbl + " without a message.</div>";
+        if (r.rep) h += '<div class="mer-bub me">' + ddEsc(r.rep) + '<span class="m">HR reply' + (r.rep_at ? " · " + ddEsc(r.rep_at) : "") + "</span></div>";
+        h += "</div>";
+        box.innerHTML = h;
+        // Anything with a message and no reply yet can be answered.
+        var canReply = window.DD_CAN_EDIT !== false && !r.rep && (r.st === 2 || (r.st === 1 && !!r.c));
+        var isDisp = r.st === 2;
+        btn.style.display = canReply ? "" : "none";
+        btn.innerHTML = isDisp
+            ? '<i class="ri-chat-check-line me-1"></i>Resolve &amp; Reply'
+            : '<i class="ri-chat-1-line me-1"></i>Reply';
+        btn.onclick = canReply ? function () { openResolveDispute("dtr", r.id, r.name, isDisp); } : null;
+        if (r.new) ddMarkReviewSeen(empId, r);
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById("modal-emp-review")).show();
+}
+
+// Opening a message clears its UNREAD state, server first then the badges.
+function ddMarkReviewSeen(empId, r) {
+    r.new = 0;
+    fetch("ajax.php?action=mark_review_seen", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "type=dtr&id=" + encodeURIComponent(r.id),
+    }).catch(function () { /* the badge still clears locally */ });
+
+    var row = document.querySelector('.drp-row[data-emp="' + empId + '"]');
+    if (row) {
+        row.classList.remove("unread");
+        var tag = row.querySelector(".drp-row-new");
+        if (tag) tag.remove();
+    }
+    var n = document.getElementById("drp-unread-n"), chip = document.getElementById("drp-unread-chip");
+    if (n) {
+        var left = Math.max(0, (parseInt(n.textContent, 10) || 0) - 1);
+        n.textContent = left;
+        if (!left && chip) chip.style.display = "none";
+    }
+}
+
+// role="button" divs need Enter/Space wired up by hand.
+document.addEventListener("keydown", function (ev) {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    var row = ev.target.closest ? ev.target.closest(".drp-row.has-msg") : null;
+    if (!row) return;
+    ev.preventDefault();
+    row.click();
+});
 
 // ── Remind employees who haven't reviewed this DTR yet ──
 function remindDtrReview(id) {

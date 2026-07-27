@@ -237,16 +237,33 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 async function decideRequest(id, status) {
-    let remarks = '';
-    if (status === 2) {
-        remarks = prompt('Reason for rejection (optional):') || '';
-    }
+    const dlg = status === 1
+        ? await Swal.fire({
+            title: 'Approve this request?',
+            text: 'An approved incident report writes/repairs the actual DTR record. Are you sure?',
+            icon: 'question', showCancelButton: true,
+            confirmButtonColor: '#0f9d58', confirmButtonText: 'Yes, approve',
+        })
+        : await Swal.fire({
+            title: 'Reject this request?',
+            input: 'text', inputLabel: 'Reason for rejection (optional)',
+            inputPlaceholder: 'e.g. No supporting logs / filed on the wrong date',
+            inputAttributes: { maxlength: 255 },
+            icon: 'warning', showCancelButton: true,
+            confirmButtonColor: '#c62828', confirmButtonText: 'Yes, reject',
+        });
+    if (!dlg.isConfirmed) return;
+    const remarks = status === 2 ? String(dlg.value || '').trim() : '';
     const res = await fetch('ajax.php?action=decide_attendance_request', {
         method: 'POST',
         body: new URLSearchParams({ id, status, remarks })
     });
     const json = await res.json();
     if (json?.result) {
+        await Swal.fire({
+            icon: 'success', title: status === 1 ? 'Approved' : 'Rejected',
+            timer: 1400, showConfirmButton: false,
+        });
         location.reload();
     } else {
         Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to update request.' });

@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/db_connect.php'; ?>
 <!doctype html>
 <html lang="en" data-layout="vertical" data-topbar="light" data-sidebar="dark" data-sidebar-size="lg" data-sidebar-image="none" data-preloader="disable" data-theme="default" data-theme-colors="default">
 
@@ -113,7 +114,11 @@
                                 <div class="text-center mt-2">
                                     <h5 class="text-primary">Welcome Back !</h5>
                                     <p class="text-muted">Sign in to continue to Payroll System.</p>
-                                    <p class="text-muted small mb-0"><i class="ri-information-line me-1"></i>Employees: use your <strong>Employee No.</strong> as username.</p>
+                                    <?php if (app_is_local()): ?>
+                                        <span class="badge bg-danger-subtle text-danger"><i class="ri-shield-keyhole-line me-1"></i>Payroll Workstation &mdash; administrator access only</span>
+                                    <?php else: ?>
+                                        <p class="text-muted small mb-0"><i class="ri-information-line me-1"></i>Employees: use your <strong>Employee No.</strong> as username.</p>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="p-2 mt-4">
                                     <form novalidate id="form-login" method="post">

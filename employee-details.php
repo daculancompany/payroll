@@ -567,7 +567,14 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             ?>
                                                 <tr>
                                                     <td><span style="font-weight:600;"><?= htmlspecialchars($row['loan_type']) ?></span></td>
-                                                    <td><span style="font-size:12px;color:#555;"><i class="ri-calendar-2-line me-1 text-muted"></i><?= htmlspecialchars($row['loan_date']) ?></span></td>
+                                                    <td>
+                                                        <span style="font-size:12px;color:#555;"><i class="ri-calendar-2-line me-1 text-muted"></i><?= htmlspecialchars($row['loan_date']) ?></span>
+                                                        <?php if (!empty($row['effective_date']) && $row['effective_date'] !== $row['loan_date']): ?>
+                                                            <div style="font-size:10px;color:#888;margin-top:2px;" title="Deductions start on this date">
+                                                                <i class="ri-calendar-check-line me-1"></i>deducts from <?= htmlspecialchars($row['effective_date']) ?>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['loan_amount'], 2) ?></span></td>
                                                     <td class="text-end">
                                                         <span class="emp-currency-val">&#8369; <?= number_format($row['loan_balance'], 2) ?></span>
@@ -588,6 +595,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                                 loan_id="<?= $row['loan_id'] ?>" employee_id="<?= $row['employee_id'] ?>"
                                                                 loan_balance="<?= $row['loan_balance'] ?>" damount="<?= $row['damount'] ?>"
                                                                 loan_amount="<?= $row['loan_amount'] ?>" loan_date="<?= $row['loan_date'] ?>"
+                                                                effective_date="<?= htmlspecialchars($row['effective_date'] ?? '') ?>"
                                                                 loan_type="<?= $row['loan_type_id'] ?>" loan_status="<?= $row['loan_status'] ?>"
                                                                 onclick="editLoan(this)"
                                                                 data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Loan">

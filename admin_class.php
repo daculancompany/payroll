@@ -99,6 +99,19 @@ class Action
         }
 
         // ── 2) EMPLOYEE (employee_portal_accounts) — sign in with employee_no OR account email ──
+        // The offline payroll machine (APP_ROLE=local) is ADMIN ONLY: skip the
+        // employee branch entirely so employee credentials can never open a
+        // session on the box that holds the salary data.
+        if (function_exists('app_is_local') && app_is_local()) {
+            $up = $this->db->prepare("
+                INSERT INTO login_attempts (identifier, ip, attempts, locked_until) VALUES (?, ?, 1, NULL)
+                ON DUPLICATE KEY UPDATE attempts = attempts + 1,
+                    locked_until = IF(attempts + 1 >= $MAX, DATE_ADD(NOW(), INTERVAL $LOCK MINUTE), locked_until)
+            ");
+            $up->bind_param('ss', $identity, $ip);
+            $up->execute();
+            return ['result' => false, 'message' => 'Invalid username or password.'];
+        }
         $acct_join = $has_acct ? "LEFT JOIN employee_portal_accounts a ON a.employee_id = e.id" : "";
         $acct_cols = $has_acct ? "a.password AS acct_pass, a.is_active AS acct_active" : "NULL AS acct_pass, 1 AS acct_active";
         // Employees may sign in with their employee_no OR the email stored as
@@ -197,6 +210,63 @@ class Action
         $stmt->fetch();
         $stmt->close();
         return $count > 0;
+    }
+
+    /**
+     * Give a newly created employee a portal login on the default password.
+     *
+     * Username is the supplied email when it is a real one, otherwise
+     * firstname.lastname@<default domain>. employee_portal_accounts.username is
+     * UNIQUE, so a numeric suffix is added until the candidate is free —
+     * duplicate emails across staff are common and must not abort the insert.
+     *
+     * No-op when the employee already has an account, which keeps re-imports
+     * from resetting a password the employee has already changed.
+     */
+    private function ensure_portal_account($employee_id, $firstname, $lastname, $email = '')
+    {
+        if (!$this->tableExists('employee_portal_accounts')) return null;
+        $employee_id = (int) $employee_id;
+        if ($employee_id <= 0) return null;
+
+        $chk = $this->db->query("SELECT id FROM employee_portal_accounts WHERE employee_id = $employee_id LIMIT 1");
+        if ($chk && $chk->num_rows > 0) return null;
+
+        $email = strtolower(trim((string) $email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $slug = function ($s) {
+                return preg_replace('/[^a-z0-9]+/', '', strtolower(trim((string) $s)));
+            };
+            $base = $slug($firstname) . '.' . $slug($lastname);
+            if ($base === '' || $base === '.') $base = 'user' . $employee_id;
+            $email = $base . '@' . PORTAL_DEFAULT_EMAIL_DOMAIN;
+        }
+
+        $parts  = array_pad(explode('@', $email, 2), 2, PORTAL_DEFAULT_EMAIL_DOMAIN);
+        $local  = $parts[0];
+        $domain = $parts[1];
+
+        $find = $this->db->prepare("SELECT id FROM employee_portal_accounts WHERE LOWER(username) = LOWER(?) LIMIT 1");
+        $candidate = $email;
+        $n = 1;
+        while (true) {
+            $find->bind_param('s', $candidate);
+            $find->execute();
+            $find->store_result();
+            $taken = $find->num_rows > 0;
+            $find->free_result();
+            if (!$taken) break;
+            $n++;
+            $candidate = $local . $n . '@' . $domain;
+        }
+
+        $hash = password_hash(PORTAL_DEFAULT_PASSWORD, PASSWORD_BCRYPT);
+        $ins  = $this->db->prepare("INSERT INTO employee_portal_accounts
+            (employee_id, username, password, is_active, must_change) VALUES (?, ?, ?, 1, 1)");
+        $ins->bind_param('iss', $employee_id, $candidate, $hash);
+        $ins->execute();
+
+        return $candidate;
     }
 
     // Returns true if the given column exists on the given table.
@@ -563,6 +633,21 @@ class Action
                     throw new Exception("Failed to insert employee.");
                 }
 
+                // Default work schedule (DTR_DEFAULT_SHIFT / DTR_DEFAULT_REST_DAYS,
+                // db_connect.php) so DTR hour/late computations work from day one.
+                $defSched = $this->db->query("SELECT id FROM work_schedules
+                    WHERE LOWER(description) = LOWER('" . $this->db->real_escape_string(DTR_DEFAULT_SHIFT) . "')
+                      AND status = 1 LIMIT 1")->fetch_assoc();
+                if ($defSched) {
+                    $ds = $this->db->prepare("INSERT INTO employee_schedules
+                        (employee_id, schedule_id, effective_from, rest_days, notes)
+                        VALUES (?, ?, CURDATE(), ?, 'Default shift (auto-assigned)')");
+                    $dsId = (int)$defSched['id'];
+                    $dsRd = DTR_DEFAULT_REST_DAYS;
+                    $ds->bind_param('iis', $employee_id, $dsId, $dsRd);
+                    $ds->execute();
+                }
+
                 // Insert contributions for SSS, PHIC, HDMF
                 $contributions = [
                     ['id' => 1, 'amount' => $sss],
@@ -583,6 +668,11 @@ class Action
                         throw new Exception("Failed to insert contribution.");
                     }
                 }
+
+                // Every new employee gets a portal login on the default password
+                // (must_change = 1) so they can sign in without an extra step.
+                $this->ensure_portal_account($employee_id, $firstname, $lastname, $_POST['email'] ?? '');
+
                 $this->db->commit();
                 return $employee_id;
             } else {
@@ -1422,79 +1512,129 @@ class Action
         return ['result' => true, 'message' => $msg];
     }
 
+    /**
+     * Approved incident report → write/repair the day's DTR_details row.
+     *
+     * Where the row lands, in order of preference:
+     *   1. the row this employee already has for that date (repaired in place,
+     *      whatever batch it is in — so the fix is visible in DTR Documents)
+     *   2. a new row in the DTR batch whose period covers the date
+     *      (the employee's own site first)
+     *   3. a new one-day fallback batch — only when no batch covers the date,
+     *      and never with site_id 0 (the FK made that fail silently before)
+     *
+     * Figures (late / undertime / overtime / NSD / holiday type) are computed
+     * exactly like the manual edit path (edit_dtr_time) so an incident repair
+     * and a manual repair always agree. The row is left PENDING so it still
+     * passes through the normal DTR approval flow. Every write is checked and
+     * throws on failure so decide_attendance_request rolls the approval back.
+     */
     private function applyIncidentToDtr($req)
     {
-        $employee_id = $req['employee_id'];
-        $date        = $req['request_date'];
+        $employee_id = (int) $req['employee_id'];
+        $date        = $this->db->real_escape_string($req['request_date']);
 
-        $site_row = $this->db->query("SELECT site_id FROM employee_bio WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1")->fetch_assoc();
-        $site_id  = $site_row ? $site_row['site_id'] : 0;
+        $in_ts  = strtotime($date . ' ' . $req['claimed_time_in']);
+        $out_ts = strtotime($date . ' ' . $req['claimed_time_out']);
+        if ($out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
 
-        $site = $this->db->query("SELECT employer_id FROM sites WHERE id = $site_id LIMIT 1")->fetch_assoc();
-        $employer_id = $site ? $site['employer_id'] : 1;
-
-        $admin_row = $this->db->query("SELECT id FROM users WHERE role = 1 LIMIT 1")->fetch_assoc();
-        $admin_id  = $admin_row ? $admin_row['id'] : 1;
-
-        $dtr_row = $this->db->query("SELECT id FROM DTR WHERE date_from = '$date' AND site_id = $site_id AND device_id = 0 LIMIT 1")->fetch_assoc();
-        if ($dtr_row) {
-            $ddtr_id = $dtr_row['id'];
-        } else {
-            $stmt = $this->db->prepare(
-                "INSERT INTO DTR (local_id, date_from, date_to, timekeeper_id, site_id, device_id, file, uploaded_by, employer_id, status)
-                 VALUES (0, ?, ?, ?, ?, 0, 'incident', NULL, ?, 2)"
-            );
-            $stmt->bind_param('ssiii', $date, $date, $admin_id, $site_id, $employer_id);
-            $stmt->execute();
-            $ddtr_id = $this->db->insert_id;
-        }
-
-        $time_in_ts  = strtotime($date . ' ' . $req['claimed_time_in']);
-        $time_out_ts = strtotime($date . ' ' . $req['claimed_time_out']);
-        if ($time_out_ts <= $time_in_ts) $time_out_ts = strtotime('+1 day', $time_out_ts);
+        // Figures via the shared day math (dtr_compute_day, db_connect.php).
+        $c = dtr_compute_day($this->db, $employee_id, $date, [$in_ts, $out_ts]);
+        $work_hours = $c['work_hours'];
+        $overtime   = $c['overtime'];
+        $undertime  = $c['undertime'];
+        $late       = $c['late'];
+        $nsd_hours  = $c['nsd_hours'];
+        $day_type   = $c['day_type'];
 
         $logs = json_encode([
-            ['dateTime' => date('Y-m-d H:i:s', $time_in_ts), 'type' => 'incident'],
-            ['dateTime' => date('Y-m-d H:i:s', $time_out_ts), 'type' => 'incident'],
+            ['dateTime' => date('Y-m-d H:i:s', $in_ts), 'type' => 'incident'],
+            ['dateTime' => date('Y-m-d H:i:s', $out_ts), 'type' => 'incident'],
         ]);
 
-        $schedule = $this->db->query("
-            SELECT ws.* FROM employee_schedules es
-            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-            WHERE es.employee_id = $employee_id AND es.effective_from <= '$date' AND (es.effective_to IS NULL OR es.effective_to >= '$date')
-            ORDER BY es.effective_from DESC LIMIT 1
+        // ── 1. Repair the employee's existing row for that date, in place ──
+        $existing = $this->db->query("
+            SELECT id FROM DTR_details
+            WHERE employee_id = $employee_id AND date_time = '$date'
+            ORDER BY id DESC LIMIT 1
+        ")->fetch_assoc();
+        if ($existing) {
+            $existing_id = (int) $existing['id'];
+            $stmt = $this->db->prepare(
+                "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
+                 day_type=?, nsd_hours=?, is_complete=1, attendance_type='incident',
+                 status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+            );
+            $stmt->bind_param('sddddsdi', $logs, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours, $existing_id);
+            if (!$stmt->execute()) throw new Exception('Could not update the DTR record: ' . $stmt->error);
+            return;
+        }
+
+        // ── 2. No row yet — put one in the batch that covers the date ──
+        $siteRow = $this->db->query("
+            SELECT b.site_id FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+            WHERE d.employee_id = $employee_id ORDER BY d.date_time DESC LIMIT 1
+        ")->fetch_assoc();
+        $emp_site = $siteRow ? (int) $siteRow['site_id'] : 0;
+
+        $batch = $this->db->query("
+            SELECT id FROM DTR WHERE date_from <= '$date' AND date_to >= '$date'
+            ORDER BY (site_id = $emp_site) DESC, id DESC LIMIT 1
         ")->fetch_assoc();
 
-        $raw_hours  = ($time_out_ts - $time_in_ts) / 3600;
-        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
-        $work_hours = round(max(0, $raw_hours - $break_hrs), 2);
-        if ($schedule) {
-            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+        if ($batch) {
+            $ddtr_id = (int) $batch['id'];
         } else {
-            $work_hours = round(min(8, $work_hours), 2);
+            // ── 3. Fallback: a one-day incident batch with a real site_id ──
+            $site_id = $emp_site;
+            if (!$site_id) {
+                $bio = $this->db->query("SELECT site_id FROM employee_bio WHERE employee_id = $employee_id ORDER BY id DESC LIMIT 1")->fetch_assoc();
+                $site_id = $bio ? (int) $bio['site_id'] : 0;
+            }
+            if (!$site_id) {
+                $first = $this->db->query("SELECT id FROM sites ORDER BY id ASC LIMIT 1")->fetch_assoc();
+                $site_id = $first ? (int) $first['id'] : 0;
+            }
+            if (!$site_id) throw new Exception('No site exists to attach the incident DTR to.');
+
+            $site        = $this->db->query("SELECT employer_id FROM sites WHERE id = $site_id LIMIT 1")->fetch_assoc();
+            $employer_id = $site ? (int) $site['employer_id'] : 1;
+            $admin_row   = $this->db->query("SELECT id FROM users WHERE role = 1 LIMIT 1")->fetch_assoc();
+            $admin_id    = $admin_row ? (int) $admin_row['id'] : 1;
+
+            $found = $this->db->query("SELECT id FROM DTR WHERE date_from = '$date' AND site_id = $site_id AND device_id = 0 AND file = 'incident' LIMIT 1")->fetch_assoc();
+            if ($found) {
+                $ddtr_id = (int) $found['id'];
+            } else {
+                $stmt = $this->db->prepare(
+                    "INSERT INTO DTR (local_id, date_from, date_to, timekeeper_id, site_id, device_id, file, uploaded_by, employer_id, status)
+                     VALUES (0, ?, ?, ?, ?, 0, 'incident', NULL, ?, 2)"
+                );
+                $stmt->bind_param('ssiii', $date, $date, $admin_id, $site_id, $employer_id);
+                if (!$stmt->execute()) throw new Exception('Could not create the incident DTR batch: ' . $stmt->error);
+                $ddtr_id = $this->db->insert_id;
+            }
         }
 
-        $existing = $this->db->query("SELECT id FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' AND ddtr_id = $ddtr_id LIMIT 1")->fetch_assoc();
-        if ($existing) {
-            $stmt = $this->db->prepare("UPDATE DTR_details SET logs=?, work_hours=?, attendance_type='incident' WHERE id=?");
-            $stmt->bind_param('sdi', $logs, $work_hours, $existing['id']);
-        } else {
-            $stmt = $this->db->prepare(
-                "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type) VALUES (?,?,?,?,?,'incident')"
-            );
-            $stmt->bind_param('iisds', $ddtr_id, $employee_id, $date, $work_hours, $logs);
-        }
-        $stmt->execute();
+        $stmt = $this->db->prepare(
+            "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, late, undertime,
+                                      day_type, nsd_hours, is_complete, logs, attendance_type, status)
+             VALUES (?,?,?,?,?,?,?,?,?,1,?,'incident',0)"
+        );
+        $stmt->bind_param('iisddddsds', $ddtr_id, $employee_id, $date, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours, $logs);
+        if (!$stmt->execute()) throw new Exception('Could not write the DTR record: ' . $stmt->error);
     }
 
     // Writes an approved OT request's requested hours onto the matching DTR_details
     // row (same employee + date) so the timekeeper sees it filled in, not 0.
-    // Returns false when no DTR row exists for that date (e.g. rest-day OT or the
-    // biometric import hasn't run yet) so the caller can warn the approver.
+    // With no row for that date (rest-day OT / biometric import not run yet) the
+    // hours are parked on a pending zero-hour row in the batch covering the date
+    // so they aren't lost; its exception flags force a manual decision.
+    // Returns false only when NO batch covers the date, so the caller can warn.
     private function applyOvertimeToDtr($req)
     {
         $employee_id = (int) $req['employee_id'];
-        $date        = $req['request_date'];
+        $date        = $this->db->real_escape_string($req['request_date']);
         $ot_hours    = (float) $req['ot_hours_requested'];
 
         $existing = $this->db->query(
@@ -1502,12 +1642,26 @@ class Action
         )->fetch_assoc();
 
         if ($existing) {
+            $existing_id = (int) $existing['id'];
             $stmt = $this->db->prepare("UPDATE DTR_details SET overtime = ? WHERE id = ?");
-            $stmt->bind_param('di', $ot_hours, $existing['id']);
-            $stmt->execute();
+            $stmt->bind_param('di', $ot_hours, $existing_id);
+            if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
             return true;
         }
-        return false;
+
+        $batch = $this->db->query(
+            "SELECT id FROM DTR WHERE date_from <= '$date' AND date_to >= '$date' ORDER BY id DESC LIMIT 1"
+        )->fetch_assoc();
+        if (!$batch) return false;
+
+        $ddtr_id = (int) $batch['id'];
+        $stmt = $this->db->prepare(
+            "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, logs, attendance_type, status)
+             VALUES (?,?,?,0,?,'[]','overtime',0)"
+        );
+        $stmt->bind_param('iisd', $ddtr_id, $employee_id, $date, $ot_hours);
+        if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
+        return true;
     }
 
     function delete_attendance_request()
@@ -1739,6 +1893,8 @@ class Action
         try {
             $this->db->query("DELETE FROM loan_history WHERE payroll_id = $id");
             $this->db->query("DELETE FROM deduction_history WHERE payroll_id = $id");
+            // One-off items belong to the payroll — don't leave them orphaned.
+            $this->db->query("DELETE FROM payroll_item_extras WHERE payroll_id = $id");
             $this->db->query("DELETE FROM payroll_items WHERE payroll_id = $id");
             $this->db->query("DELETE FROM payroll_employee_reviews WHERE payroll_id = $id");
             $this->db->query("DELETE FROM payroll_logs WHERE payroll_id = $id");
@@ -2672,6 +2828,24 @@ class Action
                     }
                 }
 
+                // Preload declared-holiday dates (legal + special) in this period.
+                // A holiday is a paid non-working day, so a MONTHLY employee who
+                // didn't work it must NOT be counted absent for it. Keyed Y-m-d.
+                $holidayDates = [];
+                $hq = $this->db->prepare(
+                    "SELECT start_date, end_date FROM calendar_events
+                     WHERE type IN (1, 3) AND start_date <= ? AND COALESCE(end_date, start_date) >= ?"
+                );
+                $hq->bind_param('ss', $date_to, $date_from);
+                $hq->execute();
+                $hres = $hq->get_result();
+                while ($h = $hres->fetch_assoc()) {
+                    $hEnd = $h['end_date'] ?: $h['start_date'];
+                    for ($d = strtotime($h['start_date']); $d <= strtotime($hEnd); $d = strtotime('+1 day', $d)) {
+                        $holidayDates[date('Y-m-d', $d)] = true;
+                    }
+                }
+
                 foreach ($result as $row) {
                     $employee_id = $row["employee_id"];
                     $isAutoDeduct = $row["isAutoDeduct"];
@@ -2884,8 +3058,10 @@ class Action
                             $stmt->execute();
                             $result = $stmt->get_result();
                             while ($row = $result->fetch_assoc()) {
-                                // Skip loans not yet started (before loan_date) or fully paid.
-                                if (!empty($row['loan_date']) && date('Y-m-d', strtotime($row['loan_date'])) > $date_to) {
+                                // Skip loans not yet started or fully paid. Deductions begin on
+                                // effective_date when set, else on loan_date (the grant date).
+                                $loan_start = !empty($row['effective_date']) ? $row['effective_date'] : $row['loan_date'];
+                                if (!empty($loan_start) && date('Y-m-d', strtotime($loan_start)) > $date_to) {
                                     continue;
                                 }
                                 if ((int) $row['loan_status'] === 1) continue;
@@ -2953,7 +3129,12 @@ class Action
                     if ($rate_type === 'monthly') {
                         $expected_days = 0;
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
-                            if (!$this->isRestDay($restMap[$employee_id] ?? [], date('Y-m-d', $d))) $expected_days++;
+                            $eymd = date('Y-m-d', $d);
+                            // Expected work days exclude rest days AND declared holidays
+                            // (a holiday is paid non-working — never an absence).
+                            if (!$this->isRestDay($restMap[$employee_id] ?? [], $eymd) && empty($holidayDates[$eymd])) {
+                                $expected_days++;
+                            }
                         }
                         // Paid leave is not an absence.
                         $absent = max(0, (int) round($expected_days - $present - $paid_leave));
@@ -3037,6 +3218,10 @@ class Action
                 $upd = $this->db->prepare("UPDATE payroll SET status = 1 WHERE id = ?");
                 $upd->bind_param("i", $id);
                 $upd->execute();
+                // Recalculating DELETEs and re-INSERTs payroll_items, so every
+                // named one-off item is now pointing at a row id that no longer
+                // exists. Re-attach them by employee before committing.
+                $this->relink_payroll_extras($id);
                 $this->db->commit();
                 return ['result' => true, 'message' => 'save'];
             }
@@ -3139,7 +3324,9 @@ class Action
                     $s->execute();
                     $r = $s->get_result();
                     while ($row = $r->fetch_assoc()) {
-                        if (!empty($row['loan_date']) && date('Y-m-d', strtotime($row['loan_date'])) > $date_to) continue;
+                        // Deductions begin on effective_date when set, else on loan_date.
+                        $loan_start = !empty($row['effective_date']) ? $row['effective_date'] : $row['loan_date'];
+                        if (!empty($loan_start) && date('Y-m-d', strtotime($loan_start)) > $date_to) continue;
                         if ((int) $row['loan_status'] === 1) continue;
                         $balance = (float) $row['loan_balance'];
                         if ($balance <= 0) continue;
@@ -3298,6 +3485,33 @@ class Action
     // Admin resolves one disputed review (DTR or payroll) with a written reply,
     // and the filing employee is notified of the outcome.
     // Params: type = 'dtr'|'payroll', id = reviews-table PK, reply = admin note.
+    /**
+     * Mark an employee's sign-off message as read by staff. Fired when the
+     * message popup opens, so the UNREAD dot clears without needing a reply —
+     * reading a dispute is not the same as resolving it. First reader wins;
+     * later opens leave the original timestamp alone.
+     */
+    function mark_review_seen()
+    {
+        $type = ($_POST['type'] ?? '') === 'payroll' ? 'payroll' : 'dtr';
+        $id   = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+        if (!$id) return ['result' => false, 'message' => 'Missing review id'];
+
+        $table = $type === 'payroll' ? 'payroll_employee_reviews' : 'dtr_employee_reviews';
+        // Older databases may not have run 2026_07_review_seen.sql yet — the
+        // panels degrade to "everything read" rather than erroring.
+        $col = $this->db->query("SHOW COLUMNS FROM $table LIKE 'seen_at'");
+        if (!$col || !$col->num_rows) return ['result' => true, 'message' => 'skipped'];
+
+        $admin = (int) ($_SESSION['login_id'] ?? 0);
+        $stmt = $this->db->prepare("UPDATE $table SET seen_at = NOW(), seen_by = ?,
+                                    reviewed_at = reviewed_at WHERE id = ? AND seen_at IS NULL");
+        $stmt->bind_param('ii', $admin, $id);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        return ['result' => true, 'message' => 'seen', 'at' => date('M j, g:i A')];
+    }
+
     function resolve_review_dispute()
     {
         $type  = ($_POST['type'] ?? '') === 'payroll' ? 'payroll' : 'dtr';
@@ -3311,12 +3525,25 @@ class Action
 
         $rv = $this->db->query("SELECT * FROM $table WHERE id = $id")->fetch_assoc();
         if (!$rv) return ['result' => false, 'message' => 'Review not found'];
-        if ((int)$rv['status'] !== 2) return ['result' => false, 'message' => 'Only disputes can be resolved.'];
+        // Disputes AND confirmations can be answered: an employee who signs off
+        // with "correct, but move my loan to next cutoff" deserves a reply too.
+        // Only a sign-off that carries no message has nothing to respond to.
+        $rvStatus = (int)$rv['status'];
+        if ($rvStatus !== 1 && $rvStatus !== 2) return ['result' => false, 'message' => 'This employee has not reviewed yet.'];
+        $isDispute = $rvStatus === 2;
+        if (!$isDispute && trim((string)($rv['comment'] ?? '')) === '') {
+            return ['result' => false, 'message' => 'This employee confirmed without a message — there is nothing to reply to.'];
+        }
 
         // reviewed_at = reviewed_at guards against schemas where the column still
         // has ON UPDATE CURRENT_TIMESTAMP: resolving must not overwrite when the
         // employee actually signed off.
-        $stmt = $this->db->prepare("UPDATE $table SET resolved_at = NOW(), resolved_by = ?, admin_reply = ?, reviewed_at = reviewed_at WHERE id = ?");
+        // Replying implies reading, so clear the UNREAD marker in the same write
+        // (guarded — 2026_07_review_seen.sql may not have run yet).
+        $hasSeen = $this->db->query("SHOW COLUMNS FROM $table LIKE 'seen_at'");
+        $seenSet = ($hasSeen && $hasSeen->num_rows)
+            ? ", seen_at = COALESCE(seen_at, NOW()), seen_by = COALESCE(seen_by, $admin)" : '';
+        $stmt = $this->db->prepare("UPDATE $table SET resolved_at = NOW(), resolved_by = ?, admin_reply = ?$seenSet, reviewed_at = reviewed_at WHERE id = ?");
         $stmt->bind_param('isi', $admin, $reply, $id);
         if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
 
@@ -3334,14 +3561,21 @@ class Action
         $period = $b ? (date('M j', strtotime($b['date_from'])) . ' – ' . date('M j, Y', strtotime($b['date_to']))) : '';
         $this->notifyEmployee(
             (int) $rv['employee_id'],
-            'Your dispute was addressed',
-            "HR responded to your $what dispute for $period: $reply",
+            $isDispute ? 'Your dispute was addressed' : 'HR replied to your message',
+            $isDispute
+                ? "HR responded to your $what dispute for $period: $reply"
+                : "HR replied to your note on your $what for $period: $reply",
             'ri-chat-check-line',
             'info',
             $link
         );
 
-        return ['result' => true, 'message' => 'Dispute resolved and the employee has been notified.'];
+        return [
+            'result'  => true,
+            'message' => $isDispute
+                ? 'Dispute resolved and the employee has been notified.'
+                : 'Reply sent and the employee has been notified.',
+        ];
     }
 
     // Bulk-send several DTR batches for review (status 1 → 3). ids = array of DTR ids.
@@ -3424,6 +3658,86 @@ class Action
     function remind_payroll_review()
     {
         return $this->_remindReview('payroll');
+    }
+
+    // Per-payroll-item review-request counters. Added on demand so existing
+    // databases pick them up without a manual migration.
+    private function ensureReviewSentColumns()
+    {
+        $has = $this->db->query("SHOW COLUMNS FROM payroll_items LIKE 'review_sent_count'");
+        if ($has && $has->num_rows > 0) return true;
+        $this->db->query("ALTER TABLE payroll_items
+            ADD COLUMN review_sent_count INT NOT NULL DEFAULT 0,
+            ADD COLUMN review_sent_at DATETIME NULL");
+        $chk = $this->db->query("SHOW COLUMNS FROM payroll_items LIKE 'review_sent_count'");
+        return $chk && $chk->num_rows > 0;
+    }
+
+    // Ask a SUBSET of a payroll's employees to review their payslip.
+    // Unlike send_payroll_for_review() this does NOT change the batch status —
+    // it only notifies the picked employees, so a reviewer can chase individual
+    // people while the batch is still being worked on. Repeatable: each send
+    // bumps that employee's review_sent_count.
+    function notify_payroll_review_selected()
+    {
+        $id  = isset($_POST['id']) ? (int) $_POST['id'] : 0;
+        $raw = $_POST['item_ids'] ?? '';
+        if (is_array($raw)) $raw = implode(',', $raw);
+        $itemIds = array_values(array_filter(array_map('intval', explode(',', (string) $raw))));
+        if (!$id || !$itemIds) return ['result' => false, 'message' => 'Select at least one employee first.'];
+
+        $payroll = $this->db->query("SELECT id, date_from, date_to, status FROM payroll WHERE id = $id")->fetch_assoc();
+        if (!$payroll) return ['result' => false, 'message' => 'Payroll not found.'];
+        // Employees can only SEE and confirm a payslip while the batch is out
+        // for review (status 3) — see employee-portal.php. Refuse to notify in
+        // any other state so a request can never point at an empty portal.
+        $pstatus = (int) $payroll['status'];
+        if ($pstatus !== 3) {
+            $why = [
+                0 => 'Calculate this payroll first, then send it for review.',
+                1 => 'Send this payroll for review first — employees cannot see their payslip yet.',
+                2 => 'This payroll is locked; the confirmation window is closed.',
+            ][$pstatus] ?? 'This payroll is not open for employee review.';
+            return ['result' => false, 'message' => $why];
+        }
+
+        // Scope the ids to this payroll so a crafted request can't notify others.
+        $idList = implode(',', $itemIds);
+        $period = date('M j', strtotime($payroll['date_from'])) . ' – ' . date('M j, Y', strtotime($payroll['date_to']));
+        $count  = $this->notifyEmployeesFromQuery(
+            "SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $id AND id IN ($idList)",
+            'Please review your payslip',
+            "Your payslip for $period needs your review. Please check it and confirm.",
+            'ri-file-list-3-line',
+            'warning',
+            'employee-portal.php?tab=payslips'
+        );
+        if ($count <= 0) return ['result' => false, 'message' => 'No matching employees in this payroll.'];
+
+        // Bump the per-employee send counter and return the fresh values so the
+        // UI can update its badges without a reload.
+        $sent = [];
+        if ($this->ensureReviewSentColumns()) {
+            $this->db->query("UPDATE payroll_items
+                SET review_sent_count = review_sent_count + 1, review_sent_at = NOW()
+                WHERE payroll_id = $id AND id IN ($idList)");
+            $res = $this->db->query("SELECT id, review_sent_count, review_sent_at
+                FROM payroll_items WHERE payroll_id = $id AND id IN ($idList)");
+            if ($res) while ($r = $res->fetch_assoc()) {
+                $sent[(int) $r['id']] = [
+                    'n'  => (int) $r['review_sent_count'],
+                    'at' => $r['review_sent_at'] ? date('M j, g:i A', strtotime($r['review_sent_at'])) : '',
+                ];
+            }
+        }
+
+        // type 5 appends " Payroll" to the phrase (see save_payroll_history)
+        $this->save_payroll_history($id, 5, "Review Request Sent to $count Employee(s) —");
+        return [
+            'result'  => true,
+            'message' => "$count employee(s) notified to review their payslip.",
+            'sent'    => $sent,
+        ];
     }
 
     private function _remindReview($type)
@@ -4682,8 +4996,494 @@ class Action
         return $stmt->execute() ? 1 : 0;
     }
 
+    /**
+     * May this payroll_item be written to right now?
+     *
+     * Until now the ONLY thing stopping an edit was whether the page happened to
+     * render an <input>, which meant a browser tab left open from before a batch
+     * was sent for review (or locked) could still silently save over figures
+     * employees were in the middle of confirming. The server decides now.
+     *
+     * Open payroll (status 1) → editable.
+     * Out for review (3)      → editable ONLY for a row an admin explicitly
+     *                           unlocked (see unlock_payroll_item).
+     * Locked (2) / New (0)    → never.
+     *
+     * Returns null when the write is allowed, or an error array to return as-is.
+     */
+    private function payroll_item_write_block($itemId)
+    {
+        $itemId = (int) $itemId;
+        if (!$itemId) return ['result' => false, 'message' => 'Missing payroll item.'];
+
+        // unlocked_at ships in 2026_07_payroll_item_unlock.sql — older databases
+        // simply have no per-row unlock, so treat every row as locked.
+        $hasUnlock = $this->db->query("SHOW COLUMNS FROM payroll_items LIKE 'unlocked_at'");
+        $unlockCol = ($hasUnlock && $hasUnlock->num_rows) ? 'i.unlocked_at' : 'NULL AS unlocked_at';
+
+        $row = $this->db->query("SELECT p.status, $unlockCol
+                FROM payroll_items i
+                INNER JOIN payroll p ON p.id = i.payroll_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+
+        $status = (int) $row['status'];
+        if ($status === 1) return null;
+        if ($status === 3 && !empty($row['unlocked_at'])) return null;
+
+        return ['result' => false, 'message' => $status === 2
+            ? 'This payroll is locked — reopen it before editing.'
+            : 'This payroll is out for employee review. Unlock the employee first to edit their figures.',
+            'reload' => true];
+    }
+
+    /**
+     * Add a named one-off line to ONE employee's payslip — "Uniform ₱500" as a
+     * deduction, "Transport ₱300" as an allowance — without recalculating the
+     * batch (which would rebuild payroll_items and discard manual corrections).
+     *
+     * Goes through the same payroll_item_write_block() gate as any other edit,
+     * so an in-review batch still requires that employee to be unlocked first.
+     */
+    function save_payroll_item_extra()
+    {
+        $itemId = (int)($_POST['item_id'] ?? 0);
+        if ($block = $this->payroll_item_write_block($itemId)) return $block;
+
+        $extraId = (int)($_POST['id'] ?? 0);          // >0 edits an existing line
+        $kind    = (int)($_POST['kind'] ?? 1) === 2 ? 2 : 1;   // 2 allowance, else deduction
+        $label   = trim((string)($_POST['label'] ?? ''));
+        $amount  = round((float)($_POST['amount'] ?? 0), 2);
+
+        if ($label === '')  return ['result' => false, 'message' => 'A label is required.'];
+        if (mb_strlen($label) > 120) $label = mb_substr($label, 0, 120);
+        if ($amount <= 0)   return ['result' => false, 'message' => 'Enter an amount greater than zero.'];
+
+        $row = $this->db->query("SELECT payroll_id, employee_id FROM payroll_items WHERE id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+
+        $uid = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        if ($extraId) {
+            $st = $this->db->prepare("UPDATE payroll_item_extras SET kind = ?, label = ?, amount = ?
+                                      WHERE id = ? AND payroll_item_id = ?");
+            $st->bind_param('isdii', $kind, $label, $amount, $extraId, $itemId);
+        } else {
+            $st = $this->db->prepare("INSERT INTO payroll_item_extras
+                    (payroll_item_id, payroll_id, employee_id, kind, label, amount, created_by)
+                    VALUES (?,?,?,?,?,?,?)");
+            $st->bind_param('iiiisdi', $itemId, $row['payroll_id'], $row['employee_id'], $kind, $label, $amount, $uid);
+        }
+        if (!$st->execute()) return ['result' => false, 'message' => $st->error];
+        if (!$extraId) $extraId = $this->db->insert_id;
+
+        $this->save_payroll_history((int)$row['payroll_id'], 5,
+            ($kind === 2 ? 'Added allowance "' : 'Added deduction "') . $label . '" ' . number_format($amount, 2) . ' —');
+
+        // The stored net is what the portal and payslips read — keep it true.
+        $this->resync_item_net($itemId);
+        // Changing what an employee is paid invalidates any sign-off they gave.
+        $this->void_signoff_for_item($itemId);
+
+        return ['result' => true, 'message' => 'Item saved.', 'id' => $extraId,
+                'extras' => $this->payroll_item_extras($itemId)];
+    }
+
+    /** Remove one extra line from an employee's payslip. */
+    function delete_payroll_item_extra()
+    {
+        $extraId = (int)($_POST['id'] ?? 0);
+        if (!$extraId) return ['result' => false, 'message' => 'Missing item.'];
+
+        $row = $this->db->query("SELECT payroll_item_id, payroll_id, kind, label, amount
+                                 FROM payroll_item_extras WHERE id = $extraId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Item not found.'];
+        if ($block = $this->payroll_item_write_block($row['payroll_item_id'])) return $block;
+
+        if (!$this->db->query("DELETE FROM payroll_item_extras WHERE id = $extraId")) {
+            return ['result' => false, 'message' => $this->db->error];
+        }
+        $this->save_payroll_history((int)$row['payroll_id'], 5,
+            'Removed ' . ((int)$row['kind'] === 2 ? 'allowance' : 'deduction') . ' "' . $row['label'] . '" —');
+        $this->resync_item_net($row['payroll_item_id']);
+        $this->void_signoff_for_item($row['payroll_item_id']);
+
+        return ['result' => true, 'message' => 'Item removed.',
+                'extras' => $this->payroll_item_extras($row['payroll_item_id'])];
+    }
+
+    /**
+     * Re-attach a payroll's one-off items after its payroll_items rows were
+     * rebuilt (recalculation DELETEs and re-INSERTs them, so every stored
+     * payroll_item_id is stale). Extras carry payroll_id + employee_id exactly
+     * so they can be found again.
+     *
+     * An employee who dropped out of the recalculated batch has their extras
+     * removed rather than left dangling — otherwise the lines would silently
+     * reappear the next time that employee turned up in the payroll.
+     * Finally each touched row's stored net is recomputed to include them.
+     */
+    private function relink_payroll_extras($payrollId)
+    {
+        $payrollId = (int) $payrollId;
+        $has = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'");
+        if (!$has || !$has->num_rows) return;
+
+        $any = $this->db->query("SELECT COUNT(*) AS c FROM payroll_item_extras
+                                 WHERE payroll_id = $payrollId")->fetch_assoc();
+        if (!$any || !(int)$any['c']) return;
+
+        // One target row per employee (an employee can hold several items when a
+        // payroll spans sites — the lowest id is the stable, repeatable choice).
+        $this->db->query("
+            UPDATE payroll_item_extras x
+            INNER JOIN (
+                SELECT employee_id, MIN(id) AS item_id
+                FROM payroll_items WHERE payroll_id = $payrollId
+                GROUP BY employee_id
+            ) pick ON pick.employee_id = x.employee_id
+            SET x.payroll_item_id = pick.item_id
+            WHERE x.payroll_id = $payrollId");
+
+        // Employees no longer in the batch: drop their now-meaningless extras.
+        $this->db->query("
+            DELETE x FROM payroll_item_extras x
+            LEFT JOIN payroll_items i ON i.id = x.payroll_item_id AND i.payroll_id = x.payroll_id
+            WHERE x.payroll_id = $payrollId AND i.id IS NULL");
+
+        // Stored net must include the re-attached items.
+        $ids = $this->db->query("SELECT DISTINCT payroll_item_id FROM payroll_item_extras
+                                 WHERE payroll_id = $payrollId");
+        if ($ids) while ($r = $ids->fetch_assoc()) $this->resync_item_net((int)$r['payroll_item_id']);
+    }
+
+    /**
+     * Re-persist payroll_items.net for one row.
+     *
+     * The employee portal, payslip PDFs and reports read the STORED net rather
+     * than recomputing it, so an extra that only lived in payroll_item_extras
+     * would be invisible to all of them. Recomputed from the row's own figures
+     * plus its extras — never from a delta, so repeated saves cannot drift.
+     */
+    private function resync_item_net($itemId)
+    {
+        $itemId = (int)$itemId;
+        $row = $this->db->query("SELECT pi.*, pay.settings, pay.type AS payroll_type
+                FROM payroll_items pi INNER JOIN payroll pay ON pay.id = pi.payroll_id
+                WHERE pi.id = $itemId")->fetch_assoc();
+        if (!$row) return;
+
+        $perMinute = $row['per_day'] / (8 * 60);
+        $allowance = $row['allowance_amount'] * $row['allowance_days'];
+        $ot        = $row['ot'] * $row['ot_rate'];
+        $late      = $row['late'] * $perMinute;
+        $legal     = $row['legal_holiday'] * $row['per_day'];
+        $sunday    = $row['sunday_duty'] * $row['per_day'];
+        $special   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
+
+        // Same pay-basis split as get_payroll_rows_data().
+        $rt = $row['rate_type'] ?? 'daily';
+        $isMonthly = $rt === 'monthly' || $rt === 'fixed' || ((int)$row['payroll_type'] === 5);
+        if ($isMonthly) {
+            $absent = $row['absent'] * $row['per_day'];
+            $gross  = (($row['basic_pay'] + $allowance - $absent) / 2) + $ot + $legal + $sunday + $special - $late;
+        } else {
+            $gross  = ($row['present'] * $row['per_day']) + $ot + $allowance + $legal + $sunday + $special - $late;
+        }
+
+        $ded = 0.0;
+        foreach (['contributions', 'deductions', 'loans'] as $col) {
+            foreach ((json_decode($row[$col] ?? '', true) ?: []) as $c) $ded += (float)($c['amount'] ?? 0);
+        }
+        $ded += (float)$row['sss_fund'] + (float)$row['jei_advances']
+              + (float)$row['jcc_advances'] + (float)$row['tax'] + (float)$row['other_deduction'];
+
+        $ref = 0.0;
+        foreach ((json_decode($row['refunds'] ?? '', true) ?: []) as $r) $ref += (float)($r['amount'] ?? 0);
+
+        $xAdd = $xLess = 0.0;
+        foreach ($this->payroll_item_extras($itemId) as $x) {
+            if ($x['kind'] === 2) $xAdd += $x['amt']; else $xLess += $x['amt'];
+        }
+
+        $gross += $xAdd;               // allowance extras belong in gross
+        $net = $gross - $ded - $xLess + $ref + (float)($row['adjustment'] ?? 0);
+        $st = $this->db->prepare("UPDATE payroll_items SET net = ? WHERE id = ?");
+        $st->bind_param('di', $net, $itemId);
+        $st->execute();
+    }
+
+    /** Every extra line on one payroll item, oldest first. */
+    private function payroll_item_extras($itemId)
+    {
+        $itemId = (int)$itemId;
+        $out = [];
+        $q = $this->db->query("SELECT id, kind, label, amount FROM payroll_item_extras
+                               WHERE payroll_item_id = $itemId ORDER BY id ASC");
+        if ($q) while ($r = $q->fetch_assoc()) {
+            $out[] = ['id' => (int)$r['id'], 'kind' => (int)$r['kind'],
+                      'label' => $r['label'], 'amt' => (float)$r['amount']];
+        }
+        return $out;
+    }
+
+    /**
+     * Remittance breakdown — totals per contribution / deduction / loan / refund
+     * type for one payroll, recomputed from payroll_items on every call.
+     *
+     * The modal used to be PHP-rendered once at page load, so after saving an
+     * edit it still showed the figures from before the change (the workbench
+     * updates in place and never reloads). Fetching it fresh each time the modal
+     * opens keeps it honest no matter what moved the numbers — a save here, an
+     * unlocked correction, or another admin working the same batch.
+     */
+    function remittance_breakdown()
+    {
+        $id = (int)($_POST['id'] ?? $_GET['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing payroll id.'];
+
+        $payroll = $this->db->query("SELECT settings FROM payroll WHERE id = $id")->fetch_assoc();
+        if (!$payroll) return ['result' => false, 'message' => 'Payroll not found.'];
+
+        // settings lists every configured type; type 4 is refunds, the rest are
+        // deductions (1 contribution, 2 deduction, 3 loan).
+        $settings = json_decode($payroll['settings'] ?? '', true) ?: [];
+
+        // key "type-id" => ['type','id','total','employees']
+        $remit = [];
+        $add = function ($type, $ddId, $amount) use (&$remit) {
+            $key = $type . '-' . $ddId;
+            if (!isset($remit[$key])) {
+                $remit[$key] = ['type' => (int)$type, 'id' => (int)$ddId, 'total' => 0.0, 'employees' => 0];
+            }
+            $remit[$key]['total'] += (float)$amount;
+            if ((float)$amount > 0) $remit[$key]['employees']++;
+        };
+
+        // Which JSON column and which id key each configured type reads from —
+        // mirrors the table loops in payroll_calculations.php exactly.
+        $srcFor = [
+            1 => ['contributions', 'contribution_id'],
+            2 => ['deductions',    'deduction_id'],
+            3 => ['loans',         'deduction_id'],
+            4 => ['refunds',       'refund_id'],
+        ];
+
+        $rows = $this->db->query("SELECT contributions, deductions, loans, refunds
+                                  FROM payroll_items WHERE payroll_id = $id");
+        if ($rows) while ($row = $rows->fetch_assoc()) {
+            $decoded = [
+                'contributions' => json_decode($row['contributions'] ?? '', true) ?: [],
+                'deductions'    => json_decode($row['deductions'] ?? '', true) ?: [],
+                'loans'         => json_decode($row['loans'] ?? '', true) ?: [],
+                'refunds'       => json_decode($row['refunds'] ?? '', true) ?: [],
+            ];
+            foreach ($settings as $cfg) {
+                $type = (int)($cfg['type'] ?? 0);
+                if (!isset($srcFor[$type])) continue;
+                [$col, $idKey] = $srcFor[$type];
+                $amount = 0;
+                foreach ($decoded[$col] as $entry) {
+                    if (($entry[$idKey] ?? null) == $cfg['id']) $amount = $entry['amount'] ?? 0;
+                }
+                $add($type, $cfg['id'], $amount);
+            }
+        }
+
+        // Group for display, resolving each type's name from its source table.
+        $labels = [
+            1 => ['label' => 'Contributions', 'icon' => 'ri-hand-coin-line'],
+            2 => ['label' => 'Deductions',    'icon' => 'ri-subtract-line'],
+            3 => ['label' => 'Loans',         'icon' => 'ri-bank-card-line'],
+            4 => ['label' => 'Refunds',       'icon' => 'ri-refund-2-line'],
+        ];
+        $groups = [];
+        $dedTotal = $refTotal = 0.0;
+        foreach ($labels as $type => $meta) {
+            $items = [];
+            foreach ($remit as $rm) {
+                if ($rm['type'] !== $type) continue;
+                $items[] = [
+                    'name'      => $this->remit_type_label($type, $rm['id']),
+                    'employees' => (int)$rm['employees'],
+                    'total'     => round((float)$rm['total'], 2),
+                ];
+                if ($type === 4) $refTotal += $rm['total'];
+                else             $dedTotal += $rm['total'];
+            }
+            if ($items) $groups[] = ['label' => $meta['label'], 'icon' => $meta['icon'], 'items' => $items];
+        }
+
+        // ── Named one-off items (payroll_item_extras) ──
+        // Ad-hoc per-employee lines rather than configured types, so they get
+        // their own groups, collapsed by label. One-off DEDUCTIONS are money
+        // withheld and count toward Total Deductions; one-off ALLOWANCES are
+        // payouts, so they are totalled separately rather than muddling either.
+        $extraAddTotal = 0.0;
+        if ($this->db->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+            $byKind = [1 => [], 2 => []];
+            $xq = $this->db->query("SELECT kind, label, COUNT(*) AS employees, SUM(amount) AS total
+                                    FROM payroll_item_extras WHERE payroll_id = $id
+                                    GROUP BY kind, label ORDER BY label ASC");
+            if ($xq) while ($x = $xq->fetch_assoc()) {
+                $byKind[(int)$x['kind'] === 2 ? 2 : 1][] = [
+                    'name'      => $x['label'],
+                    'employees' => (int)$x['employees'],
+                    'total'     => round((float)$x['total'], 2),
+                ];
+            }
+            if ($byKind[1]) {
+                $groups[] = ['label' => 'One-off Deductions', 'icon' => 'ri-scissors-cut-line', 'items' => $byKind[1]];
+                foreach ($byKind[1] as $it) $dedTotal += $it['total'];
+            }
+            if ($byKind[2]) {
+                $groups[] = ['label' => 'One-off Allowances', 'icon' => 'ri-gift-line', 'items' => $byKind[2]];
+                foreach ($byKind[2] as $it) $extraAddTotal += $it['total'];
+            }
+        }
+
+        $emp = $this->db->query("SELECT COUNT(DISTINCT employee_id) AS c FROM payroll_items
+                                 WHERE payroll_id = $id")->fetch_assoc();
+
+        return [
+            'result'      => true,
+            'groups'      => $groups,
+            'ded_total'   => round($dedTotal, 2),
+            'ref_total'   => round($refTotal, 2),
+            'extra_add'   => round($extraAddTotal, 2),
+            'employees'   => (int)($emp['c'] ?? 0),
+        ];
+    }
+
+    /** Display name for one remittance type, from whichever table defines it. */
+    private function remit_type_label($type, $ddId)
+    {
+        $ddId = (int)$ddId;
+        $sql = [
+            1 => "SELECT contribution AS n FROM contributions WHERE id = $ddId",
+            2 => "SELECT deduction AS n FROM deductions WHERE id = $ddId",
+            3 => "SELECT loan_type AS n FROM contribution_loan_types WHERE clt_id = $ddId",
+            4 => "SELECT refunds AS n FROM refunds WHERE id = $ddId",
+        ][(int)$type] ?? null;
+        if (!$sql) return '#' . $ddId;
+        $r = $this->db->query($sql);
+        $row = $r ? $r->fetch_assoc() : null;
+        return $row['n'] ?? ('#' . $ddId);
+    }
+
+    /**
+     * Reopen ONE employee's row while the payroll is out for employee review, so
+     * a disputed figure can be corrected without recalling the whole batch and
+     * voiding everybody else's sign-off.
+     *
+     * Admin only: this rewrites money after employees have already seen it.
+     * Unlocking alone changes no figures and voids no sign-off — that happens
+     * only if an edit is actually saved (see void_signoff_for_item).
+     */
+    function unlock_payroll_item()
+    {
+        if ((int)($_SESSION['login_role'] ?? 0) !== 1) {
+            return ['result' => false, 'message' => 'Only an administrator can unlock an employee for editing.'];
+        }
+        $itemId = (int)($_POST['id'] ?? 0);
+        $reason = trim((string)($_POST['reason'] ?? ''));
+        if (!$itemId) return ['result' => false, 'message' => 'Missing payroll item.'];
+        if ($reason === '') return ['result' => false, 'message' => 'A reason is required to unlock an employee.'];
+        if (mb_strlen($reason) > 255) $reason = mb_substr($reason, 0, 255);
+
+        $row = $this->db->query("SELECT i.payroll_id, i.employee_id, p.status,
+                    CONCAT(e.lastname, ', ', e.firstname) AS name
+                FROM payroll_items i
+                INNER JOIN payroll p ON p.id = i.payroll_id
+                INNER JOIN employee e ON e.id = i.employee_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+        if ((int)$row['status'] !== 3) {
+            return ['result' => false, 'message' => (int)$row['status'] === 1
+                ? 'This payroll is already open — no unlock needed.'
+                : 'Only a payroll that is out for employee review can be unlocked per employee.'];
+        }
+
+        $uid = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $st = $this->db->prepare("UPDATE payroll_items
+                SET unlocked_at = NOW(), unlocked_by = ?, unlocked_reason = ? WHERE id = ?");
+        $st->bind_param('isi', $uid, $reason, $itemId);
+        if (!$st->execute()) return ['result' => false, 'message' => $st->error];
+
+        $this->save_payroll_history((int)$row['payroll_id'], 5,
+            'Unlocked ' . $row['name'] . ' for editing (' . $reason . ') —');
+
+        return [
+            'result'  => true,
+            'message' => $row['name'] . ' is now editable. Saving a change will void their review and ask them to confirm again.',
+            'name'    => $row['name'],
+        ];
+    }
+
+    /** Re-freeze a row that was unlocked (also called automatically on re-confirm). */
+    function relock_payroll_item()
+    {
+        if ((int)($_SESSION['login_role'] ?? 0) !== 1) {
+            return ['result' => false, 'message' => 'Only an administrator can lock an employee.'];
+        }
+        $itemId = (int)($_POST['id'] ?? 0);
+        if (!$itemId) return ['result' => false, 'message' => 'Missing payroll item.'];
+
+        $row = $this->db->query("SELECT i.payroll_id, CONCAT(e.lastname, ', ', e.firstname) AS name
+                FROM payroll_items i INNER JOIN employee e ON e.id = i.employee_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
+
+        if (!$this->db->query("UPDATE payroll_items
+                SET unlocked_at = NULL, unlocked_by = NULL, unlocked_reason = NULL
+                WHERE id = $itemId")) {
+            return ['result' => false, 'message' => $this->db->error];
+        }
+        $this->save_payroll_history((int)$row['payroll_id'], 5, 'Locked ' . $row['name'] . ' —');
+
+        return ['result' => true, 'message' => $row['name'] . ' is locked again.', 'name' => $row['name']];
+    }
+
+    /**
+     * An unlocked row was actually edited, so whatever the employee signed off on
+     * no longer exists: drop their sign-off and ask them to review the corrected
+     * payslip. Without this the batch would report them as "Confirmed" against
+     * figures they never saw.
+     */
+    private function void_signoff_for_item($itemId)
+    {
+        $itemId = (int) $itemId;
+        $row = $this->db->query("SELECT i.payroll_id, i.employee_id, p.status, p.date_from, p.date_to
+                FROM payroll_items i
+                INNER JOIN payroll p ON p.id = i.payroll_id
+                WHERE i.id = $itemId")->fetch_assoc();
+        if (!$row || (int)$row['status'] !== 3) return;     // only meaningful mid-review
+
+        $pid = (int)$row['payroll_id'];
+        $eid = (int)$row['employee_id'];
+        $had = $this->db->query("SELECT id FROM payroll_employee_reviews
+                WHERE payroll_id = $pid AND employee_id = $eid")->fetch_assoc();
+        if (!$had) return;                                  // never reviewed — nothing to void
+
+        $this->db->query("DELETE FROM payroll_employee_reviews
+                WHERE payroll_id = $pid AND employee_id = $eid");
+        // The reviewer's colour mark came from that sign-off; clear it too.
+        $this->db->query("UPDATE payroll_items SET review_status = 0
+                WHERE payroll_id = $pid AND employee_id = $eid AND review_status IN (1,2)");
+
+        $period = date('M j', strtotime($row['date_from'])) . ' – ' . date('M j, Y', strtotime($row['date_to']));
+        $this->notifyEmployee(
+            $eid,
+            'Your payslip was corrected',
+            "Your payslip for $period was updated. Please review and confirm it again.",
+            'ri-refresh-line',
+            'warning',
+            'employee-portal.php?tab=payslips'
+        );
+    }
+
     function update_payroll_item()
     {
+        if ($block = $this->payroll_item_write_block($_POST['id'] ?? 0)) return $block;
         $this->db->begin_transaction();
         $id = $_POST['id'];
         $value = $_POST['value'];
@@ -4794,6 +5594,8 @@ class Action
 
             $this->save_payroll_history($payroll_r['payroll_id'], $type, [["value" => $value, "field" => $field, "employee_id" => $payroll_r['employee_id']]],  $field2, $value2);
             $this->db->commit();
+            // Editing an unlocked row invalidates what that employee confirmed.
+            $this->void_signoff_for_item($id);
             return ['result' => true, 'message' => 'save'];
         } catch (mysqli_sql_exception $e) {
             return ['result' => false, 'message' => $e->getMessage()];
@@ -4804,6 +5606,13 @@ class Action
     function update_payroll_item_new()
     {
         $items = $_POST['items'];
+        if (!is_array($items) || !$items) return ['result' => false, 'message' => 'Nothing to save.'];
+
+        // Every row in the batch has to be writable, checked before anything is
+        // written — a partial save would leave the sheet half-updated.
+        foreach ($items as $item) {
+            if ($block = $this->payroll_item_write_block($item['id'] ?? 0)) return $block;
+        }
 
         try {
             $this->db->begin_transaction();
@@ -4846,6 +5655,15 @@ class Action
             }
 
             $this->db->commit();
+            // Editing an unlocked row invalidates what that employee confirmed.
+            // Deduped: one sheet save can carry several fields for the same row.
+            $voided = [];
+            foreach ($items as $item) {
+                $iid = (int)($item['id'] ?? 0);
+                if (!$iid || isset($voided[$iid])) continue;
+                $voided[$iid] = true;
+                $this->void_signoff_for_item($iid);
+            }
             return ['result' => true, 'message' => 'save'];
         } catch (Exception $e) {
             $this->db->rollback();
@@ -4944,6 +5762,15 @@ class Action
         $t_absent = 0;
         $t_late = 0;
 
+        // Named one-off items per payroll_items row, if the feature's table exists.
+        $extrasByItem = [];
+        $hasExtras = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'");
+        if ($hasExtras && $hasExtras->num_rows) {
+            $xq = $this->db->query("SELECT payroll_item_id, kind, amount FROM payroll_item_extras
+                                    WHERE payroll_id = " . (int)$payroll_id);
+            if ($xq) while ($x = $xq->fetch_assoc()) $extrasByItem[(int)$x['payroll_item_id']][] = $x;
+        }
+
         while ($row = $result->fetch_assoc()) {
             $payroll_type     = isset($row['payroll_type']) ? (int) $row['payroll_type'] : 0;
             $perMinute        = $row['per_day'] / (8 * 60);
@@ -4988,6 +5815,16 @@ class Action
             foreach ($refunds_data as $r) $total_ref += floatval($r['amount'] ?? 0);
             // Manual signed adjustment (+ addition / − recovery) applied to net.
             $adjustment = floatval($row['adjustment'] ?? 0);
+            // Named one-off items for this employee (payroll_item_extras):
+            // kind 1 deducts, kind 2 adds. Folded in here so the figures this
+            // endpoint sends back after a save match the rendered sheet.
+            $xAdd = $xLess = 0.0;
+            foreach (($extrasByItem[(int)$row['id']] ?? []) as $x) {
+                if ((int)$x['kind'] === 2) $xAdd  += (float)$x['amount'];
+                else                       $xLess += (float)$x['amount'];
+            }
+            $gross     += $xAdd;        // allowance extras belong in gross
+            $total_ded += $xLess;
             $net = $gross - $total_ded + $total_ref + $adjustment;
 
             $t_gross      += $gross;
@@ -5273,6 +6110,10 @@ class Action
         $loan_status = isset($_POST['loan_status']) ? 1 : 0;
         $data = " employee_id=$employee_id ";
         $data .= ", loan_date='$loan_date' ";
+        // Optional deduction start date; blank falls back to loan_date at calc time.
+        $eff = trim($_POST['effective_date'] ?? '');
+        $eff_ok = $eff !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $eff);
+        $data .= ", effective_date=" . ($eff_ok ? "'" . $this->db->real_escape_string($eff) . "'" : "NULL") . " ";
         $data .= ", loan_amount = $loan_amount ";
         $data .= ", loan_status = $loan_status ";
         $data .= ", loan_type = $loan_type ";
@@ -5354,6 +6195,21 @@ class Action
         $rr = $rq->get_result();
         while ($rw = $rr->fetch_assoc()) $restMap[$rw['employee_id']][] = $rw;
 
+        // Declared holidays in the period — excluded from expected work days here
+        // too, so this sanity check agrees with the generation absent logic.
+        $holidayDates = [];
+        $hq = $this->db->prepare("SELECT start_date, end_date FROM calendar_events
+            WHERE type IN (1, 3) AND start_date <= ? AND COALESCE(end_date, start_date) >= ?");
+        $hq->bind_param('ss', $pay['date_to'], $pay['date_from']);
+        $hq->execute();
+        $hres = $hq->get_result();
+        while ($h = $hres->fetch_assoc()) {
+            $hEnd = $h['end_date'] ?: $h['start_date'];
+            for ($d = strtotime($h['start_date']); $d <= strtotime($hEnd); $d = strtotime('+1 day', $d)) {
+                $holidayDates[date('Y-m-d', $d)] = true;
+            }
+        }
+
         $negative = [];
         $zero = [];
         $swings = [];
@@ -5376,7 +6232,8 @@ class Action
             if (!$isFixed) {
                 $expected = 0;
                 for ($d = strtotime($pay['date_from']); $d <= strtotime($pay['date_to']); $d = strtotime('+1 day', $d)) {
-                    if (!$this->isRestDay($restMap[$eid] ?? [], date('Y-m-d', $d))) $expected++;
+                    $symd = date('Y-m-d', $d);
+                    if (!$this->isRestDay($restMap[$eid] ?? [], $symd) && empty($holidayDates[$symd])) $expected++;
                 }
                 $counted = (float) $r['present'] + (float) ($r['paid_leave'] ?? 0) + (float) $r['absent'];
                 $miss = $expected - $counted;
@@ -6542,43 +7399,18 @@ class Action
         $logs = [['dateTime' => date('Y-m-d H:i:s', $in_ts), 'type' => 'manual']];
         if ($out_ts) $logs[] = ['dateTime' => date('Y-m-d H:i:s', $out_ts), 'type' => 'manual'];
 
-        // Detect holiday
-        $day_type = 'regular';
-        $hol = $this->db->query("SELECT type FROM calendar_events WHERE '$date' BETWEEN start_date AND COALESCE(end_date,'$date') AND type IN (1,3) LIMIT 1")->fetch_assoc();
-        if ($hol) $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
-
-        // Get schedule
-        $schedule = $this->db->query("
-            SELECT ws.* FROM employee_schedules es
-            INNER JOIN work_schedules ws ON ws.id=es.schedule_id
-            INNER JOIN DTR_details d ON d.id=$id
-            WHERE es.employee_id=d.employee_id AND es.effective_from<='$date' AND (es.effective_to IS NULL OR es.effective_to>='$date')
-            ORDER BY es.effective_from DESC LIMIT 1
-        ")->fetch_assoc();
-
-        $raw_hours  = $out_ts ? ($out_ts - $in_ts) / 3600 : 0;
-        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
-        $work_hours = $out_ts ? round(max(0, $raw_hours - $break_hrs), 2) : 0;
-        $overtime   = 0;
-        $late = 0;
-        $undertime = 0;
-        $nsd_hours = 0;
-        $is_complete = $out_ts ? 1 : 0;
-
-        if ($out_ts && $schedule) {
-            $sched_start = strtotime($date . ' ' . $schedule['start_time']);
-            $sched_end   = strtotime($date . ' ' . $schedule['end_time']);
-            if ($schedule['is_graveyard']) $sched_end = strtotime('+1 day', $sched_end);
-            $late      = round(max(0, ($in_ts - $sched_start) / 3600), 2);
-            $undertime = round(max(0, ($sched_end - $out_ts) / 3600), 2);
-            $overtime  = round(max(0, ($out_ts - $sched_end) / 3600), 2);
-            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
-
-            foreach ([[$date . ' 22:00:00', $date . ' 23:59:59'], [$date . ' 00:00:00', $date . ' 06:00:00']] as $w) {
-                $nsd_hours += max(0, min($out_ts, strtotime($w[1])) - max($in_ts, strtotime($w[0]))) / 3600;
-            }
-            $nsd_hours = round($nsd_hours, 2);
-        }
+        // Figures via the shared day math (dtr_compute_day, db_connect.php) —
+        // identical to the incident repair and batch recompute.
+        $emp_row = $this->db->query("SELECT employee_id FROM DTR_details WHERE id = $id")->fetch_assoc();
+        if (!$emp_row) return ['result' => false, 'message' => 'Record not found'];
+        $c = dtr_compute_day($this->db, (int)$emp_row['employee_id'], $date, $out_ts ? [$in_ts, $out_ts] : [$in_ts]);
+        $work_hours  = $c['work_hours'];
+        $overtime    = $c['overtime'];
+        $undertime   = $c['undertime'];
+        $late        = $c['late'];
+        $nsd_hours   = $c['nsd_hours'];
+        $day_type    = $c['day_type'];
+        $is_complete = $c['is_complete'];
 
         $json_logs = json_encode($logs);
         $stmt = $this->db->prepare(
@@ -6718,6 +7550,171 @@ class Action
     {
         $id   = intval($_POST['id'] ?? 0);
         $stmt = $this->db->prepare("DELETE FROM DTR_details WHERE id=?");
+        $stmt->bind_param('i', $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
+    }
+
+    /**
+     * Recompute every record of a batch from its raw logs using the shared
+     * day math (dtr_compute_day: current schedules + holiday calendar).
+     * Needed for batches generated before schedules existed, or after a
+     * schedule assignment changes mid-period.
+     *
+     * Policy: figures are updated in place; APPROVED rows whose figures
+     * actually changed are reset to pending for re-approval (the approval
+     * was given for the old numbers). Disapproved rows keep their status —
+     * rejection reasons are usually independent of the figures. Rows whose
+     * figures come out identical are left completely untouched.
+     */
+    function recompute_dtr()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $ddtr_id = (int)($_POST['id'] ?? 0);
+        if (!$ddtr_id) return ['result' => false, 'message' => 'Missing DTR id'];
+        $batch = $this->db->query("SELECT id, status FROM DTR WHERE id = $ddtr_id")->fetch_assoc();
+        if (!$batch) return ['result' => false, 'message' => 'Batch not found'];
+        if ((int)$batch['status'] === 2) {
+            return ['result' => false, 'message' => 'This batch is final-approved — its figures are locked.'];
+        }
+
+        $res = $this->db->query("SELECT id, employee_id, date_time, work_hours, overtime, undertime,
+                                        late, nsd_hours, day_type, status, logs
+                                 FROM DTR_details WHERE ddtr_id = $ddtr_id");
+        $scanned = $changed = $repending = 0;
+
+        $this->db->begin_transaction();
+        try {
+            $upd = $this->db->prepare(
+                "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=? WHERE id=?"
+            );
+            $updPend = $this->db->prepare(
+                "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=?,
+                 status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+            );
+            while ($row = $res->fetch_assoc()) {
+                $scanned++;
+                $ts = [];
+                foreach ((json_decode($row['logs']) ?: []) as $lg) {
+                    $t = strtotime($lg->dateTime ?? '');
+                    if ($t !== false) $ts[] = $t;
+                }
+                $c = dtr_compute_day($this->db, (int)$row['employee_id'], $row['date_time'], $ts);
+
+                $same = abs($c['work_hours'] - (float)$row['work_hours']) < 0.005
+                     && abs($c['overtime']   - (float)$row['overtime'])   < 0.005
+                     && abs($c['undertime']  - (float)$row['undertime'])  < 0.005
+                     && abs($c['late']       - (float)$row['late'])       < 0.005
+                     && abs($c['nsd_hours']  - (float)$row['nsd_hours'])  < 0.005
+                     && $c['day_type'] === $row['day_type'];
+                if ($same) continue;
+
+                $changed++;
+                $rowId    = (int)$row['id'];
+                $toPend   = ((int)$row['status'] === 1);   // only approved rows re-open
+                $stmt     = $toPend ? $updPend : $upd;
+                if ($toPend) $repending++;
+                $stmt->bind_param('dddddsii', $c['work_hours'], $c['overtime'], $c['undertime'],
+                                  $c['late'], $c['nsd_hours'], $c['day_type'], $c['is_complete'], $rowId);
+                if (!$stmt->execute()) throw new Exception('Row ' . $rowId . ': ' . $stmt->error);
+            }
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Recompute failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        return [
+            'result'    => true,
+            'scanned'   => $scanned,
+            'changed'   => $changed,
+            'repending' => $repending,
+            'message'   => "$scanned record(s) scanned, $changed updated, $repending sent back to pending.",
+        ];
+    }
+
+    /**
+     * Message an employee about one specific attendance record — asks for an
+     * explanation without forcing a disapproval. Stored per record
+     * (dtr_messages) and delivered as a portal bell notification + push.
+     */
+    function message_dtr_record()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $rec_id  = (int)($_POST['id'] ?? 0);
+        $message = trim($_POST['message'] ?? '');
+        if (!$rec_id || $message === '') return ['result' => false, 'message' => 'A message is required.'];
+        if (mb_strlen($message) > 500)   return ['result' => false, 'message' => 'Message is too long (max 500 characters).'];
+
+        $rec = $this->db->query("SELECT id, employee_id, date_time FROM DTR_details WHERE id = $rec_id")->fetch_assoc();
+        if (!$rec) return ['result' => false, 'message' => 'Record not found'];
+
+        $uid    = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $rid    = (int)$rec['id'];
+        $eid    = (int)$rec['employee_id'];
+        $rdate  = $rec['date_time'];
+        $stmt = $this->db->prepare("INSERT INTO dtr_messages (dtr_detail_id, employee_id, date_time, message, sent_by, sender_type) VALUES (?,?,?,?,?,'admin')");
+        $stmt->bind_param('iissi', $rid, $eid, $rdate, $message, $uid);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        $dateLbl = date('M j, Y', strtotime($rdate));
+        $this->notifyEmployee(
+            $eid,
+            'Question about your attendance',
+            "Support asks about your $dateLbl attendance: \u{201C}$message\u{201D}",
+            'ri-chat-3-line',
+            'warning',
+            'employee-portal.php?tab=attendance&rec=' . $rid . '&date=' . rawurlencode($rdate)
+        );
+
+        $by = '';
+        if ($uid) {
+            $u = $this->db->query("SELECT name FROM users WHERE id = $uid")->fetch_assoc();
+            $by = $u['name'] ?? '';
+        }
+        return ['result' => true, 'message' => 'Message sent', 'by' => $by, 'at' => date('M j, g:i A')];
+    }
+
+    // ── Internal admin notes on an employee (DTR Documents, admin-only) ──
+    // These never reach the employee — separate from dtr_messages (which do).
+    // Levels: info (blue), good (green), watch (amber), critical (red).
+    function save_dtr_note()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $ddtr_id = (int)($_POST['ddtr_id'] ?? 0);
+        $emp_id  = (int)($_POST['employee_id'] ?? 0);
+        $level   = (string)($_POST['level'] ?? 'info');
+        $note    = trim($_POST['note'] ?? '');
+        if (!$ddtr_id || !$emp_id)  return ['result' => false, 'message' => 'Missing employee or batch.'];
+        if ($note === '')           return ['result' => false, 'message' => 'A note is required.'];
+        if (mb_strlen($note) > 500) return ['result' => false, 'message' => 'Note is too long (max 500 characters).'];
+        if (!in_array($level, ['info', 'good', 'watch', 'critical'], true)) $level = 'info';
+
+        $uid = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $stmt = $this->db->prepare("INSERT INTO dtr_admin_notes (ddtr_id, employee_id, level, note, created_by) VALUES (?,?,?,?,?)");
+        $stmt->bind_param('iissi', $ddtr_id, $emp_id, $level, $note, $uid);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        $by = '';
+        if ($uid) {
+            $u = $this->db->query("SELECT name FROM users WHERE id = $uid")->fetch_assoc();
+            $by = $u['name'] ?? '';
+        }
+        return ['result' => true, 'id' => $this->db->insert_id, 'by' => $by, 'at' => date('M j, g:i A')];
+    }
+
+    function delete_dtr_note()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing id'];
+        $stmt = $this->db->prepare("DELETE FROM dtr_admin_notes WHERE id = ?");
         $stmt->bind_param('i', $id);
         return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
     }
@@ -7481,6 +8478,11 @@ class Action
                             $stmt->execute();
                         }
 
+                        // Imported employees get a portal login on the default
+                        // password too — the sheet carries no email, so the
+                        // username is generated from their name.
+                        $this->ensure_portal_account($employee_id, $firstname, $lastname);
+
                         // Insert loans and deductions for new employees only
                         if ($sss_loan > 0) {
                             $loan_status = 0;
@@ -7543,28 +8545,35 @@ class Action
                 // ── Appended template columns, shared by insert and update ──
                 if (!empty($employee_id)) {
                     // Shift / schedule (col R) -> employee_schedules, matched by name.
+                    // A blank cell falls back to the global default shift
+                    // (DTR_DEFAULT_SHIFT, db_connect.php) so every imported
+                    // employee ends up with a working schedule.
                     $shift_name = trim((string) ($row[17] ?? ''));
-                    if ($shift_name !== '') {
-                        $stmtCheckSchedule->bind_param("s", $shift_name);
-                        $stmtCheckSchedule->execute();
-                        $stmtCheckSchedule->store_result();
-                        if ($stmtCheckSchedule->num_rows > 0) {
-                            $stmtCheckSchedule->bind_result($schedule_id);
-                            $stmtCheckSchedule->fetch();
-                            $stmtCheckSchedule->free_result();
-                            // Re-importing must not stack duplicate assignments.
-                            $chk = $this->db->query("SELECT id FROM employee_schedules
-                                WHERE employee_id = $employee_id AND schedule_id = " . (int) $schedule_id . " LIMIT 1");
-                            if (!$chk || $chk->num_rows === 0) {
-                                $eff = date('Y-m-d');
-                                $ins = $this->db->prepare("INSERT INTO employee_schedules
-                                    (employee_id, schedule_id, effective_from, notes) VALUES (?, ?, ?, 'Imported')");
-                                $ins->bind_param("iis", $employee_id, $schedule_id, $eff);
-                                $ins->execute();
-                            }
-                        } else {
-                            $stmtCheckSchedule->free_result();
+                    $is_default = ($shift_name === '');
+                    if ($is_default) $shift_name = DTR_DEFAULT_SHIFT;
+                    $stmtCheckSchedule->bind_param("s", $shift_name);
+                    $stmtCheckSchedule->execute();
+                    $stmtCheckSchedule->store_result();
+                    if ($stmtCheckSchedule->num_rows > 0) {
+                        $stmtCheckSchedule->bind_result($schedule_id);
+                        $stmtCheckSchedule->fetch();
+                        $stmtCheckSchedule->free_result();
+                        // Re-importing must not stack duplicate assignments; the
+                        // default never overrides an existing assignment at all.
+                        $dupWhere = $is_default ? '' : ' AND schedule_id = ' . (int) $schedule_id;
+                        $chk = $this->db->query("SELECT id FROM employee_schedules
+                            WHERE employee_id = $employee_id$dupWhere LIMIT 1");
+                        if (!$chk || $chk->num_rows === 0) {
+                            $eff  = date('Y-m-d');
+                            $note = $is_default ? 'Default shift (auto-assigned)' : 'Imported';
+                            $rd   = DTR_DEFAULT_REST_DAYS;
+                            $ins = $this->db->prepare("INSERT INTO employee_schedules
+                                (employee_id, schedule_id, effective_from, rest_days, notes) VALUES (?, ?, ?, ?, ?)");
+                            $ins->bind_param("iisss", $employee_id, $schedule_id, $eff, $rd, $note);
+                            $ins->execute();
                         }
+                    } else {
+                        $stmtCheckSchedule->free_result();
                     }
 
                     // Recurring deduction (cols S/T) -> employee_deductions, matched by name.

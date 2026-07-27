@@ -44,7 +44,7 @@ $fc->execute();
 $filteredRecords = (int)($fc->get_result()->fetch_assoc()['c'] ?? 0);
 
 // Page of data.
-$sql = "SELECT date_time, work_hours, logs, attendance_type, overtime, notes
+$sql = "SELECT id, date_time, work_hours, logs, attendance_type, overtime, notes
         FROM DTR_details
         WHERE employee_id = ? AND date_time BETWEEN ? AND ?
         ORDER BY $orderColumn $orderDir
@@ -53,6 +53,28 @@ $st = $conn->prepare($sql);
 $st->bind_param('issii', $emp_id, $from, $to, $start, $length);
 $st->execute();
 $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// Per-record admin↔employee message threads for this page (guarded: the
+// dtr_messages table may not exist on older databases).
+$msgMap = [];
+$recIds = array_map(fn($r) => (int)$r['id'], $rows);
+if ($recIds) {
+    $inList = implode(',', $recIds);
+    $mq = @$conn->query("SELECT m.dtr_detail_id, m.message, m.created_at, m.sender_type, u.name AS sender
+                         FROM dtr_messages m LEFT JOIN users u ON u.id = m.sent_by
+                         WHERE m.employee_id = $emp_id AND m.dtr_detail_id IN ($inList)
+                         ORDER BY m.id ASC");
+    if ($mq) {
+        while ($m = $mq->fetch_assoc()) {
+            $msgMap[(int)$m['dtr_detail_id']][] = [
+                'from' => ($m['sender_type'] === 'employee') ? 'emp' : 'admin',
+                'msg'  => $m['message'],
+                'by'   => $m['sender'] ?? '',
+                'at'   => date('M j, g:i A', strtotime($m['created_at'])),
+            ];
+        }
+    }
+}
 
 $data = [];
 foreach ($rows as $att) {
@@ -88,8 +110,12 @@ foreach ($rows as $att) {
     if (!$popLines) $popLines = '<span style="color:#aaa;font-size:11px;">No logs</span>';
     $totalLogs  = count($logs_obj);
 
+    $msgs     = $msgMap[(int)$att['id']] ?? [];
+    $msgBadge = $msgs
+        ? '<span class="att-msg-badge" title="' . count($msgs) . ' message(s) with HR"><i class="ri-chat-3-line"></i> ' . count($msgs) . '</span>'
+        : '';
     $dateHtml = '<div style="font-weight:700;">' . date('M d, Y', strtotime($dt)) . '</div>'
-              . '<div style="font-size:10px;color:#aaa;">' . date('l', strtotime($dt)) . '</div>';
+              . '<div style="font-size:10px;color:#aaa;">' . date('l', strtotime($dt)) . $msgBadge . '</div>';
 
     $typeHtml = '<span class="att-type ' . $att_cls . '">' . htmlspecialchars($atype_lbl) . '</span>';
 
@@ -132,6 +158,9 @@ foreach ($rows as $att) {
         // portal's Attendance Details modal — same lines the popover shows.
         'logs_all'  => $popLines,
         'logs_count'=> $totalLogs,
+        // Conversation with HR about this date (shown in the details modal).
+        'rec_id'    => (int)$att['id'],
+        'msgs'      => $msgs,
     ];
 }
 

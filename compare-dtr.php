@@ -69,7 +69,7 @@
             display: block;
             position: absolute;
             width: 5px;
-            background-color: #1ABC9C;
+            background-color: #704EC0;
             left: 0;
             top: 0;
             bottom: 0;
@@ -84,7 +84,7 @@
             top: 50%;
             height: 1.5rem;
             width: 0.5rem;
-            background-color: #1ABC9C;
+            background-color: #704EC0;
             cursor: col-resize;
         }
 

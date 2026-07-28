@@ -13,7 +13,7 @@
 
     <!-- ── PWA: installable admin app (separate manifest from the employee portal) ── -->
     <link rel="manifest" href="manifest-admin.webmanifest">
-    <meta name="theme-color" content="#219688">
+    <meta name="theme-color" content="#6642aa">
     <!-- iOS ignores the manifest; it reads these tags on "Add to Home Screen" -->
     <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -76,8 +76,8 @@
             align-items: center;
             justify-content: center;
             border-radius: 50%;
-            background: rgba(0, 150, 136, 0.10);
-            color: #009688;
+            background: rgba(103, 59, 182, 0.10);
+            color: #673bb6;
             font-size: 30px;
         }
         .dt-empty-state .dt-empty-ic.dt-empty-ic-search {
@@ -181,10 +181,10 @@
             transition: all 0.2s ease;
         } */
 
-        /* ===== Clean white sidebar + solid teal active menu ===== */
+        /* ===== Clean white sidebar + solid purple active menu ===== */
         :root {
-            --sb-teal: #009688;
-            --sb-teal-soft: rgba(0, 150, 136, .08);
+            --sb-primary: #673bb6;
+            --sb-primary-soft: rgba(103, 59, 182, .08);
         }
 
         .navbar-menu {
@@ -192,10 +192,10 @@
             border-right: 1px solid #eef0f2;
         }
 
-        /* Solid teal logo bar */
+        /* Solid purple logo bar */
         .navbar-menu .navbar-brand-box {
-            background: var(--sb-teal);
-            border-bottom: 1px solid var(--sb-teal);
+            background: var(--sb-primary);
+            border-bottom: 1px solid var(--sb-primary);
         }
 
         .navbar-menu .logo-light {
@@ -209,7 +209,7 @@
             font-weight: 600;
         }
 
-        /* Collapse toggle button on the teal bar */
+        /* Collapse toggle button on the purple bar */
         .navbar-menu .navbar-brand-box #vertical-hover,
         .navbar-menu .navbar-brand-box #vertical-hover i {
             color: #ffffff;
@@ -244,22 +244,22 @@
         /* Hover */
         #navbar-nav .nav-link.menu-link:hover,
         #navbar-nav .menu-dropdown .nav-link:hover {
-            background: var(--sb-teal-soft);
-            color: var(--sb-teal);
+            background: var(--sb-primary-soft);
+            color: var(--sb-primary);
         }
 
         #navbar-nav .nav-link.menu-link:hover i,
         #navbar-nav .menu-dropdown .nav-link:hover i {
-            color: var(--sb-teal);
+            color: var(--sb-primary);
         }
 
         /* Solid active state */
         #navbar-nav .nav-link.menu-link.active,
         #navbar-nav .menu-dropdown .nav-link.active {
-            background: var(--sb-teal) !important;
+            background: var(--sb-primary) !important;
             color: #ffffff !important;
             font-weight: 500;
-            box-shadow: 0 2px 6px rgba(0, 150, 136, .28);
+            box-shadow: 0 2px 6px rgba(103, 59, 182, .28);
         }
 
         #navbar-nav .nav-link.menu-link.active i,
@@ -269,13 +269,13 @@
 
         /* ===== Minimized (collapsed) sidebar fixes =====
            The Velzon template forces the brand box + flyout to --vz-vertical-menu-bg
-           (a near-white), which killed our teal bar and left the hover menu washed out.
+           (a near-white), which killed our purple bar and left the hover menu washed out.
            [data-sidebar-size^="sm"] covers sm / sm-hover / sm-hover-active. */
 
-        /* Keep the logo bar teal when collapsed, and only show the compact "HR" mark */
+        /* Keep the logo bar purple when collapsed, and only show the compact "HR" mark */
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-brand-box {
-            background: var(--sb-teal) !important;
-            border-bottom-color: var(--sb-teal) !important;
+            background: var(--sb-primary) !important;
+            border-bottom-color: var(--sb-primary) !important;
         }
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-brand-box .logo-lg {
             display: none !important;
@@ -285,12 +285,12 @@
             color: #ffffff !important;
         }
 
-        /* Hovered parent item (the expanding row) — solid teal, readable label + icon */
+        /* Hovered parent item (the expanding row) — solid purple, readable label + icon */
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .nav-item:hover > a.menu-link,
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .nav-item:hover > a.menu-link span,
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .nav-item:hover > a.menu-link i,
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .nav-item:hover > a.menu-link:after {
-            background-color: var(--sb-teal) !important;
+            background-color: var(--sb-primary) !important;
             color: #ffffff !important;
         }
 
@@ -308,15 +308,15 @@
             color: #98a0ac !important;
         }
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .menu-dropdown .nav-link:hover {
-            background: var(--sb-teal-soft) !important;
-            color: var(--sb-teal) !important;
+            background: var(--sb-primary-soft) !important;
+            color: var(--sb-primary) !important;
         }
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .menu-dropdown .nav-link:hover i {
-            color: var(--sb-teal) !important;
+            color: var(--sb-primary) !important;
         }
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .menu-dropdown .nav-link.active,
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .menu-dropdown .nav-link.active i {
-            background: var(--sb-teal) !important;
+            background: var(--sb-primary) !important;
             color: #ffffff !important;
         }
     </style>

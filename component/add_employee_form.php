@@ -6,7 +6,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0" id="create-title">
-                        <i class="ri-user-add-line me-2" style="color:#009688;"></i>
+                        <i class="ri-user-add-line me-2" style="color:#673bb6;"></i>
                         <?= isset($employee_no) ? 'Edit' : 'Create' ?> Employee
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -18,12 +18,12 @@
                     ?>
 
                     <!-- Personal Information -->
-                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#009688;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
+                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#673bb6;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
                         <i class="ri-user-3-line me-1"></i>Personal Information
                     </div>
                     <div class="row g-3 mb-3">
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-shield-check-line me-1"></i>Classification <span class="text-danger">*</span>
                             </label>
                             <select id="clasification-select" class="form-control select2" name="clasification_id"
@@ -42,7 +42,7 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 First Name <span class="text-danger">*</span>
                             </label>
                             <input type="text" class="form-control" name="firstname"
@@ -51,7 +51,7 @@
                                 data-parsley-required-message="First name is required." required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Middle Name
                             </label>
                             <input type="text" class="form-control" name="middlename" maxlength="225"
@@ -59,7 +59,7 @@
                                 placeholder="e.g. Santos">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Last Name <span class="text-danger">*</span>
                             </label>
                             <input type="text" class="form-control" name="lastname"
@@ -68,7 +68,7 @@
                                 data-parsley-required-message="Last name is required." required>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Extension
                             </label>
                             <input type="text" class="form-control" name="ext"
@@ -76,7 +76,7 @@
                                 placeholder="SR / JR">
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Birthdate
                             </label>
                             <div class="input-group">
@@ -87,12 +87,12 @@
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-building-3-line me-1"></i>Department
                             </label>
                             <select id="department-select" class="form-control select2" name="department_id"
                                 data-placeholder="Select department">
-                                <option value=""></option>
+                                <option value="">Select Department</option>
                                 <?php
                                 $depts = $conn->query("SELECT * FROM department ORDER BY name ASC");
                                 if ($depts) while ($row = $depts->fetch_assoc()):
@@ -105,7 +105,7 @@
                             </select>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-briefcase-4-line me-1"></i>Position <span class="text-danger">*</span>
                             </label>
                             <select id="position-select" class="form-control select2" name="position_id"
@@ -126,12 +126,12 @@
                     </div>
 
                     <!-- Compensation -->
-                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#009688;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
+                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#673bb6;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
                         <i class="ri-money-dollar-circle-line me-1"></i>Compensation
                     </div>
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Monthly Basic Pay <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -143,7 +143,7 @@
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Basic Daily Rate <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -156,7 +156,7 @@
                         </div>
                         <?php $__rate_type = isset($rate_type) && in_array($rate_type, ['daily', 'monthly', 'fixed'], true) ? $rate_type : 'daily'; ?>
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Rate Type <span class="text-danger">*</span>
                             </label>
                             <div class="d-flex flex-wrap gap-4 mt-1">
@@ -181,7 +181,7 @@
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Overtime Rate <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -193,7 +193,7 @@
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Allowance Rate <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -213,7 +213,7 @@
                         <input type="hidden" name="sss_fund" value="<?= isset($sss_fund) ? htmlspecialchars($sss_fund) : '0' ?>">
                         <!-- SSS Provident Fund field hidden on request
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 SSS Provident Fund <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -227,12 +227,12 @@
                     </div>
 
                     <!-- Bank / Payout details -->
-                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#009688;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
+                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#673bb6;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
                         <i class="ri-bank-line me-1"></i>Bank / Payout Details
                     </div>
                     <div class="row g-2 mb-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Bank
                             </label>
                             <select class="form-select" name="bank_id">
@@ -247,7 +247,7 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Account Number
                             </label>
                             <input type="text" class="form-control" name="bank_account_no" maxlength="50"
@@ -260,7 +260,7 @@
                     </div>
 
                     <!-- Settings -->
-                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#009688;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
+                    <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#673bb6;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
                         <i class="ri-settings-3-line me-1"></i>Payroll Settings
                     </div>
                     <div class="row g-2">
@@ -299,7 +299,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
                         <i class="ri-save-line me-1"></i><?= isset($employee_no) ? 'Save Changes' : 'Create Employee' ?>
                     </button>
@@ -317,20 +317,20 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-subtract-line me-2" style="color:#009688;"></i>Add Deduction
+                        <i class="ri-subtract-line me-2" style="color:#673bb6;"></i>Add Deduction
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Deduction <span class="text-danger">*</span>
                             </label>
                             <select class="form-control select2" id="deduction_id" name="deduction_id[]"
                                 data-placeholder="Select deduction"
                                 data-parsley-required-message="Please select deduction." required>
-                                <option value=""></option>
+                                <option value="">Select Deduction</option>
                                 <?php
                                 $deduction = $conn->query("SELECT * FROM deductions ORDER BY deduction ASC");
                                 while ($row = $deduction->fetch_assoc()):
@@ -340,7 +340,7 @@
                             </select>
                         </div>
                         <div class="col-12" id="dfield">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Start Date <small style="text-transform:none;color:#888;">(first deduction)</small>
                             </label>
                             <div class="input-group">
@@ -351,7 +351,7 @@
                             </div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Amount <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -362,7 +362,7 @@
                             </div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Total <small style="text-transform:none;color:#888;">(leave 0 for a recurring deduction; set an amount to amortize like a loan)</small>
                             </label>
                             <div class="input-group">
@@ -377,7 +377,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="ri-add-line me-1"></i>Add Deduction
                     </button>
                 </div>
@@ -394,21 +394,21 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-hand-coin-line me-2" style="color:#009688;"></i>Edit Contribution
+                        <i class="ri-hand-coin-line me-2" style="color:#673bb6;"></i>Edit Contribution
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Contribution
                             </label>
                             <input class="form-control" id="contribution-name" type="text" disabled
-                                style="background:#eef0f8;font-weight:600;color:#009688;">
+                                style="background:#eef0f8;font-weight:600;color:#673bb6;">
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Amount <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -425,7 +425,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
                         <i class="ri-save-line me-1"></i>Save Changes
                     </button>
@@ -443,20 +443,20 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-gift-line me-2" style="color:#009688;"></i>Add Allowance
+                        <i class="ri-gift-line me-2" style="color:#673bb6;"></i>Add Allowance
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Allowance <span class="text-danger">*</span>
                             </label>
                             <select class="form-control select2" id="allowance_id" name="allowance_id[]"
                                 data-placeholder="Select allowance"
                                 data-parsley-required-message="Please select allowance." required>
-                                <option value=""></option>
+                                <option value="">Select Allowance</option>
                                 <?php
                                 $allowance = $conn->query("SELECT * FROM allowances ORDER BY allowance ASC");
                                 while ($row = $allowance->fetch_assoc()):
@@ -466,20 +466,20 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Type <span class="text-danger">*</span>
                             </label>
                             <select id="type2" class="form-control select2" name="type[]"
                                 data-placeholder="Select type"
                                 data-parsley-required-message="Please select type." required>
-                                <option value=""></option>
+                                <option value="">Select Type</option>
                                 <option value="1">Monthly</option>
                                 <option value="2">Semi-Monthly</option>
                                 <option value="3">Once</option>
                             </select>
                         </div>
                         <div class="col-12" style="display:none;" id="dfield2">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Effective Date
                             </label>
                             <div class="input-group">
@@ -490,7 +490,7 @@
                             </div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Amount <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -507,7 +507,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
                         <i class="ri-add-line me-1"></i>Add Allowance
                     </button>
@@ -526,20 +526,20 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-bank-card-line me-2" style="color:#009688;"></i>Add Loan
+                        <i class="ri-bank-card-line me-2" style="color:#673bb6;"></i>Add Loan
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Loan Type <span class="text-danger">*</span>
                             </label>
                             <select id="loan-select" class="form-control select2" name="loan_type"
                                 data-placeholder="Select loan type"
                                 data-parsley-required-message="Type is required." required>
-                                <option value=""></option>
+                                <option value="">Select Loan Type</option>
                                 <?php
                                 $pos = $conn->query("SELECT * FROM contribution_loan_types ORDER BY loan_type ASC");
                                 while ($row = $pos->fetch_assoc()):
@@ -549,7 +549,7 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Loan Date <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -560,7 +560,7 @@
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Loan Amount <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -572,7 +572,7 @@
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Deduction / Month <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -584,7 +584,7 @@
                             </div>
                         </div>
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Balance <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -596,7 +596,7 @@
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Start of Deduction
                             </label>
                             <div class="input-group">
@@ -624,7 +624,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
                         <i class="ri-save-line me-1"></i>Save Loan
                     </button>
@@ -641,12 +641,12 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-file-excel-2-line me-2" style="color:#009688;"></i>Import Employees
+                        <i class="ri-file-excel-2-line me-2" style="color:#673bb6;"></i>Import Employees
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                         <i class="ri-upload-2-line me-1"></i>Excel File <span class="text-danger">*</span>
                     </label>
                     <div class="input-group">
@@ -658,13 +658,13 @@
                     <div class="form-text text-muted mt-1" style="font-size:11px;">
                         <i class="ri-information-line me-1"></i>Accepted formats: .xlsx, .xls, .csv
                     </div>
-                    <div class="mt-3 p-2" style="border:1px dashed #b2dfdb;border-radius:6px;background:#f1f8f7;">
-                        <div style="font-size:11px;color:#00695c;" class="mb-2">
+                    <div class="mt-3 p-2" style="border:1px dashed #cabede;border-radius:6px;background:#f4f3f8;">
+                        <div style="font-size:11px;color:#57339d;" class="mb-2">
                             <i class="ri-lightbulb-line me-1"></i>New to importing? Start from the template — its column order
                             must be kept, and the <b>Notes</b> sheet explains every field.
                         </div>
                         <a href="export-employee-template.php" class="btn btn-sm w-100"
-                           style="background:#fff;border:1px solid #009688;color:#009688;font-weight:600;font-size:11px;">
+                           style="background:#fff;border:1px solid #673bb6;color:#673bb6;font-weight:600;font-size:11px;">
                             <i class="ri-download-2-line me-1"></i>Download Import Template (.xlsx)
                         </a>
                     </div>
@@ -673,7 +673,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
                         <i class="ri-upload-2-line me-1"></i>Upload
                     </button>

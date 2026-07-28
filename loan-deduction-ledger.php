@@ -86,7 +86,7 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
     /* Expandable payment-history sub-row (keeps its own look above the global zebra) */
     #ldl-table > tbody > tr.ldl-hist > td { background:#fbfdfc !important; }
     .ldl-hist table { margin:0; font-size:11px; }
-    .ldl-hist th { background:#e8f3f1; color:#176358; padding:5px 8px; }
+    .ldl-hist th { background:#edebf3; color:#4e3483; padding:5px 8px; }
     .ldl-hist td { padding:5px 8px; }
 </style>
 
@@ -96,7 +96,7 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
 
     <div class="row mb-3"><div class="col-12">
         <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-            <h4 class="mb-sm-0"><i class="ri-bank-card-line me-2" style="color:#009688;"></i>Loan &amp; Deduction Ledger</h4>
+            <h4 class="mb-sm-0"><i class="ri-bank-card-line me-2" style="color:#673bb6;"></i>Loan &amp; Deduction Ledger</h4>
             <ol class="breadcrumb m-0">
                 <li class="breadcrumb-item"><a href="index.php?page=reports">Reports</a></li>
                 <li class="breadcrumb-item active">Loan &amp; Deduction Ledger</li>
@@ -105,16 +105,16 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
     </div></div>
 
     <!-- Filters -->
-    <div class="card rpt-card mb-3" style="border-top:3px solid #009688;">
+    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
         <div class="card-body py-3">
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="loan-deduction-ledger">
                 <div class="col-md-4">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Search</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Search</label>
                     <input type="text" name="q" value="<?= htmlspecialchars($f_q) ?>" class="form-control" placeholder="Employee, ID or item…">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Type</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Type</label>
                     <select name="kind" class="form-control">
                         <option value="all"       <?= $f_kind==='all'?'selected':'' ?>>All</option>
                         <option value="loan"      <?= $f_kind==='loan'?'selected':'' ?>>Loans only</option>
@@ -122,7 +122,7 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Status</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Status</label>
                     <select name="status" class="form-control">
                         <option value="active" <?= $f_status==='active'?'selected':'' ?>>Active (unpaid)</option>
                         <option value="paid"   <?= $f_status==='paid'?'selected':'' ?>>Fully paid</option>
@@ -130,7 +130,7 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
                     </select>
                 </div>
                 <div class="col-md-2 d-flex gap-2">
-                    <button type="submit" class="btn btn-sm w-100" style="background:#009688;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Filter</button>
+                    <button type="submit" class="btn btn-sm w-100" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Filter</button>
                 </div>
             </form>
         </div>
@@ -138,14 +138,14 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
 
     <!-- Summary -->
     <div class="row g-3 mb-3">
-        <div class="col-md-3 col-6"><div class="ldl-stat"><div class="lbl">Accounts</div><div class="val" style="color:#009688;"><?= count($view) ?></div></div></div>
+        <div class="col-md-3 col-6"><div class="ldl-stat"><div class="lbl">Accounts</div><div class="val" style="color:#673bb6;"><?= count($view) ?></div></div></div>
         <div class="col-md-3 col-6"><div class="ldl-stat"><div class="lbl">Original Total</div><div class="val"><?= ldl_money($t_orig) ?></div></div></div>
         <div class="col-md-3 col-6"><div class="ldl-stat"><div class="lbl">Paid to Date</div><div class="val" style="color:#2e7d32;"><?= ldl_money($t_paid) ?></div></div></div>
         <div class="col-md-3 col-6"><div class="ldl-stat"><div class="lbl">Outstanding</div><div class="val" style="color:#d32f2f;"><?= ldl_money($t_bal) ?></div></div></div>
     </div>
 
     <div class="d-flex justify-content-end gap-2 mb-2">
-        <button type="button" onclick="repExportCSV('ldl-table','loan-deduction-ledger.csv')" class="btn btn-sm" style="background:#009688;color:#fff;font-weight:700;"><i class="ri-file-excel-2-line me-1"></i>Export CSV</button>
+        <button type="button" onclick="repExportCSV('ldl-table','loan-deduction-ledger.csv')" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-file-excel-2-line me-1"></i>Export CSV</button>
         <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line me-1"></i>Print</button>
     </div>
 

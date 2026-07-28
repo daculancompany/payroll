@@ -44,6 +44,15 @@ foreach ($emp as $k => $v) {
 // Close statement
 $stmt->close();
 
+// Null-safe escape — nullable employee columns (ext, middlename, sss_no, ...)
+// otherwise trigger a deprecation on PHP 8.1+ when passed straight to htmlspecialchars().
+if (!function_exists('esc')) {
+    function esc($v)
+    {
+        return htmlspecialchars((string) ($v ?? ''));
+    }
+}
+
 // Current rest days (day off) for this employee, from the active schedule period.
 $cur_rest_days = '';
 $__rdq = $conn->query("SELECT rest_days FROM employee_schedules
@@ -62,7 +71,7 @@ if (!function_exists('ed_rest_pills')) {
         foreach ($labels as $i => $lb) {
             $on = in_array($i, $set, true);
             $out .= '<span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;font-size:10px;font-weight:700;margin-right:2px;'
-                . ($on ? 'background:#009688;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+                . ($on ? 'background:#673bb6;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
         }
         return $out;
     }
@@ -74,7 +83,7 @@ $__day_off_set = array_filter(array_map('intval', $cur_rest_days === '' ? [] : e
 $day_off_label = empty($__day_off_set) ? 'None' : implode(', ', array_map(fn($d) => $__day_names[$d], $__day_off_set));
 
 $initials = strtoupper(substr($firstname, 0, 1)) . strtoupper(substr($lastname, 0, 1));
-$fullname  = htmlspecialchars($lastname . ', ' . $firstname . ($middlename ? ' ' . substr($middlename, 0, 1) . '.' : ''));
+$fullname  = esc($lastname . ', ' . $firstname . ($middlename ? ' ' . substr($middlename, 0, 1) . '.' : ''));
 
 $age = null;
 if (!empty($bday) && strtotime($bday)) {
@@ -104,7 +113,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     FROM leave_requests WHERE employee_id = $emp_id");
 ?>
 <style>
-    :root { --emp-brand:#009688; --emp-brand-dark:#00776b; --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
+    :root { --emp-brand:#673bb6; --emp-brand-dark:#5d35a5; --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
 
     /* ---- Left profile sidebar ---- */
     .emp-sidebar { border:1px solid #d0d7ee; border-radius:10px; overflow:hidden; background:#fff; box-shadow:0 2px 10px rgba(20,30,60,.05); }
@@ -130,7 +139,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     .detail-section-title { background:var(--emp-brand); color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:6px 12px; display:flex; align-items:center; gap:6px; }
     .detail-row { display:flex; flex-wrap:wrap; }
     .detail-item { padding:7px 14px; border-bottom:1px solid #eef0f8; border-right:1px solid #eef0f8; flex:1; min-width:180px; transition:background .15s ease; }
-    .detail-item:hover { background:#f6fbfa; }
+    .detail-item:hover { background:#f8f7fb; }
     .detail-item:last-child { border-right:none; }
     .detail-label { font-size:10px; color:#888; font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
     .detail-value { font-size:13px; font-weight:600; color:#1a1a1a; }
@@ -148,19 +157,19 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     .emp-tabs-nav .nav-item { flex-shrink:0; }
     .emp-tabs-nav .nav-link { display:flex; align-items:center; gap:7px; padding:8px 14px; border-radius:7px; font-size:12.5px; font-weight:600; color:#5a6474; white-space:nowrap; border:1px solid transparent; transition:all .18s ease; }
     .emp-tabs-nav .nav-link i { font-size:15px; line-height:1; }
-    .emp-tabs-nav .nav-link:hover { background:#e9f5f3; color:var(--emp-brand); transform:translateY(-1px); }
-    .emp-tabs-nav .nav-link.active { background:linear-gradient(145deg, var(--emp-brand) 0%, var(--emp-brand-dark) 100%); color:#fff; box-shadow:0 3px 10px rgba(0,150,136,.3); }
+    .emp-tabs-nav .nav-link:hover { background:#efecf5; color:var(--emp-brand); transform:translateY(-1px); }
+    .emp-tabs-nav .nav-link.active { background:linear-gradient(145deg, var(--emp-brand) 0%, var(--emp-brand-dark) 100%); color:#fff; box-shadow:0 3px 10px rgba(103,59,182,.3); }
     .tab-count { font-size:10px; font-weight:700; line-height:1; padding:3px 7px; border-radius:20px; background:#e8ecf5; color:#5a6474; transition:all .18s ease; }
-    .emp-tabs-nav .nav-link:hover .tab-count { background:#d4ebe7; color:var(--emp-brand); }
+    .emp-tabs-nav .nav-link:hover .tab-count { background:#dfdaeb; color:var(--emp-brand); }
     .emp-tabs-nav .nav-link.active .tab-count { background:rgba(255,255,255,.25); color:#fff; }
     .tab-count.tab-count-alert { background:#ffe4c4; color:#b45309; }
 
     /* ---- Summary stat cards ---- */
     .emp-stat-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; margin:6px 0 14px; }
     .emp-stat-card { display:flex; align-items:center; gap:11px; background:#fff; border:1px solid #d0d7ee; border-radius:8px; padding:11px 14px; transition:all .18s ease; }
-    .emp-stat-card:hover { border-color:var(--emp-brand); box-shadow:0 3px 10px rgba(0,150,136,.12); transform:translateY(-1px); }
+    .emp-stat-card:hover { border-color:var(--emp-brand); box-shadow:0 3px 10px rgba(103,59,182,.12); transform:translateY(-1px); }
     .emp-stat-ic { width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; background:var(--emp-brand-soft); color:var(--emp-brand); }
-    .emp-stat-ic.ic-brand { background:#e0f2f1; color:var(--emp-brand); }
+    .emp-stat-ic.ic-brand { background:#eae5f2; color:var(--emp-brand); }
     .emp-stat-ic.ic-danger { background:#fdecec; color:#d63939; }
     .emp-stat-ic.ic-warn { background:#fff4e0; color:#b45309; }
     .emp-stat-ic.ic-dark { background:#eceff4; color:#39434f; }
@@ -171,7 +180,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
 
     /* ---- Loan repayment progress ---- */
     .loan-progress { height:5px; background:#edf0f6; border-radius:4px; overflow:hidden; margin-top:5px; min-width:90px; }
-    .loan-progress-bar { height:100%; border-radius:4px; background:linear-gradient(90deg, var(--emp-brand), #26bfae); transition:width .3s ease; }
+    .loan-progress-bar { height:100%; border-radius:4px; background:linear-gradient(90deg, var(--emp-brand), #7a56bf); transition:width .3s ease; }
     .loan-progress-pct { font-size:10px; color:#889; font-weight:600; }
 
     /* ---- Table empty states ---- */
@@ -240,16 +249,16 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <div class="emp-side-avatar"><?= $initials ?></div>
                                     <div class="emp-side-name"><?= $fullname ?></div>
                                     <div class="emp-side-role">
-                                        <i class="ri-briefcase-4-line me-1"></i><?= htmlspecialchars(ucwords($pname)) ?>
+                                        <i class="ri-briefcase-4-line me-1"></i><?= esc(ucwords($pname)) ?>
                                         <?php if (!empty($dept_name)): ?>
-                                            <br><i class="ri-building-3-line me-1"></i><?= htmlspecialchars($dept_name) ?>
+                                            <br><i class="ri-building-3-line me-1"></i><?= esc($dept_name) ?>
                                         <?php endif; ?>
                                     </div>
-                                    <div class="emp-side-empno"><i class="ri-barcode-line me-1"></i><?= htmlspecialchars($employee_no) ?></div>
+                                    <div class="emp-side-empno"><i class="ri-barcode-line me-1"></i><?= esc($employee_no) ?></div>
                                 </div>
                                 <div class="emp-side-meta">
                                     <span class="badge" style="display:inline-flex;align-items:center;gap:2px;<?= clasif_badge_style($clasification) ?>">
-                                        <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
+                                        <i class="mdi mdi-circle-medium"></i><?= esc($clasification) ?>
                                     </span>
                                     <?php if ($status == 1): ?>
                                         <span class="badge rounded-pill bg-success"><i class="ri-checkbox-circle-line me-1"></i>Active</span>
@@ -296,7 +305,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 </div>
                                 <!-- <div class="emp-side-barcode">
                                     <div class="barcode-wrap">
-                                        <img alt="<?= htmlspecialchars($employee_no) ?>" src="includes/barcode.php?codetype=Code39&size=40&text=<?= urlencode($employee_no) ?>&print=true" style="max-width:100%;" />
+                                        <img alt="<?= esc($employee_no) ?>" src="includes/barcode.php?codetype=Code39&size=40&text=<?= urlencode($employee_no) ?>&print=true" style="max-width:100%;" />
                                     </div>
                                 </div> -->
                             </div>
@@ -363,19 +372,19 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <div class="detail-row">
                                         <div class="detail-item">
                                             <div class="detail-label">First Name</div>
-                                            <div class="detail-value"><?= htmlspecialchars($firstname) ?></div>
+                                            <div class="detail-value"><?= esc($firstname) ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Middle Name</div>
-                                            <div class="detail-value"><?= htmlspecialchars($middlename) ?: '<span class="text-muted">—</span>' ?></div>
+                                            <div class="detail-value"><?= esc($middlename) ?: '<span class="text-muted">—</span>' ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Last Name</div>
-                                            <div class="detail-value"><?= htmlspecialchars($lastname) ?></div>
+                                            <div class="detail-value"><?= esc($lastname) ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Extension</div>
-                                            <div class="detail-value"><?= htmlspecialchars($ext) ?: '<span class="text-muted">—</span>' ?></div>
+                                            <div class="detail-value"><?= esc($ext) ?: '<span class="text-muted">—</span>' ?></div>
                                         </div>
                                     </div>
                                     <div class="detail-row">
@@ -389,21 +398,21 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Employee Code</div>
-                                            <div class="detail-value" style="font-family:monospace;"><?= htmlspecialchars($employee_code) ?: '<span class="text-muted">—</span>' ?></div>
+                                            <div class="detail-value" style="font-family:monospace;"><?= esc($employee_code) ?: '<span class="text-muted">—</span>' ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Position</div>
-                                            <div class="detail-value"><?= htmlspecialchars(ucwords($pname)) ?></div>
+                                            <div class="detail-value"><?= esc(ucwords($pname)) ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Department</div>
-                                            <div class="detail-value"><?= !empty($dept_name) ? htmlspecialchars($dept_name) : '<span class="text-muted">—</span>' ?></div>
+                                            <div class="detail-value"><?= !empty($dept_name) ? esc($dept_name) : '<span class="text-muted">—</span>' ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Classification</div>
                                             <div class="detail-value">
                                                 <span class="badge" style="display:inline-flex;align-items:center;gap:2px;<?= clasif_badge_style($clasification) ?>">
-                                                    <i class="mdi mdi-circle-medium"></i><?= htmlspecialchars($clasification) ?>
+                                                    <i class="mdi mdi-circle-medium"></i><?= esc($clasification) ?>
                                                 </span>
                                             </div>
                                         </div>
@@ -453,11 +462,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                     <div class="detail-row">
                                         <div class="detail-item">
                                             <div class="detail-label">Bank</div>
-                                            <div class="detail-value"><?= $__bank_name !== '' ? htmlspecialchars($__bank_name) : '<span class="text-muted">Not set</span>' ?></div>
+                                            <div class="detail-value"><?= $__bank_name !== '' ? esc($__bank_name) : '<span class="text-muted">Not set</span>' ?></div>
                                         </div>
                                         <div class="detail-item">
                                             <div class="detail-label">Account Number</div>
-                                            <div class="detail-value" style="font-family:monospace;"><?= !empty($bank_account_no) ? htmlspecialchars($bank_account_no) : '<span class="text-muted">Not set</span>' ?></div>
+                                            <div class="detail-value" style="font-family:monospace;"><?= !empty($bank_account_no) ? esc($bank_account_no) : '<span class="text-muted">Not set</span>' ?></div>
                                         </div>
                                         <div class="detail-item" style="flex:2;"></div>
                                     </div>
@@ -566,12 +575,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     : 0;
                                             ?>
                                                 <tr>
-                                                    <td><span style="font-weight:600;"><?= htmlspecialchars($row['loan_type']) ?></span></td>
+                                                    <td><span style="font-weight:600;"><?= esc($row['loan_type']) ?></span></td>
                                                     <td>
-                                                        <span style="font-size:12px;color:#555;"><i class="ri-calendar-2-line me-1 text-muted"></i><?= htmlspecialchars($row['loan_date']) ?></span>
+                                                        <span style="font-size:12px;color:#555;"><i class="ri-calendar-2-line me-1 text-muted"></i><?= esc($row['loan_date']) ?></span>
                                                         <?php if (!empty($row['effective_date']) && $row['effective_date'] !== $row['loan_date']): ?>
                                                             <div style="font-size:10px;color:#888;margin-top:2px;" title="Deductions start on this date">
-                                                                <i class="ri-calendar-check-line me-1"></i>deducts from <?= htmlspecialchars($row['effective_date']) ?>
+                                                                <i class="ri-calendar-check-line me-1"></i>deducts from <?= esc($row['effective_date']) ?>
                                                             </div>
                                                         <?php endif; ?>
                                                     </td>
@@ -595,7 +604,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                                 loan_id="<?= $row['loan_id'] ?>" employee_id="<?= $row['employee_id'] ?>"
                                                                 loan_balance="<?= $row['loan_balance'] ?>" damount="<?= $row['damount'] ?>"
                                                                 loan_amount="<?= $row['loan_amount'] ?>" loan_date="<?= $row['loan_date'] ?>"
-                                                                effective_date="<?= htmlspecialchars($row['effective_date'] ?? '') ?>"
+                                                                effective_date="<?= esc($row['effective_date'] ?? '') ?>"
                                                                 loan_type="<?= $row['loan_type_id'] ?>" loan_status="<?= $row['loan_status'] ?>"
                                                                 onclick="editLoan(this)"
                                                                 data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Loan">
@@ -641,11 +650,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             while ($row = $contributions->fetch_assoc()):
                                             ?>
                                                 <tr>
-                                                    <td><span style="font-weight:600;"><?= htmlspecialchars($row['contribution']) ?></span></td>
+                                                    <td><span style="font-weight:600;"><?= esc($row['contribution']) ?></span></td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['amount'], 2) ?></span></td>
                                                     <td class="text-center">
                                                         <button type="button"
-                                                            data-id="<?= $row['id'] ?>" data-name="<?= htmlspecialchars($row['contribution']) ?>" data-amount="<?= $row['amount'] ?>"
+                                                            data-id="<?= $row['id'] ?>" data-name="<?= esc($row['contribution']) ?>" data-amount="<?= $row['amount'] ?>"
                                                             class="btn btn-sm btn-outline-primary"
                                                             onclick="editContriAmount(this)"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Amount">
@@ -682,19 +691,19 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 <div class="cn-grid mt-2">
                                     <div class="cn-item">
                                         <label><i class="ri-id-card-line me-1"></i>SSS No.</label>
-                                        <input type="text" class="form-control sss_no" data-id="sss_no" value="<?= htmlspecialchars($sss_no) ?>" name="sss_no" placeholder="Enter SSS No." />
+                                        <input type="text" class="form-control sss_no" data-id="sss_no" value="<?= esc($sss_no) ?>" name="sss_no" placeholder="Enter SSS No." />
                                     </div>
                                     <div class="cn-item">
                                         <label><i class="ri-id-card-line me-1"></i>HDMF No.</label>
-                                        <input type="text" class="form-control sss_no" data-id="hdmf_no" value="<?= htmlspecialchars($hdmf_no) ?>" name="hdmf_no" placeholder="Enter HDMF No." />
+                                        <input type="text" class="form-control sss_no" data-id="hdmf_no" value="<?= esc($hdmf_no) ?>" name="hdmf_no" placeholder="Enter HDMF No." />
                                     </div>
                                     <div class="cn-item">
                                         <label><i class="ri-id-card-line me-1"></i>PhilHealth No.</label>
-                                        <input type="text" class="form-control sss_no" id="ph_no" data-id="ph_no" value="<?= htmlspecialchars($ph_no) ?>" placeholder="Enter PhilHealth No." />
+                                        <input type="text" class="form-control sss_no" id="ph_no" data-id="ph_no" value="<?= esc($ph_no) ?>" placeholder="Enter PhilHealth No." />
                                     </div>
                                     <div class="cn-item">
                                         <label><i class="ri-id-card-line me-1"></i>TIN No.</label>
-                                        <input type="text" class="form-control sss_no" data-id="tin_no" value="<?= htmlspecialchars($tin_no) ?>" placeholder="Enter TIN No." />
+                                        <input type="text" class="form-control sss_no" data-id="tin_no" value="<?= esc($tin_no) ?>" placeholder="Enter TIN No." />
                                     </div>
                                 </div>
                             </div>
@@ -750,7 +759,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             ?>
                                                 <?php $amortizing = (float)$row['total_amount'] > 0; ?>
                                                 <tr>
-                                                    <td><span style="font-weight:600;"><?= htmlspecialchars($row['dname']) ?></span></td>
+                                                    <td><span style="font-weight:600;"><?= esc($row['dname']) ?></span></td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['amount'], 2) ?></span></td>
                                                     <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['total_amount'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
                                                     <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['balance'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
@@ -812,14 +821,14 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             while ($row = $query->fetch_assoc()):
                                             ?>
                                                 <tr>
-                                                    <td class="text-center"><span style="font-family:monospace;font-weight:700;color:#1976d2;"><?= htmlspecialchars($row['code']) ?></span></td>
-                                                    <td class="text-center"><span style="font-family:monospace;font-size:12px;"><?= htmlspecialchars($row['device_id']) ?></span></td>
+                                                    <td class="text-center"><span style="font-family:monospace;font-weight:700;color:#1976d2;"><?= esc($row['code']) ?></span></td>
+                                                    <td class="text-center"><span style="font-family:monospace;font-size:12px;"><?= esc($row['device_id']) ?></span></td>
                                                     <td>
-                                                        <div style="font-weight:600;font-size:13px;"><i class="ri-radio-button-line text-success me-1"></i><?= htmlspecialchars($row['site_name']) ?></div>
-                                                        <div style="font-size:11px;color:#666;"><i class="ri-hashtag text-muted me-1"></i><?= htmlspecialchars($row['site_code']) ?></div>
-                                                        <div style="font-size:11px;color:#888;"><i class="ri-map-pin-line text-muted me-1"></i><?= htmlspecialchars($row['site_address']) ?></div>
+                                                        <div style="font-weight:600;font-size:13px;"><i class="ri-radio-button-line text-success me-1"></i><?= esc($row['site_name']) ?></div>
+                                                        <div style="font-size:11px;color:#666;"><i class="ri-hashtag text-muted me-1"></i><?= esc($row['site_code']) ?></div>
+                                                        <div style="font-size:11px;color:#888;"><i class="ri-map-pin-line text-muted me-1"></i><?= esc($row['site_address']) ?></div>
                                                     </td>
-                                                    <td><span style="font-weight:600;"><?= htmlspecialchars($row['cluster']) ?></span></td>
+                                                    <td><span style="font-weight:600;"><?= esc($row['cluster']) ?></span></td>
                                                 </tr>
                                             <?php endwhile; ?>
                                         </tbody>
@@ -856,7 +865,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         foreach ($labels as $i => $lb) {
                                             $on = in_array($i, $set, true);
                                             $out .= '<span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;font-size:10px;font-weight:700;margin-right:2px;'
-                                                . ($on ? 'background:#009688;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+                                                . ($on ? 'background:#673bb6;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
                                         }
                                         return $out;
                                     }
@@ -875,7 +884,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 <div class="alert alert-success d-flex gap-4 align-items-center py-3">
                                     <i class="ri-time-fill fs-2"></i>
                                     <div>
-                                        <div class="fw-bold fs-6"><?= htmlspecialchars($cur_sched['description']) ?></div>
+                                        <div class="fw-bold fs-6"><?= esc($cur_sched['description']) ?></div>
                                         <div class="text-muted" style="font-size:13px;">
                                             <?= date('h:i A', strtotime($cur_sched['start_time'])) ?> –
                                             <?= date('h:i A', strtotime($cur_sched['end_time'])) ?>
@@ -927,12 +936,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 WHERE es.employee_id = $emp_id
                                                 ORDER BY es.effective_from DESC
                                             ");
-                                            if (!$hist) { echo '<!-- query error: ' . htmlspecialchars($conn->error) . ' -->'; }
+                                            if (!$hist) { echo '<!-- query error: ' . esc($conn->error) . ' -->'; }
                                             while ($hist && ($h = $hist->fetch_assoc())):
                                             ?>
                                             <tr>
                                                 <td>
-                                                    <span class="fw-semibold"><?= htmlspecialchars($h['description']) ?></span>
+                                                    <span class="fw-semibold"><?= esc($h['description']) ?></span>
                                                     <?php if ($h['is_graveyard']): ?>
                                                         <span class="badge bg-dark ms-1"><i class="ri-moon-line"></i></span>
                                                     <?php endif; ?>
@@ -946,20 +955,27 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <td class="text-center">
                                                     <?= $h['effective_to'] ? date('M d, Y', strtotime($h['effective_to'])) : '<span class="badge bg-success">Current</span>' ?>
                                                 </td>
-                                                <td><?= htmlspecialchars($h['changed_by_name'] ?? '—') ?></td>
-                                                <td><small class="text-muted"><?= htmlspecialchars($h['notes'] ?? '') ?></small></td>
+                                                <td><?= esc($h['changed_by_name'] ?? '—') ?></td>
+                                                <td><small class="text-muted"><?= esc($h['notes'] ?? '') ?></small></td>
                                             </tr>
                                             <?php endwhile; ?>
                                         </tbody>
                                     </table>
                                 </div>
 
-                                <!-- Registered Fingerprints (two-hand status) -->
-                                <div class="mt-4">
-                                    <?php
-                                    require_once __DIR__ . '/component/finger_hands.php';
-                                    echo render_finger_hands($conn, $emp_id);
-                                    ?>
+                                <!-- Registered Fingerprints (two-hand status) — one card per
+                                     scanner, since the mobile kiosk and the desktop scanner
+                                     store their templates in separate tables. -->
+                                <?php require_once __DIR__ . '/component/finger_hands.php'; ?>
+                                <div class="row mt-4">
+                                    <?php /* Mobile Kiosk card (incl. face registration) — hidden for now.
+                                    <div class="col-md-6 mb-3">
+                                        <?= render_finger_hands($conn, $emp_id) ?>
+                                    </div>
+                                    */ ?>
+                                    <div class="col-md-6 mb-3">
+                                        <?= render_finger_hands($conn, $emp_id, ['source' => 'device']) ?>
+                                    </div>
                                 </div>
                             </div>
 
@@ -967,7 +983,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                             <div class="tab-pane" id="arrow-leave" role="tabpanel">
 
                                 <?php
-                                $can_edit_credits = in_array($login_role, [1, 8, 9]);
+                                $can_edit_credits = can_edit_leave_credits($login_role);
                                 $elig_row = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c, e.leave_override FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = " . $emp_id)->fetch_assoc();
                                 $emp_leave_eligible = $elig_row && leave_eligibility_from($elig_row['c'], $elig_row['leave_override']);
                                 ?>
@@ -1039,7 +1055,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     $rem   = $avail - $used;
                                                 ?>
                                                 <tr>
-                                                    <td><b><i class="ri-calendar-event-line me-1 text-success"></i><?= htmlspecialchars($c['name']) ?></b></td>
+                                                    <td><b><i class="ri-calendar-event-line me-1 text-success"></i><?= esc($c['name']) ?></b></td>
                                                     <td class="text-center">
                                                         <?php if ($can_edit_credits && $emp_leave_eligible): ?>
                                                             <div class="input-group input-group-sm" style="max-width:220px;margin:0 auto;">
@@ -1048,9 +1064,9 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                                     data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>">
                                                                 <button class="btn btn-success leave-credit-save" type="button" title="Set balance"><i class="ri-save-line"></i></button>
                                                                 <button class="btn btn-outline-success leave-credit-adjust" type="button" data-mode="add"
-                                                                    data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>" data-type-name="<?= htmlspecialchars($c['name']) ?>" title="Add credits"><i class="ri-add-line"></i></button>
+                                                                    data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>" data-type-name="<?= esc($c['name']) ?>" title="Add credits"><i class="ri-add-line"></i></button>
                                                                 <button class="btn btn-outline-danger leave-credit-adjust" type="button" data-mode="deduct"
-                                                                    data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>" data-type-name="<?= htmlspecialchars($c['name']) ?>" title="Deduct credits"><i class="ri-subtract-line"></i></button>
+                                                                    data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>" data-type-name="<?= esc($c['name']) ?>" title="Deduct credits"><i class="ri-subtract-line"></i></button>
                                                             </div>
                                                         <?php else: ?>
                                                             <?= $emp_leave_eligible ? rtrim(rtrim(number_format($avail, 1), '0'), '.') : '<span class="text-muted">—</span>' ?>
@@ -1101,14 +1117,14 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             ?>
                                                 <tr>
                                                     <td><?= date('M d, Y g:i A', strtotime($h['created_at'])) ?></td>
-                                                    <td><?= htmlspecialchars($h['type_name']) ?>
-                                                        <?php if (!empty($h['reason'])): ?><div class="text-muted" style="font-size:10px;" title="<?= htmlspecialchars($h['reason']) ?>"><i class="ri-chat-1-line"></i> <?= htmlspecialchars(mb_strimwidth($h['reason'], 0, 36, '…')) ?></div><?php endif; ?>
+                                                    <td><?= esc($h['type_name']) ?>
+                                                        <?php if (!empty($h['reason'])): ?><div class="text-muted" style="font-size:10px;" title="<?= esc($h['reason']) ?>"><i class="ri-chat-1-line"></i> <?= esc(mb_strimwidth($h['reason'], 0, 36, '…')) ?></div><?php endif; ?>
                                                     </td>
                                                     <td class="text-center">
                                                         <span class="badge <?= $ctClass ?>" style="font-size:9px;"><?= $ctLabel ?><?= $ct !== 'set' ? ' ' . ($delta >= 0 ? '+' : '') . $f($delta) : '' ?></span>
                                                         <div><span class="text-muted"><?= $f($h['old_credits']) ?></span> <i class="ri-arrow-right-line <?= $up ? 'text-success' : 'text-danger' ?>"></i> <b class="<?= $up ? 'text-success' : 'text-danger' ?>"><?= $f($h['new_credits']) ?></b></div>
                                                     </td>
-                                                    <td><?= htmlspecialchars($h['changed_name'] ?? 'System') ?></td>
+                                                    <td><?= esc($h['changed_name'] ?? 'System') ?></td>
                                                 </tr>
                                             <?php endwhile; else: ?>
                                                 <tr><td colspan="4">
@@ -1133,7 +1149,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <th class="text-center"><i class="ri-time-line me-1"></i>Duration</th>
                                                 <th><i class="ri-chat-1-line me-1"></i>Reason</th>
                                                 <?php foreach (leave_stages() as $sdef): ?>
-                                                <th class="text-center"><?= htmlspecialchars($sdef['label']) ?></th>
+                                                <th class="text-center"><?= esc($sdef['label']) ?></th>
                                                 <?php endforeach; ?>
                                                 <th class="text-center"><i class="ri-pulse-line me-1"></i>Status</th>
                                             </tr>
@@ -1153,8 +1169,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             ");
                                             $lv_status = [0 => ['Pending','bg-warning'], 1 => ['Approved','bg-success'], 2 => ['Rejected','bg-danger']];
                                             $lv_stage = function ($s, $by, $rem) use ($lv_status) {
-                                                if ($s == 1) return '<span class="badge bg-success-subtle text-success border border-success-subtle" title="' . htmlspecialchars($by ?? '') . '"><i class="ri-check-line"></i></span>';
-                                                if ($s == 2) return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="' . htmlspecialchars($rem ?? '') . '"><i class="ri-close-line"></i></span>';
+                                                if ($s == 1) return '<span class="badge bg-success-subtle text-success border border-success-subtle" title="' . esc($by ?? '') . '"><i class="ri-check-line"></i></span>';
+                                                if ($s == 2) return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="' . esc($rem ?? '') . '"><i class="ri-close-line"></i></span>';
                                                 return '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-time-line"></i></span>';
                                             };
                                             if ($lv) while ($row = $lv->fetch_assoc()):
@@ -1162,12 +1178,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             ?>
                                                 <tr>
                                                     <td><?= date('M d, Y', strtotime($row['date_applied'])) ?></td>
-                                                    <td><span class="badge bg-info-subtle text-info border border-info-subtle"><?= htmlspecialchars($row['leave_type_name']) ?></span></td>
+                                                    <td><span class="badge bg-info-subtle text-info border border-info-subtle"><?= esc($row['leave_type_name']) ?></span></td>
                                                     <td class="text-center">
                                                         <b><?= rtrim(rtrim(number_format($row['duration'], 1), '0'), '.') ?></b> day(s)
                                                         <div class="text-muted" style="font-size:11px;"><?= date('M d', strtotime($row['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($row['date_to'])) ?></div>
                                                     </td>
-                                                    <td style="max-width:220px;"><span class="text-muted"><?= nl2br(htmlspecialchars($row['reason'] ?? '')) ?></span>
+                                                    <td style="max-width:220px;"><span class="text-muted"><?= nl2br(esc($row['reason'] ?? '')) ?></span>
                                                         <?php
                                                         $rej_remark = '';
                                                         foreach (array_reverse(leave_stages(), true) as $rk => $rd) {
@@ -1175,7 +1191,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                         }
                                                         ?>
                                                         <?php if ($row['status'] == 2 && $rej_remark): ?>
-                                                            <div class="text-danger" style="font-size:11px;"><i class="ri-information-line"></i> <?= htmlspecialchars($rej_remark) ?></div>
+                                                            <div class="text-danger" style="font-size:11px;"><i class="ri-information-line"></i> <?= esc($rej_remark) ?></div>
                                                         <?php endif; ?>
                                                     </td>
                                                     <?php foreach (leave_stages() as $skey => $sdef): ?>
@@ -1198,7 +1214,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                             <div class="modal-dialog modal-dialog-centered">
                                 <form id="form-adjust-credit" class="modal-content">
                                     <div class="modal-header">
-                                        <h6 class="modal-title" id="adjust-title"><i class="ri-coins-line me-2" style="color:#009688;"></i>Adjust Credits</h6>
+                                        <h6 class="modal-title" id="adjust-title"><i class="ri-coins-line me-2" style="color:#673bb6;"></i>Adjust Credits</h6>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
@@ -1280,7 +1296,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                             document.getElementById('adj-mode').value = mode;
                             document.getElementById('adj-amount').value = '';
                             document.getElementById('adj-reason').value = '';
-                            document.getElementById('adjust-title').innerHTML = '<i class="ri-coins-line me-2" style="color:#009688;"></i>' + (isAdd ? 'Add' : 'Deduct') + ' Credits';
+                            document.getElementById('adjust-title').innerHTML = '<i class="ri-coins-line me-2" style="color:#673bb6;"></i>' + (isAdd ? 'Add' : 'Deduct') + ' Credits';
                             document.getElementById('adj-desc').innerHTML = (isAdd ? 'Add days to' : 'Deduct days from') + ' <b>' + b.dataset.typeName + '</b> balance.';
                             document.getElementById('adj-submit').className = 'btn btn-sm ' + (isAdd ? 'btn-success' : 'btn-danger');
                             new bootstrap.Modal(document.getElementById('modal-adjust-credit')).show();
@@ -1353,7 +1369,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 while ($s = $scheds->fetch_assoc()):
                                 ?>
                                 <option value="<?= $s['id'] ?>">
-                                    <?= htmlspecialchars($s['description']) ?>
+                                    <?= esc($s['description']) ?>
                                     (<?= date('h:i A', strtotime($s['start_time'])) ?> – <?= date('h:i A', strtotime($s['end_time'])) ?>)
                                 </option>
                                 <?php endwhile; ?>
@@ -1478,5 +1494,41 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                 new bootstrap.Tooltip(el, { trigger: 'hover' });
             });
         });
+
+        // Keep the open tab across reloads — every save on this page calls
+        // location.reload(), which would otherwise drop the user back on Overview.
+        // Remembered per employee for this browser tab only (sessionStorage).
+        (function () {
+            const KEY = 'empdet-tab-<?= $emp_id ?>';
+            const TABS = '.nav-link[data-bs-toggle="tab"]';
+
+            function activate(href) {
+                const link = document.querySelector(TABS + '[href="' + href + '"]');
+                if (!link || link.classList.contains('active')) return;
+                if (typeof bootstrap !== 'undefined' && bootstrap.Tab) {
+                    bootstrap.Tab.getOrCreateInstance(link).show();
+                }
+            }
+
+            function start() {
+                // An explicit #arrow-… in the URL wins over the remembered tab.
+                const hash = location.hash && location.hash.indexOf('#arrow-') === 0 ? location.hash : null;
+                const want = hash || sessionStorage.getItem(KEY);
+                if (want) activate(want);
+
+                document.querySelectorAll(TABS).forEach(function (link) {
+                    link.addEventListener('shown.bs.tab', function (e) {
+                        const href = e.target.getAttribute('href');
+                        if (href) sessionStorage.setItem(KEY, href);
+                    });
+                });
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', start);
+            } else {
+                start();
+            }
+        })();
     </script>
     <?php include 'component/add_employee_form.php'; ?>

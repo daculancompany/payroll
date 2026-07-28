@@ -4,20 +4,20 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-upload-2-line me-2" style="color:#009688;"></i>Upload DTR Files
+                        <i class="ri-upload-2-line me-2" style="color:#673bb6;"></i>Upload DTR Files
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                             <i class="ri-fingerprint-line me-1"></i>Biometric File
                             <span class="text-danger">*</span>
                         </label>
                         <div class="input-group">
                             <span class="input-group-text" style="background:#eef0f8;border-color:#c5cde8;">
-                                <i class="ri-file-text-line" style="color:#009688;"></i>
+                                <i class="ri-file-text-line" style="color:#673bb6;"></i>
                             </span>
                             <input type="file" name="fileBiometric" id="fileBiometric" class="form-control"
                                 accept=".txt" required
@@ -29,13 +29,13 @@
                     </div>
 
                     <div class="mb-1">
-                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                             <i class="ri-database-2-line me-1"></i>Database File
                             <span class="text-danger">*</span>
                         </label>
                         <div class="input-group">
                             <span class="input-group-text" style="background:#eef0f8;border-color:#c5cde8;">
-                                <i class="ri-file-text-line" style="color:#009688;"></i>
+                                <i class="ri-file-text-line" style="color:#673bb6;"></i>
                             </span>
                             <input type="file" name="fileDB" id="fileDB" class="form-control"
                                 accept=".txt" required
@@ -51,7 +51,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="ri-upload-2-line me-1"></i>Upload
                     </button>
                 </div>

@@ -447,7 +447,7 @@ $refund_names = [];   // refund id => display name
 .pay-stat-body { line-height: 1.2; }
 .pay-stat-val { font-size: 14px; font-weight: 800; color: #323130; }
 .pay-stat-lbl { font-size: 10px; color: #a19f9d; text-transform: uppercase; letter-spacing: .4px; }
-.pay-stat.employees .pay-stat-icon { background:#e6f5f3; color:#219688; }
+.pay-stat.employees .pay-stat-icon { background:#eeeaf5; color:#6642aa; }
 .pay-stat.gross     .pay-stat-icon { background:#e8f5e9; color:#2e7d32; }
 .pay-stat.deduct    .pay-stat-icon { background:#fce4ec; color:#c62828; }
 .pay-stat.net       .pay-stat-icon { background:#e3f2fd; color:#1565c0; }
@@ -461,13 +461,13 @@ $refund_names = [];   // refund id => display name
 
 /* Header row 1: section banners (pastel tint per group) */
 #table-1 thead tr:first-child th {
-    background: #d7ece9 !important;           /* mint — general/attendance group */
-    color: #116257 !important;
+    background: #e1dcec !important;           /* mint — general/attendance group */
+    color: #4f3288 !important;
     font-size: 10px !important;
     font-weight: 800 !important;
     text-transform: uppercase !important;
     letter-spacing: .4px !important;
-    border: 1px solid #c2ddd8 !important;
+    border: 1px solid #cfc8de !important;
     padding: 7px 8px !important;
 }
 #table-1 thead tr:first-child th.info-header    { background: #dde9f8 !important; color: #1e50a0 !important; border-color: #c5d8f0 !important; }
@@ -476,11 +476,11 @@ $refund_names = [];   // refund id => display name
 
 /* Header row 2: column labels (lighter tint of the same family) */
 #table-1 thead tr:nth-child(2) th {
-    background: #ebf5f3 !important;
-    color: #116257 !important;
+    background: #f0edf5 !important;
+    color: #4f3288 !important;
     font-size: 10px !important;
     font-weight: 700 !important;
-    border: 1px solid #d5e6e2 !important;
+    border: 1px solid #ddd9e7 !important;
     white-space: nowrap !important;
     padding: 5px 8px !important;
 }
@@ -574,10 +574,10 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .att-log-dir { font-size:10px; font-weight:700; padding:1px 0; border-radius:3px; min-width:34px; text-align:center; display:inline-block; }
 .att-log-in  { background:#d4edda; color:#155724; }
 .att-log-out { background:#f8d7da; color:#721c24; }
-.att-log-bio    { background:#009688; color:#fff; font-size:10px; }
+.att-log-bio    { background:#673bb6; color:#fff; font-size:10px; }
 .att-log-manual { background:#dc3545; color:#fff; font-size:10px; }
 #modal-att-logs .al-meta-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.3px; }
-#modal-att-logs .al-meta-value { font-size:13px; font-weight:700; color:#009688; }
+#modal-att-logs .al-meta-value { font-size:13px; font-weight:700; color:#673bb6; }
 .al-day { margin-bottom:14px; }
 .al-day:last-child { margin-bottom:0; }
 .al-day-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
@@ -587,13 +587,13 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 
 /* ── Search / dept filter / anomaly-flags toolbar ── */
 .pay-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-.pay-search-box { display:flex; align-items:center; gap:6px; background:#fff; border:1px solid #cfe3e0; border-radius:6px; padding:5px 10px; min-width:240px; }
-.pay-search-box i { color:#219688; font-size:14px; }
+.pay-search-box { display:flex; align-items:center; gap:6px; background:#fff; border:1px solid #d9d3e4; border-radius:6px; padding:5px 10px; min-width:240px; }
+.pay-search-box i { color:#6642aa; font-size:14px; }
 .pay-search-box input { border:none; outline:none; font-size:12px; flex:1; background:transparent; min-width:160px; }
 .pay-search-box button { border:none; background:none; color:#999; cursor:pointer; padding:0 2px; font-size:14px; line-height:1; }
 #pay-dept-filter,
 #pay-pos-filter,
-#pay-rate-filter { border:1px solid #cfe3e0; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; max-width:230px; }
+#pay-rate-filter { border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; max-width:230px; }
 .pay-anomaly-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .pay-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; border:1px solid; cursor:pointer; user-select:none; background:#fff; transition:box-shadow .1s; }
 .pay-chip:hover { box-shadow:0 1px 4px rgba(0,0,0,.12); }
@@ -661,7 +661,7 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .prp-row-ic { font-size:13px; flex-shrink:0; }
 .prp-row.ok   .prp-row-ic { color:#33a466; }
 .prp-row.disp .prp-row-ic { color:#c62828; }
-.prp-row-name { flex:1; min-width:0; font-weight:700; color:#33403c;
+.prp-row-name { flex:1; min-width:0; font-weight:700; color:#3c3846;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .prp-row-done { color:#107c41; font-size:12px; flex-shrink:0; }
 /* Unread = nobody has opened this message yet (seen_at IS NULL) */
@@ -680,13 +680,13 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 
 /* ── The sign-off conversation popup ── */
 #modal-emp-review .mer-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
-#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#33403c; }
+#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#3c3846; }
 .mer-badge { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800;
     padding:2px 9px; border-radius:12px; border:1px solid; }
 .mer-badge.ok   { background:#eafaf0; color:#107c41; border-color:#b7e4c7; }
 .mer-badge.disp { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
-.mer-when { font-size:10.5px; color:#8aa39c; margin-left:auto; }
-.mer-empty { text-align:center; color:#8aa39c; font-size:12.5px; padding:22px 12px; }
+.mer-when { font-size:10.5px; color:#948ea5; margin-left:auto; }
+.mer-empty { text-align:center; color:#948ea5; font-size:12.5px; padding:22px 12px; }
 .prp-disputes.is-scroll { max-height:340px; overflow-y:auto; padding-right:4px; }
 .prp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
 .prp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
@@ -730,7 +730,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 .vh-header {
     background: #d9eedd;
     padding: 16px 18px 0;
-    color: #10453d;
+    color: #412b6d;
     position: relative; overflow: hidden;
 }
 
@@ -738,12 +738,12 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 .vh-title { font-size:15px; font-weight:800; letter-spacing:.2px; display:flex; align-items:center; gap:8px; }
 .vh-title-icon {
     width:26px; height:26px; border-radius:8px;
-    background:rgba(16,69,61,.10); border:1px solid rgba(16,69,61,.16);
+    background:rgba(65,43,109,.10); border:1px solid rgba(65,43,109,.16);
     display:flex; align-items:center; justify-content:center; font-size:14px;
 }
-.vh-subtitle { font-size:11px; color:rgba(16,69,61,.8); margin-top:3px; }
+.vh-subtitle { font-size:11px; color:rgba(65,43,109,.8); margin-top:3px; }
 .vh-count-badge {
-    background:rgba(16,69,61,.12); color:#10453d;
+    background:rgba(65,43,109,.12); color:#412b6d;
     font-size:11px; font-weight:700;
     border-radius:20px; padding:3px 10px;
     backdrop-filter:blur(4px); white-space:nowrap;
@@ -753,31 +753,31 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 }
 .vh-tab {
     padding:8px 13px; font-size:11px; font-weight:600;
-    color:rgba(16,69,61,.75); cursor:pointer;
+    color:rgba(65,43,109,.75); cursor:pointer;
     border-bottom:2px solid transparent;
     transition:all .15s; white-space:nowrap;
     display:flex; align-items:center; gap:5px;
 }
-.vh-tab.active { color:#10453d; border-bottom-color:#219688; }
-.vh-tab:hover:not(.active) { color:rgba(16,69,61,.95); }
+.vh-tab.active { color:#412b6d; border-bottom-color:#6642aa; }
+.vh-tab:hover:not(.active) { color:rgba(65,43,109,.95); }
 .vh-tab-count {
     font-size:9px; font-weight:800; line-height:1;
-    background:rgba(16,69,61,.12); border-radius:20px; padding:2px 5px;
+    background:rgba(65,43,109,.12); border-radius:20px; padding:2px 5px;
 }
-.vh-tab.active .vh-tab-count { background:rgba(16,69,61,.2); }
+.vh-tab.active .vh-tab-count { background:rgba(65,43,109,.2); }
 .vh-search-bar {
-    padding:10px 14px; background:#f8fffe;
+    padding:10px 14px; background:#fcfbfe;
     border-bottom:1px solid #e1dfdd;
     display:flex; align-items:center; gap:8px;
 }
 .vh-search-wrap { position:relative; flex:1; }
 .vh-search-input {
-    width:100%; border:1px solid #c8e6e2; border-radius:6px;
+    width:100%; border:1px solid #d7d0e6; border-radius:6px;
     padding:6px 28px 6px 32px; font-size:12px; color:#323130;
     background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a19f9d' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
     outline:none; transition:border-color .15s, box-shadow .15s;
 }
-.vh-search-input:focus { border-color:#219688; box-shadow:0 0 0 3px rgba(33,150,136,.12); }
+.vh-search-input:focus { border-color:#6642aa; box-shadow:0 0 0 3px rgba(102,66,170,.12); }
 .vh-search-clear {
     position:absolute; right:6px; top:50%; transform:translateY(-50%);
     border:none; background:none; color:#a19f9d; font-size:14px;
@@ -787,23 +787,23 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 .vh-date-group-label {
     padding:7px 16px;
     font-size:10px; font-weight:800;
-    color:#176358; text-transform:uppercase; letter-spacing:.6px;
-    background:#f4fbfa; border-top:1px solid #e6f5f3; border-bottom:1px solid #e6f5f3;
+    color:#4e3483; text-transform:uppercase; letter-spacing:.6px;
+    background:#f8f6fb; border-top:1px solid #eeeaf5; border-bottom:1px solid #eeeaf5;
     position:sticky; top:0; z-index:2;
     display:flex; align-items:center; gap:6px;
 }
-.vh-date-group-label .vh-group-count { margin-left:auto; color:#8aa9a4; font-weight:700; }
+.vh-date-group-label .vh-group-count { margin-left:auto; color:#9890ab; font-weight:700; }
 .vh-entry {
     display:flex; gap:12px; padding:13px 16px 13px 14px;
     border-bottom:1px solid #f4f4f4;
     transition:background .12s; position:relative;
 }
-.vh-entry:hover { background:#f9fffe; }
-.vh-entry.is-latest { background:#f2fdfa; }
+.vh-entry:hover { background:#fcfcfe; }
+.vh-entry.is-latest { background:#f7f6fc; }
 .vh-entry.is-latest::before {
     content:''; position:absolute; left:0; top:0; bottom:0;
     width:3px; border-radius:0 2px 2px 0;
-    background:#219688;
+    background:#6642aa;
 }
 .vh-timeline {
     display:flex; flex-direction:column; align-items:center;
@@ -815,7 +815,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
     font-size:14px; transition:transform .15s;
 }
 .vh-entry:hover .vh-node { transform:scale(1.08); }
-.vh-line { width:2px; flex:1; min-height:14px; background:#e8ecec; margin-top:6px; border-radius:2px; }
+.vh-line { width:2px; flex:1; min-height:14px; background:#eae9ec; margin-top:6px; border-radius:2px; }
 .vh-content { flex:1; min-width:0; padding-top:2px; }
 .vh-event-row { display:flex; align-items:flex-start; gap:8px; margin-bottom:6px; }
 .vh-event-text {
@@ -825,7 +825,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 .vh-event-sub { font-size:11px; font-weight:500; color:#8a8886; margin-top:1px; }
 .vh-latest-badge {
     font-size:9px; font-weight:800; letter-spacing:.3px;
-    background:#219688; color:#fff;
+    background:#6642aa; color:#fff;
     border-radius:20px; padding:2px 7px;
     flex-shrink:0; margin-top:1px;
 }
@@ -839,7 +839,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 }
 .vh-chip i { font-size:11px; opacity:.75; }
 .vh-chip-emp { background:#eef4ff; color:#3557b7; border-color:#dbe4fb; }
-.vh-chip-val { background:#ecfdf5; color:#0f766e; border-color:#d3f0e8; font-variant-numeric:tabular-nums; }
+.vh-chip-val { background:#ecfdf5; color:#5b3699; border-color:#e0dcef; font-variant-numeric:tabular-nums; }
 .vh-meta { display:flex; align-items:center; gap:7px; }
 .vh-avatar {
     width:22px; height:22px; border-radius:50%;
@@ -859,7 +859,7 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 .vh-sk-lines { flex:1; }
 .vh-sk-bar { height:9px; border-radius:4px; margin-bottom:7px; }
 .vh-skeleton .vh-sk-node, .vh-skeleton .vh-sk-bar {
-    background:linear-gradient(90deg,#eef1f1 25%,#f7f9f9 50%,#eef1f1 75%);
+    background:linear-gradient(90deg,#f0eef1 25%,#f8f7f9 50%,#f0eef1 75%);
     background-size:200% 100%; animation:vh-shimmer 1.2s infinite;
 }
 @keyframes vh-shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
@@ -870,11 +870,11 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
 body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 .pcw-app { transition:opacity .35s ease; }
 #pcw-boot { position:fixed; inset:0; z-index:4000; display:flex; align-items:center; justify-content:center;
-    background:#eef2f1; transition:opacity .35s ease; }
+    background:#f0eff2; transition:opacity .35s ease; }
 #pcw-boot.hide { opacity:0; pointer-events:none; }
 .pcw-boot-inner { display:flex; flex-direction:column; align-items:center; gap:14px; }
 .pcw-boot-ring { width:46px; height:46px; border-radius:50%;
-    border:4px solid #d7ece9; border-top-color:#107c41; animation:pcw-spin .8s linear infinite; }
+    border:4px solid #e1dcec; border-top-color:#107c41; animation:pcw-spin .8s linear infinite; }
 .pcw-boot-txt { font-size:13px; font-weight:700; color:#0e6b37; letter-spacing:.3px;
     font-family:'Segoe UI', system-ui, Arial, sans-serif; }
 @keyframes pcw-spin { to { transform:rotate(360deg); } }
@@ -981,7 +981,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                     <button type="button" data-rv="1"><i class="ri-lock-2-fill" style="color:#33a466;"></i> Verified</button>
                                     <button type="button" data-rv="2"><i class="ri-error-warning-fill" style="color:#e0653f;"></i> Issue</button>
                                     <button type="button" data-rv="3"><i class="ri-loader-4-line" style="color:#3f7fe0;"></i> Reviewing</button>
-                                    <button type="button" data-rv="0"><i class="ri-checkbox-blank-circle-line" style="color:#9aa;"></i> No mark</button>
+                                    <button type="button" data-rv="0"><i class="ri-checkbox-blank-circle-line" style="color:#a29cac;"></i> No mark</button>
                                 </div>
                                 <?php if (in_array((int)$status, [2, 3], true)): ?>
                                 <?php /* The employees' own sign-off, separate from the reviewer's
@@ -1003,7 +1003,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                 <div class="pcw-rv-chips" id="pcw-lock-chips">
                                     <button type="button" data-lock="" class="on">All</button>
                                     <button type="button" data-lock="u"><i class="ri-lock-unlock-line" style="color:#c98a00;"></i> Unlocked</button>
-                                    <button type="button" data-lock="l"><i class="ri-lock-line" style="color:#7a8f88;"></i> Locked</button>
+                                    <button type="button" data-lock="l"><i class="ri-lock-line" style="color:#827d91;"></i> Locked</button>
                                 </div>
                                 <?php endif; ?>
                                 <div class="pcw-fp-lbl">Department</div>
@@ -1101,7 +1101,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                 <i class="ri-arrow-down-s-line pcw-collapse-ic"></i>
                             </div>
                             <div class="pcw-sum-body" id="pcw-sum">
-                                <div style="font-size:12px;color:#8aa39c;">No employee selected.</div>
+                                <div style="font-size:12px;color:#948ea5;">No employee selected.</div>
                             </div>
                         </div>
                         <!-- ── Batch Insights ── -->
@@ -1217,7 +1217,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 <!-- ══ Full-width sheet editor modal — the classic Excel-style payroll table ══ -->
 <div class="modal fade" id="modal-table-editor" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-fullscreen">
-        <div class="modal-content" style="background:#eef2f1;">
+        <div class="modal-content" style="background:#f0eff2;">
             <div class="modal-body p-2 d-flex flex-column" style="overflow:hidden;">
                 <div class="xl-panel" id="myDiv" style="flex:1;min-height:0;display:flex;flex-direction:column;">
                     <div class="xl-ribbon">
@@ -1240,7 +1240,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                             <button data-toggle="tooltip" title="Download this table as a styled Excel workbook" onclick="pcwExportTableExcel(<?= $id ?>)" class="xl-btn" id="xl-export-btn"><i class="ri-file-excel-2-line"></i> Excel</button>
                             <!-- <button data-toggle="tooltip" title="Totals per contribution, deduction, loan, and refund type" onclick="openRemitModal()" class="xl-btn"><i class="ri-hand-coin-line"></i> Remittance</button>
                             <button id="btn-print-payslips" title="Check rows to select employees, then click to print their payslips" onclick="printSelectedPayslips()" class="xl-btn">
-                                <i class="ri-file-text-line"></i> Payslips <span id="ps-count" style="background:#c8e6e2;color:#176358;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:2px;font-weight:700;">0</span>
+                                <i class="ri-file-text-line"></i> Payslips <span id="ps-count" style="background:#d7d0e6;color:#4e3483;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:2px;font-weight:700;">0</span>
                             </button> -->
                             <!-- <?php if ($status == 1) { ?>
                                 <div class="xl-ribbon-sep"></div>
@@ -2640,7 +2640,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                 <h6 class="modal-title text-white"><i class="ri-user-received-2-line me-2"></i>Payslip Review Message</h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" style="background:#eef2f1;" id="mer-body"></div>
+            <div class="modal-body" style="background:#f0eff2;" id="mer-body"></div>
             <div class="modal-footer py-2">
                 <button type="button" class="btn btn-sm btn-success" id="mer-reply" style="display:none;">
                     <i class="ri-chat-check-line me-1"></i>Resolve &amp; Reply
@@ -2656,11 +2656,11 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 <div class="modal fade" id="modal-att-logs" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header py-2" style="background:#009688;">
+            <div class="modal-header py-2" style="background:#673bb6;">
                 <h6 class="modal-title text-white"><i class="ri-calendar-check-line me-2"></i>Daily Time Record</h6>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" style="background:#eef2f1;">
+            <div class="modal-body" style="background:#f0eff2;">
                 <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
                     <div>
                         <div class="al-meta-label"><i class="ri-user-line me-1"></i>Employee</div>
@@ -2836,7 +2836,7 @@ var _vhFilter = 'all';
 var _vhSearch = '';
 
 var actionMeta = {
-    created:    { color:'#219688', bg:'#e6f5f3', icon:'ri-add-circle-line',       label:'Created'    },
+    created:    { color:'#6642aa', bg:'#eeeaf5', icon:'ri-add-circle-line',       label:'Created'    },
     calculated: { color:'#2563eb', bg:'#dbeafe', icon:'ri-calculator-line',        label:'Calculated' },
     locked:     { color:'#7c3aed', bg:'#ede9fe', icon:'ri-lock-line',              label:'Locked'     },
     unlocked:   { color:'#059669', bg:'#d1fae5', icon:'ri-lock-unlock-line',       label:'Unlocked'   },
@@ -3075,7 +3075,7 @@ function openPayrollHistory(id) {
             body.innerHTML = '<div class="vh-empty"><i class="ri-error-warning-line" style="color:#dc2626;"></i>'
                 + '<div class="vh-empty-title" style="color:#dc2626;">Failed to load</div>'
                 + '<div class="mb-2">Something went wrong fetching the history.</div>'
-                + '<button class="btn btn-sm" style="background:#219688;color:#fff;font-weight:600;border:none;" onclick="openPayrollHistory(' + Number(id) + ')">'
+                + '<button class="btn btn-sm" style="background:#6642aa;color:#fff;font-weight:600;border:none;" onclick="openPayrollHistory(' + Number(id) + ')">'
                 + '<i class="ri-refresh-line me-1"></i>Retry</button></div>';
         }
     });
@@ -3443,7 +3443,7 @@ function printPayslipPreview() {
    Payroll document workbench (pcw-*) — layout mirrors dtr-documents.php
    ════════════════════════════════════════════════════════════════════ */
 html, body { height:100%; }
-body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, sans-serif; overflow:hidden; }
+body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, sans-serif; overflow:hidden; }
 .pcw-app { display:flex; flex-direction:column; gap:12px; height:100vh; padding:12px 16px; }
 /* Loading overlay + content-gating CSS lives in the critical <style> in <head>
    so it applies before first paint — see that block. */
@@ -3455,7 +3455,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-back-btn:hover { background:#ddeee3; color:#0e6b37; }
 .pcw-title-icon { width:38px; height:38px; border-radius:11px; flex-shrink:0; background:linear-gradient(135deg,#107c41,#2ea867);
   color:#fff; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 3px 8px rgba(16,124,65,.3); }
-.pcw-h-title { font-size:15px; font-weight:800; color:#2b3a36; display:flex; align-items:center; gap:8px; }
+.pcw-h-title { font-size:15px; font-weight:800; color:#363242; display:flex; align-items:center; gap:8px; }
 .pcw-status-badge { font-size:10.5px; font-weight:800; padding:3px 11px; border-radius:20px; display:inline-flex; align-items:center; gap:4px; }
 .pst-open { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
 .pst-rev  { background:#e3f2fd; color:#1565c0; border:1px solid #a8cff5; }
@@ -3480,7 +3480,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-panel-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 13px;
   border-bottom:1px solid #eef2f0; background:#f4faf5; font-size:12px; font-weight:800; color:#0e6b37; }
 .pcw-panel-head i { color:#107c41; }
-#pcw-total { font-weight:600; color:#7a8f88; font-size:10.5px; }
+#pcw-total { font-weight:600; color:#827d91; font-size:10.5px; }
 /* ── Collapsible right-column panels ──────────────────────────────────────
    The head stays put and only the body scrolls; clicking the head folds the
    panel away so a long batch can be given the whole column. */
@@ -3505,7 +3505,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-search-wrap:focus-within { border-color:#107c41; box-shadow:0 0 0 2px rgba(16,124,65,.14); }
 .pcw-search-wrap > i { color:#107c41; font-size:14px; }
 .pcw-search-wrap input { border:none; outline:none; flex:1; font-size:12px; min-width:0; background:transparent; }
-.pcw-select { width:100%; border:1px solid #cfe9d6; border-radius:8px; font-size:11.5px; padding:5px 8px; color:#33403c; background:#fff; outline:none; cursor:pointer; }
+.pcw-select { width:100%; border:1px solid #cfe9d6; border-radius:8px; font-size:11.5px; padding:5px 8px; color:#3c3846; background:#fff; outline:none; cursor:pointer; }
 /* Filter button + popover (mirrors dtr-documents.php's filter UI) */
 .pcw-filter-btn { position:relative; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
   flex-shrink:0; border-radius:7px; cursor:pointer; color:#0e6b37; background:#eef7f0; border:1px solid #cfe9d6; transition:background .12s; }
@@ -3514,14 +3514,14 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-filter-count { position:absolute; top:-5px; right:-5px; min-width:14px; height:14px; padding:0 3px; border-radius:8px;
   background:#c62828; color:#fff; font-size:8.5px; font-weight:800; display:flex; align-items:center; justify-content:center; }
 .pcw-filter-pop { display:none; position:absolute; left:11px; right:11px; top:calc(100% + 2px); z-index:40;
-  background:#fff; border:1px solid #e1dfdd; border-radius:12px; padding:11px; box-shadow:0 10px 30px rgba(16,55,50,.18); }
+  background:#fff; border:1px solid #e1dfdd; border-radius:12px; padding:11px; box-shadow:0 10px 30px rgba(58,40,93,.18); }
 .pcw-filter-pop.open { display:block; }
 .pcw-fp-head { display:flex; justify-content:space-between; align-items:center; font-size:11.5px; font-weight:800; color:#0e6b37; }
 .pcw-fp-head i { color:#107c41; }
 .pcw-fp-reset { display:inline-flex; align-items:center; gap:3px; border:none; background:transparent; color:#c62828;
   font-size:10px; font-weight:700; cursor:pointer; padding:2px 5px; border-radius:6px; }
 .pcw-fp-reset:hover { background:#fdf4f3; }
-.pcw-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#8aa39c; margin:10px 0 4px; }
+.pcw-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:10px 0 4px; }
 .pcw-rv-chips { display:flex; flex-wrap:wrap; gap:4px; }
 .pcw-rv-chips button { display:inline-flex; align-items:center; gap:3px; padding:3px 9px; border-radius:20px; font-size:10px;
   font-weight:700; cursor:pointer; color:#5b6f62; background:#fff; border:1px solid #d5e6da; transition:all .12s; }
@@ -3557,8 +3557,8 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-rv-ic.rv-chk   { background:#3f7fe0; }
 .pcw-rv-ic.rv-chk i { animation:pcw-spin 1.4s linear infinite; }
 .pcw-item-main { flex:1; min-width:0; }
-.pcw-item-name { font-size:12px; font-weight:700; color:#33403c; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pcw-item-sub { font-size:10px; color:#8aa39c; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-item-name { font-size:12px; font-weight:700; color:#3c3846; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-item-sub { font-size:10px; color:#948ea5; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pcw-item-tags { margin-top:3px; }
 .pcw-rv-tag { display:inline-flex; align-items:center; gap:3px; font-size:9px; font-weight:800; letter-spacing:.2px;
   padding:1px 7px; border-radius:20px; border:1px solid; }
@@ -3596,9 +3596,9 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 @keyframes pcw-bulk-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 .pcw-bulk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .pcw-bulk-n { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; color:#0e6b37; }
-.pcw-bulk-x { border:none; background:transparent; color:#8aa39c; cursor:pointer; font-size:15px; line-height:1; padding:2px 4px; }
+.pcw-bulk-x { border:none; background:transparent; color:#948ea5; cursor:pointer; font-size:15px; line-height:1; padding:2px 4px; }
 .pcw-bulk-x:hover { color:#c62828; }
-.pcw-bulk-lbl { font-size:8.5px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#8aa39c; margin:8px 0 4px; }
+.pcw-bulk-lbl { font-size:8.5px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:8px 0 4px; }
 .pcw-bulk-rv { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
 .pcw-bulk-rv button { display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:5px 6px; border-radius:7px;
   font-size:10px; font-weight:800; cursor:pointer; border:1px solid; background:#fff; transition:filter .12s; }
@@ -3625,7 +3625,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-fdot { width:7px; height:7px; border-radius:50%; }
 .pcw-fdot.abs { background:#c98a00; } .pcw-fdot.lt { background:#e2574c; } .pcw-fdot.neg { background:#c62828; }
 .pcw-fdot.disp { background:#7c3aed; } .pcw-fdot.ok { background:#63c584; }
-.pcw-list-empty { text-align:center; color:#8aa39c; font-size:12px; padding:26px 8px; }
+.pcw-list-empty { text-align:center; color:#948ea5; font-size:12px; padding:26px 8px; }
 .pcw-list-foot { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:6px; padding:7px 11px;
   border-top:1px solid #eef2f0; background:#fafdfb; }
 .pcw-selall { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#5b6f62; margin:0; cursor:pointer; }
@@ -3636,7 +3636,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-center { min-width:0; min-height:0; display:flex; flex-direction:column; }
 .pcw-doc-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; max-width:820px; margin:0 auto 9px; width:100%; }
 .pcw-doc-nav { display:flex; align-items:center; gap:6px; }
-.pcw-doc-pos { font-size:11px; color:#7a8f88; font-weight:600; }
+.pcw-doc-pos { font-size:11px; color:#827d91; font-weight:600; }
 .pcw-doc-zoom { display:flex; align-items:center; gap:5px; }
 .pcw-pg-btn { width:27px; height:27px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #cfe9d6;
   background:#fff; color:#0e6b37; border-radius:7px; font-size:14px; cursor:pointer; }
@@ -3646,7 +3646,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:#b8d8c2 transparent; padding-bottom:10px; }
 .pcw-paper { background:#fffefb; width:100%; max-width:820px; margin:0 auto; border:1px solid #dcd8cc; border-radius:2px;
   box-shadow:0 2px 14px rgba(60,55,40,.14); padding:30px 36px 26px; font-family:'Times New Roman', Times, serif; color:#1a1a1a; zoom:var(--pcw-zoom, 1); }
-.pcw-doc-empty { text-align:center; color:#8aa39c; font-size:13px; padding:60px 10px; font-family:'Segoe UI', system-ui, sans-serif; }
+.pcw-doc-empty { text-align:center; color:#948ea5; font-size:13px; padding:60px 10px; font-family:'Segoe UI', system-ui, sans-serif; }
 
 /* Paper internals (pp-*) — categorized computation form */
 .pp-head { text-align:center; border-bottom:2.5px solid #1a1a1a; padding-bottom:10px; }
@@ -3670,7 +3670,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 /* One-off items: inline edit / remove, and the add button */
 .pp-x-act { margin-left:7px; white-space:nowrap; opacity:0; transition:opacity .12s; }
 .pp-table tr:hover .pp-x-act { opacity:1; }
-.pp-x-btn { border:none; background:transparent; cursor:pointer; color:#8aa39c; font-size:12px; padding:0 3px; }
+.pp-x-btn { border:none; background:transparent; cursor:pointer; color:#948ea5; font-size:12px; padding:0 3px; }
 .pp-x-btn:hover { color:#107c41; }
 .pp-x-btn.del:hover { color:#c62828; }
 .pp-x-add { display:inline-flex; align-items:center; gap:4px; border:1px dashed #b8d8c2; background:#f7fbf8;
@@ -3721,12 +3721,12 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-sum-body { padding:11px 13px; max-height:42vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
 /* ── Batch Insights panel ── */
 .pcw-ins-body { flex:1; min-height:0; overflow-y:auto; padding:11px 13px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
-.pcw-ins-sec { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#8aa39c; margin:2px 0 6px; }
+.pcw-ins-sec { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:2px 0 6px; }
 .pcw-ins-sec:not(:first-child) { margin-top:15px; }
 .pcw-ins-stats { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
 .pcw-ins-tile { border:1px solid #e8eeeb; border-radius:8px; padding:7px 9px; background:#fafdfb; }
-.pcw-ins-tile .v { font-size:14px; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums; color:#33403c; }
-.pcw-ins-tile .l { font-size:8.5px; color:#8aa39c; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
+.pcw-ins-tile .v { font-size:14px; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums; color:#3c3846; }
+.pcw-ins-tile .l { font-size:8.5px; color:#948ea5; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
 .pcw-ins-tile.net .v { color:#1e50a0; } .pcw-ins-tile.ded .v { color:#c62828; } .pcw-ins-tile.gross .v { color:#107c41; }
 /* Review progress bar */
 .pcw-ins-bar { display:flex; height:10px; border-radius:6px; overflow:hidden; background:#eef2f0; border:1px solid #e1e6e3; }
@@ -3746,7 +3746,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-exc:hover { background:#f6faf8; }
 .pcw-exc.on { border-color:#107c41; box-shadow:0 0 0 1px #107c41 inset; background:#eef7f1; }
 .pcw-exc .ic { width:24px; height:24px; flex-shrink:0; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:13px; }
-.pcw-exc .tx { flex:1; min-width:0; font-size:11px; font-weight:700; color:#3a4a45; }
+.pcw-exc .tx { flex:1; min-width:0; font-size:11px; font-weight:700; color:#434050; }
 .pcw-exc .n { font-size:12px; font-weight:800; font-variant-numeric:tabular-nums; }
 .pcw-exc.danger .ic { background:#fdecea; color:#c62828; } .pcw-exc.danger .n { color:#c62828; }
 .pcw-exc.warn .ic { background:#fff4e0; color:#c98a00; } .pcw-exc.warn .n { color:#c98a00; }
@@ -3759,15 +3759,15 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-ins-allclear i { font-size:16px; }
 .pcw-ins-mover { display:flex; align-items:center; gap:8px; padding:5px 2px; border-bottom:1px dashed #eef2f0; }
 .pcw-ins-mover:last-child { border-bottom:none; }
-.pcw-ins-mover .nm { flex:1; min-width:0; font-size:10.5px; font-weight:700; color:#33403c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-ins-mover .nm { flex:1; min-width:0; font-size:10.5px; font-weight:700; color:#3c3846; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pcw-ins-mover .pct { font-size:10.5px; font-weight:800; font-variant-numeric:tabular-nums; }
 .pcw-ins-mover .pct.up { color:#178a4e; } .pcw-ins-mover .pct.down { color:#c62828; }
 /* Name + "no. · position · department". Long department strings
    (ADMINISTRATION/FINANCE/HR/BILLING/…) are clipped to one line so the panel
    never scrolls sideways — the full text stays in the title tooltip. */
-.pcw-sum-emp { font-size:12.5px; font-weight:800; color:#33403c;
+.pcw-sum-emp { font-size:12.5px; font-weight:800; color:#3c3846;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.pcw-sum-sub { font-size:10.5px; color:#8aa39c; margin:1px 0 9px;
+.pcw-sum-sub { font-size:10.5px; color:#948ea5; margin:1px 0 9px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pcw-sum-sent { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; color:#3557b7;
   background:#eef2fd; border:1px solid #ccd9f7; border-radius:8px; padding:5px 9px; margin:-4px 0 9px; }
@@ -3775,7 +3775,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-sum-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
 .pcw-sum-tile { border:1px solid #e8eeeb; border-radius:8px; padding:6px 4px; background:#fafdfb; text-align:center; }
 .pcw-sum-tile .v { font-size:12.5px; font-weight:800; color:#107c41; line-height:1.1; font-variant-numeric:tabular-nums; }
-.pcw-sum-tile .l { font-size:8.5px; color:#8aa39c; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
+.pcw-sum-tile .l { font-size:8.5px; color:#948ea5; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
 .pcw-sum-tile.ded .v { color:#c62828; } .pcw-sum-tile.net .v { color:#1e50a0; }
 .pcw-sum-tile.abs .v { color:#c98a00; } .pcw-sum-tile.lt .v { color:#e2574c; }
 /* ── Per-employee unlock (mid-review editing) ── */
@@ -3791,18 +3791,18 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-sum-actions .pcw-btn { padding:5px 10px; font-size:11px; flex:1 1 45%; justify-content:center; white-space:nowrap; }
 /* Internal admin notes — read-only list, same content and style as
    dtr-documents.php's notes panel (no add form here). */
-.ddv-notes { margin-top:11px; border-top:1px dashed #e4ece9; padding-top:9px; }
-.ddv-notes-hd { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; color:#5b6f68; margin-bottom:6px; }
-.ddv-notes-hd .lock { font-size:9px; font-weight:800; color:#8aa39c; background:#eef2f0; border-radius:10px; padding:1px 6px; }
+.ddv-notes { margin-top:11px; border-top:1px dashed #e7e6ed; padding-top:9px; }
+.ddv-notes-hd { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; color:#635f73; margin-bottom:6px; }
+.ddv-notes-hd .lock { font-size:9px; font-weight:800; color:#948ea5; background:#eef2f0; border-radius:10px; padding:1px 6px; }
 .ddv-note { display:flex; gap:7px; align-items:flex-start; padding:6px 8px; border-radius:8px; margin-bottom:5px; border:1px solid; }
-.ddv-note .nt { flex:1; min-width:0; font-size:11px; font-weight:600; color:#3a4a45; line-height:1.35; word-break:break-word; }
-.ddv-note .nm { display:block; font-size:8.5px; color:#98a8a2; margin-top:2px; font-weight:600; }
+.ddv-note .nt { flex:1; min-width:0; font-size:11px; font-weight:600; color:#434050; line-height:1.35; word-break:break-word; }
+.ddv-note .nm { display:block; font-size:8.5px; color:#9d9baa; margin-top:2px; font-weight:600; }
 .ddv-note.info     { background:#eef4fd; border-color:#c9def7; }
 .ddv-note.good     { background:#eefaf2; border-color:#bfe6cd; }
 .ddv-note.watch    { background:#fff8e6; border-color:#f2e0a6; }
 .ddv-note.critical { background:#fdecec; border-color:#f3c9c9; }
 .ddv-note .lv { font-size:14px; flex-shrink:0; line-height:1.2; }
-.ddv-note-empty { font-size:10px; color:#a4b3ad; padding:2px 2px 6px; }
+.ddv-note-empty { font-size:10px; color:#a9a6b4; padding:2px 2px 6px; }
 
 /* The per-day punch tables in the DTR modal reuse the original .al-day /
    .att-log-* styles defined at the top of this page. Logs cards sit on the
@@ -3821,9 +3821,9 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .al-fs { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; line-height:1.35;
   font-size:10.5px; font-weight:700; color:#5b6f62; background:#fff; border:1px solid #e1e8e4; }
 .al-fs i { font-size:12px; color:#107c41; }
-.al-fs b { font-weight:800; color:#33403c; font-variant-numeric:tabular-nums; }
-.al-fs em { font-style:normal; font-weight:700; font-size:9px; letter-spacing:.3px; text-transform:uppercase; color:#8aa39c; }
-.al-fs.days i, .al-fs.days b { color:#009688; }
+.al-fs b { font-weight:800; color:#3c3846; font-variant-numeric:tabular-nums; }
+.al-fs em { font-style:normal; font-weight:700; font-size:9px; letter-spacing:.3px; text-transform:uppercase; color:#948ea5; }
+.al-fs.days i, .al-fs.days b { color:#673bb6; }
 .al-fs.ot   i, .al-fs.ot   b { color:#c98a00; }
 .al-fs.ut   i, .al-fs.ut   b { color:#1565c0; }
 .al-fs.late i, .al-fs.late b { color:#c62828; }
@@ -3837,7 +3837,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 
 /* ── Tabs inside the Daily Time Record modal (DTR · Logs · Messages · Notes) ── */
 .pcw-tabs { display:flex; gap:4px; border-bottom:2px solid #d5e6da; margin-bottom:12px; flex-wrap:wrap;
-  position:sticky; top:0; z-index:5; background:#eef2f1; padding-top:2px; }
+  position:sticky; top:0; z-index:5; background:#f0eff2; padding-top:2px; }
 .pcw-tab { display:inline-flex; align-items:center; gap:5px; border:none; background:transparent; cursor:pointer;
   padding:8px 14px; margin-bottom:-2px; font-size:12px; font-weight:700; color:#5b6f62;
   border-bottom:2px solid transparent; border-radius:6px 6px 0 0; transition:color .12s, border-color .12s, background .12s; }
@@ -3849,7 +3849,7 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-tab.active .pcw-tab-count { background:#107c41; color:#fff; }
 .pcw-tab-pane { display:none; }
 .pcw-tab-pane.active { display:block; }
-.pcw-tab-empty { text-align:center; color:#8aa39c; font-size:12.5px; padding:34px 12px; }
+.pcw-tab-empty { text-align:center; color:#948ea5; font-size:12.5px; padding:34px 12px; }
 .pcw-tab-empty i { font-size:26px; display:block; margin-bottom:8px; opacity:.5; }
 
 /* Admin ↔ employee record messages — read-only chat bubbles in the DTR modal
@@ -3857,8 +3857,8 @@ body { margin:0; background:#eef2f1; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-chat { display:flex; flex-direction:column; gap:6px; padding:2px; }
 .pcw-bub { max-width:82%; padding:6px 10px; border-radius:11px; font-size:11.5px; line-height:1.4;
   word-break:break-word; position:relative; }
-.pcw-bub.me   { align-self:flex-end; background:#d7ece9; color:#116257; border-bottom-right-radius:3px; }
-.pcw-bub.them { align-self:flex-start; background:#f1f3f2; color:#33403c; border-bottom-left-radius:3px; }
+.pcw-bub.me   { align-self:flex-end; background:#e1dcec; color:#4f3288; border-bottom-right-radius:3px; }
+.pcw-bub.them { align-self:flex-start; background:#f1f3f2; color:#3c3846; border-bottom-left-radius:3px; }
 .pcw-bub .m { display:block; font-size:8.5px; opacity:.7; margin-top:3px; }
 .pcw-bub-day { display:inline-block; font-size:8px; font-weight:800; letter-spacing:.4px; text-transform:uppercase;
   background:rgba(0,0,0,.06); border-radius:8px; padding:0 6px; margin-right:5px; vertical-align:1px; }
@@ -4650,14 +4650,14 @@ window.PCW_META = <?= json_encode([
     var XL_FILL = {
         // group band (header row 1) → [background, text]
         head1: {
-            'primary-header': ['#d7ece9', '#116257'],
+            'primary-header': ['#e1dcec', '#4f3288'],
             'info-header':    ['#dde9f8', '#1e50a0'],
             'success-header': ['#d9eedd', '#107c41'],
             'danger-header':  ['#fbe3e6', '#b02a37']
         },
         // column labels (header row 2) — lighter tint of the same family
         head2: {
-            'primary-header': ['#ebf5f3', '#116257'],
+            'primary-header': ['#f0edf5', '#4f3288'],
             'info-header':    ['#eef4fc', '#1e50a0'],
             'success-header': ['#ebf7ee', '#107c41'],
             'danger-header':  ['#fdf0f1', '#b02a37']
@@ -4670,7 +4670,7 @@ window.PCW_META = <?= json_encode([
             .find(function (c) { return th.classList.contains(c); }) || 'primary-header';
         var c = map[key];
         return 'background-color:' + c[0] + ';color:' + c[1] + ';font-weight:bold;'
-            + 'border:1px solid #c2ddd8;text-align:center;';
+            + 'border:1px solid #cfc8de;text-align:center;';
     }
     window.pcwExportTableExcel = function (payrollId) {
         var src = document.getElementById('table-1');

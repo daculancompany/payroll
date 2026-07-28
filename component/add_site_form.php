@@ -5,7 +5,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title title mb-0">
-                        <i class="ri-map-pin-2-line me-2" style="color:#009688;"></i>Create Site
+                        <i class="ri-map-pin-2-line me-2" style="color:#673bb6;"></i>Create Site
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -13,7 +13,7 @@
 
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-hashtag me-1"></i>Site Code <span class="text-danger">*</span>
                             </label>
                             <input type="text" class="form-control" placeholder="e.g. SITE-001"
@@ -21,7 +21,7 @@
                                 data-parsley-required-message="Code is required." required>
                         </div>
                         <div class="col-md-8">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-map-pin-2-line me-1"></i>Site Name <span class="text-danger">*</span>
                             </label>
                             <input type="text" class="form-control" placeholder="e.g. Main Branch"
@@ -29,7 +29,7 @@
                                 data-parsley-required-message="Name is required." required>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-road-map-line me-1"></i>Address <span class="text-danger">*</span>
                             </label>
                             <textarea class="form-control" id="site_address" name="site_address"
@@ -37,13 +37,13 @@
                                 required data-parsley-required-message="Address is required."></textarea>
                         </div>
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-building-2-line me-1"></i>Employer <span class="text-danger">*</span>
                             </label>
                             <select id="employer_id" class="form-control select2" name="employer_id"
                                 data-placeholder="Select employer"
                                 data-parsley-required-message="Please select employer." required>
-                                <option value=""></option>
+                                <option value="">Select Employer</option>
                                 <?php
                                 $user_forms = $conn->query("SELECT * FROM employers ORDER BY employer_name ASC");
                                 while ($row_data_form = $user_forms->fetch_assoc()):
@@ -55,13 +55,13 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-global-line me-1"></i>Cluster <span class="text-danger">*</span>
                             </label>
                             <select id="cluster-select" class="form-control select2" name="cluster_id"
                                 data-placeholder="Select cluster"
                                 data-parsley-required-message="Please select cluster." required>
-                                <option value=""></option>
+                                <option value="">Select Cluster</option>
                                 <?php
                                 $pos = $conn->query("SELECT * FROM clusters ORDER BY cluster ASC");
                                 while ($row = $pos->fetch_assoc()):
@@ -71,12 +71,12 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-user-settings-line me-1"></i>Timekeeper
                             </label>
                             <select id="timekeeper-select" class="form-control select2" name="timekeeper_id"
                                 data-placeholder="Select timekeeper">
-                                <option value=""></option>
+                                <option value="">Select Timekeeper</option>
                                 <?php
                                 $pos = $conn->query("SELECT * FROM users WHERE role = 5 ORDER BY name ASC");
                                 while ($row = $pos->fetch_assoc()):
@@ -98,7 +98,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="ri-save-line me-1"></i><span class="fa fa-spinner fa-spin fa-spinner-button"></span>Create
                     </button>
                 </div>

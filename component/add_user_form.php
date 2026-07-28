@@ -5,7 +5,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title title mb-0">
-                        <i class="ri-user-add-line me-2" style="color:#009688;"></i>Create User
+                        <i class="ri-user-add-line me-2" style="color:#673bb6;"></i>Create User
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -13,7 +13,7 @@
                     <div class="row g-3">
                         <input type="hidden" name="employer_id" value="1" />
                         <!-- <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-building-2-line me-1"></i>Employer <span class="text-danger">*</span>
                             </label>
                             <select id="employer-select" class="form-control select2" name="employer_id"
@@ -31,7 +31,7 @@
                         </div> -->
 
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-shield-check-line me-1"></i>Role <span class="text-danger">*</span>
                             </label>
                             <select class="form-control select2" id="role" name="role"
@@ -40,13 +40,16 @@
                                 <option value="10">Supervisor</option>
                                 <option value="8">Department Head</option>
                                 <option value="9">HR</option>
+                                <!-- Scanner-device operator: kiosk login + a read-only
+                                     attendance report / employee roster on the web. -->
+                                <option value="5">Timekeeper</option>
                             </select>
                         </div>
 
                         <!-- Department — required for a Department Head (role 8) and a Supervisor
                              (role 10); both approve their own department's leave requests. -->
                         <div class="col-md-12 d-none" id="department-wrapper">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-community-line me-1"></i>Department <span class="text-danger">*</span>
                             </label>
                             <select class="form-control select2" id="department_id" name="department_id"
@@ -62,7 +65,7 @@
                         </div>
 
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-user-3-line me-1"></i>Full Name <span class="text-danger">*</span>
                             </label>
                             <input type="text" class="form-control" placeholder="e.g. Juan Dela Cruz"
@@ -71,7 +74,7 @@
                         </div>
 
                         <div class="col-md-6" id="username-wrapper">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-at-line me-1"></i>Username <span class="text-danger">*</span>
                             </label>
                             <input type="text" class="form-control" placeholder="username"
@@ -80,7 +83,7 @@
                         </div>
 
                         <div class="col-md-6" id="password-wrapper">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-lock-password-line me-1"></i>Password <span class="text-danger">*</span>
                             </label>
                             <div class="input-group">
@@ -102,7 +105,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
                         <i class="ri-save-line me-1"></i>Create
                     </button>

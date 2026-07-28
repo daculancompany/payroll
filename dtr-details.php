@@ -236,17 +236,17 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 
 <link rel="stylesheet" href="assets2/css/my-style.css">
 <style>
-/* ── DTR Details — #219688 brand theme ── */
+/* ── DTR Details — #6642aa brand theme ── */
 #print-section { display: none; }
 
-/* ── Table headers — soft pastel mint bands (was a solid teal fill) ── */
+/* ── Table headers — soft pastel mint bands (was a solid purple fill) ── */
 /* z-index:14 beats frozen body cols (z-index:12) so header stays on top when scrolling */
-#table-1 thead th { background-color:#ebf5f3 !important; color:#116257 !important; border-color:#d5e6e2 !important; font-weight:700 !important; z-index:14 !important; }
+#table-1 thead th { background-color:#f0edf5 !important; color:#4f3288 !important; border-color:#ddd9e7 !important; font-weight:700 !important; z-index:14 !important; }
 #table-1 thead tr:first-child th,
 #table-1 thead tr:first-child th.primary-header,
 #table-1 thead tr:first-child th.info-header,
 #table-1 thead tr:first-child th.success-header,
-#table-1 thead tr:first-child th.danger-header { background-color:#d7ece9 !important; color:#116257 !important; border-color:#c2ddd8 !important; font-weight:800 !important; z-index:14 !important; }
+#table-1 thead tr:first-child th.danger-header { background-color:#e1dcec !important; color:#4f3288 !important; border-color:#cfc8de !important; font-weight:800 !important; z-index:14 !important; }
 /* Corner cells (top+left sticky) need highest z-index */
 #table-1 thead tr:first-child th:nth-child(1),
 #table-1 thead tr:first-child th:nth-child(2),
@@ -255,7 +255,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 #table-1 thead tr:nth-child(2) th.primary-header,
 #table-1 thead tr:nth-child(2) th.info-header,
 #table-1 thead tr:nth-child(2) th.success-header,
-#table-1 thead tr:nth-child(2) th.danger-header { background-color:#ebf5f3 !important; color:#116257 !important; border-color:#d5e6e2 !important; z-index:14 !important; }
+#table-1 thead tr:nth-child(2) th.danger-header { background-color:#f0edf5 !important; color:#4f3288 !important; border-color:#ddd9e7 !important; z-index:14 !important; }
 .table-responsive2 { border-color:#c0e0c8 !important; }
 #table-1 tbody td:nth-child(1), #table-1 tfoot th:nth-child(1) {
     background-color:#f1f6f2 !important; color:#0b5e31 !important; border-right-color:#b8d8c2 !important;
@@ -265,23 +265,23 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 }
 #table-1 tbody tr:nth-child(even) td { background-color:#fafcfa !important; }
 #table-1 tbody tr:hover td { background-color:#eaf6ef !important; }
-.xl-ribbon { border-top-color:#219688 !important; }
-.xl-ribbon-title { color:#176358 !important; }
-.xl-ribbon-title i { color:#219688 !important; }
-.xl-btn i { color:#219688 !important; }
+.xl-ribbon { border-top-color:#6642aa !important; }
+.xl-ribbon-title { color:#4e3483 !important; }
+.xl-ribbon-title i { color:#6642aa !important; }
+.xl-btn i { color:#6642aa !important; }
 /* Soft ribbon buttons — pastel mint fill, deeper on hover */
-.xl-btn { background:#eef7f5 !important; border:1px solid #d5e6e2 !important; color:#176358 !important; border-radius:8px !important; }
-.xl-btn:hover { background:#dcefec !important; border-color:#aad5d0 !important; color:#176358 !important; }
-.xl-btn-save { background:#d7ece9 !important; border-color:#aad5d0 !important; color:#116257 !important; animation:none !important; }
-.xl-btn-save i { color:#116257 !important; }
-.xl-btn-save:hover { background:#c2e2dd !important; border-color:#8cc7c0 !important; color:#0d4d44 !important; }
-.xl-search-wrap i { color:#219688 !important; }
-.xl-search-wrap:focus-within { border-color:#219688 !important; box-shadow:0 0 0 2px rgba(33,150,136,0.15) !important; }
+.xl-btn { background:#f2f0f7 !important; border:1px solid #ddd9e7 !important; color:#4e3483 !important; border-radius:8px !important; }
+.xl-btn:hover { background:#e5e1ef !important; border-color:#c0b5d5 !important; color:#4e3483 !important; }
+.xl-btn-save { background:#e1dcec !important; border-color:#c0b5d5 !important; color:#4f3288 !important; animation:none !important; }
+.xl-btn-save i { color:#4f3288 !important; }
+.xl-btn-save:hover { background:#d2cae2 !important; border-color:#aa9bc7 !important; color:#462c79 !important; }
+.xl-search-wrap i { color:#6642aa !important; }
+.xl-search-wrap:focus-within { border-color:#6642aa !important; box-shadow:0 0 0 2px rgba(102,66,170,0.15) !important; }
 
 /* ── Employee review progress panel ── */
 .dtr-review-panel { border:1px solid #cdeeda; background:#f6fbf8; border-radius:10px; padding:10px 14px; margin-bottom:10px; }
 .drp-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
-.drp-title { font-size:13px; font-weight:700; color:#176358; display:flex; align-items:center; gap:6px; }
+.drp-title { font-size:13px; font-weight:700; color:#4e3483; display:flex; align-items:center; gap:6px; }
 .drp-counts { display:flex; gap:6px; flex-wrap:wrap; }
 .drp-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; }
 .drp-chip.appr { background:#eafaf0; color:#0f9d58; border:1px solid #b7e4c7; }
@@ -304,7 +304,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .drp-row-ic { font-size:13px; flex-shrink:0; }
 .drp-row.ok   .drp-row-ic { color:#0f9d58; }
 .drp-row.disp .drp-row-ic { color:#c62828; }
-.drp-row-name { flex:1; min-width:0; font-weight:700; color:#33403c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.drp-row-name { flex:1; min-width:0; font-weight:700; color:#3c3846; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .drp-row-done { color:#0f9d58; font-size:12px; flex-shrink:0; }
 .drp-row-new { flex-shrink:0; font-size:8.5px; font-weight:800; letter-spacing:.4px; color:#fff;
     background:#3557b7; border-radius:8px; padding:1px 5px; }
@@ -316,19 +316,19 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .drp-row.has-msg { cursor:pointer; }
 .drp-row.has-msg:hover { filter:brightness(.97); }
 .drp-row.has-msg:hover .drp-row-msg { background:#a9700a; border-color:#a9700a; color:#fff; }
-.drp-row.has-msg:focus-visible { outline:2px solid #219688; outline-offset:1px; }
+.drp-row.has-msg:focus-visible { outline:2px solid #6642aa; outline-offset:1px; }
 #modal-emp-review .mer-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
-#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#33403c; }
+#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#3c3846; }
 .mer-badge { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800;
     padding:2px 9px; border-radius:12px; border:1px solid; }
 .mer-badge.ok   { background:#eafaf0; color:#0f9d58; border-color:#b7e4c7; }
 .mer-badge.disp { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
-.mer-when { font-size:10.5px; color:#8aa39c; margin-left:auto; }
-.mer-empty { text-align:center; color:#8aa39c; font-size:12.5px; padding:22px 12px; }
+.mer-when { font-size:10.5px; color:#948ea5; margin-left:auto; }
+.mer-empty { text-align:center; color:#948ea5; font-size:12.5px; padding:22px 12px; }
 .mer-chat { display:flex; flex-direction:column; gap:6px; }
 .mer-bub { max-width:85%; padding:6px 10px; border-radius:11px; font-size:11.5px; line-height:1.4; word-break:break-word; }
-.mer-bub.them { align-self:flex-start; background:#f1f3f2; color:#33403c; border-bottom-left-radius:3px; }
-.mer-bub.me   { align-self:flex-end; background:#d7ece9; color:#116257; border-bottom-right-radius:3px; }
+.mer-bub.them { align-self:flex-start; background:#f1f3f2; color:#3c3846; border-bottom-left-radius:3px; }
+.mer-bub.me   { align-self:flex-end; background:#e1dcec; color:#4f3288; border-bottom-right-radius:3px; }
 .mer-bub .m { display:block; font-size:8.5px; opacity:.7; margin-top:3px; }
 /* ── Large batches ──────────────────────────────────────────────────────────
    Mirrors payroll_calculations.php: with hundreds of employees the confirmed
@@ -356,7 +356,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .dtr-stats-row { display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap; }
 .dtr-stat-box {
     flex:1; min-width:150px;
-    border:1px solid #e1dfdd; border-top:3px solid #219688; border-radius:10px; background:#fff;
+    border:1px solid #e1dfdd; border-top:3px solid #6642aa; border-radius:10px; background:#fff;
     padding:11px 16px; display:flex; align-items:center; gap:12px;
     box-shadow:0 1px 4px rgba(0,0,0,.05);
     transition:box-shadow .15s, transform .15s;
@@ -370,7 +370,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .dtr-stat-box .stat-val  { font-size:17px; font-weight:800; line-height:1.1; font-family:'Segoe UI',Arial,sans-serif; }
 .dtr-stat-box .stat-lbl  { font-size:10px; color:#a19f9d; text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
 /* Per-stat accent: top border + faint gradient wash matching the metric color */
-.dtr-stat-box.sb-wh   { border-top-color:#219688; background:linear-gradient(180deg,#f5fbfa 0%,#fff 60%); }
+.dtr-stat-box.sb-wh   { border-top-color:#6642aa; background:linear-gradient(180deg,#f8f7fb 0%,#fff 60%); }
 .dtr-stat-box.sb-ot   { border-top-color:#f7b84b; background:linear-gradient(180deg,#fffcf3 0%,#fff 60%); }
 .dtr-stat-box.sb-ut   { border-top-color:#50a5f1; background:linear-gradient(180deg,#f4f9fe 0%,#fff 60%); }
 .dtr-stat-box.sb-late { border-top-color:#f06548; background:linear-gradient(180deg,#fef6f4 0%,#fff 60%); }
@@ -386,7 +386,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 
 /* ── New clean layout helpers ── */
 .dtr-date-label { font-weight:700; font-size:12px; letter-spacing:0.2px; }
-.dtr-emp-count  { font-size:10px; padding:1px 8px; border-radius:10px; background:rgba(17,98,87,0.10); margin-left:6px; }
+.dtr-emp-count  { font-size:10px; padding:1px 8px; border-radius:10px; background:rgba(79,50,136,0.10); margin-left:6px; }
 .dtr-date-totals { display:flex; gap:14px; font-size:11px; opacity:0.9; }
 .dtr-emp-init {
     width:28px; height:28px; border-radius:8px;
@@ -394,36 +394,36 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
     border:1px solid #c0e0c8;
     display:flex; align-items:center; justify-content:center; flex-shrink:0;
 }
-.dtr-emp-name { font-size:12px; color:#176358; font-weight:600; }
-.dtr-emp-pos  { font-size:11px; color:#4a9b93; }
+.dtr-emp-name { font-size:12px; color:#4e3483; font-weight:600; }
+.dtr-emp-pos  { font-size:11px; color:#745aa4; }
 .dtr-emp-totals { display:flex; gap:10px; }
 .dtr-tot-item { display:flex; flex-direction:column; align-items:center; min-width:40px; }
 .dtr-tot-item .tot-lbl { font-size:9px; color:#888; text-transform:uppercase; letter-spacing:0.3px; }
-.dtr-tot-item .tot-val { font-size:12px; font-weight:700; color:#219688; line-height:1.1; }
+.dtr-tot-item .tot-val { font-size:12px; font-weight:700; color:#6642aa; line-height:1.1; }
 .dtr-tot-item.ot   .tot-val { color:#c98a00; }
 .dtr-tot-item.ut   .tot-val { color:#1565c0; }
 .dtr-tot-item.late .tot-val { color:#c62828; }
 .dtr-time-chip { display:inline-block; padding:2px 7px; border-radius:2px; font-size:11px; font-weight:600; font-family:'Segoe UI',Arial,sans-serif; }
-.dtr-time-chip.in  { background:#e6f5f3; color:#219688; border:1px solid #aad5d0; }
+.dtr-time-chip.in  { background:#eeeaf5; color:#6642aa; border:1px solid #c0b5d5; }
 .dtr-time-chip.out { background:#fce4ec; color:#c62828; border:1px solid #f9a8b5; }
 .dtr-time-chip.na  { background:#f5f5f5; color:#888;    border:1px solid #ddd; }
 .dtr-pos-chip { display:inline-block; padding:1px 7px; border-radius:2px; font-size:10px; background:#f3f2f1; color:#323130; border:1px solid #e1dfdd; }
 .dtr-log-chip { display:inline-flex; align-items:center; gap:3px; margin-bottom:1px; padding:1px 5px; border-radius:2px; font-size:10px; font-weight:500; }
 .dtr-logs-pill { display:inline-flex; flex-direction:column; align-items:center; gap:1px; font-size:11px; line-height:1.3; }
 .dtr-logs-count { font-size:9px; color:#a19f9d; margin-top:1px; }
-.dtr-logs-pill:hover .dtr-logs-count { color:#219688; }
+.dtr-logs-pill:hover .dtr-logs-count { color:#6642aa; }
 
 /* ── Segment toggle ── */
-.dtr-segment { display:inline-flex; background:#e6f5f3; border-radius:8px; padding:3px; gap:2px; }
-.dtr-seg-btn { border:none; background:transparent; border-radius:6px; padding:5px 14px; font-size:12px; font-weight:600; color:#219688; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
-.dtr-seg-btn.active { background:#219688; color:#fff; box-shadow:0 1px 4px rgba(33,150,136,.25); }
-.dtr-seg-btn:not(.active):hover { background:#c5e8e4; }
+.dtr-segment { display:inline-flex; background:#eeeaf5; border-radius:8px; padding:3px; gap:2px; }
+.dtr-seg-btn { border:none; background:transparent; border-radius:6px; padding:5px 14px; font-size:12px; font-weight:600; color:#6642aa; cursor:pointer; display:flex; align-items:center; gap:5px; transition:all .15s; }
+.dtr-seg-btn.active { background:#6642aa; color:#fff; box-shadow:0 1px 4px rgba(102,66,170,.25); }
+.dtr-seg-btn:not(.active):hover { background:#d7cfe7; }
 
 /* ── Employee cards view ── */
 .ecard { background:#fff; border:1px solid #e1dfdd; border-radius:10px; margin-bottom:10px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,.05); transition:box-shadow .15s; }
-.ecard:hover { box-shadow:0 3px 10px rgba(33,150,136,.12); }
+.ecard:hover { box-shadow:0 3px 10px rgba(102,66,170,.12); }
 .ecard-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; cursor:pointer; user-select:none; gap:12px; }
-.ecard-header:hover { background:#f9fffe; }
+.ecard-header:hover { background:#fcfcfe; }
 .ecard-left { display:flex; align-items:center; gap:12px; flex:1; min-width:0; }
 .ecard-right { display:flex; align-items:center; gap:12px; flex-shrink:0; }
 .ecard-name { font-size:13px; font-weight:700; color:#323130; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -441,7 +441,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .ecard-entry-stats { display:flex; gap:8px; flex-shrink:0; }
 .ecard-stat { display:flex; flex-direction:column; align-items:center; min-width:30px; }
 .ecard-stat-lbl { font-size:9px; color:#a19f9d; text-transform:uppercase; letter-spacing:.3px; }
-.ecard-stat-val { font-size:11px; font-weight:700; color:#219688; }
+.ecard-stat-val { font-size:11px; font-weight:700; color:#6642aa; }
 .ecard-stat.ot .ecard-stat-val  { color:#c98a00; }
 .ecard-stat.ut .ecard-stat-val  { color:#1565c0; }
 .ecard-stat.late .ecard-stat-val { color:#c62828; }
@@ -470,25 +470,25 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .dtr-fs-exit {
     display:none; position:fixed; top:10px; right:16px; z-index:9999;
     align-items:center; gap:5px; padding:6px 14px; font-size:12px; font-weight:600;
-    color:#fff; background:#219688; border:1px solid #176358; border-radius:4px; cursor:pointer;
+    color:#fff; background:#6642aa; border:1px solid #4e3483; border-radius:4px; cursor:pointer;
     box-shadow:0 2px 8px rgba(0,0,0,.25);
 }
-.dtr-fs-exit:hover { background:#176358; }
+.dtr-fs-exit:hover { background:#4e3483; }
 .dtr-fs .dtr-fs-exit { display:inline-flex; }
-.dtr-log-chip.bio    { background:#e6f5f3; color:#219688; border:1px solid #aad5d0; }
+.dtr-log-chip.bio    { background:#eeeaf5; color:#6642aa; border:1px solid #c0b5d5; }
 .dtr-log-chip.manual { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
 
-/* ── Date group banner — soft mint band (was a solid teal fill) ── */
+/* ── Date group banner — soft mint band (was a solid purple fill) ── */
 #table-1 tbody tr.date-separator td {
-    background:#d7ece9 !important; color:#116257 !important;
+    background:#e1dcec !important; color:#4f3288 !important;
     padding:7px 14px !important;
-    border-top:1px solid #c2ddd8 !important;
-    border-bottom:1px solid #c2ddd8 !important;
+    border-top:1px solid #cfc8de !important;
+    border-bottom:1px solid #cfc8de !important;
     font-family:'Segoe UI',Arial,sans-serif;
 }
-#table-1 tbody tr.date-separator td * { color:#116257 !important; }
+#table-1 tbody tr.date-separator td * { color:#4f3288 !important; }
 #table-1 tbody tr.date-separator td small,
-#table-1 tbody tr.date-separator td .text-muted { color:#4a8a80 !important; }
+#table-1 tbody tr.date-separator td .text-muted { color:#6b5794 !important; }
 /* OT/Late figures keep their status color even inside the banner */
 #table-1 tbody tr.date-separator td .dtr-date-ot   { color:#8a6d1a !important; font-weight:700; }
 #table-1 tbody tr.date-separator td .dtr-date-late { color:#b02a37 !important; font-weight:700; }
@@ -502,7 +502,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 
 /* ── Employee card row ── */
 #table-1 tbody tr.employee-header td {
-    background:#f4fbfa !important;
+    background:#f8f6fb !important;
     border-top:2px solid #cdeeda !important;
     border-bottom:0 !important;
     padding:8px 12px 0 !important;
@@ -520,7 +520,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 }
 
 /* ── Entry rows under a card ── */
-#table-1 tbody tr.attendance-entry td { background:#f4fbfa; }
+#table-1 tbody tr.attendance-entry td { background:#f8f6fb; }
 #table-1 tbody tr.attendance-entry:last-of-type td { padding-bottom:10px !important; }
 
 /* ── Duplicate entry ── */
@@ -540,20 +540,20 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 /* ── Page title: icon badge + soft meta chips ── */
 .dtr-title-icon {
     width:42px; height:42px; border-radius:12px; flex-shrink:0;
-    background:linear-gradient(135deg,#219688,#2fb3a3); color:#fff;
+    background:linear-gradient(135deg,#6642aa,#7654b8); color:#fff;
     display:flex; align-items:center; justify-content:center; font-size:20px;
-    box-shadow:0 3px 8px rgba(33,150,136,.30);
+    box-shadow:0 3px 8px rgba(102,66,170,.30);
 }
 .dtr-meta-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
 .dtr-meta-chip {
     display:inline-flex; align-items:center; gap:5px;
-    font-size:11px; font-weight:600; color:#176358;
-    background:#eef7f5; border:1px solid #d5e6e2; border-radius:20px; padding:3px 10px;
+    font-size:11px; font-weight:600; color:#4e3483;
+    background:#f2f0f7; border:1px solid #ddd9e7; border-radius:20px; padding:3px 10px;
 }
-.dtr-meta-chip i { color:#219688; font-size:13px; }
+.dtr-meta-chip i { color:#6642aa; font-size:13px; }
 
 /* ── Column header icons ── */
-#table-1 thead tr:first-child th i { font-size:13px; margin-right:4px; vertical-align:-1.5px; color:#3d8b80 !important; }
+#table-1 thead tr:first-child th i { font-size:13px; margin-right:4px; vertical-align:-1.5px; color:#674f98 !important; }
 
 /* ── Soft status badges (pastel pills instead of solid Bootstrap fills) ── */
 #table-1 [data-rec-badge] .badge, .ecard-entry-status .badge, #cmpl-badge .badge,
@@ -584,22 +584,22 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .dtr-loader.show { opacity:1; visibility:visible; }
 .dtr-loader-ring {
     width:46px; height:46px; border-radius:50%;
-    border:4px solid #d7ece9; border-top-color:#219688;
+    border:4px solid #e1dcec; border-top-color:#6642aa;
     animation:dtr-spin .8s linear infinite;
 }
 .dtr-loader-text {
-    font-size:12px; font-weight:700; color:#176358; letter-spacing:.3px;
+    font-size:12px; font-weight:700; color:#4e3483; letter-spacing:.3px;
     display:flex; align-items:center; gap:2px;
 }
 .dtr-loader-text .dot { animation:dtr-blink 1.4s infinite both; }
 .dtr-loader-text .dot:nth-child(2) { animation-delay:.2s; }
 .dtr-loader-text .dot:nth-child(3) { animation-delay:.4s; }
 .dtr-loader-bar {
-    width:180px; height:4px; border-radius:4px; background:#e6f5f3; overflow:hidden;
+    width:180px; height:4px; border-radius:4px; background:#eeeaf5; overflow:hidden;
 }
 .dtr-loader-bar::after {
     content:''; display:block; width:40%; height:100%; border-radius:4px;
-    background:linear-gradient(90deg,#219688,#5fc9bb);
+    background:linear-gradient(90deg,#6642aa,#967ec5);
     animation:dtr-slide 1.1s ease-in-out infinite;
 }
 @keyframes dtr-spin  { to { transform:rotate(360deg); } }
@@ -620,24 +620,24 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
     display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
     padding:10px 4px 16px; border-top:1px solid #eef2f0; margin-top:6px;
 }
-.emp-pager-size, .emp-pager-info { font-size:11.5px; color:#7a8f88; }
+.emp-pager-size, .emp-pager-info { font-size:11.5px; color:#827d91; }
 .emp-pager-size select {
-    border:1px solid #d5e6e2; background:#fff; color:#176358; border-radius:6px;
+    border:1px solid #ddd9e7; background:#fff; color:#4e3483; border-radius:6px;
     padding:3px 22px 3px 8px; font-size:11.5px; font-weight:600; cursor:pointer; margin-left:2px;
 }
-.emp-pager-size select:focus { outline:none; border-color:#219688; box-shadow:0 0 0 2px rgba(33,150,136,.15); }
+.emp-pager-size select:focus { outline:none; border-color:#6642aa; box-shadow:0 0 0 2px rgba(102,66,170,.15); }
 .emp-pager-nav { display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
 .emp-page-btn {
     min-width:30px; height:30px; padding:0 8px;
     display:inline-flex; align-items:center; justify-content:center;
-    border:1px solid #d5e6e2; background:#fff; color:#176358;
+    border:1px solid #ddd9e7; background:#fff; color:#4e3483;
     border-radius:7px; font-size:12px; font-weight:600; cursor:pointer;
     transition:background .12s, border-color .12s, color .12s;
 }
-.emp-page-btn:hover:not(:disabled):not(.active) { background:#eef7f5; border-color:#aad5d0; }
-.emp-page-btn.active { background:#219688; border-color:#176358; color:#fff; cursor:default; }
+.emp-page-btn:hover:not(:disabled):not(.active) { background:#f2f0f7; border-color:#c0b5d5; }
+.emp-page-btn.active { background:#6642aa; border-color:#4e3483; color:#fff; cursor:default; }
 .emp-page-btn:disabled { opacity:.4; cursor:not-allowed; }
-.emp-page-gap { padding:0 3px; color:#a8b8b3; font-size:12px; user-select:none; }
+.emp-page-gap { padding:0 3px; color:#aeabb9; font-size:12px; user-select:none; }
 .emp-pager.is-loading { opacity:.55; pointer-events:none; }
 @media (max-width:575.98px) {
     .emp-pager { justify-content:center; }
@@ -647,10 +647,10 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 /* ── View counter chip ── */
 .dtr-count-chip {
     display:inline-flex; align-items:center; gap:5px;
-    font-size:11px; font-weight:600; color:#176358;
-    background:#eef7f5; border:1px solid #d5e6e2; border-radius:20px; padding:3px 10px;
+    font-size:11px; font-weight:600; color:#4e3483;
+    background:#f2f0f7; border:1px solid #ddd9e7; border-radius:20px; padding:3px 10px;
 }
-.dtr-count-chip i { color:#219688; font-size:13px; }
+.dtr-count-chip i { color:#6642aa; font-size:13px; }
 
 /* Ribbon "pending" badge — soft amber pill */
 #batch-pending-badge {
@@ -659,7 +659,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 }
 
 /* ── bg-soft utilities ── */
-.bg-soft-primary   { background:rgba(33,150,136,0.10) !important; }
+.bg-soft-primary   { background:rgba(102,66,170,0.10) !important; }
 .bg-soft-secondary { background:rgba(108,117,125,0.08) !important; }
 .bg-soft-success   { background:rgba(16,124,65,0.10) !important; }
 .bg-soft-danger    { background:rgba(240,101,72,0.10) !important; }
@@ -672,19 +672,19 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .editable-field .form-control {
     border:1px solid #d4d4d4; border-radius:2px;
     font-size:11px; padding:2px 5px; height:24px;
-    background:#f0faf9; transition:all 0.15s;
+    background:#f5f3fa; transition:all 0.15s;
 }
 .editable-field .form-control:focus {
-    border-color:#219688; box-shadow:0 0 0 2px rgba(33,150,136,0.15); background:#fff;
+    border-color:#6642aa; box-shadow:0 0 0 2px rgba(102,66,170,0.15); background:#fff;
 }
 .update-dtr-field {
     display:inline-flex !important; align-items:center; justify-content:center;
     width:22px !important; height:22px !important; padding:0 !important; font-size:11px !important;
-    background:#e6f5f3 !important; border:1px solid #aad5d0 !important; border-radius:2px !important;
-    color:#219688 !important; cursor:pointer; flex-shrink:0;
+    background:#eeeaf5 !important; border:1px solid #c0b5d5 !important; border-radius:2px !important;
+    color:#6642aa !important; cursor:pointer; flex-shrink:0;
     box-shadow:none !important; transition:background 0.1s, border-color 0.1s;
 }
-.update-dtr-field:hover { background:#219688 !important; border-color:#176358 !important; color:#fff !important; }
+.update-dtr-field:hover { background:#6642aa !important; border-color:#4e3483 !important; color:#fff !important; }
 
 /* ── Action buttons — soft pastel fills ── */
 #table-1 td .btn-group .btn, .ecard .btn-group .btn { width:26px; height:26px; padding:0; font-size:13px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; box-shadow:none; margin-right:2px; }
@@ -713,11 +713,11 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 /* ── Misc ── */
 .stat-item, .total-item { min-width:55px; }
 .stat-value, .total-value { font-size:1rem; }
-.update-success { border-color:#219688 !important; background:rgba(33,150,136,0.08) !important; animation:pulse-ok 2s; }
+.update-success { border-color:#6642aa !important; background:rgba(102,66,170,0.08) !important; animation:pulse-ok 2s; }
 @keyframes pulse-ok {
-    0%   { box-shadow:0 0 0 0 rgba(33,150,136,0.6); }
-    70%  { box-shadow:0 0 0 8px rgba(33,150,136,0); }
-    100% { box-shadow:0 0 0 0 rgba(33,150,136,0); }
+    0%   { box-shadow:0 0 0 0 rgba(102,66,170,0.6); }
+    70%  { box-shadow:0 0 0 8px rgba(102,66,170,0); }
+    100% { box-shadow:0 0 0 0 rgba(102,66,170,0); }
 }
 
 /* ── Print ── */
@@ -770,7 +770,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 #table-1 .dtr-time-chip { padding: 2px 7px !important; }
 
 /* Nicer rows */
-#table-1 tbody tr.attendance-entry:hover td { background: #f2fbfa !important; }
+#table-1 tbody tr.attendance-entry:hover td { background: #f7f5fb !important; }
 #table-1 tbody tr.attendance-entry td { transition: background .15s ease; vertical-align: middle !important; }
 #table-1 .btn-group-sm .btn { padding: 2px 6px !important; }
 </style>
@@ -1080,9 +1080,9 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
                         <!-- Summary stat cards -->
                         <div class="dtr-stats-row">
                             <div class="dtr-stat-box sb-wh">
-                                <div class="stat-icon" style="background:#e6f5f3;color:#219688;"><i class="ri-time-line"></i></div>
+                                <div class="stat-icon" style="background:#eeeaf5;color:#6642aa;"><i class="ri-time-line"></i></div>
                                 <div>
-                                    <div class="stat-val" style="color:#219688;"><span id="stat-work-hours"><?= number_format($grandTotals['work_hours'], 2) ?></span></div>
+                                    <div class="stat-val" style="color:#6642aa;"><span id="stat-work-hours"><?= number_format($grandTotals['work_hours'], 2) ?></span></div>
                                     <div class="stat-lbl">Work Hours</div>
                                 </div>
                             </div>
@@ -1246,12 +1246,12 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
                         <div class="modal fade" id="employeeNotesModal" tabindex="-1" aria-hidden="true">
                             <div class="modal-dialog modal-dialog-centered">
                                 <div class="modal-content">
-                                    <div class="modal-header" style="background:#f0faf8;border-bottom:1px solid #d5e6e2;">
-                                        <h5 class="modal-title" style="color:#176358;font-weight:700;"><i class="ri-sticky-note-line me-2" style="color:#219688;"></i>Employee Notes</h5>
+                                    <div class="modal-header" style="background:#f5f3fa;border-bottom:1px solid #ddd9e7;">
+                                        <h5 class="modal-title" style="color:#4e3483;font-weight:700;"><i class="ri-sticky-note-line me-2" style="color:#6642aa;"></i>Employee Notes</h5>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
-                                        <h6 id="modalEmployeeName" class="mb-1" style="color:#219688;font-weight:600;"></h6>
+                                        <h6 id="modalEmployeeName" class="mb-1" style="color:#6642aa;font-weight:600;"></h6>
                                         <p id="modalEmployeePosition" class="text-muted small mb-0"></p>
                                         <p id="modalEmployeeDate" class="text-muted small mb-2"></p>
                                         <label class="form-label fw-semibold small">Notes:</label>

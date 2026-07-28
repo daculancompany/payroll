@@ -9,7 +9,7 @@
 			<div class="col-md-4">
 				<label for="" class="control-label">Employee</label>
 				<select id="employee_id" class="borwser-default select2">
-					<option value=""></option>
+					<option value="">Select Employee</option>
 					<?php 
 					$employee = $conn->query("SELECT *,concat(lastname,', ',firstname,' ',middlename) as ename FROM employee order by concat(lastname,', ',firstname,' ',middlename) asc");
 					while($row = $employee->fetch_assoc()):

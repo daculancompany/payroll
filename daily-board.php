@@ -111,28 +111,28 @@ function board_name($r)
 }
 ?>
 <style>
-    .db-toolbar { background:linear-gradient(135deg,#eef6f5 0%,#e4f2f0 100%); border:1px solid #cfe5e2; border-radius:10px; padding:10px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-    .db-nav-btn { width:34px; height:34px; border-radius:50%; border:1px solid #cfe5e2; background:#fff; color:#009688; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s,color .15s,box-shadow .15s; }
-    .db-nav-btn:hover { background:#009688; color:#fff; box-shadow:0 2px 6px rgba(0,150,136,.35); }
-    .db-date-pill { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #cfe5e2; border-radius:20px; padding:6px 16px; font-weight:700; color:#00695c; cursor:pointer; font-size:14px; min-width:190px; justify-content:center; transition:border-color .15s, box-shadow .15s; }
-    .db-date-pill:hover { border-color:#009688; box-shadow:0 2px 6px rgba(0,150,136,.15); }
-    .db-today-badge { font-size:10px; background:#009688; color:#fff; border-radius:10px; padding:1px 8px; margin-left:6px; vertical-align:middle; }
-    /* daterangepicker theme override, same teal used on attendance.php */
-    .daterangepicker td.active, .daterangepicker td.active:hover { background-color:#009688 !important; }
-    .daterangepicker td.start-date, .daterangepicker td.end-date { background-color:#00796b !important; }
-    .daterangepicker .drp-buttons .btn.applyBtn { background-color:#009688 !important; border-color:#00796b !important; }
+    .db-toolbar { background:linear-gradient(135deg,#f2f0f6 0%,#ebe7f2 100%); border:1px solid #dad4e5; border-radius:10px; padding:10px 14px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+    .db-nav-btn { width:34px; height:34px; border-radius:50%; border:1px solid #dad4e5; background:#fff; color:#673bb6; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .15s,color .15s,box-shadow .15s; }
+    .db-nav-btn:hover { background:#673bb6; color:#fff; box-shadow:0 2px 6px rgba(103,59,182,.35); }
+    .db-date-pill { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #dad4e5; border-radius:20px; padding:6px 16px; font-weight:700; color:#57339d; cursor:pointer; font-size:14px; min-width:190px; justify-content:center; transition:border-color .15s, box-shadow .15s; }
+    .db-date-pill:hover { border-color:#673bb6; box-shadow:0 2px 6px rgba(103,59,182,.15); }
+    .db-today-badge { font-size:10px; background:#673bb6; color:#fff; border-radius:10px; padding:1px 8px; margin-left:6px; vertical-align:middle; }
+    /* daterangepicker theme override, same purple used on attendance.php */
+    .daterangepicker td.active, .daterangepicker td.active:hover { background-color:#673bb6 !important; }
+    .daterangepicker td.start-date, .daterangepicker td.end-date { background-color:#5d36a6 !important; }
+    .daterangepicker .drp-buttons .btn.applyBtn { background-color:#673bb6 !important; border-color:#5d36a6 !important; }
     .db-group-toggle .btn { padding:4px 10px; }
-    .db-group-toggle .btn.active { background:#009688; border-color:#009688; color:#fff; }
+    .db-group-toggle .btn.active { background:#673bb6; border-color:#673bb6; color:#fff; }
 
     .db-search { position:relative; }
-    .db-search i { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:#8fb8b3; font-size:14px; pointer-events:none; }
-    .db-search input { border:1px solid #cfe5e2; border-radius:20px; padding:6px 12px 6px 32px; font-size:12.5px; width:220px; outline:none; background:#fff; transition:border-color .15s, box-shadow .15s; }
-    .db-search input:focus { border-color:#009688; box-shadow:0 0 0 3px rgba(0,150,136,.12); }
+    .db-search i { position:absolute; left:11px; top:50%; transform:translateY(-50%); color:#a397ba; font-size:14px; pointer-events:none; }
+    .db-search input { border:1px solid #dad4e5; border-radius:20px; padding:6px 12px 6px 32px; font-size:12.5px; width:220px; outline:none; background:#fff; transition:border-color .15s, box-shadow .15s; }
+    .db-search input:focus { border-color:#673bb6; box-shadow:0 0 0 3px rgba(103,59,182,.12); }
 
     .db-rate { display:flex; align-items:center; gap:10px; margin:12px 2px 0; }
     .db-rate-track { flex:1; height:7px; background:#eceff3; border-radius:4px; overflow:hidden; }
-    .db-rate-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#26a69a,#00897b); transition:width .4s ease; }
-    .db-rate-lbl { font-size:11px; font-weight:700; color:#00695c; white-space:nowrap; }
+    .db-rate-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#6f47b5,#6339af); transition:width .4s ease; }
+    .db-rate-lbl { font-size:11px; font-weight:700; color:#57339d; white-space:nowrap; }
 
     .db-summary { display:flex; gap:10px; flex-wrap:wrap; margin:12px 0 16px; }
     .db-sum-card { flex:1; min-width:120px; border-radius:10px; padding:10px 12px; text-align:center; border:1px solid; cursor:pointer; user-select:none; position:relative; transition:transform .12s, box-shadow .12s; }
@@ -148,9 +148,9 @@ function board_name($r)
     .db-sum-card.secondary { background:#f5f5f5; border-color:#e0e0e0; color:#666; }
 
     .db-group { margin-bottom:16px; }
-    .db-group-head { display:flex; align-items:center; gap:8px; background:linear-gradient(135deg,#eef6f5,#e7f3f1); border:1px solid #cfe5e2; border-radius:8px; padding:7px 12px; margin-bottom:8px; }
-    .db-group-title { font-size:13px; font-weight:700; color:#00695c; }
-    .db-group-time { font-size:11px; color:#5c8b86; }
+    .db-group-head { display:flex; align-items:center; gap:8px; background:linear-gradient(135deg,#f2f0f6,#edeaf3); border:1px solid #dad4e5; border-radius:8px; padding:7px 12px; margin-bottom:8px; }
+    .db-group-title { font-size:13px; font-weight:700; color:#57339d; }
+    .db-group-time { font-size:11px; color:#746491; }
     .db-group-in { font-size:11px; font-weight:700; color:#1a7f37; margin-left:auto; }
     .db-group-count { flex-shrink:0; }
 
@@ -162,12 +162,12 @@ function board_name($r)
     .db-card.st-info    { border-left-color:#3a9bdc; }
     .db-card.st-secondary { border-left-color:#c5c9d3; }
     .db-card-top { display:flex; align-items:center; gap:8px; }
-    .db-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#26a69a,#00796b); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .db-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#6f47b5,#5d36a6); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
     .db-card.st-danger .db-avatar { background:linear-gradient(135deg,#adb5bd,#868e96); }
     .db-name { font-size:12.5px; font-weight:700; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .db-name-link { color:#1a1a1a; text-decoration:none; }
-    .db-name-link:hover { color:#00796b; text-decoration:underline; }
-    a.db-avatar:hover { box-shadow:0 0 0 3px rgba(0,150,136,.25); text-decoration:none; color:#fff; }
+    .db-name-link:hover { color:#5d36a6; text-decoration:underline; }
+    a.db-avatar:hover { box-shadow:0 0 0 3px rgba(103,59,182,.25); text-decoration:none; color:#fff; }
     .db-sub { font-size:10.5px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .db-tag { font-size:9.5px; color:#1976d2; }
     .db-status-row { margin-top:8px; padding-top:7px; border-top:1px dashed #eef0f8; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
@@ -265,7 +265,7 @@ function board_name($r)
                             ?>
                             <div class="db-group" data-group-key="<?= htmlspecialchars($gkey) ?>">
                                 <div class="db-group-head">
-                                    <i class="ri-<?= $isShiftGroup ? 'time' : 'building-3' ?>-line" style="color:#009688;"></i>
+                                    <i class="ri-<?= $isShiftGroup ? 'time' : 'building-3' ?>-line" style="color:#673bb6;"></i>
                                     <span class="db-group-title"><?= htmlspecialchars($group['label']) ?></span>
                                     <?php if (!empty($group['time'])): ?><span class="db-group-time"><?= htmlspecialchars($group['time']) ?></span><?php endif; ?>
                                     <span class="db-group-in"><i class="ri-user-follow-line"></i> <?= $in_count ?> in</span>

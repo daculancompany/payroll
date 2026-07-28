@@ -50,7 +50,7 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
 
     <div class="row mb-3"><div class="col-12">
         <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-            <h4 class="mb-sm-0"><i class="ri-time-line me-2" style="color:#009688;"></i>Attendance / DTR Summary</h4>
+            <h4 class="mb-sm-0"><i class="ri-time-line me-2" style="color:#673bb6;"></i>Attendance / DTR Summary</h4>
             <ol class="breadcrumb m-0">
                 <li class="breadcrumb-item"><a href="index.php?page=reports">Reports</a></li>
                 <li class="breadcrumb-item active">Attendance Summary</li>
@@ -58,26 +58,26 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
         </div>
     </div></div>
 
-    <div class="card rpt-card mb-3" style="border-top:3px solid #009688;">
+    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
         <div class="card-body py-3">
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="attendance-summary">
                 <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">From</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">From</label>
                     <div class="input-group">
                         <span class="input-group-text"><i class="ri-calendar-2-line"></i></span>
                         <input type="text" name="from" value="<?= htmlspecialchars($f_from) ?>" class="form-control datetimepicker" autocomplete="off" placeholder="YYYY/MM/DD">
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">To</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">To</label>
                     <div class="input-group">
                         <span class="input-group-text"><i class="ri-calendar-2-line"></i></span>
                         <input type="text" name="to" value="<?= htmlspecialchars($f_to) ?>" class="form-control datetimepicker" autocomplete="off" placeholder="YYYY/MM/DD">
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Site</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Site</label>
                     <select name="site" class="form-control report-select2" data-placeholder="All sites">
                         <option value="0">All sites</option>
                         <?php foreach ($sites as $s): ?>
@@ -86,7 +86,7 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
                     </select>
                 </div>
                 <div class="col-md-3 d-flex gap-2">
-                    <button type="submit" class="btn btn-sm" style="background:#009688;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Filter</button>
+                    <button type="submit" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Filter</button>
                     <button type="button" onclick="repExportCSV('as-table','attendance-summary.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
                     <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
                 </div>

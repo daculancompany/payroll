@@ -14,7 +14,7 @@
 
     <!-- ── PWA: lets the admin app be installed from the login screen too ── -->
     <link rel="manifest" href="manifest-admin.webmanifest">
-    <meta name="theme-color" content="#219688">
+    <meta name="theme-color" content="#6642aa">
     <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
@@ -70,8 +70,8 @@
         } */
 
         .auth-one-bg .bg-overlay {
-            background: -webkit-gradient(linear, left top, right top, from(#176358), to(#219688cc));
-            background: linear-gradient(to right, #176358e0, #219688cc);
+            background: -webkit-gradient(linear, left top, right top, from(#4e3483), to(#6642aacc));
+            background: linear-gradient(to right, #4e3483e0, #6642aacc);
             opacity: .9;
         }
     </style>

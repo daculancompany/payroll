@@ -1,22 +1,22 @@
 <style>
-    .vlog-site-code { background:#009688; color:#fff; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; display:inline-block; margin-bottom:3px; font-family:monospace; }
+    .vlog-site-code { background:#673bb6; color:#fff; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; display:inline-block; margin-bottom:3px; font-family:monospace; }
     .vlog-site-name { font-size:12px; font-weight:600; color:#222; }
     .vlog-site-addr { font-size:11px; color:#888; }
     .vlog-name { font-weight:600; font-size:13px; }
     .vlog-company { font-size:12px; color:#555; }
-    .vlog-date { font-weight:600; color:#009688; font-size:13px; }
+    .vlog-date { font-weight:600; color:#673bb6; font-size:13px; }
     .vlog-date small { display:block; font-size:11px; color:#888; font-weight:400; }
     .vlog-thumb { width:38px; height:38px; object-fit:cover; border-radius:4px; border:2px solid #d0d7ee; cursor:pointer; transition:transform .15s; }
-    .vlog-thumb:hover { transform:scale(1.1); border-color:#009688; }
-    .vlog-filter-bar { background:#009688; color:#fff; border-radius:4px; padding:10px 16px; margin-bottom:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .vlog-thumb:hover { transform:scale(1.1); border-color:#673bb6; }
+    .vlog-filter-bar { background:#673bb6; color:#fff; border-radius:4px; padding:10px 16px; margin-bottom:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
     .vlog-filter-bar .lbl { font-size:11px; opacity:.75; }
     .vlog-filter-bar .val { font-weight:700; font-size:13px; }
     .vlog-empty { text-align:center; padding:3.5rem 1rem 3rem; background:#f7f8fc; border-radius:8px; border:2px dashed #c5cde8; }
     .vlog-empty .vlog-empty-icon { width:64px; height:64px; border-radius:50%; background:#eef0f8; border:2px solid #d0d7ee; display:flex; align-items:center; justify-content:center; margin:0 auto 14px; }
-    .vlog-empty .vlog-empty-icon i { font-size:28px; color:#009688; opacity:.6; }
-    .vlog-empty h6 { color:#009688; font-weight:700; margin-bottom:6px; font-size:15px; }
+    .vlog-empty .vlog-empty-icon i { font-size:28px; color:#673bb6; opacity:.6; }
+    .vlog-empty h6 { color:#673bb6; font-weight:700; margin-bottom:6px; font-size:15px; }
     .vlog-empty p { color:#888; font-size:12px; margin-bottom:14px; }
-    .vlog-empty-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 16px; border-radius:4px; background:#009688; color:#fff; font-size:12px; font-weight:600; border:none; cursor:pointer; }
+    .vlog-empty-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 16px; border-radius:4px; background:#673bb6; color:#fff; font-size:12px; font-weight:600; border:none; cursor:pointer; }
     .vlog-empty-btn:hover { background:#2d3d66; color:#fff; }
 
 </style>
@@ -28,7 +28,7 @@
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
                         <h4 class="mb-sm-0">
-                            <i class="ri-user-search-line me-2" style="color:#009688;"></i>Visitors Log
+                            <i class="ri-user-search-line me-2" style="color:#673bb6;"></i>Visitors Log
                         </h4>
                         <div class="page-title-right">
                             <ol class="breadcrumb m-0">
@@ -39,10 +39,10 @@
                     </div>
                 </div>
 
-                <div class="card" style="border-top:3px solid #009688;">
+                <div class="card" style="border-top:3px solid #673bb6;">
                     <div class="card-header align-items-center d-flex py-2">
                         <h4 class="card-title mb-0 flex-grow-1">
-                            <i class="ri-user-search-line me-2" style="color:#009688;"></i>Visitors Log List
+                            <i class="ri-user-search-line me-2" style="color:#673bb6;"></i>Visitors Log List
                         </h4>
                         <div class="d-flex gap-2">
                             <?php if (isset($_GET['from'])): ?>
@@ -50,7 +50,7 @@
                                     <i class="ri-close-line me-1"></i>Clear
                                 </a>
                             <?php endif; ?>
-                            <button type="button" class="btn btn-sm text-white" style="background:#009688;border-color:#009688;"
+                            <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"
                                 data-bs-toggle="modal" data-bs-target="#modal-filter-add">
                                 <i class="ri-filter-3-line me-1"></i>Filter
                             </button>
@@ -188,7 +188,7 @@
         <div class="modal-content">
             <div class="modal-header py-2">
                 <h6 class="modal-title mb-0">
-                    <i class="ri-image-line me-2" style="color:#009688;"></i>Visitor Photo
+                    <i class="ri-image-line me-2" style="color:#673bb6;"></i>Visitor Photo
                 </h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>

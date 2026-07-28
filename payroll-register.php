@@ -57,7 +57,7 @@ function pr_money($v){ return '₱' . number_format((float)$v, 2); }
 
     <div class="row mb-3"><div class="col-12">
         <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-            <h4 class="mb-sm-0"><i class="ri-file-list-3-line me-2" style="color:#009688;"></i>Payroll Register</h4>
+            <h4 class="mb-sm-0"><i class="ri-file-list-3-line me-2" style="color:#673bb6;"></i>Payroll Register</h4>
             <ol class="breadcrumb m-0">
                 <li class="breadcrumb-item"><a href="index.php?page=reports">Reports</a></li>
                 <li class="breadcrumb-item active">Payroll Register</li>
@@ -65,12 +65,12 @@ function pr_money($v){ return '₱' . number_format((float)$v, 2); }
         </div>
     </div></div>
 
-    <div class="card rpt-card mb-3" style="border-top:3px solid #009688;">
+    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
         <div class="card-body py-3">
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="payroll-register">
                 <div class="col-md-6">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;"><i class="ri-calendar-2-line me-1"></i>Payroll Period</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Payroll Period</label>
                     <select name="id" class="form-control report-select2" onchange="this.form.submit()">
                         <option value="">Select a payroll period…</option>
                         <?php foreach ($payrolls as $p): ?>
@@ -82,7 +82,7 @@ function pr_money($v){ return '₱' . number_format((float)$v, 2); }
                 </div>
                 <div class="col-md-auto">
                     <?php if ($sel_id && $sel_pay): ?>
-                    <button type="button" onclick="repExportCSV('pr-table','payroll-register.csv')" class="btn btn-sm" style="background:#009688;color:#fff;font-weight:700;"><i class="ri-file-excel-2-line me-1"></i>Export CSV</button>
+                    <button type="button" onclick="repExportCSV('pr-table','payroll-register.csv')" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-file-excel-2-line me-1"></i>Export CSV</button>
                     <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line me-1"></i>Print</button>
                     <?php endif; ?>
                 </div>
@@ -99,7 +99,7 @@ function pr_money($v){ return '₱' . number_format((float)$v, 2); }
         <div class="alert alert-warning">Payroll period not found.</div>
     <?php else: ?>
 
-    <div style="background:linear-gradient(135deg,#009688,#176358);border-radius:12px;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:14px;">
+    <div style="background:linear-gradient(135deg,#673bb6,#4e3483);border-radius:12px;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:14px;">
         <div>
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.85;">Net Payroll — <?= htmlspecialchars($sel_pay['ref_no']) ?></div>
             <div style="font-size:11px;opacity:.8;margin-top:2px;"><?= date('M d', strtotime($sel_pay['date_from'])) ?> – <?= date('M d, Y', strtotime($sel_pay['date_to'])) ?> &bull; <?= count($rows) ?> employees</div>

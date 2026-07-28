@@ -29,13 +29,13 @@ if (!function_exists('leave_timeline_css')) {
         .lvtl li:last-child::before{display:none;}
         .lvtl .lvtl-dot{position:absolute;left:0;top:1px;width:16px;height:16px;border-radius:50%;
             display:flex;align-items:center;justify-content:center;font-size:10px;color:#fff;background:#c2c9d6;}
-        .lvtl .lvtl-dot.ok{background:#176358;}
+        .lvtl .lvtl-dot.ok{background:#4e3483;}
         .lvtl .lvtl-dot.no{background:#dc3545;}
         .lvtl .lvtl-dot.wait{background:#fd7e14;}
         .lvtl .lvtl-dot.filed{background:#0d6efd;}
         .lvtl-stage{font-weight:700;color:#333;}
         .lvtl-meta{color:#8a94a6;font-size:11px;}
-        .lvtl-name{color:#176358;font-weight:600;}
+        .lvtl-name{color:#4e3483;font-weight:600;}
         .lvtl-rej{color:#dc3545;font-weight:600;}
         .lvtl-remark{color:#dc3545;font-size:11px;margin-top:1px;}
         .lvtl-badge{display:inline-block;font-size:10px;font-weight:700;border-radius:8px;padding:1px 7px;margin-left:4px;

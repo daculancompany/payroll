@@ -39,7 +39,7 @@ $reasonLabels = [
 ];
 $statusMap = [
     0 => ['Pending',  '#e6a817', 'pending'],
-    1 => ['Approved', '#219688', 'approved'],
+    1 => ['Approved', '#6642aa', 'approved'],
     2 => ['Rejected', '#c62828', 'rejected'],
 ];
 

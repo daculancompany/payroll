@@ -66,20 +66,20 @@ if (!function_exists('rest_days_pills')) {
 }
 ?>
 <style>
-    .roster-avatar { width:30px; height:30px; border-radius:50%; background:#009688; color:#fff; font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .roster-avatar { width:30px; height:30px; border-radius:50%; background:#673bb6; color:#fff; font-size:11px; font-weight:700; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
     .roster-emp-name { font-weight:600; font-size:13px; line-height:1.2; color:#1a1a1a; }
     .roster-emp-no { font-size:11px; color:#1976d2; font-family:monospace; font-weight:600; }
     .roster-emp-link { text-decoration:none; }
-    .roster-emp-link:hover .roster-emp-name { color:#009688; text-decoration:underline; }
+    .roster-emp-link:hover .roster-emp-name { color:#673bb6; text-decoration:underline; }
     .filter-label { font-size:11px; color:#666; font-weight:600; margin-bottom:3px; }
-    .roster-toolbar { background:#eef6f5; border:1px solid #cfe5e2; border-radius:6px; padding:10px 12px; }
+    .roster-toolbar { background:#f2f0f6; border:1px solid #dad4e5; border-radius:6px; padding:10px 12px; }
     .roster-toolbar .form-label { font-size:11px; font-weight:600; color:#555; margin-bottom:3px; }
     .sel-count-badge { font-size:11px; }
     .roster-edit-btn { padding:2px 8px; font-size:12px; flex-shrink:0; }
 
     /* ---- Grid (card) view, grouped by shift, compact cards ---- */
-    .roster-group-head { display:flex; align-items:center; gap:8px; background:#eef6f5; border:1px solid #cfe5e2; border-radius:6px; padding:6px 10px; margin-bottom:8px; }
-    .roster-group-head .form-check-label { font-size:12px; font-weight:700; color:#00695c; }
+    .roster-group-head { display:flex; align-items:center; gap:8px; background:#f2f0f6; border:1px solid #dad4e5; border-radius:6px; padding:6px 10px; margin-bottom:8px; }
+    .roster-group-head .form-check-label { font-size:12px; font-weight:700; color:#57339d; }
     .roster-group-count { font-size:11px; margin-left:auto; }
     .roster-card { border:1px solid #e2e5ee; border-radius:6px; padding:6px 7px; background:#fff; height:100%; transition:box-shadow .15s, border-color .15s; }
     .roster-card:hover { box-shadow:0 1px 6px rgba(0,0,0,.08); border-color:#c5cde8; }
@@ -96,7 +96,7 @@ if (!function_exists('rest_days_pills')) {
     .roster-card-col.d-none { display:none !important; }
     #roster-grid.d-none, #roster-view-table.d-none { display:none !important; }
     .view-toggle .btn { padding:4px 10px; }
-    .view-toggle .btn.active { background:#009688; border-color:#009688; color:#fff; }
+    .view-toggle .btn.active { background:#673bb6; border-color:#673bb6; color:#fff; }
 
     /* ---- Planner (staging) panel ---- */
     .planner-card { border:1px solid #ffd591; border-radius:8px; overflow:hidden; box-shadow:0 1px 6px rgba(250,173,20,.12); }
@@ -105,51 +105,51 @@ if (!function_exists('rest_days_pills')) {
     .planner-hint { font-size:11px; color:#8c6d1f; }
 
     /* ---- Bootstrap date picker pill (same pattern as Daily Board) ---- */
-    .rp-date-pill { display:flex; align-items:center; gap:6px; width:100%; padding:6px 11px; border:1px solid #cfe3e0; border-radius:6px; background:#fff; font-size:13px; font-weight:600; color:#00695c; cursor:pointer; transition:border-color .15s; }
-    .rp-date-pill:hover { border-color:#009688; }
-    .rp-date-pill i { color:#009688; }
-    /* daterangepicker theme override, same teal used on attendance.php / daily-board.php */
-    .daterangepicker td.active, .daterangepicker td.active:hover { background-color:#009688 !important; }
-    .daterangepicker td.start-date, .daterangepicker td.end-date { background-color:#00796b !important; }
-    .daterangepicker .drp-buttons .btn.applyBtn { background-color:#009688 !important; border-color:#00796b !important; }
+    .rp-date-pill { display:flex; align-items:center; gap:6px; width:100%; padding:6px 11px; border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:13px; font-weight:600; color:#57339d; cursor:pointer; transition:border-color .15s; }
+    .rp-date-pill:hover { border-color:#673bb6; }
+    .rp-date-pill i { color:#673bb6; }
+    /* daterangepicker theme override, same purple used on attendance.php / daily-board.php */
+    .daterangepicker td.active, .daterangepicker td.active:hover { background-color:#673bb6 !important; }
+    .daterangepicker td.start-date, .daterangepicker td.end-date { background-color:#5d36a6 !important; }
+    .daterangepicker .drp-buttons .btn.applyBtn { background-color:#673bb6 !important; border-color:#5d36a6 !important; }
     #plan-table { font-size:12px; }
     #plan-table thead th { background:#fffbf0; color:#8c6d1f; font-size:11px; text-transform:uppercase; letter-spacing:.3px; }
     #plan-table td { vertical-align:middle; }
-    .plan-shift-badge { background:#e6fffb; border:1px solid #87e8de; color:#006d75; border-radius:4px; padding:1px 7px; font-size:11px; font-weight:600; }
+    .plan-shift-badge { background:#f4f1fa; border:1px solid #bca9df; color:#006d75; border-radius:4px; padding:1px 7px; font-size:11px; font-weight:600; }
     .plan-cur-old { color:#999; text-decoration:line-through; font-size:11px; }
 
     /* ---- Rest-day picker (editable) ---- */
     .rd-picker { display:inline-flex; gap:3px; }
-    .rd-day { width:26px; height:26px; padding:0; border:1px solid #cfe3e0; border-radius:50%; background:#fff; color:#888; font-size:11px; font-weight:700; line-height:1; cursor:pointer; transition:all .12s; }
-    .rd-day:hover { border-color:#009688; }
-    .rd-day.active { background:#009688; border-color:#00796b; color:#fff; }
+    .rd-day { width:26px; height:26px; padding:0; border:1px solid #d9d3e4; border-radius:50%; background:#fff; color:#888; font-size:11px; font-weight:700; line-height:1; cursor:pointer; transition:all .12s; }
+    .rd-day:hover { border-color:#673bb6; }
+    .rd-day.active { background:#673bb6; border-color:#5d36a6; color:#fff; }
     /* ---- Rest-day pills (read-only, in list/grid/plan) ---- */
     .rd-view { display:inline-flex; gap:2px; }
     .rd-view-day { width:16px; height:16px; border-radius:50%; font-size:9px; font-weight:700; line-height:16px; text-align:center; background:#eef1f5; color:#c2c8d0; }
-    .rd-view-day.on { background:#009688; color:#fff; }
+    .rd-view-day.on { background:#673bb6; color:#fff; }
 
     /* ---- Selection action bar (slides up only when employees are selected) ---- */
     .page-content { padding-bottom: 130px; }              /* keep last rows above the floating bar */
     #roster-table tbody tr, #roster-grid .roster-card { cursor:pointer; }  /* whole row/card is tappable to select */
     .roster-actionbar {
         position:fixed; left:50%; bottom:18px; transform:translate(-50%,170%);
-        width:min(920px,calc(100% - 40px)); background:#fff; border:1px solid #e2e8e6;
-        border-radius:16px; box-shadow:0 14px 40px -12px rgba(15,40,36,.30); z-index:1030;
+        width:min(920px,calc(100% - 40px)); background:#fff; border:1px solid #e4e3e9;
+        border-radius:16px; box-shadow:0 14px 40px -12px rgba(47,35,73,.30); z-index:1030;
         transition:transform .28s cubic-bezier(.2,.9,.3,1.2);
     }
     .roster-actionbar.show { transform:translate(-50%,0); }
     .rab-top { display:flex; align-items:center; gap:10px; padding:10px 14px; flex-wrap:wrap; }
-    .rab-count { font-weight:700; font-size:14px; display:flex; align-items:center; gap:8px; color:#132520; }
-    .rab-n { background:#009688; color:#fff; border-radius:8px; min-width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; padding:0 6px; }
-    .rab-tabs { display:inline-flex; background:#f2f6f5; border:1px solid #e2e8e6; border-radius:11px; padding:3px; }
-    .rab-tabs button { border:0; background:transparent; color:#5a6b67; font-weight:700; font-size:13px; padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; gap:6px; align-items:center; }
-    .rab-tabs button.on { background:#fff; color:#009688; box-shadow:0 1px 3px rgba(0,0,0,.1); }
-    .rab-clear { margin-left:auto; background:transparent; border:0; color:#93a29d; font-weight:600; font-size:13px; cursor:pointer; }
-    .rab-panel { display:none; border-top:1px solid #eef1f0; background:#f7faf9; padding:12px 14px; border-radius:0 0 16px 16px; }
+    .rab-count { font-weight:700; font-size:14px; display:flex; align-items:center; gap:8px; color:#28223b; }
+    .rab-n { background:#673bb6; color:#fff; border-radius:8px; min-width:26px; height:26px; display:inline-flex; align-items:center; justify-content:center; font-size:13px; font-weight:800; padding:0 6px; }
+    .rab-tabs { display:inline-flex; background:#f4f3f6; border:1px solid #e4e3e9; border-radius:11px; padding:3px; }
+    .rab-tabs button { border:0; background:transparent; color:#625e6e; font-weight:700; font-size:13px; padding:7px 12px; border-radius:8px; cursor:pointer; display:inline-flex; gap:6px; align-items:center; }
+    .rab-tabs button.on { background:#fff; color:#673bb6; box-shadow:0 1px 3px rgba(0,0,0,.1); }
+    .rab-clear { margin-left:auto; background:transparent; border:0; color:#9895a3; font-weight:600; font-size:13px; cursor:pointer; }
+    .rab-panel { display:none; border-top:1px solid #efeef1; background:#f8f8fa; padding:12px 14px; border-radius:0 0 16px 16px; }
     .rab-panel.on { display:block; }
     .rab-row { display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap; }
     .rab-field { display:flex; flex-direction:column; }
-    .rab-hint { font-size:11.5px; color:#93a29d; margin-top:8px; }
+    .rab-hint { font-size:11.5px; color:#9895a3; margin-top:8px; }
     @media (max-width:640px){ .rab-clear{ margin-left:0; } }
 </style>
 

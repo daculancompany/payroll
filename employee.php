@@ -1,3 +1,9 @@
+<?php
+// A Timekeeper only operates the scanner — they get the roster, never the
+// pay columns. The server blanks them too (employee-server.php), so this is
+// layout, not the security boundary.
+$emp_hide_pay = is_timekeeper($login_role);
+?>
 <style>
 	.emp-id {
 		font-weight: 600;
@@ -24,7 +30,7 @@
 
 	.emp-currency {
 		font-weight: 600;
-		color: #009688;
+		color: #673bb6;
 		font-size: 12px;
 		font-family: 'Segoe UI', monospace;
 	}
@@ -54,7 +60,7 @@
 		width: 28px;
 		height: 28px;
 		border-radius: 50%;
-		background: #009688;
+		background: #673bb6;
 		color: #fff;
 		font-size: 11px;
 		font-weight: 700;
@@ -150,10 +156,12 @@
 										<th><i class="ri-user-3-line me-1"></i>Employee</th>
 										<th><i class="ri-briefcase-4-line me-1"></i>Position</th>
 										<th><i class="ri-building-3-line me-1"></i>Department</th>
-										<th><i class="ri-money-dollar-circle-line me-1"></i>Basic Pay</th>
-										<th><i class="ri-calendar-2-line me-1"></i>Daily Rate</th>
-										<th><i class="ri-money-dollar-circle-line me-1"></i>Rate Type</th>
-										<th><i class="ri-time-line me-1"></i>OT Rate</th>
+										<?php if (!$emp_hide_pay): ?>
+											<th><i class="ri-money-dollar-circle-line me-1"></i>Basic Pay</th>
+											<th><i class="ri-calendar-2-line me-1"></i>Daily Rate</th>
+											<th><i class="ri-money-dollar-circle-line me-1"></i>Rate Type</th>
+											<th><i class="ri-time-line me-1"></i>OT Rate</th>
+										<?php endif; ?>
 										<th><i class="ri-shield-check-line me-1"></i>Classification</th>
 										<th><i class="ri-pulse-line me-1"></i>Status</th>
 										<th class="text-center"><i class="ri-settings-3-line me-1"></i>Action</th>
@@ -171,4 +179,9 @@
 	</div>
 	<!-- End Page-content -->
 </div>
+<script>
+	// Read by assets2/js/employee.js — drops the four pay columns from the
+	// DataTable definition so their indexes still line up with the <th> list.
+	window.EMP_HIDE_PAY = <?= $emp_hide_pay ? 'true' : 'false' ?>;
+</script>
 <?php include 'component/add_employee_form.php'; ?>

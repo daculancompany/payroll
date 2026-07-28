@@ -1,9 +1,9 @@
 <style>
-    .usr-avatar { width:30px; height:30px; border-radius:50%; background:#009688; color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .usr-avatar { width:30px; height:30px; border-radius:50%; background:#673bb6; color:#fff; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
     .usr-name { font-weight:600; font-size:13px; }
-    .usr-username { font-family:monospace; font-size:12px; color:#009688; font-weight:600; }
+    .usr-username { font-family:monospace; font-size:12px; color:#673bb6; font-weight:600; }
     .usr-employer { font-size:13px; font-weight:600; }
-    .usr-site-code { background:#009688; color:#fff; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:700; font-family:monospace; }
+    .usr-site-code { background:#673bb6; color:#fff; padding:1px 6px; border-radius:3px; font-size:10px; font-weight:700; font-family:monospace; }
     .usr-site-name { font-size:11px; font-weight:600; color:#333; }
     .usr-site-addr { font-size:10px; color:#888; }
     .usr-site-item { border:1px solid #d0d7ee; border-radius:4px; padding:4px 8px; margin-bottom:4px; background:#f7f8fc; }
@@ -17,7 +17,7 @@
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
                         <h4 class="mb-sm-0">
-                            <i class="ri-shield-user-line me-2" style="color:#009688;"></i>User Management
+                            <i class="ri-shield-user-line me-2" style="color:#673bb6;"></i>User Management
                         </h4>
                         <div class="page-title-right">
                             <ol class="breadcrumb m-0">
@@ -31,10 +31,10 @@
                 <div class="card">
                     <div class="card-header align-items-center d-flex py-2">
                         <h4 class="card-title mb-0 flex-grow-1">
-                            <i class="ri-shield-user-line me-2" style="color:#009688;"></i>User List
+                            <i class="ri-shield-user-line me-2" style="color:#673bb6;"></i>User List
                            
                         </h4>
-                        <button type="button" class="btn btn-sm text-white" style="background:#009688;border-color:#009688;"
+                        <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"
                             data-bs-toggle="modal" data-bs-target="#modal">
                             <i class="ri-user-add-line me-1"></i>Create User
                         </button>
@@ -43,13 +43,13 @@
                     <div class="card-body">
                         <?php
                         // Roles offered in this list (Administrator role 1 is excluded from the table).
-                        $usr_roles = [10, 8, 9];
+                        $usr_roles = [10, 8, 9, ROLE_TIMEKEEPER];
                         $usr_depts = $conn->query("SELECT id, name FROM department ORDER BY name ASC");
                         ?>
                         <!-- Filter / sort controls -->
                         <div class="row g-2 mb-3 align-items-end">
                             <div class="col-6 col-md-3">
-                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-shield-check-line me-1"></i>Role</label>
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#673bb6;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-shield-check-line me-1"></i>Role</label>
                                 <select id="filter-role" class="form-select form-select-sm">
                                     <option value="">All roles</option>
                                     <?php foreach ($usr_roles as $r): ?>
@@ -58,7 +58,7 @@
                                 </select>
                             </div>
                             <div class="col-6 col-md-3">
-                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-community-line me-1"></i>Department</label>
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#673bb6;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-community-line me-1"></i>Department</label>
                                 <select id="filter-dept" class="form-select form-select-sm">
                                     <option value="">All departments</option>
                                     <?php if ($usr_depts) while ($d = $usr_depts->fetch_assoc()): ?>
@@ -67,7 +67,7 @@
                                 </select>
                             </div>
                             <div class="col-6 col-md-3">
-                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-pulse-line me-1"></i>Status</label>
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#673bb6;text-transform:uppercase;letter-spacing:.3px;"><i class="ri-pulse-line me-1"></i>Status</label>
                                 <select id="filter-status" class="form-select form-select-sm">
                                     <option value="">All statuses</option>
                                     <option value="1">Active</option>

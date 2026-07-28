@@ -10,11 +10,11 @@ $payrolls = [];
 while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
 ?>
 <style>
-    /* ── Payroll Comparison — brand teal ── */
-    .pc-wrap { --pc:#219688; --pc-d:#176358; }
-    .pc-selectbar { background:#fff; border:1px solid #e2e8f0; border-top:3px solid var(--pc); border-radius:10px; box-shadow:0 1px 6px rgba(33,150,136,.07); }
+    /* ── Payroll Comparison — brand purple ── */
+    .pc-wrap { --pc:#6642aa; --pc-d:#4e3483; }
+    .pc-selectbar { background:#fff; border:1px solid #e2e8f0; border-top:3px solid var(--pc); border-radius:10px; box-shadow:0 1px 6px rgba(102,66,170,.07); }
     .pc-flabel { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--pc); margin-bottom:4px; display:block; }
-    .pc-vs { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,var(--pc),var(--pc-d)); color:#fff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(33,150,136,.35); }
+    .pc-vs { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,var(--pc),var(--pc-d)); color:#fff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(102,66,170,.35); }
     .pc-btn { background:linear-gradient(135deg,var(--pc),var(--pc-d)); color:#fff; font-weight:700; border:none; }
     .pc-btn:hover { opacity:.92; color:#fff; }
 
@@ -38,11 +38,11 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
     .cmp-th   { background:var(--pc) !important; color:#fff !important; font-size:10.5px !important; border:none !important; padding:9px 10px !important; font-weight:700; white-space:nowrap; }
     .cmp-th2  { background:var(--pc-d) !important; color:#fff !important; font-size:10.5px !important; border:none !important; padding:9px 10px !important; font-weight:700; white-space:nowrap; }
     #cmp-table td { padding:8px 10px; font-size:12px; vertical-align:middle; }
-    #cmp-table tbody tr:hover td { background:#f4fbfa; }
+    #cmp-table tbody tr:hover td { background:#f8f6fb; }
     .cmp-up   { color:#1e9e54; font-weight:700; }
     .cmp-down { color:#dc3545; font-weight:700; }
     .cmp-same { color:#aaa; }
-    .pc-emp-av { width:28px; height:28px; border-radius:50%; background:#e6f5f3; color:var(--pc-d); font-size:10px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; margin-right:8px; }
+    .pc-emp-av { width:28px; height:28px; border-radius:50%; background:#eeeaf5; color:var(--pc-d); font-size:10px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; margin-right:8px; }
     .pc-tag { font-size:9px; font-weight:800; padding:1px 6px; border-radius:10px; text-transform:uppercase; letter-spacing:.3px; }
     .pc-tag.new { background:#e7f7ee; color:#1e9e54; }
     .pc-tag.gone{ background:#fdecec; color:#dc3545; }
@@ -60,7 +60,7 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
     <div class="row mb-3">
         <div class="col-12">
             <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-                <h4 class="mb-sm-0"><i class="ri-arrow-left-right-line me-2" style="color:#219688;"></i>Payroll Comparison</h4>
+                <h4 class="mb-sm-0"><i class="ri-arrow-left-right-line me-2" style="color:#6642aa;"></i>Payroll Comparison</h4>
                 <ol class="breadcrumb m-0">
                     <li class="breadcrumb-item"><a href="javascript:void(0);">Pages</a></li>
                     <li class="breadcrumb-item active">Payroll Comparison</li>
@@ -105,8 +105,8 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
     <div id="cmp-summary" style="display:none;" class="row g-3 mb-3">
         <div class="col-6 col-md-3">
             <div class="pc-stat">
-                <div class="ic" style="background:#e6f5f3;color:#219688;"><i class="ri-group-line"></i></div>
-                <div><div class="lbl">Employees A / B</div><div class="val" id="s-emp" style="color:#219688;"></div><div class="sub" id="s-emp-sub"></div></div>
+                <div class="ic" style="background:#eeeaf5;color:#6642aa;"><i class="ri-group-line"></i></div>
+                <div><div class="lbl">Employees A / B</div><div class="val" id="s-emp" style="color:#6642aa;"></div><div class="sub" id="s-emp-sub"></div></div>
             </div>
         </div>
         <div class="col-6 col-md-3">
@@ -225,14 +225,14 @@ function renderHead(){
         '<tr>'+
         '<th class="cmp-th" rowspan="2">#</th>'+
         '<th class="cmp-th" rowspan="2">Employee</th>'+
-        '<th class="cmp-th" colspan="3" style="text-align:center;border-left:2px solid #176358 !important;">'+CMP.labelA+'</th>'+
-        '<th class="cmp-th2" colspan="3" style="text-align:center;border-left:2px solid #0d3d35 !important;">'+CMP.labelB+'</th>'+
+        '<th class="cmp-th" colspan="3" style="text-align:center;border-left:2px solid #4e3483 !important;">'+CMP.labelA+'</th>'+
+        '<th class="cmp-th2" colspan="3" style="text-align:center;border-left:2px solid #3d2969 !important;">'+CMP.labelB+'</th>'+
         '<th class="cmp-th" rowspan="2" style="text-align:right;">Net Diff</th>'+
         '<th class="cmp-th" rowspan="2" style="text-align:center;">% </th>'+
         '</tr>'+
         '<tr>'+
         '<th class="cmp-th" style="text-align:right;">Basic</th><th class="cmp-th" style="text-align:right;">Gross</th><th class="cmp-th" style="text-align:right;">Net</th>'+
-        '<th class="cmp-th2" style="text-align:right;border-left:2px solid #0d3d35 !important;">Basic</th><th class="cmp-th2" style="text-align:right;">Gross</th><th class="cmp-th2" style="text-align:right;">Net</th>'+
+        '<th class="cmp-th2" style="text-align:right;border-left:2px solid #3d2969 !important;">Basic</th><th class="cmp-th2" style="text-align:right;">Gross</th><th class="cmp-th2" style="text-align:right;">Net</th>'+
         '</tr>';
 }
 
@@ -269,11 +269,11 @@ function renderBody(){
             '<td style="text-align:center;">'+pctBadge(inB?r.b.net:0, inA?r.a.net:0)+'</td>'+
             '</tr>';
     });
-    html+='<tr style="background:#eef6f4;font-weight:800;border-top:2px solid #cde7e2;">'+
-        '<td colspan="2" style="color:#176358;padding:10px 12px;">TOTAL ('+CMP.rows.length+')</td>'+
+    html+='<tr style="background:#f2f0f6;font-weight:800;border-top:2px solid #d9d3e7;">'+
+        '<td colspan="2" style="color:#4e3483;padding:10px 12px;">TOTAL ('+CMP.rows.length+')</td>'+
         '<td style="text-align:right;">'+fmt(totA.basic)+'</td><td style="text-align:right;">'+fmt(totA.gross)+'</td>'+
-        '<td style="text-align:right;border-right:2px solid #cde7e2;">'+fmt(totA.net)+'</td>'+
-        '<td style="text-align:right;border-left:2px solid #cde7e2;">'+fmt(totB.basic)+'</td><td style="text-align:right;">'+fmt(totB.gross)+'</td>'+
+        '<td style="text-align:right;border-right:2px solid #d9d3e7;">'+fmt(totA.net)+'</td>'+
+        '<td style="text-align:right;border-left:2px solid #d9d3e7;">'+fmt(totB.basic)+'</td><td style="text-align:right;">'+fmt(totB.gross)+'</td>'+
         '<td style="text-align:right;">'+fmt(totB.net)+'</td>'+
         '<td style="text-align:right;" colspan="2">'+(function(){var d=totB.net-totA.net;var c=d>0?'cmp-up':d<0?'cmp-down':'cmp-same';return '<span class="'+c+'">'+(d>0?'+':'')+fmt(d)+'</span>';})()+'</td>'+
         '</tr>';

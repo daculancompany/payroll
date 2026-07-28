@@ -81,7 +81,7 @@
         <form id="form-event">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title" id="event-modal-title"><i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Add Event</h6>
+                    <h6 class="modal-title" id="event-modal-title"><i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>Add Event</h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -164,7 +164,7 @@
         document.getElementById('ev-end').value = ev.end_date || '';
         document.getElementById('ev-blocks').checked = (ev.blocks_leave == 1);
         document.getElementById('ev-note').value = ev.note || '';
-        document.getElementById('event-modal-title').innerHTML = (ev.id ? '<i class="ri-edit-line me-2" style="color:#009688;"></i>Edit Event' : '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Add Event');
+        document.getElementById('event-modal-title').innerHTML = (ev.id ? '<i class="ri-edit-line me-2" style="color:#673bb6;"></i>Edit Event' : '<i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>Add Event');
         new bootstrap.Modal(document.getElementById('modal-event')).show();
     }
     window.__openEvModal = openModal;

@@ -22,7 +22,7 @@ $payroll_setting_sections = [
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-money-dollar-circle-line me-2" style="color:#009688;"></i>Create Payroll
+                        <i class="ri-money-dollar-circle-line me-2" style="color:#673bb6;"></i>Create Payroll
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -30,11 +30,11 @@ $payroll_setting_sections = [
                     <div class="row g-3">
 
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-calendar-range-line me-1"></i>Payroll Period <span class="text-danger">*</span>
                             </label>
                             <div id="payroll-daterange" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:1px solid #ced4da;border-radius:6px;background:#fff;cursor:pointer;font-weight:600;color:#0c5460;">
-                                <i class="ri-calendar-2-line" style="color:#009688;"></i>
+                                <i class="ri-calendar-2-line" style="color:#673bb6;"></i>
                                 <span id="payroll-range-label" style="color:#888;font-weight:500;">Select payroll period…</span>
                                 <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
                             </div>
@@ -47,7 +47,7 @@ $payroll_setting_sections = [
                              payroll auto-calculates a complete payslip on create. Untick any
                              you don't want. Replaces the old post-create Settings step. -->
                         <div class="col-md-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-list-settings-line me-1"></i>Deductions to apply
                             </label>
                             <div style="max-height:250px;overflow-y:auto;border:1px solid #e8eaf6;border-radius:6px;padding:10px;background:#fafaff;">
@@ -55,8 +55,8 @@ $payroll_setting_sections = [
                                     $rows = $conn->query($sec['query']); ?>
                                     <?= $i > 0 ? '<hr class="my-2">' : '' ?>
                                     <div class="d-flex align-items-center gap-2 mb-2">
-                                        <i class="<?= $sec['icon'] ?>" style="color:#009688;font-size:15px;"></i>
-                                        <span class="fw-bold" style="font-size:12px;color:#009688;"><?= $sec['title'] ?></span>
+                                        <i class="<?= $sec['icon'] ?>" style="color:#673bb6;font-size:15px;"></i>
+                                        <span class="fw-bold" style="font-size:12px;color:#673bb6;"><?= $sec['title'] ?></span>
                                     </div>
                                     <div class="row g-2">
                                         <?php while ($row = $rows->fetch_assoc()): ?>
@@ -97,7 +97,7 @@ $payroll_setting_sections = [
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="ri-add-circle-line me-1"></i>Create Payroll
                     </button>
                 </div>
@@ -113,7 +113,7 @@ $payroll_setting_sections = [
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title mb-0">
-                        <i class="ri-settings-3-line me-2" style="color:#009688;"></i>Payroll Settings
+                        <i class="ri-settings-3-line me-2" style="color:#673bb6;"></i>Payroll Settings
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
@@ -128,8 +128,8 @@ $payroll_setting_sections = [
                     ?>
                     <?= $i > 0 ? '<hr class="my-3">' : '' ?>
                     <div class="d-flex align-items-center gap-2 mb-2">
-                        <i class="<?= $sec['icon'] ?>" style="color:#009688;font-size:16px;"></i>
-                        <span class="fw-bold" style="font-size:13px;color:#009688;"><?= $sec['title'] ?></span>
+                        <i class="<?= $sec['icon'] ?>" style="color:#673bb6;font-size:16px;"></i>
+                        <span class="fw-bold" style="font-size:13px;color:#673bb6;"><?= $sec['title'] ?></span>
                     </div>
                     <div class="row g-2">
                         <?php while ($row = $rows->fetch_assoc()): ?>
@@ -154,7 +154,7 @@ $payroll_setting_sections = [
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#009688;border-color:#009688;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="ri-save-line me-1"></i>Save Settings
                     </button>
                 </div>
@@ -169,7 +169,7 @@ $payroll_setting_sections = [
         <div class="modal-content" style="border:none;border-radius:6px;overflow:hidden;">
             <div class="modal-header" style="background:#fff;border-bottom:1px solid #e1dfdd;padding:12px 16px;">
                 <div style="display:flex;align-items:center;gap:8px;">
-                    <i class="ri-history-line" style="color:#219688;font-size:17px;"></i>
+                    <i class="ri-history-line" style="color:#6642aa;font-size:17px;"></i>
                     <span style="font-weight:700;font-size:14px;color:#323130;">Version History</span>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

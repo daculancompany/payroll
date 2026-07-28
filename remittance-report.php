@@ -114,7 +114,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
 
     <div class="row mb-3"><div class="col-12">
         <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-            <h4 class="mb-sm-0"><i class="ri-government-line me-2" style="color:#009688;"></i>Government Remittance Report</h4>
+            <h4 class="mb-sm-0"><i class="ri-government-line me-2" style="color:#673bb6;"></i>Government Remittance Report</h4>
             <ol class="breadcrumb m-0">
                 <li class="breadcrumb-item"><a href="javascript:void(0);">Payroll Tools</a></li>
                 <li class="breadcrumb-item active">Remittance Report</li>
@@ -123,12 +123,12 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
     </div></div>
 
     <!-- Period selector -->
-    <div class="card rpt-card mb-3" style="border-top:3px solid #009688;">
+    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
         <div class="card-body py-3">
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="remittance-report">
                 <div class="col-md-6">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                         <i class="ri-calendar-2-line me-1"></i>Payroll Period
                     </label>
                     <select name="id" id="rr-period" class="selectpicker form-control" data-live-search="true" data-size="10" data-width="100%" title="Search a payroll period…" onchange="this.form.submit()">
@@ -142,7 +142,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                 </div>
                 <div class="col-md-auto">
                     <?php if ($sel_id && $sel_pay): ?>
-                    <a href="remittance-export.php?id=<?= $sel_id ?>" class="btn btn-sm" style="background:#009688;color:#fff;font-weight:700;">
+                    <a href="remittance-export.php?id=<?= $sel_id ?>" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;">
                         <i class="ri-file-excel-2-line me-1"></i>Export CSV
                     </a>
                     <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
@@ -171,7 +171,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
             ['PhilHealth','ri-heart-pulse-line','#1976d2','#e3f2fd'],
             ['Pag-IBIG','ri-home-4-line','#f57c00','#fff3e0'],
             ['SSS Fund','ri-safe-2-line','#6f42c1','#eef0f8'],
-            ['Tax','ri-government-line','#009688','#e6f5f3'],
+            ['Tax','ri-government-line','#673bb6','#eeeaf5'],
         ];
         foreach ($cards as $c): ?>
         <div class="col-6 col-md">
@@ -184,7 +184,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
     </div>
 
     <!-- Grand total banner -->
-    <div style="background:linear-gradient(135deg,#009688,#176358);border-radius:12px;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:14px;">
+    <div style="background:linear-gradient(135deg,#673bb6,#4e3483);border-radius:12px;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:14px;">
         <div>
             <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.85;">Total Remittance — <?= htmlspecialchars($sel_pay['ref_no']) ?></div>
             <div style="font-size:11px;opacity:.8;margin-top:2px;"><?= date('M d', strtotime($sel_pay['date_from'])) ?> – <?= date('M d, Y', strtotime($sel_pay['date_to'])) ?> &bull; <?= count($rows) ?> employees</div>

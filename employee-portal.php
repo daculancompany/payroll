@@ -484,7 +484,7 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 
 <!-- ── PWA: installable home-screen app (Android + iOS) ── -->
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#219688">
+<meta name="theme-color" content="#6642aa">
 <link rel="icon" type="image/png" href="assets2/images/pwa/icon-192.png">
 <!-- iOS: no manifest install prompt — it reads these tags on "Add to Home Screen" -->
 <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
@@ -512,32 +512,32 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 *{box-sizing:border-box;}
 body{
     margin:0;
-    font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#2b3330;
-    /* clean, cool off-white backdrop with a faint teal wash */
-    background-color:#eef2f1;
+    font-family:'Segoe UI',Arial,sans-serif;font-size:13px;color:#312f38;
+    /* clean, cool off-white backdrop with a faint purple wash */
+    background-color:#f0eff2;
     background-image:
-        radial-gradient(circle at 20% 0%, rgba(33,150,136,.06) 0, transparent 42%),
-        radial-gradient(circle at 100% 100%, rgba(33,150,136,.05) 0, transparent 40%);
+        radial-gradient(circle at 20% 0%, rgba(102,66,170,.06) 0, transparent 42%),
+        radial-gradient(circle at 100% 100%, rgba(102,66,170,.05) 0, transparent 40%);
     background-attachment:fixed;
 }
 /* Paper sheet helper — warm white with a hairline edge + layered shadow */
 .paper{
     background:#ffffff;
-    border:1px solid #e4ecea;
-    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);
+    border:1px solid #e7e6ed;
+    box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);
 }
 
 /* Top bar */
-.ptop{background:#fff;padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:200;border-bottom:1px solid #e4ecea;box-shadow:0 1px 3px rgba(16,55,50,.06);}
-.ptop-brand{color:#176358;font-size:14px;font-weight:800;display:flex;align-items:center;gap:9px;letter-spacing:.2px;}
-.ptop-logo{width:30px;height:30px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;box-shadow:0 3px 8px rgba(33,150,136,.28);overflow:hidden;}
+.ptop{background:#fff;padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:200;border-bottom:1px solid #e7e6ed;box-shadow:0 1px 3px rgba(58,40,93,.06);}
+.ptop-brand{color:#4e3483;font-size:14px;font-weight:800;display:flex;align-items:center;gap:9px;letter-spacing:.2px;}
+.ptop-logo{width:30px;height:30px;border-radius:8px;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;color:#fff;box-shadow:0 3px 8px rgba(102,66,170,.28);overflow:hidden;}
 .ptop-logo img{width:100%;height:100%;object-fit:cover;}
-.ptop-logout{background:#f0f7f5;color:#176358;border:1px solid #d5e8e4;border-radius:9px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;}
-.ptop-logout:hover{background:#e0f0ec;color:#176358;border-color:#bfe0d9;}
+.ptop-logout{background:#f3f2f7;color:#4e3483;border:1px solid #ded9e8;border-radius:9px;padding:5px 14px;font-size:12px;font-weight:700;cursor:pointer;text-decoration:none;transition:all .18s;}
+.ptop-logout:hover{background:#e7e4f0;color:#4e3483;border-color:#cec7e0;}
 .ptop-logout i{margin-right:5px;}
 .ptop-actions{display:flex;align-items:center;gap:8px;}
-.ptop-icbtn{position:relative;width:38px;height:38px;border-radius:50%;background:#f0f7f5;border:1px solid #d5e8e4;color:#176358;font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .15s,transform .12s;-webkit-tap-highlight-color:transparent;}
-.ptop-icbtn:hover{background:#e0f0ec;}
+.ptop-icbtn{position:relative;width:38px;height:38px;border-radius:50%;background:#f3f2f7;border:1px solid #ded9e8;color:#4e3483;font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;transition:background .15s,transform .12s;-webkit-tap-highlight-color:transparent;}
+.ptop-icbtn:hover{background:#e7e4f0;}
 .ptop-icbtn:active{transform:scale(.92);}
 .ptop-bell .emp-bell-dot{position:absolute;top:6px;right:7px;width:9px;height:9px;background:#ff4d4f;border:2px solid #fff;border-radius:50%;}
 .ptop-icbtn.spinning i{animation:ptop-spin .7s linear infinite;}
@@ -550,8 +550,8 @@ body{
 @media(min-width:1500px){.portal-wrap{max-width:1400px;}}
 
 /* Employee header card */
-.emp-hdr{background:#ffffff;border:1px solid #e4ecea;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 10px 26px -14px rgba(16,55,50,.22);margin-bottom:18px;}
-.emp-hdr-top{background:linear-gradient(135deg,#219688,#176358);padding:20px 22px;display:flex;align-items:center;gap:16px;}
+.emp-hdr{background:#ffffff;border:1px solid #e7e6ed;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 10px 26px -14px rgba(58,40,93,.22);margin-bottom:18px;}
+.emp-hdr-top{background:linear-gradient(135deg,#6642aa,#4e3483);padding:20px 22px;display:flex;align-items:center;gap:16px;}
 .emp-av{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.4);}
 .emp-nm{font-size:17px;font-weight:900;color:#fff;line-height:1.2;}
 .emp-sub{font-size:11px;color:rgba(255,255,255,.78);margin-top:3px;}
@@ -560,85 +560,85 @@ body{
 /* Notification bell */
 .emp-bell{position:relative;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:#fff;font-size:19px;cursor:pointer;transition:background .15s;}
 .emp-bell:hover{background:rgba(255,255,255,.32);}
-.emp-bell-dot{position:absolute;top:7px;right:8px;width:9px;height:9px;background:#ffcf33;border:2px solid #176358;border-radius:50%;}
+.emp-bell-dot{position:absolute;top:7px;right:8px;width:9px;height:9px;background:#ffcf33;border:2px solid #4e3483;border-radius:50%;}
 /* Notification panel — a top-bar dropdown on desktop, a bottom sheet on mobile */
-.emp-notif-scrim{position:fixed;inset:0;background:rgba(16,40,36,.28);z-index:1199;opacity:0;visibility:hidden;transition:opacity .2s;}
+.emp-notif-scrim{position:fixed;inset:0;background:rgba(46,35,70,.28);z-index:1199;opacity:0;visibility:hidden;transition:opacity .2s;}
 .emp-notif-scrim.open{opacity:1;visibility:visible;}
-.emp-notif-panel{position:fixed;top:52px;right:12px;width:360px;max-width:calc(100vw - 24px);background:#fff;border-radius:16px;box-shadow:0 14px 44px rgba(16,40,36,.24);z-index:1201;overflow:hidden;display:flex;flex-direction:column;
+.emp-notif-panel{position:fixed;top:52px;right:12px;width:360px;max-width:calc(100vw - 24px);background:#fff;border-radius:16px;box-shadow:0 14px 44px rgba(46,35,70,.24);z-index:1201;overflow:hidden;display:flex;flex-direction:column;
     opacity:0;visibility:hidden;transform:translateY(-8px) scale(.98);transform-origin:top right;transition:opacity .16s,transform .16s,visibility .16s;}
 .emp-notif-panel.open{opacity:1;visibility:visible;transform:translateY(0) scale(1);}
 .emp-notif-sheet-grip{display:none;}
-.emp-notif-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #eef3f2;font-size:14px;font-weight:800;color:#176358;}
-.emp-notif-allread{background:none;border:0;color:#219688;font-size:11.5px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:7px;}
-.emp-notif-allread:active{background:#eef7f5;}
+.emp-notif-head{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border-bottom:1px solid #f0eff3;font-size:14px;font-weight:800;color:#4e3483;}
+.emp-notif-allread{background:none;border:0;color:#6642aa;font-size:11.5px;font-weight:700;cursor:pointer;padding:4px 6px;border-radius:7px;}
+.emp-notif-allread:active{background:#f2f0f7;}
 .emp-notif-list{max-height:min(70vh,440px);overflow-y:auto;-webkit-overflow-scrolling:touch;}
 .emp-notif-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:38px 16px;color:#aaa;}
-.emp-notif-empty i{font-size:38px;color:#cfe0da;margin-bottom:10px;}
-.emp-notif-empty .net{font-size:14px;font-weight:800;color:#5b7a72;}
-.emp-notif-empty .nes{font-size:11.5px;color:#9fb2ab;margin-top:3px;}
-.emp-notif-item{display:flex;gap:11px;padding:13px 16px;border-bottom:1px solid #f4f7f6;cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent;}
-.emp-notif-item:hover{background:#f7fbfa;}
-.emp-notif-item:active{background:#eef5f3;}
-.emp-notif-item.unread{background:#f0faf8;}
-.emp-notif-item.unread .emp-notif-title::after{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#219688;margin-left:6px;vertical-align:middle;}
+.emp-notif-empty i{font-size:38px;color:#d5d2e1;margin-bottom:10px;}
+.emp-notif-empty .net{font-size:14px;font-weight:800;color:#69617f;}
+.emp-notif-empty .nes{font-size:11.5px;color:#a6a2b4;margin-top:3px;}
+.emp-notif-item{display:flex;gap:11px;padding:13px 16px;border-bottom:1px solid #f5f5f7;cursor:pointer;transition:background .12s;-webkit-tap-highlight-color:transparent;}
+.emp-notif-item:hover{background:#f9f8fb;}
+.emp-notif-item:active{background:#f1f0f5;}
+.emp-notif-item.unread{background:#f5f3fa;}
+.emp-notif-item.unread .emp-notif-title::after{content:'';display:inline-block;width:7px;height:7px;border-radius:50%;background:#6642aa;margin-left:6px;vertical-align:middle;}
 .emp-notif-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
 .emp-notif-primary{background:#e6f0fb;color:#2563eb;} .emp-notif-success{background:#eafaf0;color:#0f9d58;}
 .emp-notif-warning{background:#fff6e0;color:#c98a00;} .emp-notif-danger{background:#fdecea;color:#c62828;} .emp-notif-info{background:#e6f7fb;color:#0891b2;}
 .emp-notif-txt{flex:1;min-width:0;}
-.emp-notif-title{font-size:13px;font-weight:800;color:#2b3330;}
+.emp-notif-title{font-size:13px;font-weight:800;color:#312f38;}
 .emp-notif-msg{font-size:12px;color:#667;margin-top:2px;line-height:1.4;}
 .emp-notif-time{font-size:10.5px;color:#aab;margin-top:4px;}
 @media (max-width:600px){
     /* Bottom sheet — the native pattern for a phone */
     .emp-notif-panel{top:auto;left:0;right:0;bottom:0;width:100%;max-width:100%;border-radius:20px 20px 0 0;
         transform:translateY(100%);transform-origin:bottom center;transition:transform .26s cubic-bezier(.32,.72,0,1),opacity .2s,visibility .2s;
-        box-shadow:0 -8px 34px rgba(16,40,36,.22);padding-bottom:env(safe-area-inset-bottom);}
+        box-shadow:0 -8px 34px rgba(46,35,70,.22);padding-bottom:env(safe-area-inset-bottom);}
     .emp-notif-panel.open{transform:translateY(0);}
-    .emp-notif-sheet-grip{display:block;width:38px;height:4px;border-radius:3px;background:#d7e2df;margin:8px auto 2px;}
+    .emp-notif-sheet-grip{display:block;width:38px;height:4px;border-radius:3px;background:#dbd9e3;margin:8px auto 2px;}
     .emp-notif-list{max-height:66vh;}
     .emp-notif-head{padding:10px 18px 13px;}
 }
 /* My DTR tab */
-.mydtr-intro{background:#f0faf8;border:1px solid #cdeeda;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#4a6b5f;line-height:1.5;margin-bottom:14px;}
+.mydtr-intro{background:#f5f3fa;border:1px solid #cdeeda;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#585272;line-height:1.5;margin-bottom:14px;}
 .mydtr-empty{padding:34px 14px;text-align:center;color:#aaa;font-size:13px;}
 /* The card itself opens the review sheet — a chevron replaces the old
    per-row "View" / "Review & Confirm" buttons. */
-.mydtr-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid #eef3f2;border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.04);cursor:pointer;transition:border-color .16s,box-shadow .16s;}
-.mydtr-card:hover{border-color:#cfe6e1;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 10px 24px -14px rgba(16,55,50,.3);}
-.mydtr-card:focus-visible{outline:2px solid #219688;outline-offset:2px;}
+.mydtr-card{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid #f0eff3;border-radius:14px;padding:14px 16px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.04);cursor:pointer;transition:border-color .16s,box-shadow .16s;}
+.mydtr-card:hover{border-color:#dad4e6;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 10px 24px -14px rgba(58,40,93,.3);}
+.mydtr-card:focus-visible{outline:2px solid #6642aa;outline-offset:2px;}
 /* The row that still needs a decision reads as the primary one */
 .mydtr-card.needs-action{border-color:#f3d999;background:linear-gradient(180deg,#fffdf6,#fff);}
 .mydtr-card-main{min-width:0;flex:1 1 auto;}
-.mydtr-period{font-size:14px;font-weight:800;color:#176358;display:flex;align-items:center;gap:6px;}
+.mydtr-period{font-size:14px;font-weight:800;color:#4e3483;display:flex;align-items:center;gap:6px;}
 .mydtr-meta{font-size:11px;color:#999;margin-top:4px;}
 .mydtr-card-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;}
-.mydtr-chev{flex-shrink:0;font-size:20px;color:#c3ccca;line-height:1;}
+.mydtr-chev{flex-shrink:0;font-size:20px;color:#c7c4cd;line-height:1;}
 .mydtr-card.needs-action .mydtr-chev{color:#c98a00;}
 .mydtr-badge{font-size:10px;font-weight:800;padding:3px 10px;border-radius:11px;white-space:nowrap;}
 .mydtr-badge.review{background:#fff6e0;color:#c98a00;} .mydtr-badge.ok{background:#eafaf0;color:#0f9d58;}
-.mydtr-badge.dispute{background:#fdecea;color:#c62828;} .mydtr-badge.done{background:#eef3f2;color:#666;}
+.mydtr-badge.dispute{background:#fdecea;color:#c62828;} .mydtr-badge.done{background:#f0eff3;color:#666;}
 .mydtr-btn{border:0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
-.mydtr-btn.primary{background:linear-gradient(135deg,#219688,#176358);color:#fff;}
-.mydtr-btn.ghost{background:#f0f5f4;color:#176358;}
+.mydtr-btn.primary{background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;}
+.mydtr-btn.ghost{background:#f2f1f5;color:#4e3483;}
 /* Review modal table */
 .drev-prev{font-size:12px;font-weight:700;padding:9px 12px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
 .drev-prev.ok{background:#eafaf0;color:#0f9d58;} .drev-prev.dis{background:#fdecea;color:#c62828;}
 /* ── DTR detail view — mirrors the admin DTR "By Employee" card ── */
 .drev-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;}
-.drev-stat{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #eef3f2;border-radius:11px;padding:9px 11px;}
+.drev-stat{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #f0eff3;border-radius:11px;padding:9px 11px;}
 .drev-stat .ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
 .drev-stat .val{font-size:16px;font-weight:800;line-height:1.1;}
-.drev-stat .lbl{font-size:10px;color:#8a9a95;font-weight:600;text-transform:uppercase;letter-spacing:.02em;}
-.drev-stat.wh .ic{background:#e6f5f3;color:#219688;} .drev-stat.wh .val{color:#219688;}
+.drev-stat .lbl{font-size:10px;color:#908c9c;font-weight:600;text-transform:uppercase;letter-spacing:.02em;}
+.drev-stat.wh .ic{background:#eeeaf5;color:#6642aa;} .drev-stat.wh .val{color:#6642aa;}
 .drev-stat.ot .ic{background:#fff8e1;color:#f7b84b;} .drev-stat.ot .val{color:#c98a00;}
 .drev-stat.ut .ic{background:#e3f2fd;color:#50a5f1;} .drev-stat.ut .val{color:#1565c0;}
 .drev-stat.late .ic{background:#fce4ec;color:#f06548;} .drev-stat.late .val{color:#c62828;}
-.drev-daygrp{border:1px solid #eef3f2;border-radius:12px;overflow:hidden;margin-bottom:10px;background:#fff;}
-.drev-dayhead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:#f0faf8;border-bottom:1px solid #e2f0ec;}
-.drev-daylabel{font-size:12px;font-weight:800;color:#176358;display:flex;align-items:center;gap:6px;}
+.drev-daygrp{border:1px solid #f0eff3;border-radius:12px;overflow:hidden;margin-bottom:10px;background:#fff;}
+.drev-dayhead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px;background:#f5f3fa;border-bottom:1px solid #e8e5f0;}
+.drev-daylabel{font-size:12px;font-weight:800;color:#4e3483;display:flex;align-items:center;gap:6px;}
 .drev-daytot{display:flex;gap:10px;font-size:10.5px;font-weight:700;}
 .drev-entry{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;flex-wrap:wrap;}
-.drev-entry + .drev-entry{border-top:1px dashed #f1f5f4;}
+.drev-entry + .drev-entry{border-top:1px dashed #f3f2f5;}
 .drev-entry.is-approved{background:#f4fbf6;} .drev-entry.is-disapproved{background:#fdf3f3;}
 .drev-times{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
 .dtime-chip{font-size:11.5px;font-weight:700;padding:3px 10px;border-radius:8px;white-space:nowrap;}
@@ -646,12 +646,12 @@ body{
 .dtime-chip.na{background:#f3f4f6;color:#aaa;}
 .dpunch{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:5px;}
 .dpunch-chip{font-size:10px;font-weight:700;padding:2px 7px;border-radius:7px;display:inline-flex;align-items:center;gap:3px;}
-.dpunch-chip.bio{background:#e6f5f3;color:#178a7c;} .dpunch-chip.manual{background:#fff4e0;color:#b57e12;}
-.dpunch-chip .pl{color:#9aa;font-weight:800;font-size:9px;margin-right:1px;}
+.dpunch-chip.bio{background:#eeeaf5;color:#603ca4;} .dpunch-chip.manual{background:#fff4e0;color:#b57e12;}
+.dpunch-chip .pl{color:#a29cac;font-weight:800;font-size:9px;margin-right:1px;}
 .drev-mini{display:flex;gap:6px;flex-wrap:wrap;}
-.dmini{display:flex;flex-direction:column;align-items:center;background:#f7fbfa;border-radius:8px;padding:3px 9px;min-width:42px;}
-.dmini .k{font-size:9px;color:#9aa;font-weight:700;text-transform:uppercase;}
-.dmini .v{font-size:12.5px;font-weight:800;color:#2c3e3a;}
+.dmini{display:flex;flex-direction:column;align-items:center;background:#f9f8fb;border-radius:8px;padding:3px 9px;min-width:42px;}
+.dmini .k{font-size:9px;color:#a29cac;font-weight:700;text-transform:uppercase;}
+.dmini .v{font-size:12.5px;font-weight:800;color:#3a3447;}
 .dmini.ot .v{color:#c98a00;} .dmini.ut .v{color:#1565c0;} .dmini.late .v{color:#c62828;}
 .dstat-badge{font-size:10px;font-weight:800;padding:3px 9px;border-radius:9px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap;}
 .dstat-badge.ok{background:#eafaf0;color:#0f9d58;} .dstat-badge.dis{background:#fdecea;color:#c62828;} .dstat-badge.pend{background:#fff6e0;color:#c98a00;}
@@ -662,18 +662,18 @@ body{
     .drev-mini{justify-content:space-between;}
 }
 .emp-stats{display:grid;grid-template-columns:repeat(5,1fr);}
-.est{padding:12px 14px;border-right:1px solid #eef3f2;text-align:center;}
+.est{padding:12px 14px;border-right:1px solid #f0eff3;text-align:center;}
 .est:last-child{border-right:none;}
-.est-v{font-size:16px;font-weight:800;color:#219688;line-height:1;}
+.est-v{font-size:16px;font-weight:800;color:#6642aa;line-height:1;}
 .est-l{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;margin-top:3px;}
 
 /* Tabs */
-.tab-strip{display:flex;gap:4px;background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:5px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 6px 18px -12px rgba(16,55,50,.18);margin-bottom:16px;flex-wrap:wrap;}
+.tab-strip{display:flex;gap:4px;background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;padding:5px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 6px 18px -12px rgba(58,40,93,.18);margin-bottom:16px;flex-wrap:wrap;}
 .tab-btn{flex:1;padding:9px 6px;border:none;background:transparent;border-radius:8px;font-size:12px;font-weight:700;color:#888;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .18s;}
-.tab-btn.active{background:linear-gradient(135deg,#219688,#176358);color:#fff;box-shadow:0 2px 8px rgba(33,150,136,.3);}
-.tab-btn:not(.active):hover{background:#f0f7f5;color:#176358;}
+.tab-btn.active{background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;box-shadow:0 2px 8px rgba(102,66,170,.3);}
+.tab-btn:not(.active):hover{background:#f3f2f7;color:#4e3483;}
 .tab-btn .badge-count{background:rgba(255,255,255,.25);color:#fff;border-radius:10px;padding:0 6px;font-size:10px;font-weight:800;}
-.tab-btn:not(.active) .badge-count{background:#e8f7f5;color:#219688;}
+.tab-btn:not(.active) .badge-count{background:#f0ecf6;color:#6642aa;}
 .tab-panel{display:none;} .tab-panel.active{display:block;}
 .tab-more{display:none;}   /* only surfaces in the mobile bottom nav */
 
@@ -689,51 +689,51 @@ body{
     transition:transform .3s cubic-bezier(.32,.72,.24,1);}
 .more-sheet.open{transform:translateY(0);pointer-events:auto;}
 .more-sheet.dragging{transition:none;}
-.more-grip{display:block;width:42px;height:4px;border-radius:2px;background:#d7dedd;margin:4px auto 12px;}
-.more-head{font-size:15px;font-weight:800;color:#2b3330;margin-bottom:14px;text-align:center;}
+.more-grip{display:block;width:42px;height:4px;border-radius:2px;background:#dad8df;margin:4px auto 12px;}
+.more-head{font-size:15px;font-weight:800;color:#312f38;margin-bottom:14px;text-align:center;}
 .more-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;justify-content:center;}
 .more-item{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;background:#f7f8fa;border:1px solid #eef0f2;border-radius:16px;padding:15px 6px;cursor:pointer;}
 .more-item:active{background:#eef0f2;}
 .more-ic{width:44px;height:44px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;}
-.more-lbl{font-size:11px;font-weight:700;color:#2b3330;}
+.more-lbl{font-size:11px;font-weight:700;color:#312f38;}
 .more-dot{position:absolute;top:9px;right:16px;background:#dc3545;color:#fff;border-radius:9px;min-width:16px;height:16px;padding:0 4px;font-size:9px;font-weight:800;display:flex;align-items:center;justify-content:center;}
 
 /* Section title */
-.sec{font-size:11px;font-weight:800;color:#219688;text-transform:uppercase;letter-spacing:.7px;margin:18px 0 10px;display:flex;align-items:center;gap:8px;}
-.sec::after{content:'';flex:1;height:1px;background:#ddecea;}
+.sec{font-size:11px;font-weight:800;color:#6642aa;text-transform:uppercase;letter-spacing:.7px;margin:18px 0 10px;display:flex;align-items:center;gap:8px;}
+.sec::after{content:'';flex:1;height:1px;background:#e4e0ec;}
 
 /* Latest payslip */
-.ps-card{background:#ffffff;border:1px solid #e4ecea;border-radius:14px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);overflow:hidden;margin-bottom:14px;}
-.ps-period{background:#176358;color:#fff;padding:10px 18px;font-size:12px;font-weight:700;display:flex;justify-content:space-between;}
+.ps-card{background:#ffffff;border:1px solid #e7e6ed;border-radius:14px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);overflow:hidden;margin-bottom:14px;}
+.ps-period{background:#4e3483;color:#fff;padding:10px 18px;font-size:12px;font-weight:700;display:flex;justify-content:space-between;}
 .ps-body{display:grid;grid-template-columns:1fr 1fr;gap:0;}
 .ps-col{padding:14px 18px;}
-.ps-col:first-child{border-right:1px solid #f0f5f4;}
+.ps-col:first-child{border-right:1px solid #f2f1f5;}
 .ps-col-title{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;}
 .ps-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f8f8f8;}
 .ps-row:last-child{border-bottom:none;}
 .ps-lbl{font-size:11px;color:#888;}
 .ps-val{font-size:12px;font-weight:600;}
-.earn{color:#219688;} .ded{color:#dc3545;} .dim{color:#bbb;}
-.ps-net{background:linear-gradient(135deg,#219688,#176358);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;}
+.earn{color:#6642aa;} .ded{color:#dc3545;} .dim{color:#bbb;}
+.ps-net{background:linear-gradient(135deg,#6642aa,#4e3483);padding:14px 20px;display:flex;justify-content:space-between;align-items:center;}
 .ps-net-lbl{color:rgba(255,255,255,.75);font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
 .ps-net-val{color:#fff;font-size:24px;font-weight:900;}
 .ps-net-period{color:rgba(255,255,255,.6);font-size:10px;margin-top:2px;}
 
 /* Payslip history table */
 .ps-hist-table{width:100%;border-collapse:collapse;font-size:12px;}
-.ps-hist-table thead th{background:#219688;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;text-align:left;border:none;}
+.ps-hist-table thead th{background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;text-align:left;border:none;}
 .ps-hist-table thead th.r{text-align:right;}
-.ps-hist-table tbody tr{border-bottom:1px solid #f0f5f4;cursor:pointer;transition:background .14s;}
-.ps-hist-table tbody tr:hover{background:#f4fbfa;}
+.ps-hist-table tbody tr{border-bottom:1px solid #f2f1f5;cursor:pointer;transition:background .14s;}
+.ps-hist-table tbody tr:hover{background:#f8f6fb;}
 /* Read-only variant — a plain, non-interactive item list (holidays/activities) */
 .ps-hist-table.no-click tbody tr{cursor:default;}
 .ps-hist-table.no-click tbody tr:hover{background:transparent;}
 .ps-hist-table tbody td{padding:10px 12px;vertical-align:middle;}
 .ps-hist-table tbody td.r{text-align:right;}
-.ps-hist-table tfoot td{background:#f4fbfa;padding:9px 12px;font-weight:800;color:#219688;border-top:2px solid #ddecea;}
+.ps-hist-table tfoot td{background:#f8f6fb;padding:9px 12px;font-weight:800;color:#6642aa;border-top:2px solid #e4e0ec;}
 .ps-hist-table tfoot td.r{text-align:right;}
-.net-badge{font-size:13px;font-weight:900;color:#176358;}
-.present-pill{background:#e8f7f5;color:#176358;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
+.net-badge{font-size:13px;font-weight:900;color:#4e3483;}
+.present-pill{background:#f0ecf6;color:#4e3483;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
 .absent-pill{background:#fff0f0;color:#dc3545;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
 .late-pill{background:#fff8e8;color:#fd7e14;border-radius:10px;padding:2px 8px;font-size:11px;font-weight:700;}
 
@@ -742,38 +742,38 @@ body{
    itemised breakdown opens in the details sheet. */
 .pslist-paper{border-radius:14px;overflow:hidden;}
 .pslist-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;
-    padding:11px 14px;border-bottom:1px solid #f0f5f4;background:#fbfefd;}
-.pslist-count{font-size:12px;color:#8a9a95;font-weight:600;}
-.pslist-search{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #dfeae7;
+    padding:11px 14px;border-bottom:1px solid #f2f1f5;background:#fcfcfe;}
+.pslist-count{font-size:12px;color:#908c9c;font-weight:600;}
+.pslist-search{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #e4e1eb;
     border-radius:10px;padding:5px 10px;min-width:180px;}
-.pslist-search i{color:#219688;font-size:14px;}
+.pslist-search i{color:#6642aa;font-size:14px;}
 .pslist-search input{border:none;outline:none;font-size:12.5px;flex:1;min-width:0;background:transparent;}
 .pslist{display:flex;flex-direction:column;}
 .psrow{display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
-    background:#fff;border:none;border-bottom:1px solid #f2f7f6;border-left:3px solid transparent;
+    background:#fff;border:none;border-bottom:1px solid #f4f3f7;border-left:3px solid transparent;
     padding:12px 12px 12px 14px;transition:background .12s;}
 .psrow:last-of-type{border-bottom:none;}
-.psrow:hover{background:#f6fbfa;}
-.psrow:active{background:#eef7f5;}
+.psrow:hover{background:#f8f7fb;}
+.psrow:active{background:#f2f0f7;}
 .psrow.needs{border-left-color:#f0ad4e;background:#fffdf7;}
 .psrow.needs:hover{background:#fff9ec;}
 .psrow-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
-.psrow-period{font-size:14px;font-weight:800;color:#176358;line-height:1.2;}
+.psrow-period{font-size:14px;font-weight:800;color:#4e3483;line-height:1.2;}
 .psrow-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
-.psrow-ref{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;font-weight:700;color:#9bb0aa;}
+.psrow-ref{font-family:ui-monospace,Menlo,monospace;font-size:10.5px;font-weight:700;color:#a39fb2;}
 .psbadge{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:20px;white-space:nowrap;}
 .psbadge.review{background:#fff4e0;color:#b76e00;border:1px solid #f3ddb4;}
 .psbadge.ok{background:#e9f7ef;color:#178a4e;border:1px solid #bfe6cd;}
 .psbadge.dispute{background:#fdecea;color:#c62828;border:1px solid #f5c6cb;}
 .psrow-right{text-align:right;flex-shrink:0;}
-.psrow-net{display:block;font-size:15px;font-weight:900;color:#176358;line-height:1.1;font-variant-numeric:tabular-nums;}
-.psrow-sub{display:block;font-size:9.5px;color:#a9bbb6;text-transform:uppercase;letter-spacing:.4px;margin-top:1px;}
-.psrow-chev{color:#c2d3ce;font-size:20px;flex-shrink:0;}
-.pslist-empty{padding:26px 14px;text-align:center;color:#9bb0aa;font-size:12.5px;}
+.psrow-net{display:block;font-size:15px;font-weight:900;color:#4e3483;line-height:1.1;font-variant-numeric:tabular-nums;}
+.psrow-sub{display:block;font-size:9.5px;color:#b0acbd;text-transform:uppercase;letter-spacing:.4px;margin-top:1px;}
+.psrow-chev{color:#c9c5d4;font-size:20px;flex-shrink:0;}
+.pslist-empty{padding:26px 14px;text-align:center;color:#a39fb2;font-size:12.5px;}
 .pslist-total{display:flex;flex-wrap:wrap;gap:4px 18px;justify-content:flex-end;
-    padding:11px 14px;background:#f7fbfa;border-top:1px solid #eef4f2;}
-.pslist-total > div{display:flex;align-items:baseline;gap:6px;font-size:11.5px;color:#8a9a95;}
-.pslist-total b{font-size:13px;font-weight:800;color:#176358;font-variant-numeric:tabular-nums;}
+    padding:11px 14px;background:#f9f8fb;border-top:1px solid #f0eff4;}
+.pslist-total > div{display:flex;align-items:baseline;gap:6px;font-size:11.5px;color:#908c9c;}
+.pslist-total b{font-size:13px;font-weight:800;color:#4e3483;font-variant-numeric:tabular-nums;}
 .pslist-total b.ded{color:#dc3545;}
 .pslist-total .net b{font-size:15px;font-weight:900;}
 @media (max-width:575.98px){
@@ -807,19 +807,19 @@ body{
 .attrow .time-io{display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center;max-width:100%;}
 .attrow .attrow-note{overflow-wrap:anywhere;}
 .attrow .hrs-bar{max-width:70px;}
-.attrow{border-bottom:1px solid #f2f7f6;}
+.attrow{border-bottom:1px solid #f4f3f7;}
 .attrow:last-of-type{border-bottom:none;}
 .attrow .psrow-period{display:flex;align-items:center;gap:5px;}
-.attrow-day{font-size:10.5px;font-weight:600;color:#8a9794;}
-.attrow-tic{color:#219688;font-size:14px;}
+.attrow-day{font-size:10.5px;font-weight:600;color:#8f8c98;}
+.attrow-tic{color:#6642aa;font-size:14px;}
 /* the server sends the type badge / time chips as HTML — keep them inline & small */
 .attrow .psrow-meta .att-type,
 .attrow .psrow-meta .att-type span{font-size:9.5px !important;}
-.attrow-io{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#5d726c;flex-wrap:wrap;}
+.attrow-io{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#666176;flex-wrap:wrap;}
 .attrow-io .dtr-logs-pill{font-size:9.5px;}
-.attrow-note{font-size:10px;color:#8a9794;gap:4px;}
-.attrow-note i{color:#b9c8c3;}
-.attrow-filed{display:block;font-size:11px;font-weight:700;color:#5d726c;white-space:nowrap;}
+.attrow-note{font-size:10px;color:#8f8c98;gap:4px;}
+.attrow-note i{color:#bfbcc9;}
+.attrow-filed{display:block;font-size:11px;font-weight:700;color:#666176;white-space:nowrap;}
 .attm-foot{text-align:center;padding:12px 0 10px;}
 
 /* Details sheet: on phones the review modal becomes a bottom sheet */
@@ -830,108 +830,108 @@ body{
 
 /* ── Payslips — legacy mobile card list (superseded by .pslist) ── */
 .ps-mlist{display:none;padding:12px 0 2px;}
-.psm-card{position:relative;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;border-radius:14px;
+.psm-card{position:relative;background:#ffffff;border:1px solid #e7e6ed;border-left:3px solid #6642aa;border-radius:14px;
     padding:13px 14px 0;margin:0 12px 12px;overflow:hidden;cursor:pointer;
-    box-shadow:0 1px 2px rgba(16,55,50,.05),0 8px 20px -14px rgba(16,55,50,.28);}
+    box-shadow:0 1px 2px rgba(58,40,93,.05),0 8px 20px -14px rgba(58,40,93,.28);}
 .psm-chk{position:absolute;top:14px;right:12px;width:17px;height:17px;z-index:2;}
-.psm-period{font-size:15px;font-weight:800;color:#176358;line-height:1.2;padding-right:30px;}
+.psm-period{font-size:15px;font-weight:800;color:#4e3483;line-height:1.2;padding-right:30px;}
 .psm-period small{display:block;font-size:10px;font-weight:600;color:#aaa;margin-top:1px;}
-.psm-ref{font-family:monospace;font-size:11px;font-weight:700;color:#219688;margin:3px 0 2px;}
-.psm-stats{display:flex;gap:2px;border-top:1px solid #eef3f2;margin-top:10px;}
+.psm-ref{font-family:monospace;font-size:11px;font-weight:700;color:#6642aa;margin:3px 0 2px;}
+.psm-stats{display:flex;gap:2px;border-top:1px solid #f0eff3;margin-top:10px;}
 .psm-stats>div{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 2px;}
-.psm-stats span{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
-.psm-stats b{font-size:13px;font-weight:800;color:#176358;}
+.psm-stats span{font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
+.psm-stats b{font-size:13px;font-weight:800;color:#4e3483;}
 .psm-stats b.mut{color:#ccc;font-weight:600;}
 .psm-stats b.abs{color:#dc3545;} .psm-stats b.lt{color:#fd7e14;} .psm-stats b.ot{color:#fd7e14;}
-.psm-money{display:flex;border-top:1px solid #eef3f2;}
+.psm-money{display:flex;border-top:1px solid #f0eff3;}
 .psm-money>div{flex:1;display:flex;flex-direction:column;gap:2px;padding:11px 0 12px;}
-.psm-money .lbl{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
-.psm-money .val{font-size:15px;font-weight:800;color:#219688;}
+.psm-money .lbl{font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
+.psm-money .val{font-size:15px;font-weight:800;color:#6642aa;}
 .psm-money .ded{align-items:flex-end;text-align:right;}
 .psm-money .ded .val{color:#dc3545;}
-.psm-action{border-top:1px solid #eef3f2;padding:11px 0 12px;text-align:center;}
+.psm-action{border-top:1px solid #f0eff3;padding:11px 0 12px;text-align:center;}
 .psm-action .mydtr-badge{display:inline-block;margin-bottom:8px;}
 .psm-action .mydtr-btn{width:100%;padding:10px;font-size:13px;text-align:center;}
 .psm-net{display:flex;align-items:center;justify-content:space-between;
-    background:linear-gradient(135deg,#219688,#176358);margin:0 -14px;padding:12px 14px;}
+    background:linear-gradient(135deg,#6642aa,#4e3483);margin:0 -14px;padding:12px 14px;}
 .psm-net span{font-size:10px;font-weight:800;color:rgba(255,255,255,.82);text-transform:uppercase;letter-spacing:.4px;}
 .psm-net b{font-size:19px;font-weight:900;color:#fff;}
-.psm-total{margin:2px 12px 6px;background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:10px 14px;color:#fff;}
+.psm-total{margin:2px 12px 6px;background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:12px;padding:10px 14px;color:#fff;}
 .psm-total .rowt{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;font-weight:700;}
 .psm-total .rowt span{color:rgba(255,255,255,.82);text-transform:uppercase;letter-spacing:.3px;font-size:10px;}
 .psm-total .rowt.net b{font-size:15px;font-weight:900;}
 
 /* Attendance */
 .att-table{width:100%;min-width:620px;border-collapse:collapse;font-size:12px;}
-.att-table thead th{background:#219688;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;border:none;text-align:left;white-space:nowrap;}
-.att-table tbody tr{border-bottom:1px solid #f0f5f4;transition:background .14s;}
-.att-table tbody tr:hover{background:#f4fbfa;}
+.att-table thead th{background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;border:none;text-align:left;white-space:nowrap;}
+.att-table tbody tr{border-bottom:1px solid #f2f1f5;transition:background .14s;}
+.att-table tbody tr:hover{background:#f8f6fb;}
 .att-table tbody td{padding:9px 12px;vertical-align:middle;white-space:nowrap;}
 .att-table td:last-child{white-space:normal;}
 .att-type{border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;}
-.att-P{background:#e8f7f5;color:#176358;}
+.att-P{background:#f0ecf6;color:#4e3483;}
 .att-A{background:#fff0f0;color:#dc3545;}
 .att-OT{background:#fff8e8;color:#fd7e14;}
 .att-H{background:#eef0f8;color:#6f42c1;}
 .att-S{background:#fdf0f6;color:#e83e8c;}
-.hrs-bar{height:5px;border-radius:3px;background:#e0eeec;overflow:hidden;margin-top:4px;}
-.hrs-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#219688,#176358);}
+.hrs-bar{height:5px;border-radius:3px;background:#e7e3ee;overflow:hidden;margin-top:4px;}
+.hrs-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#6642aa,#4e3483);}
 
 /* ── Attendance mobile card feed (infinite scroll) — hidden on desktop ── */
 /* Card feed is the only Attendance renderer now — shown at every width. */
 .att-mlist-wrap{display:block;padding:12px 12px 14px;}
-.attm-card{position:relative;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;
+.attm-card{position:relative;background:#ffffff;border:1px solid #e7e6ed;border-left:3px solid #6642aa;
     border-radius:14px;margin-bottom:10px;padding:13px 14px 2px;
-    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
+    box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 20px -14px rgba(58,40,93,.28);}
 .attm-card:last-child{margin-bottom:0;}
 .attm-head{padding:0 104px 11px 0;}
-.attm-head .attm-d1{font-size:15px;font-weight:800;color:#176358;}
-.attm-head .attm-d2{font-size:10.5px;color:#8a9794;font-weight:600;margin-top:1px;}
+.attm-head .attm-d1{font-size:15px;font-weight:800;color:#4e3483;}
+.attm-head .attm-d2{font-size:10.5px;color:#8f8c98;font-weight:600;margin-top:1px;}
 .attm-card>.att-type{position:absolute;top:12px;right:12px;}
-.attm-stats{display:flex;border-top:1px solid #eef3f2;}
+.attm-stats{display:flex;border-top:1px solid #f0eff3;}
 .attm-stat{flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px;
     padding:11px 4px;text-align:center;}
-.attm-stat+.attm-stat{border-left:1px solid #f2f6f5;}
-.attm-stat .attm-sl{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
-.attm-stat .attm-sv{font-size:15px;font-weight:800;color:#176358;width:100%;max-width:110px;}
-.attm-io{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:11px 0 10px;border-top:1px solid #eef3f2;}
-.attm-io .attm-sl{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+.attm-stat+.attm-stat{border-left:1px solid #f4f3f6;}
+.attm-stat .attm-sl{font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
+.attm-stat .attm-sv{font-size:15px;font-weight:800;color:#4e3483;width:100%;max-width:110px;}
+.attm-io{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:11px 0 10px;border-top:1px solid #f0eff3;}
+.attm-io .attm-sl{font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
 .attm-notes{display:flex;justify-content:space-between;align-items:center;gap:12px;
-    padding:9px 0 12px;border-top:1px dashed #e4ecea;text-align:right;}
-.attm-notes::before{content:"Notes";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
-.attm-foot{text-align:center;padding:14px 0 6px;font-size:11px;color:#8a9794;font-weight:700;}
-.attm-foot .attm-spin{display:inline-block;width:16px;height:16px;border:2px solid #cfe3e0;border-top-color:#219688;
+    padding:9px 0 12px;border-top:1px dashed #e7e6ed;text-align:right;}
+.attm-notes::before{content:"Notes";font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
+.attm-foot{text-align:center;padding:14px 0 6px;font-size:11px;color:#8f8c98;font-weight:700;}
+.attm-foot .attm-spin{display:inline-block;width:16px;height:16px;border:2px solid #d9d3e4;border-top-color:#6642aa;
     border-radius:50%;vertical-align:-3px;margin-right:7px;animation:attmSpin .7s linear infinite;}
 @keyframes attmSpin{to{transform:rotate(360deg);}}
-.attm-empty{text-align:center;padding:26px 14px;font-size:12px;color:#7a8783;font-weight:600;}
-.attm-empty i{display:block;font-size:26px;color:#b3c0bc;margin-bottom:6px;}
+.attm-empty{text-align:center;padding:26px 14px;font-size:12px;color:#7f7c88;font-weight:600;}
+.attm-empty i{display:block;font-size:26px;color:#b8b5c1;margin-bottom:6px;}
 
 /* ── Requests (OT / incident) mobile card feed (infinite scroll) — hidden on desktop ── */
 /* Card feed is the only Requests renderer now — shown at every width. */
 .areq-mlist-wrap{display:block;padding:12px 12px 14px;}
-.areq-card{position:relative;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;
+.areq-card{position:relative;background:#ffffff;border:1px solid #e7e6ed;border-left:3px solid #6642aa;
     border-radius:14px;margin-bottom:10px;padding:13px 14px;
-    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
+    box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 20px -14px rgba(58,40,93,.28);}
 .areq-card:last-child{margin-bottom:0;}
 .areq-card.st-pending{border-left-color:#e6a817;}
-.areq-card.st-approved{border-left-color:#219688;}
+.areq-card.st-approved{border-left-color:#6642aa;}
 .areq-card.st-rejected{border-left-color:#c62828;}
 .areq-head{padding:0 92px 4px 0;}
-.areq-head .areq-d1{font-size:15px;font-weight:800;color:#176358;display:flex;align-items:center;gap:6px;}
-.areq-head .areq-d1 i{color:#219688;font-size:15px;}
+.areq-head .areq-d1{font-size:15px;font-weight:800;color:#4e3483;display:flex;align-items:center;gap:6px;}
+.areq-head .areq-d1 i{color:#6642aa;font-size:15px;}
 .areq-type{display:inline-flex;align-items:center;gap:4px;border-radius:8px;padding:3px 9px;font-size:10px;font-weight:700;margin-top:8px;}
 .areq-type.t-incident{background:#fff3cd;color:#856404;}
 .areq-type.t-overtime{background:#cff4fc;color:#055160;}
 .areq-status{position:absolute;top:12px;right:12px;border-radius:10px;padding:3px 11px;font-size:10px;font-weight:800;color:#fff;letter-spacing:.2px;}
 .areq-row{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;
-    margin-top:9px;padding-top:9px;border-top:1px solid #eef3f2;font-size:12px;}
-.areq-row .areq-l{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;
+    margin-top:9px;padding-top:9px;border-top:1px solid #f0eff3;font-size:12px;}
+.areq-row .areq-l{font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;
     display:flex;align-items:center;gap:5px;flex-shrink:0;padding-top:1px;}
-.areq-row .areq-l i{font-size:12px;color:#b3c0bc;}
+.areq-row .areq-l i{font-size:12px;color:#b8b5c1;}
 .areq-row .areq-v{text-align:right;color:#414a46;font-weight:600;word-break:break-word;}
-.areq-rev{margin-top:9px;padding-top:9px;border-top:1px dashed #e4ecea;font-size:11px;color:#7a8783;
+.areq-rev{margin-top:9px;padding-top:9px;border-top:1px dashed #e7e6ed;font-size:11px;color:#7f7c88;
     display:flex;gap:6px;align-items:flex-start;}
-.areq-rev i{color:#b3c0bc;font-size:13px;flex-shrink:0;margin-top:1px;}
+.areq-rev i{color:#b8b5c1;font-size:13px;flex-shrink:0;margin-top:1px;}
 
 /* Mobile: every data table becomes a stacked list of cards (label : value rows)
    instead of a horizontally-scrolling table. Cells carry data-label="…" —
@@ -942,21 +942,21 @@ body{
     .ps-hist-table tbody, .att-table tbody, .drev-tbl tbody,
     .ps-hist-table tbody tr, .att-table tbody tr, .drev-tbl tbody tr{display:block;width:100%;}
     .ps-hist-table tbody tr, .att-table tbody tr, .drev-tbl tbody tr{
-        background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;border-radius:14px;
-        margin-bottom:10px;padding:2px 13px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
+        background:#ffffff;border:1px solid #e7e6ed;border-left:3px solid #6642aa;border-radius:14px;
+        margin-bottom:10px;padding:2px 13px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 20px -14px rgba(58,40,93,.28);}
     .ps-hist-table tbody tr:last-child, .att-table tbody tr:last-child, .drev-tbl tbody tr:last-child{margin-bottom:0;}
     .ps-hist-table tbody td, .att-table tbody td, .drev-tbl tbody td{
         display:flex;align-items:center;justify-content:space-between;gap:12px;
-        padding:8px 0;border-top:1px solid #f2f6f5;white-space:normal;text-align:right;width:auto;}
+        padding:8px 0;border-top:1px solid #f4f3f6;white-space:normal;text-align:right;width:auto;}
     .ps-hist-table tbody td:first-child, .att-table tbody td:first-child, .drev-tbl tbody td:first-child{border-top:none;}
     .ps-hist-table tbody td::before, .att-table tbody td::before, .drev-tbl tbody td::before{
-        content:attr(data-label);font-size:9.5px;font-weight:800;color:#8a9794;
+        content:attr(data-label);font-size:9.5px;font-weight:800;color:#8f8c98;
         text-transform:uppercase;letter-spacing:.4px;text-align:left;flex-shrink:0;}
     .ps-hist-table tbody td[data-label=""], .att-table tbody td[data-label=""]{justify-content:center;padding:6px 0;}
     .ps-hist-table tbody td[data-label=""]::before, .att-table tbody td[data-label=""]::before{content:none;}
     /* Payslip totals footer becomes its own summary card */
     .ps-hist-table tfoot, .ps-hist-table tfoot tr{display:block;width:100%;}
-    .ps-hist-table tfoot tr{background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:2px 13px;margin-top:2px;}
+    .ps-hist-table tfoot tr{background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:12px;padding:2px 13px;margin-top:2px;}
     .ps-hist-table tfoot td{display:flex;justify-content:space-between;align-items:center;gap:12px;
         color:#fff;background:transparent;border-top:1px solid rgba(255,255,255,.18);padding:8px 0;}
     .ps-hist-table tfoot td:first-child{border-top:none;justify-content:flex-start;font-size:12px;font-weight:800;}
@@ -986,30 +986,30 @@ body{
         order:1;flex:0 0 100%;display:block;text-align:left;padding:0 0 1px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Type"] span{font-size:14px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Date Applied"]{
-        order:2;flex:0 0 100%;display:block;text-align:left;font-size:10px;color:#8a9794;padding:0 0 10px;}
+        order:2;flex:0 0 100%;display:block;text-align:left;font-size:10px;color:#8f8c98;padding:0 0 10px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Date Applied"]::before{
-        content:"Filed ";font-size:10px;font-weight:700;color:#b3c0bc;}
+        content:"Filed ";font-size:10px;font-weight:700;color:#b8b5c1;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Period"]{
         order:3;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:8px 0;border-top:1px solid #eef3f2;text-align:right;font-size:12px !important;}
+        padding:8px 0;border-top:1px solid #f0eff3;text-align:right;font-size:12px !important;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Period"]::before{
-        content:"Period";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+        content:"Period";font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Days"]{
         order:4;flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
-        padding:9px 4px;border-top:1px solid #eef3f2;text-align:center;font-size:14px;}
+        padding:9px 4px;border-top:1px solid #f0eff3;text-align:center;font-size:14px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Days"]::before{
-        content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#8a9794;
+        content:attr(data-label);display:block;order:-1;font-size:9px;font-weight:800;color:#8f8c98;
         text-transform:uppercase;letter-spacing:.3px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Progress"]{
-        order:5;flex:0 0 100%;display:block;padding:8px 0 2px;border-top:1px solid #eef3f2;}
+        order:5;flex:0 0 100%;display:block;padding:8px 0 2px;border-top:1px solid #f0eff3;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Progress"]::before{
-        content:"Progress";display:block;font-size:9px;font-weight:800;color:#8a9794;
+        content:"Progress";display:block;font-size:9px;font-weight:800;color:#8f8c98;
         text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]{
         order:6;flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:9px 0;border-top:1px solid #eef3f2;text-align:right;}
+        padding:9px 0;border-top:1px solid #f0eff3;text-align:right;}
     #leave-list-wrap .ps-hist-table tbody td[data-label="Status"]::before{
-        content:"Status";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+        content:"Status";font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
 
     /* ── Holidays & Activities — event item, not a label/value stack ──
        The generic table→card transform turned each event into three
@@ -1028,7 +1028,7 @@ body{
     #tab-holidays .ps-hist-table tbody td[data-label="Date"]{
         grid-column:1/-1;display:block;margin-bottom:7px;
         white-space:normal !important;      /* beats the inline nowrap on long ranges */
-        font-size:11px;font-weight:800;color:#219688;
+        font-size:11px;font-weight:800;color:#6642aa;
         text-transform:uppercase;letter-spacing:.3px;}
     #tab-holidays .ps-hist-table tbody td[data-label="Event"]{
         grid-column:1;min-width:0;display:block;font-size:13.5px;line-height:1.35;}
@@ -1053,11 +1053,11 @@ body{
     #tab-loans .loan-meta{gap:6px;margin-top:2px;}
     #tab-loans .loan-meta .lm-i{
         align-items:center;text-align:center;
-        background:#f7fbfa;border:1px solid #eef3f2;border-radius:12px;padding:8px 4px;}
+        background:#f9f8fb;border:1px solid #f0eff3;border-radius:12px;padding:8px 4px;}
     #tab-loans .loan-meta .lm-i em{font-size:8.5px;}
     #tab-loans .loan-meta .lm-i b{font-size:12px;}
     #tab-loans .loan-est{
-        margin-top:10px;padding-top:9px;border-top:1px solid #f2f6f5;font-size:11.5px;}
+        margin-top:10px;padding-top:9px;border-top:1px solid #f4f3f6;font-size:11.5px;}
     /* Bigger chevron + hint on touch — the card is the tap target for the
        deduction-history sheet. */
     #tab-loans .loan-chev{font-size:23px;}
@@ -1071,14 +1071,14 @@ body{
     #tab-contrib .con-tbl tbody td[data-label="SSS Provident"],
     #tab-contrib .con-tbl tbody td[data-label="Tax"]{
         gap:3px;padding:8px 4px;border-top:none;
-        background:#f7fbfa;border:1px solid #eef3f2;border-radius:12px;}
+        background:#f9f8fb;border:1px solid #f0eff3;border-radius:12px;}
     /* Full-bleed total band: the parent is a flex container, so the basis has
        to grow by the row's 13px side padding — negative margins alone only
        shift the box, they don't widen it. */
     #tab-contrib .con-tbl tbody td[data-label="Total"]{
         flex:0 0 calc(100% + 26px);
-        margin:8px -13px -12px;padding:11px 13px;background:#f4fbfa;
-        border-top:1px solid #eef3f2;border-radius:0 0 12px 12px;}
+        margin:8px -13px -12px;padding:11px 13px;background:#f8f6fb;
+        border-top:1px solid #f0eff3;border-radius:0 0 12px 12px;}
 
     /* ── Contributions (.con-tbl) — remittance card ──
        The ID beats the desktop `.con-tbl{min-width:560px}` further down the
@@ -1088,29 +1088,29 @@ body{
     .con-tbl thead{display:none;}
     .con-tbl tbody, .con-tbl tbody tr{display:block;width:100%;}
     .con-tbl tbody tr{
-        display:flex;flex-wrap:wrap;background:#ffffff;border:1px solid #e4ecea;border-left:3px solid #219688;
+        display:flex;flex-wrap:wrap;background:#ffffff;border:1px solid #e7e6ed;border-left:3px solid #6642aa;
         border-radius:14px;margin-bottom:10px;padding:12px 13px 6px;
-        box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);}
+        box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 20px -14px rgba(58,40,93,.28);}
     .con-tbl tbody td{border-top:none;padding:0;}
     .con-tbl tbody td[data-label="Pay Period"]{flex:0 0 100%;display:block;text-align:left;padding-bottom:10px;}
     .con-tbl tbody td[data-label="Contributions"],
     .con-tbl tbody td[data-label="SSS Provident"],
     .con-tbl tbody td[data-label="Tax"]{
         flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:center;gap:4px;
-        padding:9px 4px;border-top:1px solid #eef3f2;text-align:center;font-size:12px;}
+        padding:9px 4px;border-top:1px solid #f0eff3;text-align:center;font-size:12px;}
     .con-tbl tbody td[data-label="Contributions"]::before,
     .con-tbl tbody td[data-label="SSS Provident"]::before,
     .con-tbl tbody td[data-label="Tax"]::before{
-        content:attr(data-label);display:block;font-size:8.5px;font-weight:800;color:#8a9794;
+        content:attr(data-label);display:block;font-size:8.5px;font-weight:800;color:#8f8c98;
         text-transform:uppercase;letter-spacing:.2px;}
     .con-tbl tbody td[data-label="Total"]{
         flex:0 0 100%;display:flex;justify-content:space-between;align-items:center;gap:12px;
-        padding:9px 0;border-top:1px solid #eef3f2;text-align:right;font-size:14px;}
+        padding:9px 0;border-top:1px solid #f0eff3;text-align:right;font-size:14px;}
     .con-tbl tbody td[data-label="Total"]::before{
-        content:"Total";font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
+        content:"Total";font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
     /* Lifetime totals footer becomes its own gradient summary card */
     .con-tbl tfoot, .con-tbl tfoot tr{display:block;width:100%;}
-    .con-tbl tfoot tr{background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:2px 13px;margin-top:2px;}
+    .con-tbl tfoot tr{background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:12px;padding:2px 13px;margin-top:2px;}
     .con-tbl tfoot td{display:flex;justify-content:space-between;align-items:center;gap:12px;
         color:#fff !important;background:transparent;border-top:1px solid rgba(255,255,255,.18);padding:8px 0;font-size:12px;}
     .con-tbl tfoot td:first-child{border-top:none;justify-content:flex-start;font-size:12px;font-weight:800;}
@@ -1119,12 +1119,12 @@ body{
     .con-tbl tfoot td:first-child::before{content:none;}
     /* DTR review modal total row (uses <th> instead of <td>) */
     .drev-tbl tfoot, .drev-tbl tfoot tr{display:block;width:100%;}
-    .drev-tbl tfoot tr{background:#e9f5f2;border-radius:10px;padding:2px 12px;margin-top:6px;}
+    .drev-tbl tfoot tr{background:#eeecf5;border-radius:10px;padding:2px 12px;margin-top:6px;}
     .drev-tbl tfoot th{display:flex;justify-content:space-between;align-items:center;gap:12px;
-        text-align:left;padding:7px 0;border-top:1px solid #dcece8;color:#176358;}
+        text-align:left;padding:7px 0;border-top:1px solid #e3e0ec;color:#4e3483;}
     .drev-tbl tfoot th:first-child{border-top:none;justify-content:flex-start;}
     .drev-tbl tfoot th[data-label]:not([data-label=""])::before{content:attr(data-label);font-size:9.5px;
-        font-weight:800;color:#7fa89f;text-transform:uppercase;letter-spacing:.4px;}
+        font-weight:800;color:#9187aa;text-transform:uppercase;letter-spacing:.4px;}
     .drev-tbl tfoot th[data-label=""]{display:none;}
 
     /* Review modals: sticky, thumb-friendly action bar on phones */
@@ -1166,12 +1166,12 @@ body{
         box-shadow:none;padding:0;margin:0;}
     #payroll-review-body .prev-stats .drev-tbl tbody td{
         display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
-        background:#fff;border:1px solid #e4ecea;border-radius:14px;
-        box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 20px -14px rgba(16,55,50,.28);
+        background:#fff;border:1px solid #e7e6ed;border-radius:14px;
+        box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 20px -14px rgba(58,40,93,.28);
         min-height:56px;padding:9px 6px;
-        font-size:14px;font-weight:800;color:#176358;text-align:center;}
+        font-size:14px;font-weight:800;color:#4e3483;text-align:center;}
     #payroll-review-body .prev-stats .drev-tbl tbody td::before{
-        content:attr(data-label);order:-1;font-size:8.5px;font-weight:800;color:#8a9794;
+        content:attr(data-label);order:-1;font-size:8.5px;font-weight:800;color:#8f8c98;
         text-transform:uppercase;letter-spacing:.3px;text-align:center;}
 
     /* Earnings / Deductions / Net Pay → three separate stacked cards.
@@ -1182,13 +1182,13 @@ body{
     #payroll-review-body .ps-body{grid-template-columns:1fr;gap:12px;}
     #payroll-review-body .ps-col,
     #payroll-review-body .ps-col:first-child{
-        background:#fff;border:1px solid #e4ecea;border-radius:16px;padding:14px 16px 0;
-        box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);}
+        background:#fff;border:1px solid #e7e6ed;border-radius:16px;padding:14px 16px 0;
+        box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);}
     /* Section heading: bigger, with a colour dot inheriting .earn / .ded */
     #payroll-review-body .ps-col-title{
         display:flex;align-items:center;gap:7px;
         font-size:11px;letter-spacing:.6px;
-        padding-bottom:9px;margin-bottom:4px;border-bottom:1px solid #f0f5f4;}
+        padding-bottom:9px;margin-bottom:4px;border-bottom:1px solid #f2f1f5;}
     #payroll-review-body .ps-col-title::before{
         content:'';width:8px;height:8px;border-radius:50%;background:currentColor;flex:0 0 auto;}
     #payroll-review-body .ps-row{padding:9px 0;}
@@ -1198,8 +1198,8 @@ body{
        bleeding to the card edges — the card's own footer row */
     #payroll-review-body .ps-col .ps-row:last-child{
         margin-left:-16px;margin-right:-16px;padding:12px 16px;
-        border-top:1px solid #eef3f2;border-bottom:none;border-radius:0 0 15px 15px;
-        background:#f7fbfa;}
+        border-top:1px solid #f0eff3;border-bottom:none;border-radius:0 0 15px 15px;
+        background:#f9f8fb;}
     /* …and the row above it drops its rule, so the band edge isn't doubled */
     #payroll-review-body .ps-col .ps-row:nth-last-child(2){border-bottom:none;}
     /* Net pay: its own gradient card */
@@ -1229,44 +1229,44 @@ body{
 }
 
 /* DataTables chrome — pared down to fit the paper theme */
-#att-tbl_wrapper .dataTables_processing{background:#ffffff;color:#219688;font-weight:700;font-size:12px;border:none;box-shadow:none;}
+#att-tbl_wrapper .dataTables_processing{background:#ffffff;color:#6642aa;font-weight:700;font-size:12px;border:none;box-shadow:none;}
 #att-tbl_wrapper .dataTables_info{font-size:11px;color:#aaa;padding:10px 14px;}
 #att-tbl_wrapper .dataTables_paginate{padding:8px 14px;}
 #att-tbl_wrapper .dataTables_paginate .paginate_button{padding:4px 10px;margin-left:3px;border-radius:7px;font-size:11px;border:1px solid transparent !important;background:transparent !important;color:#888 !important;}
-#att-tbl_wrapper .dataTables_paginate .paginate_button:hover{background:#f0f5f4 !important;color:#176358 !important;border:1px solid transparent !important;}
-#att-tbl_wrapper .dataTables_paginate .paginate_button.current{background:linear-gradient(135deg,#219688,#176358) !important;color:#fff !important;border:none !important;}
+#att-tbl_wrapper .dataTables_paginate .paginate_button:hover{background:#f2f1f5 !important;color:#4e3483 !important;border:1px solid transparent !important;}
+#att-tbl_wrapper .dataTables_paginate .paginate_button.current{background:linear-gradient(135deg,#6642aa,#4e3483) !important;color:#fff !important;border:none !important;}
 #att-tbl_wrapper .dataTables_paginate .paginate_button.disabled{opacity:.4;}
 #att-tbl thead th{white-space:nowrap;}
 
 /* Date-range picker trigger */
-.att-range-picker{display:flex;align-items:center;gap:6px;width:210px;flex-shrink:0;padding:5px 11px;border:1px solid #cfe3e0;border-radius:8px;background:#f8fdfc;font-size:12px;font-weight:600;color:#176358;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
-.att-range-picker:hover{border-color:#219688;}
-.att-range-picker i:first-child{color:#219688;flex-shrink:0;}
+.att-range-picker{display:flex;align-items:center;gap:6px;width:210px;flex-shrink:0;padding:5px 11px;border:1px solid #d9d3e4;border-radius:8px;background:#fafafd;font-size:12px;font-weight:600;color:#4e3483;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+.att-range-picker:hover{border-color:#6642aa;}
+.att-range-picker i:first-child{color:#6642aa;flex-shrink:0;}
 /* Fixed-width trigger: the label truncates instead of stretching the box */
 .att-range-picker #att-range-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .att-range-picker i:last-child{flex-shrink:0;margin-left:0 !important;}
-/* bootstrap-datetimepicker (leave / LWOP dates) — brand teal + finger-sized */
-.bootstrap-datetimepicker-widget{font-size:13px;border-radius:16px;box-shadow:0 12px 34px rgba(16,55,50,.2);border:1px solid #e4ecea;padding:10px;}
-.bootstrap-datetimepicker-widget table td.day{height:34px;line-height:34px;width:36px;border-radius:10px;color:#2b3330;transition:background .12s;}
-.bootstrap-datetimepicker-widget table th{height:34px;border-radius:10px;color:#176358;}
+/* bootstrap-datetimepicker (leave / LWOP dates) — brand purple + finger-sized */
+.bootstrap-datetimepicker-widget{font-size:13px;border-radius:16px;box-shadow:0 12px 34px rgba(58,40,93,.2);border:1px solid #e7e6ed;padding:10px;}
+.bootstrap-datetimepicker-widget table td.day{height:34px;line-height:34px;width:36px;border-radius:10px;color:#312f38;transition:background .12s;}
+.bootstrap-datetimepicker-widget table th{height:34px;border-radius:10px;color:#4e3483;}
 .bootstrap-datetimepicker-widget table th.picker-switch{font-weight:800;font-size:14px;}
 .bootstrap-datetimepicker-widget table th.prev,
-.bootstrap-datetimepicker-widget table th.next{width:38px;border-radius:50%;color:#219688;font-size:17px;}
-.bootstrap-datetimepicker-widget table th.dow{color:#8a9794;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;height:26px;}
+.bootstrap-datetimepicker-widget table th.next{width:38px;border-radius:50%;color:#6642aa;font-size:17px;}
+.bootstrap-datetimepicker-widget table th.dow{color:#8f8c98;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;height:26px;}
 .bootstrap-datetimepicker-widget table td.active,
 .bootstrap-datetimepicker-widget table td.active:hover{
-    background:linear-gradient(135deg,#219688,#176358) !important;color:#fff !important;
-    text-shadow:none;box-shadow:0 3px 8px rgba(33,150,136,.35);font-weight:800;}
-.bootstrap-datetimepicker-widget table td.today:not(.active){color:#176358;font-weight:800;}
-.bootstrap-datetimepicker-widget table td.today:before{border-bottom-color:#219688;}
+    background:linear-gradient(135deg,#6642aa,#4e3483) !important;color:#fff !important;
+    text-shadow:none;box-shadow:0 3px 8px rgba(102,66,170,.35);font-weight:800;}
+.bootstrap-datetimepicker-widget table td.today:not(.active){color:#4e3483;font-weight:800;}
+.bootstrap-datetimepicker-widget table td.today:before{border-bottom-color:#6642aa;}
 .bootstrap-datetimepicker-widget table td.disabled,
-.bootstrap-datetimepicker-widget table td.disabled:hover{color:#ccd4d2;text-decoration:line-through;}
+.bootstrap-datetimepicker-widget table td.disabled:hover{color:#cfcdd5;text-decoration:line-through;}
 .bootstrap-datetimepicker-widget table td.day:hover,
-.bootstrap-datetimepicker-widget table th:hover{background:#e6f5f3;}
+.bootstrap-datetimepicker-widget table th:hover{background:#eeeaf5;}
 /* month / year / decade grids share the brand look */
 .bootstrap-datetimepicker-widget table td span{border-radius:10px;}
-.bootstrap-datetimepicker-widget table td span.active{background:linear-gradient(135deg,#219688,#176358);text-shadow:none;}
-.bootstrap-datetimepicker-widget table td span:hover{background:#e6f5f3;}
+.bootstrap-datetimepicker-widget table td span.active{background:linear-gradient(135deg,#6642aa,#4e3483);text-shadow:none;}
+.bootstrap-datetimepicker-widget table td span:hover{background:#eeeaf5;}
 /* Toolbar: Clear / Done become labelled pill buttons */
 .bootstrap-datetimepicker-widget a[data-action]{
     display:flex;align-items:center;justify-content:center;
@@ -1285,67 +1285,67 @@ body{
 
 /* Thread header (title + refresh) shared by DTR review & attendance details */
 .drev-thread-hd{display:flex;align-items:center;justify-content:space-between;margin:0 2px 4px;}
-.drev-refresh{width:28px;height:28px;flex-shrink:0;border:1px solid #d5e8e4;background:#f0f7f5;color:#176358;border-radius:8px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s;}
-.drev-refresh:hover{background:#e0f0ec;}
+.drev-refresh{width:28px;height:28px;flex-shrink:0;border:1px solid #ded9e8;background:#f3f2f7;color:#4e3483;border-radius:8px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s;}
+.drev-refresh:hover{background:#e7e4f0;}
 .drev-refresh.spinning i{animation:ptop-spin .7s linear infinite;display:inline-block;}
-.drev-thread-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:20px 14px;color:#8aa39c;}
-.drev-thread-empty i{font-size:30px;color:#c3d6d0;margin-bottom:7px;}
-.drev-thread-empty .det{font-size:12.5px;font-weight:800;color:#5b7a72;}
-.drev-thread-empty .des{font-size:11px;color:#9fb2ab;margin-top:3px;line-height:1.4;max-width:230px;}
+.drev-thread-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:20px 14px;color:#948ea5;}
+.drev-thread-empty i{font-size:30px;color:#cac7d7;margin-bottom:7px;}
+.drev-thread-empty .det{font-size:12.5px;font-weight:800;color:#69617f;}
+.drev-thread-empty .des{font-size:11px;color:#a6a2b4;margin-top:3px;line-height:1.4;max-width:230px;}
 .drev-send.sending{opacity:.8;cursor:default;}
 .drev-send.sending i{animation:ptop-spin .7s linear infinite;display:inline-block;}
 
 /* DTR review — per-day conversation threads with HR */
 .drev-msgs { margin-top: 12px; }
-.drev-thread { background:#fff; border:1px solid #eef3f2; border-radius:12px; padding:10px 12px; margin-top:8px; }
-.drev-thread-date { font-size:11px; font-weight:800; color:#176358; margin-bottom:6px; }
-.drev-thread-date i { color:#219688; }
+.drev-thread { background:#fff; border:1px solid #f0eff3; border-radius:12px; padding:10px 12px; margin-top:8px; }
+.drev-thread-date { font-size:11px; font-weight:800; color:#4e3483; margin-bottom:6px; }
+.drev-thread-date i { color:#6642aa; }
 .drev-thread-list { display:flex; flex-direction:column; gap:5px; max-height:180px; overflow-y:auto; }
 .drev-bub { max-width:85%; padding:6px 10px; border-radius:11px; font-size:12px; line-height:1.35; word-break:break-word; }
-.drev-bub.me   { align-self:flex-end; background:#d7ece9; color:#116257; border-bottom-right-radius:3px; }
-.drev-bub.them { align-self:flex-start; background:#f1f3f2; color:#2b3330; border-bottom-left-radius:3px; }
+.drev-bub.me   { align-self:flex-end; background:#e1dcec; color:#4f3288; border-bottom-right-radius:3px; }
+.drev-bub.them { align-self:flex-start; background:#f1f3f2; color:#312f38; border-bottom-left-radius:3px; }
 .drev-bub .mm { font-size:9px; opacity:.7; margin-top:2px; }
 /* Pinned composer bar — always at the bottom of the message screen */
-.drev-composer { flex-shrink:0; background:#fff; border-top:1px solid #eef3f2;
-    padding:10px 14px; box-shadow:0 -4px 14px rgba(16,55,50,.06); }
-.drev-composer-to { font-size:10.5px; font-weight:700; color:#8a9794; margin:0 4px 6px; }
-.drev-composer-to b { color:#176358; }
-.drev-composer-to i { color:#219688; }
-.drev-composer-hint { font-size:10px; color:#a4b0ad; margin:6px 4px 0; }
-.drev-composer-hint i { color:#c3d6d0; margin-right:3px; }
+.drev-composer { flex-shrink:0; background:#fff; border-top:1px solid #f0eff3;
+    padding:10px 14px; box-shadow:0 -4px 14px rgba(58,40,93,.06); }
+.drev-composer-to { font-size:10.5px; font-weight:700; color:#8f8c98; margin:0 4px 6px; }
+.drev-composer-to b { color:#4e3483; }
+.drev-composer-to i { color:#6642aa; }
+.drev-composer-hint { font-size:10px; color:#a9a6b1; margin:6px 4px 0; }
+.drev-composer-hint i { color:#cac7d7; margin-right:3px; }
 /* Nothing to reply to → no composer at all */
 #modal-dtr-messages.is-empty .drev-composer { display:none; }
 /* Which conversation the composer is addressing */
 .drev-thread { cursor:pointer; }
-.drev-thread.is-active { border-color:#9fd5cb; box-shadow:0 0 0 2px rgba(33,150,136,.13); }
+.drev-thread.is-active { border-color:#b9add5; box-shadow:0 0 0 2px rgba(102,66,170,.13); }
 
 /* Empty message screen */
 .drev-msg-empty { text-align:center; padding:38px 26px; }
 .drev-msg-empty .dme-ic { width:64px; height:64px; margin:0 auto 14px; border-radius:50%;
-    background:#e8f7f5; color:#219688; font-size:30px;
+    background:#f0ecf6; color:#6642aa; font-size:30px;
     display:flex; align-items:center; justify-content:center; }
-.drev-msg-empty .dme-t { font-size:15px; font-weight:800; color:#176358; }
-.drev-msg-empty .dme-d { font-size:12.5px; color:#7a8783; line-height:1.5; margin:6px auto 0; max-width:280px; }
-.drev-msg-empty .dme-hint { font-size:11.5px; color:#8a9794; line-height:1.5;
-    background:#fff; border:1px solid #eef3f2; border-radius:12px;
+.drev-msg-empty .dme-t { font-size:15px; font-weight:800; color:#4e3483; }
+.drev-msg-empty .dme-d { font-size:12.5px; color:#7f7c88; line-height:1.5; margin:6px auto 0; max-width:280px; }
+.drev-msg-empty .dme-hint { font-size:11.5px; color:#8f8c98; line-height:1.5;
+    background:#fff; border:1px solid #f0eff3; border-radius:12px;
     padding:11px 13px; margin:18px auto 0; max-width:320px; text-align:left; }
-.drev-msg-empty .dme-hint i { color:#219688; margin-right:5px; }
+.drev-msg-empty .dme-hint i { color:#6642aa; margin-right:5px; }
 
 /* Composer: one pill holding the field and the send button, like a chat app */
 .drev-thread-in { display:flex; align-items:center; gap:6px;
-    border:1px solid #d5e6e2; border-radius:999px; background:#fff;
+    border:1px solid #ddd9e7; border-radius:999px; background:#fff;
     padding:4px 4px 4px 6px; transition:border-color .15s, box-shadow .15s; }
-.drev-thread-in:focus-within { border-color:#219688; box-shadow:0 0 0 3px rgba(33,150,136,.12); }
+.drev-thread-in:focus-within { border-color:#6642aa; box-shadow:0 0 0 3px rgba(102,66,170,.12); }
 .drev-thread-in input { flex:1; min-width:0; border:none; background:transparent;
     border-radius:999px; padding:7px 8px; font-size:12.5px; outline:none; }
 .drev-thread-in button { position:relative; width:34px; height:34px; flex-shrink:0;
     display:flex; align-items:center; justify-content:center;
-    border:none; border-radius:50%; background:#219688; color:#fff; cursor:pointer;
+    border:none; border-radius:50%; background:#6642aa; color:#fff; cursor:pointer;
     transition:background .15s; }
-.drev-thread-in button:hover { background:#176358; }
+.drev-thread-in button:hover { background:#4e3483; }
 .drev-thread-in button:disabled { cursor:default; }
 /* Sending: the paper plane swaps for a spinner and the button locks */
-.drev-thread-in button.is-loading { background:#8fc4bc; }
+.drev-thread-in button.is-loading { background:#a99cc5; }
 .drev-thread-in button.is-loading i { visibility:hidden; }
 .drev-thread-in button.is-loading::after { content:''; position:absolute;
     width:15px; height:15px; border-radius:50%;
@@ -1358,7 +1358,7 @@ body{
 /* Form 48 card: the record grid scrolls sideways WITHIN the card. Without the
    wrapper the table (min ~340px of fixed columns) spills over the card's right
    padding and border on narrow screens. */
-.drev-f48-card{background:#fff;border:1px solid #eef3f2;border-radius:12px;padding:16px 18px;overflow:hidden;}
+.drev-f48-card{background:#fff;border:1px solid #f0eff3;border-radius:12px;padding:16px 18px;overflow:hidden;}
 .drev-f48-wrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
     overscroll-behavior-x:contain;}
 .drev-f48-wrap .dtrf48{min-width:340px;}
@@ -1367,24 +1367,24 @@ body{
 .drev-fab-wrap{position:sticky;bottom:8px;z-index:6;display:flex;justify-content:flex-end;
     height:54px;margin-top:-54px;pointer-events:none;}
 .drev-fab{pointer-events:auto;position:relative;width:52px;height:52px;flex-shrink:0;
-    border:none;border-radius:50%;background:linear-gradient(135deg,#219688,#176358);color:#fff;
+    border:none;border-radius:50%;background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;
     font-size:23px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;
-    box-shadow:0 6px 18px rgba(16,55,50,.32), 0 2px 5px rgba(16,55,50,.2);}
-.drev-fab:hover{background:linear-gradient(135deg,#1d8779,#125349);}
+    box-shadow:0 6px 18px rgba(58,40,93,.32), 0 2px 5px rgba(58,40,93,.2);}
+.drev-fab:hover{background:linear-gradient(135deg,#5e3e9f,#472f79);}
 .drev-fab:active{transform:scale(.94);}
 .drev-fab-badge{position:absolute;top:-3px;right:-3px;min-width:19px;height:19px;line-height:19px;
     padding:0 5px;border-radius:10px;background:#e8590c;color:#fff;
     font-size:10px;font-weight:800;border:2px solid #fff;}
 /* ── Modal headers: one clean treatment everywhere ──────────────────────
-   White surface, dark teal title, muted sub-line, hairline rule. No filled
+   White surface, dark purple title, muted sub-line, hairline rule. No filled
    or gradient header bars anywhere in the portal. */
 .modal .modal-header{
     background:#fff;
-    border-bottom:1px solid #eef3f2;
-    color:#176358;}
+    border-bottom:1px solid #f0eff3;
+    color:#4e3483;}
 .modal .modal-header .modal-title{
-    color:#176358;font-weight:700;}
-.modal .modal-header .modal-title i{color:#219688;}
+    color:#4e3483;font-weight:700;}
+.modal .modal-header .modal-title i{color:#6642aa;}
 .modal .modal-header .btn-close{filter:none;opacity:.5;}
 .modal .modal-header .btn-close:hover{opacity:.85;}
 
@@ -1400,15 +1400,15 @@ body{
 #modal-dtr-messages .modal-content{
     height:100%;max-height:100%;display:flex;flex-direction:column;
     background:#fff;border:0;border-radius:18px;overflow:hidden;
-    box-shadow:0 18px 48px rgba(8,30,26,.28), 0 2px 8px rgba(8,30,26,.14);}
+    box-shadow:0 18px 48px rgba(45,31,76,.28), 0 2px 8px rgba(45,31,76,.14);}
 #modal-dtr-messages .modal-header{
     flex-shrink:0;align-items:center;gap:10px;}
 #modal-dtr-messages .dtr-msg-titlewrap{min-width:0;}
 #modal-dtr-messages .modal-title{font-size:15px;}
-#modal-dtr-messages #dtr-msg-sub{font-size:12px;color:#8a9a95;}
+#modal-dtr-messages #dtr-msg-sub{font-size:12px;color:#908c9c;}
 #modal-dtr-messages .btn-close{flex-shrink:0;margin:0;padding:12px;}
 #modal-dtr-messages .modal-body{flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;
-    display:flex;flex-direction:column;background:#f7fbfa;}
+    display:flex;flex-direction:column;background:#f9f8fb;}
 /* Conversations hug their content and rest against the composer — they float
    on the scrim rather than filling a solid panel. margin-top:auto (not
    justify-content:flex-end) keeps an overflowing top reachable. */
@@ -1418,26 +1418,26 @@ body{
 /* Nothing to show → centre the empty state in the whole area */
 #modal-dtr-messages .drev-msg-empty{margin:auto;}
 
-/* clock-timepicker (File a Request claimed times) — brand teal accent.
+/* clock-timepicker (File a Request claimed times) — brand purple accent.
    The picker itself works in 24h (its only unambiguous mode); an invisible
    overlay input catches the taps while .ctp-display shows friendly 12-hour
    text ("8:00 PM") and the named picker input carries the HH:mm value. */
 clock-timepicker{
     display:block;width:100%;
-    --clock-timepicker-accent-color:#219688;
+    --clock-timepicker-accent-color:#6642aa;
     --clock-timepicker-popup-border-radius:16px;
-    --clock-timepicker-popup-shadow:0 12px 34px rgba(16,55,50,.2);
+    --clock-timepicker-popup-shadow:0 12px 34px rgba(58,40,93,.2);
     --clock-timepicker-font-family:inherit;
 }
 .ctp-12h{position:relative;}
 .ctp-12h clock-timepicker{position:absolute;inset:0;}
 .ctp-12h clock-timepicker input{width:100%;height:100%;opacity:0;border:0;padding:0;background:transparent;}
-.ctp-12h:focus-within .ctp-display{border-color:#219688;box-shadow:0 0 0 .25rem rgba(33,150,136,.15);}
+.ctp-12h:focus-within .ctp-display{border-color:#6642aa;box-shadow:0 0 0 .25rem rgba(102,66,170,.15);}
 .bootstrap-datetimepicker-widget a[data-action] span::after{
     font-family:'Segoe UI',-apple-system,Arial,sans-serif;font-size:12.5px;font-weight:800;margin-left:6px;line-height:1;}
 .bootstrap-datetimepicker-widget a[data-action="clear"]{background:#fdecea;color:#c62828;}
 .bootstrap-datetimepicker-widget a[data-action="clear"] span::after{content:"Clear";}
-.bootstrap-datetimepicker-widget a[data-action="close"]{background:linear-gradient(135deg,#219688,#176358);color:#fff;box-shadow:0 3px 10px rgba(33,150,136,.3);}
+.bootstrap-datetimepicker-widget a[data-action="close"]{background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;box-shadow:0 3px 10px rgba(102,66,170,.3);}
 .bootstrap-datetimepicker-widget a[data-action="close"] span::after{content:"Done";}
 /* Leave-day picker: enlarged, roomy full-height calendar. The Clear / Done
    footer actions stay visible (styled as pill buttons above). */
@@ -1447,102 +1447,102 @@ clock-timepicker{
 .bootstrap-datetimepicker-widget table th{height:40px;}
 .bootstrap-datetimepicker-widget table th.dow{height:30px;}
 
-/* daterangepicker theme override → brand teal */
-.daterangepicker td.active,.daterangepicker td.active:hover{background-color:#219688 !important;}
-.daterangepicker td.in-range{background-color:#e6f5f3 !important;color:#176358 !important;}
-.daterangepicker .ranges li.active{background-color:#219688 !important;}
-.daterangepicker .drp-buttons .btn.applyBtn{background-color:#219688 !important;border-color:#176358 !important;}
-.daterangepicker td.start-date,.daterangepicker td.end-date{background-color:#176358 !important;}
+/* daterangepicker theme override → brand purple */
+.daterangepicker td.active,.daterangepicker td.active:hover{background-color:#6642aa !important;}
+.daterangepicker td.in-range{background-color:#eeeaf5 !important;color:#4e3483 !important;}
+.daterangepicker .ranges li.active{background-color:#6642aa !important;}
+.daterangepicker .drp-buttons .btn.applyBtn{background-color:#6642aa !important;border-color:#4e3483 !important;}
+.daterangepicker td.start-date,.daterangepicker td.end-date{background-color:#4e3483 !important;}
 
 /* Loan cards */
-.loan-c{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);padding:16px 18px;margin-bottom:10px;}
+.loan-c{background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);padding:16px 18px;margin-bottom:10px;}
 .loan-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;}
-.loan-type-lbl{font-size:12px;font-weight:800;color:#176358;}
+.loan-type-lbl{font-size:12px;font-weight:800;color:#4e3483;}
 .loan-bal-val{font-size:18px;font-weight:900;color:#e83e8c;}
 .loan-progwrap{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
 .loan-prog{flex:1 1 auto;height:7px;border-radius:4px;background:#f0f0f0;overflow:hidden;}
-.loan-prog-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,#219688,#176358);}
-.loan-pct{flex:0 0 auto;font-size:10.5px;font-weight:800;color:#176358;}
+.loan-prog-bar{height:100%;border-radius:4px;background:linear-gradient(90deg,#6642aa,#4e3483);}
+.loan-pct{flex:0 0 auto;font-size:10.5px;font-weight:800;color:#4e3483;}
 /* Key figures as a labelled 3-up — the old single meta line ran the paid /
    total / per-period numbers together and collided on narrow screens. */
 .loan-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:11px;color:#888;}
 .loan-meta .lm-i{display:flex;flex-direction:column;gap:2px;min-width:0;}
-.loan-meta .lm-i em{font-style:normal;font-size:9px;font-weight:800;color:#a4b0ad;
+.loan-meta .lm-i em{font-style:normal;font-size:9px;font-weight:800;color:#a9a6b1;
     text-transform:uppercase;letter-spacing:.3px;}
-.loan-meta .lm-i b{font-size:12.5px;font-weight:800;color:#2b3330;}
-.loan-est{font-size:11px;color:#219688;font-weight:700;margin-top:9px;}
+.loan-meta .lm-i b{font-size:12.5px;font-weight:800;color:#312f38;}
+.loan-est{font-size:11px;color:#6642aa;font-weight:700;margin-top:9px;}
 
 /* Tap-to-open affordance — the whole card is the hit target, matching the
    payslip / leave / attendance lists. The chevron sits beside the balance so
    the head row still reads type-left / money-right. */
 .loan-c.loan-tap{cursor:pointer;-webkit-tap-highlight-color:transparent;
     transition:box-shadow .15s, transform .12s, border-color .15s;}
-.loan-c.loan-tap:hover{border-color:#cfe3df;box-shadow:0 1px 2px rgba(16,55,50,.06), 0 12px 26px -12px rgba(16,55,50,.26);}
+.loan-c.loan-tap:hover{border-color:#d8d3e4;box-shadow:0 1px 2px rgba(58,40,93,.06), 0 12px 26px -12px rgba(58,40,93,.26);}
 .loan-c.loan-tap:active{transform:scale(.995);}
-.loan-c.loan-tap:focus-visible{outline:2px solid #219688;outline-offset:2px;}
+.loan-c.loan-tap:focus-visible{outline:2px solid #6642aa;outline-offset:2px;}
 .loan-bal-wrap{display:flex;align-items:center;gap:6px;}
-.loan-chev{font-size:20px;color:#c2d3cf;line-height:1;flex:0 0 auto;margin-right:-4px;}
-.loan-tap-hint{font-size:10.5px;color:#a4b0ad;font-weight:700;margin-top:9px;
+.loan-chev{font-size:20px;color:#c9c5d4;line-height:1;flex:0 0 auto;margin-right:-4px;}
+.loan-tap-hint{font-size:10.5px;color:#a9a6b1;font-weight:700;margin-top:9px;
     display:flex;align-items:center;gap:4px;}
 
 /* ── Loan details modal: per-payroll deduction history ── */
 .lnh-sum{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:12px;}
-.lnh-sum .lnh-box{background:#f7fbfa;border:1px solid #eef3f2;border-radius:10px;padding:9px 12px;}
-.lnh-sum .lnh-box em{font-style:normal;display:block;font-size:9px;font-weight:800;color:#a4b0ad;
+.lnh-sum .lnh-box{background:#f9f8fb;border:1px solid #f0eff3;border-radius:10px;padding:9px 12px;}
+.lnh-sum .lnh-box em{font-style:normal;display:block;font-size:9px;font-weight:800;color:#a9a6b1;
     text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;}
-.lnh-sum .lnh-box b{font-size:14px;font-weight:900;color:#2b3330;}
+.lnh-sum .lnh-box b{font-size:14px;font-weight:900;color:#312f38;}
 .lnh-sum .lnh-box.bal b{color:#e83e8c;}
-.lnh-hd{font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;
+.lnh-hd{font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;
     display:flex;align-items:center;justify-content:space-between;margin:14px 0 6px;}
 .lnh-list{display:flex;flex-direction:column;gap:7px;}
-.lnh-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #e9f0ee;
+.lnh-row{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid #eceaf0;
     border-radius:10px;padding:9px 12px;}
 .lnh-row .lnh-l{flex:1 1 auto;min-width:0;}
-.lnh-row .lnh-per{font-size:12.5px;font-weight:800;color:#2b3330;line-height:1.25;}
-.lnh-row .lnh-ref{font-size:10.5px;color:#a4b0ad;font-weight:700;margin-top:1px;
+.lnh-row .lnh-per{font-size:12.5px;font-weight:800;color:#312f38;line-height:1.25;}
+.lnh-row .lnh-ref{font-size:10.5px;color:#a9a6b1;font-weight:700;margin-top:1px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .lnh-row .lnh-r{flex:0 0 auto;text-align:right;}
-.lnh-row .lnh-amt{font-size:13px;font-weight:900;color:#176358;}
-.lnh-row .lnh-bal{font-size:10px;color:#8a9794;font-weight:700;margin-top:1px;}
-.lnh-empty,.lnh-load{text-align:center;color:#a4b0ad;font-size:12px;padding:18px 10px;}
-.lnh-empty i,.lnh-load i{display:block;font-size:24px;margin-bottom:6px;color:#cfdad7;}
+.lnh-row .lnh-amt{font-size:13px;font-weight:900;color:#4e3483;}
+.lnh-row .lnh-bal{font-size:10px;color:#8f8c98;font-weight:700;margin-top:1px;}
+.lnh-empty,.lnh-load{text-align:center;color:#a9a6b1;font-size:12px;padding:18px 10px;}
+.lnh-empty i,.lnh-load i{display:block;font-size:24px;margin-bottom:6px;color:#d3d1db;}
 .lnh-load i{animation:ptop-spin .8s linear infinite;}
 .lnh-err{background:#fff0f0;color:#dc3545;border-radius:10px;padding:9px 12px;font-size:12px;}
 
 /* DTR time chips — matches dtr-details.php */
 .dtr-time-chip{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:700;font-family:'Segoe UI',Arial,sans-serif;white-space:nowrap;}
-.dtr-time-chip.in {background:#e6f5f3;color:#219688;border:1px solid #aad5d0;}
+.dtr-time-chip.in {background:#eeeaf5;color:#6642aa;border:1px solid #c0b5d5;}
 .dtr-time-chip.out{background:#fce4ec;color:#c62828;border:1px solid #f9a8b5;}
 .dtr-time-chip.na {background:#f5f5f5;color:#888;border:1px solid #ddd;}
 .dtr-logs-pill{display:inline-flex;align-items:center;gap:1px;cursor:pointer;line-height:1.3;margin-top:4px;}
-.dtr-logs-count{font-size:10px;color:#219688;font-weight:700;text-decoration:underline;text-decoration-style:dotted;white-space:nowrap;}
+.dtr-logs-count{font-size:10px;color:#6642aa;font-weight:700;text-decoration:underline;text-decoration-style:dotted;white-space:nowrap;}
 .dtr-log-chip{display:inline-flex;align-items:center;gap:3px;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;}
-.dtr-log-chip.bio   {background:#e6f5f3;color:#219688;border:1px solid #aad5d0;}
+.dtr-log-chip.bio   {background:#eeeaf5;color:#6642aa;border:1px solid #c0b5d5;}
 .dtr-log-chip.manual{background:#fff8e1;color:#c98a00;border:1px solid #ffe082;}
 .time-io{display:flex;align-items:center;gap:5px;flex-wrap:nowrap;}
 
 /* Today's attendance card (Overview) */
-.today-att{background:#ffffff;border:1px solid #e4ecea;border-top:3px solid #219688;border-radius:14px;
-    box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);
+.today-att{background:#ffffff;border:1px solid #e7e6ed;border-top:3px solid #6642aa;border-radius:14px;
+    box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);
     padding:13px 16px 14px;margin-bottom:16px;}
 .today-att-head{display:flex;align-items:center;gap:8px;margin-bottom:11px;}
-.today-att-title{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;color:#176358;}
-.today-att-title i{color:#219688;font-size:15px;}
-.today-att-date{font-size:10.5px;font-weight:700;color:#8a9794;}
+.today-att-title{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:800;color:#4e3483;}
+.today-att-title i{color:#6642aa;font-size:15px;}
+.today-att-date{font-size:10.5px;font-weight:700;color:#8f8c98;}
 .today-att-head .att-type{margin-left:auto;}
 .today-att-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
 .tda-box{display:flex;flex-direction:column;align-items:center;gap:3px;text-align:center;
-    background:#faf8f1;border:1px solid #eef3f2;border-radius:12px;padding:11px 6px 10px;}
+    background:#faf8f1;border:1px solid #f0eff3;border-radius:12px;padding:11px 6px 10px;}
 .tda-ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:2px;}
-.tda-ic.in {background:#e6f5f3;color:#219688;}
+.tda-ic.in {background:#eeeaf5;color:#6642aa;}
 .tda-ic.out{background:#fce4ec;color:#c62828;}
 .tda-ic.hrs{background:#eef0f8;color:#4a5bbf;}
 .tda-ic.ot {background:#fff6e0;color:#c98a00;}
-.tda-l{font-size:9px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;}
-.tda-v{font-size:14px;font-weight:900;color:#176358;line-height:1.15;}
-.tda-duty{display:inline-block;background:#e6f5f3;color:#219688;border:1px solid #aad5d0;border-radius:10px;
+.tda-l{font-size:9px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;}
+.tda-v{font-size:14px;font-weight:900;color:#4e3483;line-height:1.15;}
+.tda-duty{display:inline-block;background:#eeeaf5;color:#6642aa;border:1px solid #c0b5d5;border-radius:10px;
     padding:2px 9px;font-size:10px;font-weight:800;}
-.today-att-empty{display:flex;align-items:center;gap:9px;font-size:12px;color:#7a8783;font-weight:600;
+.today-att-empty{display:flex;align-items:center;gap:9px;font-size:12px;color:#7f7c88;font-weight:600;
     background:#faf8f1;border:1px dashed #e0d8c4;border-radius:12px;padding:12px 14px;line-height:1.45;}
 .today-att-empty i{font-size:19px;color:#b7b1a4;flex-shrink:0;}
 @media (max-width:767.98px), (pointer:coarse) and (max-height:500px){
@@ -1552,49 +1552,49 @@ clock-timepicker{
 
 /* Year-to-date strip */
 .ytd-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
-.ytd-box{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);padding:14px 16px;border-top:3px solid #219688;}
-.ytd-box.g{border-top-color:#219688;}
+.ytd-box{background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);padding:14px 16px;border-top:3px solid #6642aa;}
+.ytd-box.g{border-top-color:#6642aa;}
 .ytd-box.d{border-top-color:#dc3545;}
-.ytd-box.n{border-top-color:#176358;}
+.ytd-box.n{border-top-color:#4e3483;}
 .ytd-box.c{border-top-color:#6f42c1;}
-.ytd-val{font-size:18px;font-weight:900;line-height:1;color:#176358;}
+.ytd-val{font-size:18px;font-weight:900;line-height:1;color:#4e3483;}
 .ytd-box.d .ytd-val{color:#dc3545;}
 .ytd-box.c .ytd-val{color:#6f42c1;}
 .ytd-lbl{font-size:10px;color:#aaa;text-transform:uppercase;letter-spacing:.5px;margin-top:5px;}
 /* Subtle hover lift on stat + chart cards (style polish) */
 .ytd-box{transition:transform .16s,box-shadow .16s;}
-.ytd-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.3);}
+.ytd-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(58,40,93,.05), 0 14px 28px -14px rgba(58,40,93,.3);}
 
 /* Pay Insights strip (Overview) */
 .ins-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
-.ins-box{display:flex;align-items:center;gap:12px;background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);transition:transform .16s,box-shadow .16s;}
-.ins-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
-.ins-ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:#e8f7f5;color:#219688;}
+.ins-box{display:flex;align-items:center;gap:12px;background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;padding:13px 15px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -14px rgba(58,40,93,.18);transition:transform .16s,box-shadow .16s;}
+.ins-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(58,40,93,.05), 0 14px 28px -14px rgba(58,40,93,.28);}
+.ins-ic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;background:#f0ecf6;color:#6642aa;}
 .ins-box.up .ins-ic{background:#eafaf0;color:#0f9d58;} .ins-box.down .ins-ic{background:#fdecea;color:#dc3545;}
 .ins-box.gold .ins-ic{background:#fff6e0;color:#c98a00;} .ins-box.purple .ins-ic{background:#f2edfb;color:#6f42c1;}
-.ins-v{font-size:16px;font-weight:900;line-height:1.05;color:#176358;}
+.ins-v{font-size:16px;font-weight:900;line-height:1.05;color:#4e3483;}
 .ins-box.up .ins-v{color:#0f9d58;} .ins-box.down .ins-v{color:#dc3545;}
-.ins-l{font-size:10px;color:#8a9794;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;font-weight:700;}
+.ins-l{font-size:10px;color:#8f8c98;text-transform:uppercase;letter-spacing:.4px;margin-top:3px;font-weight:700;}
 .ins-sub{font-size:10px;color:#b7b1a4;margin-top:1px;}
 
 /* Contributions tab */
 .con-hero{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px;}
-.con-box{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);padding:14px 16px;border-top:3px solid #219688;transition:transform .16s,box-shadow .16s;}
-.con-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
-.con-box.b2{border-top-color:#4a5bbf;} .con-box.b3{border-top-color:#b26a00;} .con-box.b4{border-top-color:#176358;}
-.con-cap{font-size:10px;color:#8a9794;text-transform:uppercase;letter-spacing:.4px;font-weight:700;display:flex;align-items:center;gap:5px;}
-.con-val{font-size:19px;font-weight:900;line-height:1;color:#176358;margin-top:7px;}
+.con-box{background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -14px rgba(58,40,93,.18);padding:14px 16px;border-top:3px solid #6642aa;transition:transform .16s,box-shadow .16s;}
+.con-box:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(58,40,93,.05), 0 14px 28px -14px rgba(58,40,93,.28);}
+.con-box.b2{border-top-color:#4a5bbf;} .con-box.b3{border-top-color:#b26a00;} .con-box.b4{border-top-color:#4e3483;}
+.con-cap{font-size:10px;color:#8f8c98;text-transform:uppercase;letter-spacing:.4px;font-weight:700;display:flex;align-items:center;gap:5px;}
+.con-val{font-size:19px;font-weight:900;line-height:1;color:#4e3483;margin-top:7px;}
 .con-box.b2 .con-val{color:#4a5bbf;} .con-box.b3 .con-val{color:#b26a00;}
 .con-note{font-size:10px;color:#b7b1a4;margin-top:5px;}
-.con-intro{background:#f0faf8;border:1px solid #cdeeda;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#4a6b5f;line-height:1.5;margin-bottom:14px;}
+.con-intro{background:#f5f3fa;border:1px solid #cdeeda;border-radius:12px;padding:12px 15px;font-size:12.5px;color:#585272;line-height:1.5;margin-bottom:14px;}
 .con-tbl{width:100%;min-width:560px;border-collapse:collapse;font-size:12px;}
-.con-tbl thead th{background:#219688;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;text-align:left;border:none;}
+.con-tbl thead th{background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;font-weight:700;text-align:left;border:none;}
 .con-tbl thead th.r{text-align:right;}
-.con-tbl tbody tr{border-bottom:1px solid #f0f5f4;transition:background .14s;}
-.con-tbl tbody tr:hover{background:#f4fbfa;}
+.con-tbl tbody tr{border-bottom:1px solid #f2f1f5;transition:background .14s;}
+.con-tbl tbody tr:hover{background:#f8f6fb;}
 .con-tbl tbody td{padding:9px 12px;vertical-align:middle;}
 .con-tbl tbody td.r{text-align:right;}
-.con-tbl tfoot td{background:#f4fbfa;padding:9px 12px;font-weight:800;color:#219688;border-top:2px solid #ddecea;}
+.con-tbl tfoot td{background:#f8f6fb;padding:9px 12px;font-weight:800;color:#6642aa;border-top:2px solid #e4e0ec;}
 .con-tbl tfoot td.r{text-align:right;}
 
 /* Card entrance animation on tab reveal (respects reduced-motion) */
@@ -1604,13 +1604,13 @@ clock-timepicker{
 @media (max-width:767.98px), (pointer:coarse) and (max-height:500px){.ins-strip,.con-hero{grid-template-columns:repeat(2,1fr);}}
 
 /* Net-pay trend mini chart */
-.trend-card{background:#ffffff;border:1px solid #e4ecea;border-radius:14px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);padding:16px 18px 12px;margin-bottom:14px;}
+.trend-card{background:#ffffff;border:1px solid #e7e6ed;border-radius:14px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);padding:16px 18px 12px;margin-bottom:14px;}
 .trend-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
-.trend-title{font-size:12px;font-weight:800;color:#176358;}
+.trend-title{font-size:12px;font-weight:800;color:#4e3483;}
 .trend-bars{display:flex;align-items:flex-end;gap:8px;height:120px;}
 .trend-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:5px;}
-.trend-amt{font-size:9px;font-weight:700;color:#219688;white-space:nowrap;}
-.trend-bar{width:100%;max-width:30px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#27b09f,#176358);min-height:4px;transition:opacity .15s;}
+.trend-amt{font-size:9px;font-weight:700;color:#6642aa;white-space:nowrap;}
+.trend-bar{width:100%;max-width:30px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#724dba,#4e3483);min-height:4px;transition:opacity .15s;}
 .trend-col:last-child .trend-bar{background:linear-gradient(180deg,#f7b84b,#e8920a);}
 .trend-col:hover .trend-bar{opacity:.82;}
 .trend-lbl{font-size:9px;color:#aaa;text-align:center;line-height:1.2;}
@@ -1638,18 +1638,18 @@ clock-timepicker{
 
 /* Quick actions */
 .qa-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;}
-.qa-btn{display:flex;align-items:center;gap:10px;background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:12px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#176358;text-align:left;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);transition:transform .15s,box-shadow .15s;}
-.qa-btn:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
-.qa-btn i{width:34px;height:34px;border-radius:9px;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
+.qa-btn{display:flex;align-items:center;gap:10px;background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;padding:12px 14px;cursor:pointer;font-size:12px;font-weight:700;color:#4e3483;text-align:left;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -14px rgba(58,40,93,.18);transition:transform .15s,box-shadow .15s;}
+.qa-btn:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(58,40,93,.05), 0 14px 28px -14px rgba(58,40,93,.28);}
+.qa-btn i{width:34px;height:34px;border-radius:9px;background:#f0ecf6;color:#6642aa;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;}
 .qa-badge{margin-left:auto;background:#e6a817;color:#fff;border-radius:10px;padding:1px 8px;font-size:10px;font-weight:800;}
 
 /* Upcoming events (Overview) */
 .evt-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px dashed #ece4d2;}
 .evt-row:last-child{border-bottom:none;}
-.evt-date{width:44px;flex-shrink:0;text-align:center;background:#f3f8f7;border:1px solid #ddecea;border-radius:9px;padding:4px 0;}
-.evt-date .d{font-size:15px;font-weight:900;color:#176358;line-height:1.1;}
-.evt-date .m{font-size:9px;font-weight:800;color:#219688;text-transform:uppercase;letter-spacing:.5px;}
-.evt-title{font-size:12px;font-weight:700;color:#2b3330;line-height:1.3;}
+.evt-date{width:44px;flex-shrink:0;text-align:center;background:#f5f4f8;border:1px solid #e4e0ec;border-radius:9px;padding:4px 0;}
+.evt-date .d{font-size:15px;font-weight:900;color:#4e3483;line-height:1.1;}
+.evt-date .m{font-size:9px;font-weight:800;color:#6642aa;text-transform:uppercase;letter-spacing:.5px;}
+.evt-title{font-size:12px;font-weight:700;color:#312f38;line-height:1.3;}
 .evt-note{font-size:10.5px;color:#999;margin-top:1px;}
 .evt-pill{margin-left:auto;flex-shrink:0;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;}
 .evt-pill.hol{background:#fff0f0;color:#c62828;}
@@ -1659,11 +1659,11 @@ clock-timepicker{
 .lvc-row{padding:7px 0;border-bottom:1px dashed #ece4d2;}
 .lvc-row:last-child{border-bottom:none;}
 .lvc-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
-.lvc-name{font-size:11.5px;font-weight:700;color:#2b3330;}
-.lvc-num{font-size:11px;font-weight:800;color:#176358;}
+.lvc-name{font-size:11.5px;font-weight:700;color:#312f38;}
+.lvc-num{font-size:11px;font-weight:800;color:#4e3483;}
 .lvc-num .dim2{color:#aaa;font-weight:600;}
-.lvc-bar{height:6px;border-radius:3px;background:#e0eeec;overflow:hidden;}
-.lvc-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#219688,#176358);}
+.lvc-bar{height:6px;border-radius:3px;background:#e7e3ee;overflow:hidden;}
+.lvc-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#6642aa,#4e3483);}
 .lvc-row.spent .lvc-fill{background:#dc3545;}
 
 /* Sticky tab strip on desktop so navigation stays reachable on the wide page */
@@ -1679,77 +1679,77 @@ clock-timepicker{
 }
 
 /* Basic info grid */
-.info-section{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);overflow:hidden;margin-bottom:14px;}
-.info-sec-title{background:#219688;color:#fff;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;padding:8px 16px;display:flex;align-items:center;gap:7px;}
+.info-section{background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);overflow:hidden;margin-bottom:14px;}
+.info-sec-title{background:#6642aa;color:#fff;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;padding:8px 16px;display:flex;align-items:center;gap:7px;}
 .info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0;}
-.info-item{padding:10px 16px;border-bottom:1px solid #f0f5f4;border-right:1px solid #f0f5f4;}
+.info-item{padding:10px 16px;border-bottom:1px solid #f2f1f5;border-right:1px solid #f2f1f5;}
 .info-item:last-child{border-right:none;}
 .info-lbl{font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;}
 .info-val{font-size:13px;font-weight:600;color:#222;}
 .info-val.mono{font-family:monospace;font-size:12px;}
-.info-val.teal{color:#219688;}
+.info-val.accent{color:#6642aa;}
 
 /* Empty state — uniform card across every tab */
-.empty-state{text-align:center;padding:34px 22px;background:#ffffff;border:1px solid #e4ecea;border-radius:14px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);}
-.empty-ic{width:52px;height:52px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:23px;margin:0 auto 12px;}
-.empty-state p{font-size:12.5px;color:#7a8783;margin:0;font-weight:600;line-height:1.5;}
-.empty-state p strong{color:#2b3330;}
-.empty-state.success .empty-ic{background:#e8f7f5;color:#219688;}
-.empty-state.success p{color:#176358;font-weight:800;}
+.empty-state{text-align:center;padding:34px 22px;background:#ffffff;border:1px solid #e7e6ed;border-radius:14px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -14px rgba(58,40,93,.18);}
+.empty-ic{width:52px;height:52px;border-radius:50%;background:#f0ecf6;color:#6642aa;display:flex;align-items:center;justify-content:center;font-size:23px;margin:0 auto 12px;}
+.empty-state p{font-size:12.5px;color:#7f7c88;margin:0;font-weight:600;line-height:1.5;}
+.empty-state p strong{color:#312f38;}
+.empty-state.success .empty-ic{background:#f0ecf6;color:#6642aa;}
+.empty-state.success p{color:#4e3483;font-weight:800;}
 .empty-state.warn .empty-ic{background:#fff3cd;color:#c98a00;}
 .empty-state.warn p{color:#8a6d1a;}
 
 /* bootstrap-select — make the dropdown + search box visible on the paper theme */
-.bootstrap-select .dropdown-toggle{background:#fff !important;border:1px solid #cfe3e0 !important;color:#2b3330 !important;font-size:13px;border-radius:8px;padding:7px 11px;box-shadow:none !important;}
-.bootstrap-select .dropdown-toggle:focus{outline:none !important;border-color:#219688 !important;box-shadow:0 0 0 2px rgba(33,150,136,.15) !important;}
-.bootstrap-select .dropdown-menu{font-size:13px;border:1px solid #e4ecea;box-shadow:0 8px 22px -10px rgba(16,55,50,.3);}
-.bootstrap-select .dropdown-menu li a{color:#2b3330;}
-.bootstrap-select .dropdown-menu li.selected a,.bootstrap-select .dropdown-menu li a:hover{background:#e6f5f3 !important;color:#176358 !important;}
+.bootstrap-select .dropdown-toggle{background:#fff !important;border:1px solid #d9d3e4 !important;color:#312f38 !important;font-size:13px;border-radius:8px;padding:7px 11px;box-shadow:none !important;}
+.bootstrap-select .dropdown-toggle:focus{outline:none !important;border-color:#6642aa !important;box-shadow:0 0 0 2px rgba(102,66,170,.15) !important;}
+.bootstrap-select .dropdown-menu{font-size:13px;border:1px solid #e7e6ed;box-shadow:0 8px 22px -10px rgba(58,40,93,.3);}
+.bootstrap-select .dropdown-menu li a{color:#312f38;}
+.bootstrap-select .dropdown-menu li.selected a,.bootstrap-select .dropdown-menu li a:hover{background:#eeeaf5 !important;color:#4e3483 !important;}
 .bootstrap-select .bs-searchbox{padding:8px;}
 .bootstrap-select .bs-searchbox .form-control{
-    background:#fff !important;color:#2b3330 !important;
-    border:1px solid #cfe3e0 !important;border-radius:6px;font-size:13px;padding:6px 10px;
-    -webkit-text-fill-color:#2b3330;
+    background:#fff !important;color:#312f38 !important;
+    border:1px solid #d9d3e4 !important;border-radius:6px;font-size:13px;padding:6px 10px;
+    -webkit-text-fill-color:#312f38;
 }
-.bootstrap-select .bs-searchbox .form-control::placeholder{color:#9aa3a0 !important;-webkit-text-fill-color:#9aa3a0;}
-.bootstrap-select .bs-searchbox .form-control:focus{border-color:#219688 !important;box-shadow:0 0 0 2px rgba(33,150,136,.15) !important;}
+.bootstrap-select .bs-searchbox .form-control::placeholder{color:#9d9ba4 !important;-webkit-text-fill-color:#9d9ba4;}
+.bootstrap-select .bs-searchbox .form-control:focus{border-color:#6642aa !important;box-shadow:0 0 0 2px rgba(102,66,170,.15) !important;}
 
 /* ── Help tab ── */
-.help-hero{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,#219688,#176358);border-radius:16px;padding:20px 22px;color:#fff;margin-bottom:6px;box-shadow:0 10px 26px -14px rgba(23,99,88,.6);}
+.help-hero{display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:16px;padding:20px 22px;color:#fff;margin-bottom:6px;box-shadow:0 10px 26px -14px rgba(78,52,131,.6);}
 .help-hero-ic{width:52px;height:52px;border-radius:14px;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0;}
 .help-hero-t{font-size:17px;font-weight:900;line-height:1.2;}
 .help-hero-s{font-size:11.5px;color:rgba(255,255,255,.82);margin-top:4px;}
 .help-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px;}
-.help-card{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;padding:14px 15px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);transition:transform .15s,box-shadow .15s;}
-.help-card:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(16,55,50,.05), 0 14px 28px -14px rgba(16,55,50,.28);}
+.help-card{background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;padding:14px 15px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -14px rgba(58,40,93,.18);transition:transform .15s,box-shadow .15s;}
+.help-card:hover{transform:translateY(-2px);box-shadow:0 1px 2px rgba(58,40,93,.05), 0 14px 28px -14px rgba(58,40,93,.28);}
 .help-card-ic{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;margin-bottom:9px;}
-.help-card-t{font-size:13px;font-weight:800;color:#2b3330;margin-bottom:3px;}
-.help-card-d{font-size:11.5px;color:#7a8783;line-height:1.45;}
+.help-card-t{font-size:13px;font-weight:800;color:#312f38;margin-bottom:3px;}
+.help-card-d{font-size:11.5px;color:#7f7c88;line-height:1.45;}
 /* glossary rows */
 .gloss{display:flex;gap:12px;padding:8px 16px;border-bottom:1px dashed #ece4d2;}
 .gloss:last-child{border-bottom:none;}
-.gloss-t{font-size:12px;font-weight:800;color:#176358;min-width:150px;flex-shrink:0;}
+.gloss-t{font-size:12px;font-weight:800;color:#4e3483;min-width:150px;flex-shrink:0;}
 .gloss-d{font-size:12px;color:#66706c;line-height:1.4;}
 /* FAQ accordion */
 .faq{margin-bottom:6px;}
-.faq-item{background:#ffffff;border:1px solid #e4ecea;border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:0 1px 2px rgba(16,55,50,.04);}
-.faq-q{width:100%;border:none;background:transparent;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;font-size:12.5px;font-weight:700;color:#2b3330;cursor:pointer;text-align:left;}
-.faq-q i{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:15px;transition:transform .2s;}
-.faq-item.open .faq-q i{transform:rotate(45deg);background:#219688;color:#fff;}
+.faq-item{background:#ffffff;border:1px solid #e7e6ed;border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:0 1px 2px rgba(58,40,93,.04);}
+.faq-q{width:100%;border:none;background:transparent;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;font-size:12.5px;font-weight:700;color:#312f38;cursor:pointer;text-align:left;}
+.faq-q i{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:#f0ecf6;color:#6642aa;display:flex;align-items:center;justify-content:center;font-size:15px;transition:transform .2s;}
+.faq-item.open .faq-q i{transform:rotate(45deg);background:#6642aa;color:#fff;}
 .faq-a{max-height:0;overflow:hidden;transition:max-height .25s ease;}
 .faq-item.open .faq-a{max-height:400px;}
 .faq-a p{margin:0;padding:0 16px 14px;font-size:12px;color:#66706c;line-height:1.55;}
-.faq-a code{background:#eef3f2;color:#176358;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;}
+.faq-a code{background:#f0eff3;color:#4e3483;padding:1px 6px;border-radius:4px;font-size:11.5px;font-weight:700;}
 /* contact card */
-.contact-card{display:flex;align-items:center;gap:14px;background:#ffffff;border:1px solid #e4ecea;border-left:4px solid #219688;border-radius:12px;padding:16px 18px;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -14px rgba(16,55,50,.18);flex-wrap:wrap;}
-.contact-ic{width:46px;height:46px;border-radius:50%;background:#e8f7f5;color:#219688;display:flex;align-items:center;justify-content:center;font-size:23px;flex-shrink:0;}
-.contact-t{font-size:13.5px;font-weight:800;color:#176358;}
-.contact-d{font-size:11.5px;color:#7a8783;margin-top:2px;}
+.contact-card{display:flex;align-items:center;gap:14px;background:#ffffff;border:1px solid #e7e6ed;border-left:4px solid #6642aa;border-radius:12px;padding:16px 18px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -14px rgba(58,40,93,.18);flex-wrap:wrap;}
+.contact-ic{width:46px;height:46px;border-radius:50%;background:#f0ecf6;color:#6642aa;display:flex;align-items:center;justify-content:center;font-size:23px;flex-shrink:0;}
+.contact-t{font-size:13.5px;font-weight:800;color:#4e3483;}
+.contact-d{font-size:11.5px;color:#7f7c88;margin-top:2px;}
 .contact-meta{font-size:11px;color:#66706c;font-weight:600;text-align:right;}
-.contact-meta i{color:#219688;}
+.contact-meta i{color:#6642aa;}
 
 /* Footer */
-.portal-foot{text-align:center;font-size:11px;color:#8a9794;margin-top:30px;}
+.portal-foot{text-align:center;font-size:11px;color:#8f8c98;margin-top:30px;}
 
 @media (max-width:767.98px), (pointer:coarse) and (max-height:500px){
     .portal-wrap{padding:14px 10px 40px;}
@@ -1759,9 +1759,9 @@ clock-timepicker{
     .emp-nm{font-size:15px;}
     .emp-no-badge{padding:4px 8px;font-size:10px;}
     .emp-stats{grid-template-columns:repeat(3,1fr);}
-    .est:nth-child(n+4){border-top:1px solid #eef3f2;}
+    .est:nth-child(n+4){border-top:1px solid #f0eff3;}
     .ps-body{grid-template-columns:1fr;}
-    .ps-col:first-child{border-right:none;border-bottom:1px solid #f0f5f4;}
+    .ps-col:first-child{border-right:none;border-bottom:1px solid #f2f1f5;}
     .ps-net-val{font-size:20px;}
     .ytd-val{font-size:16px;}
 
@@ -1789,12 +1789,12 @@ clock-timepicker{
     }
     .tab-btn i{font-size:21px;line-height:1;display:block;transition:none;transform:none;}
     .tab-btn span.tab-label{display:block;font-size:9px;font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
-    /* Active item: soft teal tint + brand color icon/label (no heavy filled block) */
-    .tab-btn.active{background:#e8f7f5;color:#176358;box-shadow:none;}
+    /* Active item: soft purple tint + brand color icon/label (no heavy filled block) */
+    .tab-btn.active{background:#f0ecf6;color:#4e3483;box-shadow:none;}
     .tab-btn .badge-count{position:absolute;top:4px;right:9px;font-size:8px;padding:0 4px;}
     /* On the light mobile "active" background, the translucent-white desktop badge is
        unreadable — force a solid, high-contrast pill instead. */
-    .tab-btn.active .badge-count{background:#219688;color:#fff;}
+    .tab-btn.active .badge-count{background:#6642aa;color:#fff;}
     /* Only the 5 primary items live in the bottom nav; the rest go to the More sheet */
     .tab-strip .tab-secondary{display:none;}
     .tab-more{display:flex;}
@@ -1818,7 +1818,7 @@ clock-timepicker{
 .modal select.form-control,
 .modal input.form-control,
 .modal textarea.form-control {
-    border: 1.5px solid #b0c4c0 !important;
+    border: 1.5px solid #b9b4c5 !important;
     background: #fff !important;
     color: #2d2d2d !important;
     border-radius: 8px;
@@ -1829,8 +1829,8 @@ clock-timepicker{
 .modal select.form-control:focus,
 .modal input.form-control:focus,
 .modal textarea.form-control:focus {
-    border-color: #219688 !important;
-    box-shadow: 0 0 0 2px rgba(33,150,136,.15) !important;
+    border-color: #6642aa !important;
+    box-shadow: 0 0 0 2px rgba(102,66,170,.15) !important;
     outline: none;
 }
 .modal label {
@@ -1860,12 +1860,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
     width: 38px; height: 38px; border-radius: 50%; background: #fff;
     box-shadow: 0 2px 10px rgba(0,0,0,.18);
     display: flex; align-items: center; justify-content: center;
-    color: #219688; font-size: 19px;
+    color: #6642aa; font-size: 19px;
     transform: translateY(-100px);
     transition: transform .18s ease, color .15s;
     pointer-events: none;
 }
-#ptr-indicator.ready { color: #176358; }
+#ptr-indicator.ready { color: #4e3483; }
 #ptr-indicator.spin i { animation: ptrSpin .7s linear infinite; }
 @keyframes ptrSpin { to { transform: rotate(360deg); } }
 </style>
@@ -1992,7 +1992,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <?php if (count($loans)): ?><span class="more-dot"><?= count($loans) ?></span><?php endif; ?>
             </button>
             <button type="button" class="more-item" onclick="goMore('contrib')">
-                <span class="more-ic" style="background:#eef7f5;color:#176358;"><i class="ri-shield-check-line"></i></span>
+                <span class="more-ic" style="background:#f2f0f7;color:#4e3483;"><i class="ri-shield-check-line"></i></span>
                 <span class="more-lbl">Contributions</span>
             </button>
             <button type="button" class="more-item" onclick="goMore('holidays')">
@@ -2000,7 +2000,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <span class="more-lbl">Holidays</span>
             </button>
             <button type="button" class="more-item" onclick="goMore('info')">
-                <span class="more-ic" style="background:#e8f7f5;color:#219688;"><i class="ri-profile-line"></i></span>
+                <span class="more-ic" style="background:#f0ecf6;color:#6642aa;"><i class="ri-profile-line"></i></span>
                 <span class="more-lbl">My Info</span>
             </button>
             <?php /* Help hidden for now — restore by uncommenting.
@@ -2174,7 +2174,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             foreach ($labels as $i => $lb) {
                 $on = in_array($i, $set, true);
                 $pills .= '<span style="display:inline-block;width:19px;height:19px;line-height:19px;text-align:center;border-radius:50%;font-size:9.5px;font-weight:700;margin-right:2px;'
-                    . ($on ? 'background:#009688;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+                    . ($on ? 'background:#673bb6;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
             }
             $text = empty($set) ? 'None' : implode(', ', array_map(fn($d) => $names[$d], $set));
             return [$pills, $text];
@@ -2186,35 +2186,35 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         if ($suq) while ($u = $suq->fetch_assoc()) $sched_upcoming[] = $u;
         ?>
         <div class="sec"><i class="ri-time-line"></i>My Work Schedule</div>
-        <div style="background:#fff;border:1px solid #e6ebe9;border-radius:14px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.04);">
+        <div style="background:#fff;border:1px solid #e8e7eb;border-radius:14px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.04);">
             <?php if ($sched_cur): ?>
             <div style="display:flex;align-items:center;gap:12px;">
-                <div style="width:42px;height:42px;border-radius:12px;background:#e6fffb;color:#009688;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <div style="width:42px;height:42px;border-radius:12px;background:#f4f1fa;color:#673bb6;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                     <i class="ri-time-line" style="font-size:20px;"></i>
                 </div>
                 <div style="flex:1;min-width:0;">
-                    <div style="font-size:10px;color:#8a9a95;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Current Shift</div>
-                    <div style="font-size:15px;font-weight:700;color:#1b2b27;"><?= htmlspecialchars($sched_cur['description']) ?>
+                    <div style="font-size:10px;color:#908c9c;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">Current Shift</div>
+                    <div style="font-size:15px;font-weight:700;color:#2b2639;"><?= htmlspecialchars($sched_cur['description']) ?>
                         <?php if ($sched_cur['is_graveyard']): ?><span style="font-size:10px;background:#2b2b3a;color:#fff;padding:1px 6px;border-radius:6px;vertical-align:middle;"><i class="ri-moon-line"></i> Night</span><?php endif; ?>
                     </div>
-                    <div style="font-size:12px;color:#5c6b66;">
+                    <div style="font-size:12px;color:#625f6e;">
                         <?= date('h:i A', strtotime($sched_cur['start_time'])) ?> – <?= date('h:i A', strtotime($sched_cur['end_time'])) ?>
                         &nbsp;·&nbsp; <?= rtrim(rtrim($sched_cur['total_hours'], '0'), '.') ?> hrs
                     </div>
                     <?php list($__do_pills, $__do_text) = $portal_day_off($sched_cur['rest_days'] ?? ''); ?>
-                    <div style="font-size:12px;color:#5c6b66;margin-top:6px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
-                        <span style="font-weight:600;color:#8a9a95;"><i class="ri-moon-line me-1"></i>Day Off:</span>
+                    <div style="font-size:12px;color:#625f6e;margin-top:6px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;">
+                        <span style="font-weight:600;color:#908c9c;"><i class="ri-moon-line me-1"></i>Day Off:</span>
                         <span><?= $__do_pills ?></span>
-                        <span style="color:#1b2b27;font-weight:600;"><?= htmlspecialchars($__do_text) ?></span>
+                        <span style="color:#2b2639;font-weight:600;"><?= htmlspecialchars($__do_text) ?></span>
                     </div>
                 </div>
             </div>
             <?php else: ?>
-            <div style="font-size:13px;color:#8a9a95;"><i class="ri-information-line me-1"></i>No work schedule assigned yet.</div>
+            <div style="font-size:13px;color:#908c9c;"><i class="ri-information-line me-1"></i>No work schedule assigned yet.</div>
             <?php endif; ?>
 
             <?php if (count($sched_upcoming)): ?>
-            <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e6ebe9;">
+            <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e8e7eb;">
                 <div style="font-size:10px;color:#ad6800;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;"><i class="ri-calendar-schedule-line me-1"></i>Upcoming Changes</div>
                 <?php foreach ($sched_upcoming as $up): ?>
                 <div style="display:flex;align-items:center;gap:10px;padding:6px 0;">
@@ -2222,8 +2222,8 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         <?= date('M j', strtotime($up['effective_from'])) ?>
                     </div>
                     <div style="flex:1;min-width:0;">
-                        <div style="font-size:13px;font-weight:600;color:#1b2b27;"><?= htmlspecialchars($up['description']) ?></div>
-                        <div style="font-size:11px;color:#8a9a95;"><?= date('h:i A', strtotime($up['start_time'])) ?> – <?= date('h:i A', strtotime($up['end_time'])) ?> &nbsp;·&nbsp; from <?= date('F j, Y', strtotime($up['effective_from'])) ?></div>
+                        <div style="font-size:13px;font-weight:600;color:#2b2639;"><?= htmlspecialchars($up['description']) ?></div>
+                        <div style="font-size:11px;color:#908c9c;"><?= date('h:i A', strtotime($up['start_time'])) ?> – <?= date('h:i A', strtotime($up['end_time'])) ?> &nbsp;·&nbsp; from <?= date('F j, Y', strtotime($up['effective_from'])) ?></div>
                     </div>
                 </div>
                 <?php endforeach; ?>
@@ -2233,11 +2233,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 
         <!-- My Fingerprints (two-hand status) -->
         <div class="sec"><i class="ri-fingerprint-line"></i>My Fingerprints</div>
-        <div style="margin-bottom:14px;">
-            <?php
-            require_once __DIR__ . '/component/finger_hands.php';
-            echo render_finger_hands($conn, $emp_id, ['title' => 'Enrolled Fingerprints']);
-            ?>
+        <?php require_once __DIR__ . '/component/finger_hands.php'; ?>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px;">
+            <?php /* Mobile Kiosk card (incl. face registration) — hidden for now.
+            <?= render_finger_hands($conn, $emp_id, ['title' => 'Enrolled Fingerprints (Mobile Kiosk)']) ?>
+            */ ?>
+            <?= render_finger_hands($conn, $emp_id, ['source' => 'device', 'title' => 'Enrolled Fingerprints (Scanner Device)']) ?>
         </div>
 
         <!-- This-month attendance summary -->
@@ -2367,7 +2368,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <div class="trend-card">
                 <div class="trend-head">
                     <span class="trend-title"><i class="ri-calendar-2-line me-1"></i>Upcoming Holidays &amp; Activities</span>
-                    <a href="javascript:void(0)" onclick="switchTab('holidays',null)" style="font-size:10px;color:#219688;font-weight:700;text-decoration:none;">See all →</a>
+                    <a href="javascript:void(0)" onclick="switchTab('holidays',null)" style="font-size:10px;color:#6642aa;font-weight:700;text-decoration:none;">See all →</a>
                 </div>
                 <?php foreach (array_slice($calendar_events_portal, 0, 5) as $ev):
                     $isHol = $ev['type'] == 1; $st = strtotime($ev['start_date']); ?>
@@ -2390,7 +2391,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <div class="trend-card">
                 <div class="trend-head">
                     <span class="trend-title"><i class="ri-coins-line me-1"></i>My Leave Credits</span>
-                    <a href="javascript:void(0)" onclick="switchTab('leave',null)" style="font-size:10px;color:#219688;font-weight:700;text-decoration:none;">Request →</a>
+                    <a href="javascript:void(0)" onclick="switchTab('leave',null)" style="font-size:10px;color:#6642aa;font-weight:700;text-decoration:none;">Request →</a>
                 </div>
                 <?php foreach ($leave_balance as $b):
                     $avail = (float)$b['credits']; $used = (float)$b['used']; $rem = max(0, $avail - $used);
@@ -2452,7 +2453,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <?php foreach (($latest['extras'] ?? []) as $__x): if ($__x['kind'] !== 2) continue; ?>
                     <div class="ps-row"><span class="ps-lbl"><?= htmlspecialchars($__x['label']) ?></span><span class="ps-val earn">₱<?= n2($__x['amount']) ?></span></div>
                     <?php endforeach; ?>
-                    <div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#219688;">Gross Pay</span><span class="ps-val earn" style="font-size:15px;font-weight:900;">₱<?= n2($gross) ?></span></div>
+                    <div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#6642aa;">Gross Pay</span><span class="ps-val earn" style="font-size:15px;font-weight:900;">₱<?= n2($gross) ?></span></div>
                 </div>
                 <!-- Deductions -->
                 <div class="ps-col">
@@ -2625,7 +2626,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
     <div class="tab-panel" id="tab-attendance">
         <div class="sec"><i class="ri-calendar-check-line"></i>Attendance Records</div>
         <div class="paper" style="border-radius:14px;overflow:hidden;">
-            <div style="padding:10px 14px;border-bottom:1px solid #f0f5f4;display:flex;justify-content:space-between;align-items:center;">
+            <div style="padding:10px 14px;border-bottom:1px solid #f2f1f5;display:flex;justify-content:space-between;align-items:center;">
                 <span style="font-size:12px;color:#888;"><span id="att-count">0</span> records</span>
                 <div style="display:flex;align-items:center;gap:6px;">
                     <div id="att-range" class="att-range-picker">
@@ -2633,7 +2634,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         <span id="att-range-label">Last 7 Days</span>
                         <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
                     </div>
-                    <button onclick="clearAttFilter()" class="btn btn-sm" style="background:#f0f5f4;color:#888;padding:5px 10px;font-size:11px;border:none;border-radius:7px;">Today</button>
+                    <button onclick="clearAttFilter()" class="btn btn-sm" style="background:#f2f1f5;color:#888;padding:5px 10px;font-size:11px;border:none;border-radius:7px;">Today</button>
                 </div>
             </div>
             <div class="table-responsive">
@@ -2664,7 +2665,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <!-- Request a Request Button -->
         <div class="d-flex gap-2 mb-3">
             <button type="button" onclick="openAttRequestModal()"
-                style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
                 <i class="ri-add-circle-line me-1"></i>File a Request
             </button>
         </div>
@@ -2672,7 +2673,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <!-- My Request History — server-side DataTable on desktop; on mobile a
              dedicated infinite-scroll card feed (#areq-mlist) hits the same endpoint. -->
         <div class="sec"><i class="ri-history-line"></i>My Requests
-            <span style="font-weight:600;color:#8a9794;font-size:12px;">(<span id="areq-count">0</span>)</span>
+            <span style="font-weight:600;color:#8f8c98;font-size:12px;">(<span id="areq-count">0</span>)</span>
         </div>
         <div id="att-req-list-wrap">
             <div class="paper" style="border-radius:14px;overflow:hidden;">
@@ -2712,7 +2713,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <select id="cmp-a"></select>
                 </div>
                 <div class="col-12 col-md-2 text-center" style="padding-bottom:4px;">
-                    <span style="display:inline-flex;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:800;font-size:11px;align-items:center;justify-content:center;">VS</span>
+                    <span style="display:inline-flex;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:800;font-size:11px;align-items:center;justify-content:center;">VS</span>
                 </div>
                 <div class="col-12 col-md-5">
                     <label class="info-lbl" style="margin-bottom:4px;">Period B</label>
@@ -2767,7 +2768,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </div>
         <?php endforeach; ?>
         <!-- Loan total -->
-        <div style="background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+        <div style="background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:12px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
             <span style="color:rgba(255,255,255,.8);font-size:12px;font-weight:700;">TOTAL LOAN BALANCE</span>
             <span style="color:#fff;font-size:20px;font-weight:900;">₱<?= n2($total_loan_balance) ?></span>
         </div>
@@ -2805,7 +2806,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </div>
 
         <div class="sec"><i class="ri-history-line"></i>Remittance History</div>
-        <div style="background:#ffffff;border:1px solid #e4ecea;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(16,55,50,.05), 0 8px 22px -12px rgba(16,55,50,.18);">
+        <div style="background:#ffffff;border:1px solid #e7e6ed;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -12px rgba(58,40,93,.18);">
             <div style="overflow-x:auto;">
                 <table class="con-tbl">
                     <thead>
@@ -2821,13 +2822,13 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         <?php foreach ($contrib_hist as $ch): ?>
                         <tr>
                             <td data-label="Pay Period">
-                                <div style="font-weight:700;color:#176358;"><?= htmlspecialchars($ch['period']) ?></div>
+                                <div style="font-weight:700;color:#4e3483;"><?= htmlspecialchars($ch['period']) ?></div>
                                 <div style="font-size:10px;color:#aaa;font-family:monospace;"><?= htmlspecialchars($ch['ref']) ?></div>
                             </td>
                             <td class="r" data-label="Contributions"><?= $ch['contrib'] > 0 ? '₱'.n2($ch['contrib']) : '<span class="dim">—</span>' ?></td>
                             <td class="r" data-label="SSS Provident"><?= $ch['sssfund'] > 0 ? '₱'.n2($ch['sssfund']) : '<span class="dim">—</span>' ?></td>
                             <td class="r" data-label="Tax"><?= $ch['tax'] > 0 ? '₱'.n2($ch['tax']) : '<span class="dim">—</span>' ?></td>
-                            <td class="r" data-label="Total" style="font-weight:800;color:#176358;">₱<?= n2($ch['total']) ?></td>
+                            <td class="r" data-label="Total" style="font-weight:800;color:#4e3483;">₱<?= n2($ch['total']) ?></td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -2843,7 +2844,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </table>
             </div>
         </div>
-        <div style="font-size:11px;color:#8a9794;margin-top:10px;line-height:1.5;"><i class="ri-error-warning-line me-1"></i>These figures come from your reviewed and locked payslips. For official contribution records, please coordinate with HR.</div>
+        <div style="font-size:11px;color:#8f8c98;margin-top:10px;line-height:1.5;"><i class="ri-error-warning-line me-1"></i>These figures come from your reviewed and locked payslips. For official contribution records, please coordinate with HR.</div>
         <?php else: ?>
         <div class="empty-state"><div class="empty-ic"><i class="ri-shield-check-line"></i></div><p>No contributions recorded yet.<br>They'll appear here once your payslips are released.</p></div>
         <?php endif; ?>
@@ -2884,7 +2885,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <!-- Request Leave Button -->
         <div class="d-flex gap-2 mb-3">
             <button type="button" onclick="openLeaveModal()"
-                style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
                 <i class="ri-add-circle-line me-1"></i>Request a Leave
             </button>
             <?php if (!empty($lwop_types_list)): ?>
@@ -2914,7 +2915,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         .lv-chips{display:inline-flex;gap:8px;font-size:16px;align-items:center;}
         .lv-chip i{vertical-align:middle;}
         .lv-tl-details{margin-top:6px;}
-        .lv-tl-details>summary{cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:#219688;
+        .lv-tl-details>summary{cursor:pointer;list-style:none;font-size:11px;font-weight:700;color:#6642aa;
             display:inline-flex;align-items:center;gap:4px;padding:2px 0;}
         .lv-tl-details>summary::-webkit-details-marker{display:none;}
         .lv-tl-details[open]>summary{margin-bottom:2px;}
@@ -2925,10 +2926,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <div class="paper pslist-paper">
             <div class="pslist">
                 <?php
-                $stMap = [0 => ['Pending','#fd7e14','#fff8e8'], 1 => ['Approved','#176358','#e8f7f5'], 2 => ['Rejected','#dc3545','#fff0f0']];
+                $stMap = [0 => ['Pending','#fd7e14','#fff8e8'], 1 => ['Approved','#4e3483','#f0ecf6'], 2 => ['Rejected','#dc3545','#fff0f0']];
                 // Compact per-stage chip (icon coloured by status), labelled by tooltip.
                 $stageChip = function ($s, $label) {
-                    if ($s == 1) return '<span class="lv-chip" style="color:#176358;" title="' . htmlspecialchars($label) . ': Approved"><i class="ri-checkbox-circle-fill"></i></span>';
+                    if ($s == 1) return '<span class="lv-chip" style="color:#4e3483;" title="' . htmlspecialchars($label) . ': Approved"><i class="ri-checkbox-circle-fill"></i></span>';
                     if ($s == 2) return '<span class="lv-chip" style="color:#dc3545;" title="' . htmlspecialchars($label) . ': Rejected"><i class="ri-close-circle-fill"></i></span>';
                     return '<span class="lv-chip" style="color:#fd7e14;" title="' . htmlspecialchars($label) . ': Pending"><i class="ri-time-fill"></i></span>';
                 };
@@ -3027,7 +3028,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">Employee No.</div>
-                    <div class="info-val mono teal"><?= htmlspecialchars($emp['employee_no']) ?></div>
+                    <div class="info-val mono accent"><?= htmlspecialchars($emp['employee_no']) ?></div>
                 </div>
                 <?php if (!empty($emp['employee_code'])): ?>
                 <div class="info-item">
@@ -3053,7 +3054,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">Status</div>
-                    <div class="info-val"><?= ((int)$emp['status'] === 1) ? '<span style="color:#219688;">● Active</span>' : '<span style="color:#dc3545;">● Inactive</span>' ?></div>
+                    <div class="info-val"><?= ((int)$emp['status'] === 1) ? '<span style="color:#6642aa;">● Active</span>' : '<span style="color:#dc3545;">● Inactive</span>' ?></div>
                 </div>
             </div>
         </div>
@@ -3103,11 +3104,11 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <div class="info-grid">
                 <div class="info-item">
                     <div class="info-lbl">Basic Pay</div>
-                    <div class="info-val teal">₱<?= n2($emp['basic_pay']) ?></div>
+                    <div class="info-val accent">₱<?= n2($emp['basic_pay']) ?></div>
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">Daily Rate</div>
-                    <div class="info-val teal">₱<?= n2($emp['salary']) ?></div>
+                    <div class="info-val accent">₱<?= n2($emp['salary']) ?></div>
                 </div>
                 <div class="info-item">
                     <div class="info-lbl">OT Rate</div>
@@ -3161,7 +3162,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <div class="sec"><i class="ri-compass-3-line"></i>Getting Around</div>
         <div class="help-grid">
             <div class="help-card">
-                <div class="help-card-ic" style="background:#e8f7f5;color:#219688;"><i class="ri-dashboard-line"></i></div>
+                <div class="help-card-ic" style="background:#f0ecf6;color:#6642aa;"><i class="ri-dashboard-line"></i></div>
                 <div class="help-card-t">Overview</div>
                 <div class="help-card-d">Your year-to-date earnings, a net-pay trend, and your most recent payslip at a glance.</div>
             </div>
@@ -3185,7 +3186,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <!-- How to read your payslip -->
         <div class="sec"><i class="ri-book-open-line"></i>Understanding Your Payslip</div>
         <div class="info-section">
-            <div class="info-sec-title" style="background:#176358;"><i class="ri-arrow-up-circle-line"></i> Earnings — money added</div>
+            <div class="info-sec-title" style="background:#4e3483;"><i class="ri-arrow-up-circle-line"></i> Earnings — money added</div>
             <div style="padding:4px 0;">
                 <div class="gloss"><span class="gloss-t">Basic Pay</span><span class="gloss-d">Your contracted rate for the pay period.</span></div>
                 <div class="gloss"><span class="gloss-t">Allowance</span><span class="gloss-d">Extra pay such as daily allowance × number of days.</span></div>
@@ -3204,7 +3205,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <div class="gloss"><span class="gloss-t">JEI / JCC Advances</span><span class="gloss-d">Repayment of cash advances or loans.</span></div>
             </div>
         </div>
-        <div style="background:linear-gradient(135deg,#219688,#176358);border-radius:12px;padding:14px 18px;color:#fff;display:flex;align-items:center;gap:12px;margin-bottom:14px;">
+        <div style="background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:12px;padding:14px 18px;color:#fff;display:flex;align-items:center;gap:12px;margin-bottom:14px;">
             <i class="ri-calculator-line" style="font-size:26px;opacity:.85;"></i>
             <div>
                 <div style="font-size:12px;font-weight:800;">Net Pay = Earnings − Deductions</div>
@@ -3493,21 +3494,21 @@ var LEAVE_DETAILS = <?= json_encode($lv_details ?? [], JSON_HEX_APOS | JSON_HEX_
 function openLeaveDetail(id) {
     var d = LEAVE_DETAILS[id];
     if (!d) return;
-    var stMap = { 0: ['Pending', '#fd7e14', '#fff8e8'], 1: ['Approved', '#176358', '#e8f7f5'], 2: ['Rejected', '#dc3545', '#fff0f0'] };
+    var stMap = { 0: ['Pending', '#fd7e14', '#fff8e8'], 1: ['Approved', '#4e3483', '#f0ecf6'], 2: ['Rejected', '#dc3545', '#fff0f0'] };
     var st = stMap[d.status] || ['Unknown', '#888', '#eee'];
     var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
-        + '<span style="font-weight:800;color:#176358;font-size:16px;">' + escapeHtml(d.type) + '</span>'
+        + '<span style="font-weight:800;color:#4e3483;font-size:16px;">' + escapeHtml(d.type) + '</span>'
         + '<span style="background:' + st[2] + ';color:' + st[1] + ';border-radius:10px;padding:3px 12px;font-size:11px;font-weight:700;">' + st[0] + '</span>'
         + '</div>'
         + '<div class="row g-2 mb-2" style="font-size:12.5px;">'
-        + '<div class="col-6"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Filed</div>' + escapeHtml(d.applied) + '</div>'
-        + '<div class="col-6"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Days</div><b>' + escapeHtml(String(d.days)) + '</b>'
+        + '<div class="col-6"><div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">Filed</div>' + escapeHtml(d.applied) + '</div>'
+        + '<div class="col-6"><div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">Days</div><b>' + escapeHtml(String(d.days)) + '</b>'
         + (d.half ? ' <span style="background:#fff8e8;color:#fd7e14;border-radius:8px;padding:1px 7px;font-size:10px;font-weight:700;">' + escapeHtml(d.half) + '</span>' : '') + '</div>'
-        + '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Period</div>' + escapeHtml(d.period) + '</div>'
-        + (d.reason ? '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">Reason</div>' + escapeHtml(d.reason) + '</div>' : '')
+        + '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">Period</div>' + escapeHtml(d.period) + '</div>'
+        + (d.reason ? '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">Reason</div>' + escapeHtml(d.reason) + '</div>' : '')
         + '</div>'
         + (d.rej ? '<div style="background:#fff0f0;color:#dc3545;border-radius:10px;padding:8px 12px;font-size:12px;margin-bottom:10px;"><i class="ri-information-line me-1"></i><b>Rejected:</b> ' + escapeHtml(d.rej) + '</div>' : '')
-        + '<div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">Approval Timeline</div>'
+        + '<div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">Approval Timeline</div>'
         + d.timeline;
     document.getElementById('leave-detail-body').innerHTML = h;
     new bootstrap.Modal(document.getElementById('modal-leave-detail')).show();
@@ -3561,11 +3562,11 @@ function prependLeaveRow(req) {
     };
     var row = '<tr onclick="openLeaveDetail(' + parseInt(req.id, 10) + ')" style="cursor:pointer;" title="Tap to view details">'
         + '<td data-label="Date Applied">' + fmtMDY(req.date_applied) + '</td>'
-        + '<td data-label="Type"><span style="font-weight:700;color:#176358;">' + escapeHtml(req.leave_type_name) + '</span></td>'
+        + '<td data-label="Type"><span style="font-weight:700;color:#4e3483;">' + escapeHtml(req.leave_type_name) + '</span></td>'
         + '<td data-label="Period" style="font-size:11px;">' + fmtMD(req.date_from) + ' – ' + fmtMDY(req.date_to) + '</td>'
         + '<td class="r" data-label="Days"><b>' + trimNum(req.duration) + '</b></td>'
         + '<td data-label="Progress"><div class="lv-chips">' + chips
-        + '<span style="font-size:10px;color:#219688;font-weight:700;margin-left:4px;"><i class="ri-eye-line"></i> Details</span></div></td>'
+        + '<span style="font-size:10px;color:#6642aa;font-weight:700;margin-left:4px;"><i class="ri-eye-line"></i> Details</span></div></td>'
         + '<td data-label="Status"><span style="background:#fff8e8;color:#fd7e14;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;">Pending</span></td>'
         + '</tr>';
     tbody.insertAdjacentHTML('afterbegin', row);
@@ -3693,9 +3694,9 @@ function setLvDuration(val) {
     document.getElementById('lv-half-period').value = _lvIsHalf ? val : '';
     document.querySelectorAll('.lv-dur-btn').forEach(function(b) {
         var active = b.dataset.val === val;
-        b.style.background  = active ? '#219688' : '#fff';
+        b.style.background  = active ? '#6642aa' : '#fff';
         b.style.color       = active ? '#fff' : '#555';
-        b.style.borderColor = active ? '#219688' : '#b0c4c0';
+        b.style.borderColor = active ? '#6642aa' : '#b9b4c5';
     });
     document.getElementById('lv-half-hint').textContent =
         _lvIsHalf ? '(One of your selected days counts as a half day.)' : '';
@@ -3707,9 +3708,9 @@ function setLvHalfOn(val) {
     document.getElementById('lv-half-on').value = val;
     document.querySelectorAll('.lv-halfon-btn').forEach(function(b) {
         var active = b.dataset.val === val;
-        b.style.background  = active ? '#219688' : '#fff';
+        b.style.background  = active ? '#6642aa' : '#fff';
         b.style.color       = active ? '#fff' : '#555';
-        b.style.borderColor = active ? '#219688' : '#b0c4c0';
+        b.style.borderColor = active ? '#6642aa' : '#b9b4c5';
     });
     updateLvBalance();
 }
@@ -3752,7 +3753,7 @@ function updateLvBalance() {
     }
     var need = lvDuration(), over = need > rem + 0.001;
     hint.style.display = 'block';
-    hint.style.color = over ? '#c62828' : '#176358';
+    hint.style.color = over ? '#c62828' : '#4e3483';
     hint.innerHTML = over
         ? '<i class="ri-error-warning-line"></i> Not enough credits — this needs <b>' + trimNum(need) + '</b> day(s) but you only have <b>' + trimNum(rem) + '</b> left.'
         : (need > 0
@@ -3786,7 +3787,7 @@ function setLwopDuration(val) {
         var active = b.dataset.val === val;
         b.style.background  = active ? '#c62828' : '#fff';
         b.style.color       = active ? '#fff' : '#555';
-        b.style.borderColor = active ? '#c62828' : '#b0c4c0';
+        b.style.borderColor = active ? '#c62828' : '#b9b4c5';
     });
     document.getElementById('lwop-half-hint').textContent =
         _lwopIsHalf ? '(One of your selected days counts as a half day.)' : '';
@@ -3799,7 +3800,7 @@ function setLwopHalfOn(val) {
         var active = b.dataset.val === val;
         b.style.background  = active ? '#c62828' : '#fff';
         b.style.color       = active ? '#fff' : '#555';
-        b.style.borderColor = active ? '#c62828' : '#b0c4c0';
+        b.style.borderColor = active ? '#c62828' : '#b9b4c5';
     });
 }
 
@@ -4354,7 +4355,7 @@ function submitDtrReview(decision) {
         title: decision === 1 ? 'Confirm your DTR?' : 'Submit dispute?',
         text: decision === 1 ? 'This tells HR your attendance is correct.' : 'HR will be notified to review your concern.',
         icon: 'question', showCancelButton: true,
-        confirmButtonColor: decision === 1 ? '#219688' : '#c62828',
+        confirmButtonColor: decision === 1 ? '#6642aa' : '#c62828',
         confirmButtonText: decision === 1 ? 'Yes, confirm' : 'Yes, dispute',
     }).then(function (r) {
         if (!r.isConfirmed) return;
@@ -4443,7 +4444,7 @@ function buildPayrollReviewBreakdown(d) {
         + (pos(d.sun_amt) ? eRow('Rest Day Duty (' + d.sun_days + ')', d.sun_amt) : '')
         + (pos(d.spc_amt) ? eRow('Special Holiday (' + d.spc_days + ')', d.spc_amt) : '')
         + (pos(d.late_amt) ? eRow('Late (' + d.late_min + ' min)', d.late_amt, true) : '')
-        + '<div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#219688;">Gross Pay</span>'
+        + '<div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#6642aa;">Gross Pay</span>'
         + '<span class="ps-val earn" style="font-size:15px;font-weight:900;">₱' + d.gross + '</span></div>';
 
     // ── Deductions column ──
@@ -4582,9 +4583,9 @@ function loanDetailHtml(d) {
     var rows = d.rows || [];
 
     var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
-        + '<span style="font-weight:800;color:#176358;font-size:15px;">' + escapeHtml(L.type_name) + '</span>'
+        + '<span style="font-weight:800;color:#4e3483;font-size:15px;">' + escapeHtml(L.type_name) + '</span>'
         + (L.settled
-            ? '<span style="background:#e8f7f5;color:#176358;border-radius:10px;padding:3px 12px;font-size:11px;font-weight:700;">Settled</span>'
+            ? '<span style="background:#f0ecf6;color:#4e3483;border-radius:10px;padding:3px 12px;font-size:11px;font-weight:700;">Settled</span>'
             : '<span style="background:#fff8e8;color:#fd7e14;border-radius:10px;padding:3px 12px;font-size:11px;font-weight:700;">Active</span>')
         + '</div>';
 
@@ -4625,7 +4626,7 @@ function loanDetailHtml(d) {
     }).join('') + '</div>';
 
     h += '<div class="lnh-hd" style="margin-bottom:0;"><span>Total posted</span>'
-        + '<span style="color:#176358;font-size:12px;">' + peso(d.paid_posted) + '</span></div>';
+        + '<span style="color:#4e3483;font-size:12px;">' + peso(d.paid_posted) + '</span></div>';
     return h;
 }
 
@@ -4678,7 +4679,7 @@ document.addEventListener('DOMContentLoaded', function () {
     initCompare();
     if (typeof ApexCharts === 'undefined') return;
     var base = { chart:{ fontFamily:'Segoe UI,Arial,sans-serif', toolbar:{show:false}, parentHeightOffset:0 },
-                 grid:{ borderColor:'#eef3f2', strokeDashArray:0 },
+                 grid:{ borderColor:'#f0eff3', strokeDashArray:0 },
                  xaxis:{ categories:CHART.labels, labels:{ style:{ fontSize:'10px', colors:'#999' } } },
                  dataLabels:{ enabled:false }, legend:{ fontSize:'11px', markers:{ width:9, height:9 } } };
 
@@ -4686,7 +4687,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Net vs Gross — area, two series
         new ApexCharts(document.querySelector('#chart-pay'), Object.assign({}, base, {
             chart: Object.assign({ type:'area', height:240 }, base.chart),
-            colors:['#219688','#4a5bbf'],
+            colors:['#6642aa','#4a5bbf'],
             stroke:{ curve:'smooth', width:[3,2] },
             fill:{ type:'gradient', gradient:{ opacityFrom:0.35, opacityTo:0.04 } },
             series:[ { name:'Net Pay', data:CHART.net }, { name:'Gross Pay', data:CHART.gross } ],
@@ -4717,7 +4718,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Present vs Absent — grouped column
         new ApexCharts(document.querySelector('#chart-attend'), Object.assign({}, base, {
             chart: Object.assign({ type:'bar', height:200 }, base.chart),
-            colors:['#219688','#dc3545'],
+            colors:['#6642aa','#dc3545'],
             plotOptions:{ bar:{ columnWidth:'55%', borderRadius:3 } },
             series:[ { name:'Present', data:CHART.present }, { name:'Absent', data:CHART.absent } ],
             yaxis:{ labels:{ style:{ fontSize:'10px', colors:'#999' } } }
@@ -4728,14 +4729,14 @@ document.addEventListener('DOMContentLoaded', function () {
     if (DED.length && document.querySelector('#chart-deduct')) {
         new ApexCharts(document.querySelector('#chart-deduct'), {
             chart:{ type:'donut', height:262, fontFamily:'Segoe UI,Arial,sans-serif' },
-            colors:['#219688','#4a5bbf','#b26a00','#c9366f','#5e35b1','#7a7f2a'],
+            colors:['#6642aa','#4a5bbf','#b26a00','#c9366f','#5e35b1','#7a7f2a'],
             series: DED.map(function(d){ return d.value; }),
             labels: DED.map(function(d){ return d.label; }),
             stroke:{ width:2, colors:['#ffffff'] },
             dataLabels:{ enabled:false },
             legend:{ position:'bottom', fontSize:'11px', markers:{ width:9, height:9 } },
             plotOptions:{ pie:{ donut:{ size:'70%', labels:{ show:true,
-                value:{ fontSize:'14px', fontWeight:800, color:'#2b3330', formatter:function(v){ return peso(v); } },
+                value:{ fontSize:'14px', fontWeight:800, color:'#312f38', formatter:function(v){ return peso(v); } },
                 total:{ show:true, label:'Total', fontSize:'10px', color:'#999', formatter:function(){ return peso(TOTDED); } }
             } } } },
             tooltip:{ y:{ formatter:peso } }
@@ -4773,21 +4774,21 @@ function initCompare(){
         if(!a||!b) return;
         var h='<div class="paper" style="border-radius:14px;overflow:hidden;">'+
             '<table style="width:100%;border-collapse:collapse;font-size:12px;">'+
-            '<thead><tr style="background:#176358;color:#fff;">'+
+            '<thead><tr style="background:#4e3483;color:#fff;">'+
             '<th style="padding:9px 12px;text-align:left;">Item</th>'+
             '<th style="padding:9px 12px;text-align:right;">A</th>'+
             '<th style="padding:9px 12px;text-align:right;">B</th>'+
             '<th style="padding:9px 12px;text-align:right;">Diff (B−A)</th></tr>'+
-            '<tr style="background:#1f7d70;color:rgba(255,255,255,.85);font-size:10px;">'+
+            '<tr style="background:#5a3c96;color:rgba(255,255,255,.85);font-size:10px;">'+
             '<td style="padding:4px 12px;">Period</td><td style="padding:4px 12px;text-align:right;">'+a.label+'</td>'+
             '<td style="padding:4px 12px;text-align:right;">'+b.label+'</td><td></td></tr></thead><tbody>'+
-            '<tr><td colspan="4" style="padding:6px 12px;background:#eef6f4;font-weight:800;color:#176358;font-size:10px;text-transform:uppercase;">Earnings</td></tr>'+
+            '<tr><td colspan="4" style="padding:6px 12px;background:#f2f0f6;font-weight:800;color:#4e3483;font-size:10px;text-transform:uppercase;">Earnings</td></tr>'+
             row('Basic Pay',a.basic,b.basic)+
             row('Allowance',a.allowance,b.allowance)+
             row('Overtime',a.ot,b.ot)+
             row('Absent (−)',a.absent,b.absent,true)+
             row('Late (−)',a.late,b.late,true)+
-            '<tr style="border-top:1px solid #eee;"><td style="padding:7px 12px;font-weight:800;color:#219688;">Gross Pay</td><td style="padding:7px 12px;text-align:right;font-weight:800;">'+peso(a.gross)+'</td><td style="padding:7px 12px;text-align:right;font-weight:800;">'+peso(b.gross)+'</td><td style="padding:7px 12px;text-align:right;font-weight:800;" class="'+((b.gross-a.gross)>=0?'earn':'ded')+'">'+((b.gross-a.gross)>0?'+':'')+peso(b.gross-a.gross)+'</td></tr>'+
+            '<tr style="border-top:1px solid #eee;"><td style="padding:7px 12px;font-weight:800;color:#6642aa;">Gross Pay</td><td style="padding:7px 12px;text-align:right;font-weight:800;">'+peso(a.gross)+'</td><td style="padding:7px 12px;text-align:right;font-weight:800;">'+peso(b.gross)+'</td><td style="padding:7px 12px;text-align:right;font-weight:800;" class="'+((b.gross-a.gross)>=0?'earn':'ded')+'">'+((b.gross-a.gross)>0?'+':'')+peso(b.gross-a.gross)+'</td></tr>'+
             '<tr><td colspan="4" style="padding:6px 12px;background:#fdecec;font-weight:800;color:#b02a37;font-size:10px;text-transform:uppercase;">Deductions</td></tr>'+
             row('Contributions',a.contrib,b.contrib,true)+
             row('SSS Fund',a.sss_fund,b.sss_fund,true)+
@@ -4797,7 +4798,7 @@ function initCompare(){
             row('Other',a.other,b.other,true)+
             '<tr style="border-top:1px solid #eee;"><td style="padding:7px 12px;font-weight:800;color:#dc3545;">Total Deductions</td><td style="padding:7px 12px;text-align:right;font-weight:800;">'+peso(a.ded)+'</td><td style="padding:7px 12px;text-align:right;font-weight:800;">'+peso(b.ded)+'</td><td style="padding:7px 12px;text-align:right;font-weight:800;" class="'+((b.ded-a.ded)<=0?'earn':'ded')+'">'+((b.ded-a.ded)>0?'+':'')+peso(b.ded-a.ded)+'</td></tr>'+
             '</tbody></table>'+
-            '<div style="background:linear-gradient(135deg,#219688,#176358);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;color:#fff;">'+
+            '<div style="background:linear-gradient(135deg,#6642aa,#4e3483);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;color:#fff;">'+
             '<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;opacity:.8;">Net Pay Difference</div>'+
             '<div style="font-size:11px;opacity:.7;margin-top:2px;">A '+peso(a.net)+' → B '+peso(b.net)+'</div></div>'+
             '<div style="font-size:22px;font-weight:900;">'+((b.net-a.net)>0?'+':'')+peso(b.net-a.net)+'</div></div>'+
@@ -4861,19 +4862,19 @@ var attM = { start: 0, pageSize: 15, total: null, loading: false, done: false, s
 // Click-to-open details modal for one attendance record (table row or card).
 function openAttDetail(r) {
     if (!r) return;
-    var lbl = function (t) { return '<div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">' + t + '</div>'; };
+    var lbl = function (t) { return '<div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">' + t + '</div>'; };
     var noteText = (r.notes || '').replace(/<[^>]*>/g, '').trim();
     var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
-        + '<div style="font-weight:800;color:#176358;font-size:15px;line-height:1.3;">' + (r.date || '') + '</div>'
+        + '<div style="font-weight:800;color:#4e3483;font-size:15px;line-height:1.3;">' + (r.date || '') + '</div>'
         + '<div>' + (r.type || '') + '</div>'
         + '</div>'
         + '<div class="row g-2" style="font-size:13px;">'
-        + '<div class="col-6" style="background:#f7fbfa;border-radius:10px;padding:10px 12px;">' + lbl('Work Hours') + '<b>' + (r.work_hours || '—') + '</b></div>'
-        + '<div class="col-6" style="background:#f7fbfa;border-radius:10px;padding:10px 12px;">' + lbl('OT Hours') + '<b>' + (r.ot_hours || '—') + '</b></div>'
+        + '<div class="col-6" style="background:#f9f8fb;border-radius:10px;padding:10px 12px;">' + lbl('Work Hours') + '<b>' + (r.work_hours || '—') + '</b></div>'
+        + '<div class="col-6" style="background:#f9f8fb;border-radius:10px;padding:10px 12px;">' + lbl('OT Hours') + '<b>' + (r.ot_hours || '—') + '</b></div>'
         + '<div class="col-12" style="margin-top:10px;">' + lbl('Time In / Out') + (r.time_io || '—') + '</div>'
         + '<div class="col-12" style="margin-top:6px;">'
         + lbl('All Logs' + (r.logs_count ? ' (' + r.logs_count + ')' : ''))
-        + '<div style="background:#f7fbfa;border:1px solid #e4ecea;border-radius:10px;padding:8px 12px;margin-top:3px;">'
+        + '<div style="background:#f9f8fb;border:1px solid #e7e6ed;border-radius:10px;padding:8px 12px;margin-top:3px;">'
         + (r.logs_all || '<span style="color:#aaa;font-size:11px;">No logs</span>') + '</div></div>'
         + ((noteText && noteText !== '—') ? '<div class="col-12" style="margin-top:6px;">' + lbl('Notes') + r.notes + '</div>' : '')
         + '</div>'
@@ -5253,9 +5254,9 @@ var AREQ_ENDPOINT = 'attendance-requests-portal-server.php';
 function openAreqDetail(r) {
     if (!r) return;
     var typeIcon = r.type_key === 'incident' ? 'ri-error-warning-line' : 'ri-timer-flash-line';
-    var lbl = function (t) { return '<div style="font-size:9.5px;font-weight:800;color:#8a9794;text-transform:uppercase;letter-spacing:.3px;">' + t + '</div>'; };
+    var lbl = function (t) { return '<div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">' + t + '</div>'; };
     var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
-        + '<span style="font-weight:800;color:#176358;font-size:16px;"><i class="' + typeIcon + ' me-1"></i>' + (r.type_label || 'Request') + '</span>'
+        + '<span style="font-weight:800;color:#4e3483;font-size:16px;"><i class="' + typeIcon + ' me-1"></i>' + (r.type_label || 'Request') + '</span>'
         + '<span style="background:' + (r.status_color || '#888') + ';color:#fff;border-radius:10px;padding:3px 12px;font-size:11px;font-weight:800;">' + (r.status_label || '') + '</span>'
         + '</div>'
         + '<div class="row g-2" style="font-size:12.5px;">'
@@ -5265,7 +5266,7 @@ function openAreqDetail(r) {
         + '<div class="col-12">' + lbl('Details') + (r.details_html || '—') + '</div>'
         + '</div>'
         + (r.reviewer_html
-            ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e4ecea;font-size:12px;color:#555;">' + lbl('Reviewer Notes') + r.reviewer_html + '</div>'
+            ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e7e6ed;font-size:12px;color:#555;">' + lbl('Reviewer Notes') + r.reviewer_html + '</div>'
             : '');
     document.getElementById('areq-detail-body').innerHTML = h;
     new bootstrap.Modal(document.getElementById('modal-areq-detail')).show();
@@ -5422,12 +5423,12 @@ jQuery(function ($) {
                     <!-- color is explicit: the theme's global h1-h6 rule sets
                          --vz-heading-color on headings, which would otherwise
                          win over the header's own colour. -->
-                    <h5 class="modal-title mb-0" style="color:#176358;"><i class="ri-file-list-3-line me-1" style="color:#219688;"></i>Review My DTR</h5>
-                    <div id="dtr-review-sub" style="font-size:12px;color:#8a9a95;"></div>
+                    <h5 class="modal-title mb-0" style="color:#4e3483;"><i class="ri-file-list-3-line me-1" style="color:#6642aa;"></i>Review My DTR</h5>
+                    <div id="dtr-review-sub" style="font-size:12px;color:#908c9c;"></div>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="dtr-review-body" style="background:#f7fbfa;">
+            <div class="modal-body" id="dtr-review-body" style="background:#f9f8fb;">
                 <div class="mydtr-empty"><i class="ri-loader-4-line"></i> Loading…</div>
             </div>
             <div class="modal-footer" id="dtr-review-footer" style="background:#fff;flex-direction:column;align-items:stretch;gap:8px;">
@@ -5436,7 +5437,7 @@ jQuery(function ($) {
                 <div class="d-flex gap-2 justify-content-end">
                     <button type="button" class="btn" style="background:#fdecea;color:#c62828;font-weight:700;border-radius:10px;"
                         onclick="submitDtrReview(2)"><i class="ri-error-warning-line me-1"></i>Dispute</button>
-                    <button type="button" class="btn" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border-radius:10px;"
+                    <button type="button" class="btn" style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border-radius:10px;"
                         onclick="submitDtrReview(1)"><i class="ri-checkbox-circle-line me-1"></i>Confirm<span class="prv-btn-long"> — Looks Correct</span></button>
                 </div>
             </div>
@@ -5480,14 +5481,14 @@ jQuery(function ($) {
 <div class="modal fade" id="modal-payroll-review" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content" style="border-radius:16px;overflow:hidden;">
-            <div class="modal-header" style="background:#fff;color:#176358;border-bottom:1px solid #eef3f2;">
+            <div class="modal-header" style="background:#fff;color:#4e3483;border-bottom:1px solid #f0eff3;">
                 <div>
-                    <h5 class="modal-title mb-0" style="color:#176358;"><i class="ri-file-list-3-line me-1" style="color:#219688;"></i>Review My Payslip</h5>
-                    <div id="payroll-review-sub" style="font-size:12px;color:#8a9a95;"></div>
+                    <h5 class="modal-title mb-0" style="color:#4e3483;"><i class="ri-file-list-3-line me-1" style="color:#6642aa;"></i>Review My Payslip</h5>
+                    <div id="payroll-review-sub" style="font-size:12px;color:#908c9c;"></div>
                 </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="payroll-review-body" style="background:#f7fbfa;">
+            <div class="modal-body" id="payroll-review-body" style="background:#f9f8fb;">
                 <div class="mydtr-empty"><i class="ri-loader-4-line"></i> Loading…</div>
             </div>
             <div class="modal-footer" id="payroll-review-footer" style="background:#fff;flex-direction:column;align-items:stretch;gap:8px;">
@@ -5502,9 +5503,9 @@ jQuery(function ($) {
                 </div>
                 <!-- Read-only view (locked payroll): no decision, just the payslip -->
                 <div id="prv-readonly" class="d-flex gap-2 justify-content-between align-items-center prv-hide">
-                    <span style="font-size:11.5px;color:#8a9a95;"><i class="ri-lock-2-line me-1"></i>This payroll is closed — view only.</span>
+                    <span style="font-size:11.5px;color:#908c9c;"><i class="ri-lock-2-line me-1"></i>This payroll is closed — view only.</span>
                     <button type="button" id="prv-pdf" class="btn btn-sm"
-                        style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;border-radius:10px;">
+                        style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;border-radius:10px;">
                         <i class="ri-file-text-line me-1"></i>View Payslip
                     </button>
                 </div>
@@ -5517,8 +5518,8 @@ jQuery(function ($) {
 <div class="modal fade" id="modal-payslip-preview" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content" style="border-radius:16px;overflow:hidden;">
-            <div class="modal-header" style="background:#fff;color:#176358;border-bottom:1px solid #eef3f2;">
-                <h5 class="modal-title mb-0" style="color:#176358;"><i class="ri-file-text-line me-1" style="color:#219688;"></i>Payslip Preview</h5>
+            <div class="modal-header" style="background:#fff;color:#4e3483;border-bottom:1px solid #f0eff3;">
+                <h5 class="modal-title mb-0" style="color:#4e3483;"><i class="ri-file-text-line me-1" style="color:#6642aa;"></i>Payslip Preview</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <!-- Light backdrop: the frame holds the payslip's own HTML page now,
@@ -5533,7 +5534,7 @@ jQuery(function ($) {
                  action sits dead center at every width. The header ✕ and Esc
                  still dismiss. -->
             <div class="modal-footer" style="background:#fff;justify-content:center;">
-                <a id="payslip-preview-download" href="#" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
+                <a id="payslip-preview-download" href="#" class="btn btn-sm" style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;">
                     <i class="ri-download-2-line me-1"></i>Download PDF
                 </a>
             </div>
@@ -5547,7 +5548,7 @@ jQuery(function ($) {
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                <h6 class="modal-title" style="color:#4e3483;font-weight:700;">
                     <i class="ri-calendar-event-line me-2"></i>Leave Details
                 </h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -5565,7 +5566,7 @@ jQuery(function ($) {
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                <h6 class="modal-title" style="color:#4e3483;font-weight:700;">
                     <i class="ri-bank-line me-2"></i><span id="loan-detail-title">Loan Details</span>
                 </h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -5583,7 +5584,7 @@ jQuery(function ($) {
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                <h6 class="modal-title" style="color:#4e3483;font-weight:700;">
                     <i class="ri-fingerprint-line me-2"></i>Attendance Details
                 </h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -5601,7 +5602,7 @@ jQuery(function ($) {
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                <h6 class="modal-title" style="color:#4e3483;font-weight:700;">
                     <i class="ri-timer-flash-line me-2"></i>Request Details
                 </h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -5619,7 +5620,7 @@ jQuery(function ($) {
         <form id="leave-request-form" data-parsley-validate novalidate>
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                    <h6 class="modal-title" style="color:#4e3483;font-weight:700;">
                         <i class="ri-calendar-event-line me-2"></i>Request a Leave
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -5627,7 +5628,7 @@ jQuery(function ($) {
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-12 col-md-6">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Type of Leave <span style="color:red">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Type of Leave <span style="color:red">*</span></label>
                             <select name="leave_type_id" class="form-control" onchange="updateLvBalance()" data-parsley-required-message="Please select a leave type." required>
                                 <option value="">Select leave type…</option>
                                 <?php foreach ($leave_types_list as $t): ?>
@@ -5637,18 +5638,18 @@ jQuery(function ($) {
                             <div id="lv-bal-hint" style="display:none;font-size:11.5px;font-weight:700;margin-top:5px;"></div>
                         </div>
                         <div class="col-12 col-md-6">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Duration <span style="color:red">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Duration <span style="color:red">*</span></label>
                             <div class="d-flex gap-2">
                                 <button type="button" class="lv-dur-btn active" data-val="full" onclick="setLvDuration('full')"
-                                    style="flex:1;padding:7px;border:1.5px solid #219688;background:#219688;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #6642aa;background:#6642aa;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     Full Day
                                 </button>
                                 <button type="button" class="lv-dur-btn" data-val="AM" onclick="setLvDuration('AM')"
-                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #b9b4c5;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     AM Half
                                 </button>
                                 <button type="button" class="lv-dur-btn" data-val="PM" onclick="setLvDuration('PM')"
-                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #b9b4c5;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     PM Half
                                 </button>
                             </div>
@@ -5656,7 +5657,7 @@ jQuery(function ($) {
                             <input type="hidden" name="half_period" id="lv-half-period" value="">
                         </div>
                         <div class="col-12 col-md-6">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Leave Day(s) <span style="color:red">*</span></label>
                             <input type="text" id="lv-dates" class="form-control" placeholder="Pick one or more days…" readonly
                                 data-parsley-required-message="Please select at least one leave day." required>
                             <input type="hidden" name="dates" id="lv-dates-hidden">
@@ -5664,26 +5665,26 @@ jQuery(function ($) {
                                 <i class="ri-information-line"></i> Holidays are disabled. <span id="lv-half-hint"></span>
                             </div>
                         </div>
-                        <div class="col-12 col-md-6" id="lv-dur" style="display:none;font-size:12px;color:#176358;font-weight:700;align-self:flex-end;">
+                        <div class="col-12 col-md-6" id="lv-dur" style="display:none;font-size:12px;color:#4e3483;font-weight:700;align-self:flex-end;">
                             <i class="ri-time-line"></i> Total: <span id="lv-dur-val">0</span> day(s)
                         </div>
                         <!-- Multi-day half-day: which end of the selection is the half -->
                         <div class="col-12" id="lv-half-on-wrap" style="display:none;">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Half Day Falls On <span style="color:red">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Half Day Falls On <span style="color:red">*</span></label>
                             <div class="d-flex gap-2">
                                 <button type="button" class="lv-halfon-btn" data-val="first" onclick="setLvHalfOn('first')"
-                                    style="flex:1;padding:7px;border:1.5px solid #219688;background:#219688;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #6642aa;background:#6642aa;color:#fff;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     First Day
                                 </button>
                                 <button type="button" class="lv-halfon-btn" data-val="last" onclick="setLvHalfOn('last')"
-                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #b9b4c5;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     Last Day
                                 </button>
                             </div>
                             <input type="hidden" name="half_on" id="lv-half-on" value="first">
                         </div>
                         <div class="col-12">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason / Purpose <span style="color:red">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Reason / Purpose <span style="color:red">*</span></label>
                             <textarea name="reason" class="form-control" rows="3" placeholder="State the reason for your leave"
                                 data-parsley-required-message="Please state your reason for leave." required></textarea>
                         </div>
@@ -5691,7 +5692,7 @@ jQuery(function ($) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" id="lv-submit" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
+                    <button type="submit" id="lv-submit" class="btn btn-sm" style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;">
                         <i class="ri-send-plane-line me-1"></i>Submit Request
                     </button>
                 </div>
@@ -5728,11 +5729,11 @@ jQuery(function ($) {
                                     Full Day
                                 </button>
                                 <button type="button" class="lwop-dur-btn" data-val="AM" onclick="setLwopDuration('AM')"
-                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #b9b4c5;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     AM Half
                                 </button>
                                 <button type="button" class="lwop-dur-btn" data-val="PM" onclick="setLwopDuration('PM')"
-                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #b9b4c5;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     PM Half
                                 </button>
                             </div>
@@ -5760,7 +5761,7 @@ jQuery(function ($) {
                                     First Day
                                 </button>
                                 <button type="button" class="lwop-halfon-btn" data-val="last" onclick="setLwopHalfOn('last')"
-                                    style="flex:1;padding:7px;border:1.5px solid #b0c4c0;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
+                                    style="flex:1;padding:7px;border:1.5px solid #b9b4c5;background:#fff;color:#555;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
                                     Last Day
                                 </button>
                             </div>
@@ -5791,7 +5792,7 @@ jQuery(function ($) {
         <form id="att-request-form" data-parsley-validate novalidate>
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title" style="color:#176358;font-weight:700;">
+                    <h6 class="modal-title" style="color:#4e3483;font-weight:700;">
                         <i class="ri-timer-flash-line me-2"></i>File a Request
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -5799,7 +5800,7 @@ jQuery(function ($) {
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-12 col-md-6">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Request Type <span style="color:red;">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Request Type <span style="color:red;">*</span></label>
                             <select name="request_type" class="form-control" id="att-req-type" onchange="toggleAttFields(this.value)"
                                 data-parsley-required-message="Please select a request type." required>
                                 <option value="">— Select type —</option>
@@ -5808,13 +5809,13 @@ jQuery(function ($) {
                             </select>
                         </div>
                         <div class="col-12 col-md-6">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Date <span style="color:red;">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Date <span style="color:red;">*</span></label>
                             <input type="text" id="att-req-date" class="form-control" placeholder="Select a date…" readonly
                                 data-parsley-required-message="Please select a date." required>
                             <input type="hidden" name="request_date" id="att-req-date-hidden">
                         </div>
                         <div class="col-12 col-md-6">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red;">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Reason <span style="color:red;">*</span></label>
                             <select name="reason" class="form-control" data-parsley-required-message="Please select a reason." required>
                                 <option value="">— Select reason —</option>
                                 <option value="forgot_scan">Forgot to Scan</option>
@@ -5827,7 +5828,7 @@ jQuery(function ($) {
 
                         <!-- Incident fields -->
                         <div class="col-6 att-incident-field" style="display:none;">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time In <span style="color:red;">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Claimed Time In <span style="color:red;">*</span></label>
                             <div class="ctp-12h">
                                 <input type="text" id="att-time-in-disp" class="form-control ctp-display" placeholder="e.g. 8:00 AM" readonly tabindex="-1"
                                     data-parsley-required-message="Please enter your claimed time in.">
@@ -5837,7 +5838,7 @@ jQuery(function ($) {
                             </div>
                         </div>
                         <div class="col-6 att-incident-field" style="display:none;">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Claimed Time Out <span style="color:red;">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Claimed Time Out <span style="color:red;">*</span></label>
                             <div class="ctp-12h">
                                 <input type="text" id="att-time-out-disp" class="form-control ctp-display" placeholder="e.g. 5:00 PM" readonly tabindex="-1"
                                     data-parsley-required-message="Please enter your claimed time out.">
@@ -5849,20 +5850,20 @@ jQuery(function ($) {
 
                         <!-- OT fields -->
                         <div class="col-12 col-md-6 att-ot-field" style="display:none;">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
                             <input type="number" name="ot_hours_requested" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5"
                                 data-parsley-type="number" data-parsley-required-message="Please enter the OT hours requested.">
                         </div>
 
                         <div class="col-12">
-                            <label style="font-size:11px;font-weight:700;color:#176358;text-transform:uppercase;letter-spacing:.4px;">Notes / Explanation</label>
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Notes / Explanation</label>
                             <textarea name="notes" class="form-control" rows="2" placeholder="Describe what happened…"></textarea>
                         </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-sm" style="background:linear-gradient(135deg,#219688,#176358);color:#fff;font-weight:700;border:none;">
+                    <button type="submit" class="btn btn-sm" style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;">
                         <i class="ri-send-plane-line me-1"></i>Submit Request
                     </button>
                 </div>

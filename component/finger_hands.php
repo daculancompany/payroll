@@ -4,10 +4,15 @@
  * screen). Renders the 10 canonical fingers for one employee, marking each
  * enrolled / not, colored by capture quality.
  *
- * Data source: biometric_kiosk_templates (the live mobile-app table), format
- * 'sourceafis'. finger_index holds canonical codes (RIGHT_THUMB … LEFT_PINKY).
+ * Two independent sources, because the two scanners keep their templates in
+ * separate tables (neither SDK can read the other's blobs):
+ *   'kiosk'  → biometric_kiosk_templates, format 'sourceafis' (mobile app)
+ *   'device' → employee_fingerprints                          (desktop scanner)
+ * Both store canonical finger codes (RIGHT_THUMB … LEFT_PINKY); only the kiosk
+ * table carries a capture quality.
  *
- *   render_finger_hands($conn, $employee_id);
+ *   render_finger_hands($conn, $employee_id);                        // kiosk
+ *   render_finger_hands($conn, $employee_id, ['source' => 'device']); // desktop
  */
 
 if (!function_exists('render_finger_hands')) {
@@ -33,13 +38,20 @@ if (!function_exists('render_finger_hands')) {
         return $out;
     }
 
-    /** Fetch enrolled fingers for an employee → [code => quality|null]. */
-    function fetch_finger_status($conn, $employee_id)
+    /**
+     * Fetch enrolled fingers for an employee → [code => quality|null].
+     * $source: 'kiosk' (mobile app) or 'device' (desktop scanner).
+     */
+    function fetch_finger_status($conn, $employee_id, $source = 'kiosk')
     {
         $map = [];
         $employee_id = (int) $employee_id;
-        $q = $conn->query("SELECT finger_index, quality FROM biometric_kiosk_templates
-                           WHERE employee_id = $employee_id AND format = 'sourceafis'");
+        $sql = $source === 'device'
+            ? "SELECT finger_index, NULL AS quality FROM employee_fingerprints
+               WHERE employee_id = $employee_id"
+            : "SELECT finger_index, quality FROM biometric_kiosk_templates
+               WHERE employee_id = $employee_id AND format = 'sourceafis'";
+        $q = $conn->query($sql);
         while ($q && $r = $q->fetch_assoc()) {
             $map[$r['finger_index']] = $r['quality'] !== null ? (int) $r['quality'] : null;
         }
@@ -58,8 +70,8 @@ if (!function_exists('render_finger_hands')) {
     {
         // Palm + wrist shared across hands; fingers drawn as rounded capsules with a tip dot.
         $svg = '<svg viewBox="0 0 220 260" style="width:100%;height:auto;display:block;">';
-        $svg .= '<path d="M40 150 Q40 122 66 120 L156 120 Q182 122 182 152 L178 206 Q170 232 138 232 L86 232 Q52 232 44 206 Z" fill="rgba(0,150,136,.06)" stroke="#cfe3e0"/>';
-        $svg .= '<rect x="86" y="226" width="52" height="24" rx="11" fill="rgba(0,150,136,.06)" stroke="#cfe3e0"/>';
+        $svg .= '<path d="M40 150 Q40 122 66 120 L156 120 Q182 122 182 152 L178 206 Q170 232 138 232 L86 232 Q52 232 44 206 Z" fill="rgba(103,59,182,.06)" stroke="#d9d3e4"/>';
+        $svg .= '<rect x="86" y="226" width="52" height="24" rx="11" fill="rgba(103,59,182,.06)" stroke="#d9d3e4"/>';
         foreach ($fingers as $f) {
             $svg .= '<line x1="' . $f['bx'] . '" y1="' . $f['by'] . '" x2="' . $f['tx'] . '" y2="' . $f['ty'] . '" stroke="rgba(0,0,0,.07)" stroke-width="' . $f['w'] . '" stroke-linecap="round"/>';
         }
@@ -76,41 +88,65 @@ if (!function_exists('render_finger_hands')) {
 
     /**
      * Render the full two-hand block.
-     * $opts: ['title' => string, 'compact' => bool]
+     * $opts: ['title' => string, 'source' => 'kiosk'|'device', 'subtitle' => string,
+     *         'face' => bool, 'face_model' => string]
      */
     function render_finger_hands($conn, $employee_id, $opts = [])
     {
-        $status  = fetch_finger_status($conn, $employee_id);
+        $source  = ($opts['source'] ?? 'kiosk') === 'device' ? 'device' : 'kiosk';
+        $status  = fetch_finger_status($conn, $employee_id, $source);
         $fingers = _fh_fingers();
         $all = array_merge($fingers['right'], $fingers['left']);
         $count = 0;
         foreach ($all as $f) if (array_key_exists($f['code'], $status)) $count++;
-        $title = $opts['title'] ?? 'Registered Fingerprints';
+        $title = $opts['title'] ?? ($source === 'device'
+            ? 'Registered Fingerprints (Scanner Device)'
+            : 'Registered Fingerprints (Mobile Kiosk)');
+        $subtitle = $opts['subtitle'] ?? ($source === 'device'
+            ? 'Enrolled on the desktop fingerprint scanner'
+            : 'Enrolled on the mobile kiosk app');
+        // Only the kiosk table records a capture quality.
+        $has_quality = $source !== 'device';
+        // Faces are a kiosk-only enrollment — the desktop scanner has no camera.
+        $show_face = $opts['face'] ?? ($source === 'kiosk');
+        if ($show_face) {
+            require_once __DIR__ . '/face_status.php';
+        }
 
         ob_start(); ?>
-        <div class="finger-hands-card" style="background:#fff;border:1px solid #e6ebe9;border-radius:14px;padding:14px 16px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                <div style="font-weight:700;font-size:14px;color:#1b2b27;"><i class="ri-fingerprint-line me-1" style="color:#009688;"></i><?= htmlspecialchars($title) ?></div>
-                <span style="font-size:12px;font-weight:800;color:<?= $count ? '#009688' : '#94a3b8' ?>;"><?= $count ?>/10</span>
+        <div class="finger-hands-card" style="background:#fff;border:1px solid #e8e7eb;border-radius:14px;padding:14px 16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px;">
+                <div>
+                    <div style="font-weight:700;font-size:14px;color:#2b2639;"><i class="ri-fingerprint-line me-1" style="color:#673bb6;"></i><?= htmlspecialchars($title) ?></div>
+                    <?php if ($subtitle !== ''): ?>
+                        <div style="font-size:11px;color:#918d9c;margin-top:2px;"><?= htmlspecialchars($subtitle) ?></div>
+                    <?php endif; ?>
+                </div>
+                <span style="font-size:12px;font-weight:800;color:<?= $count ? '#673bb6' : '#94a3b8' ?>;white-space:nowrap;"><?= $count ?>/10</span>
             </div>
             <?php if ($count === 0): ?>
-                <div style="font-size:12.5px;color:#8a9a95;padding:6px 0;"><i class="ri-information-line me-1"></i>No fingerprints enrolled yet.</div>
+                <div style="font-size:12.5px;color:#908c9c;padding:6px 0;"><i class="ri-information-line me-1"></i>No fingerprints enrolled yet.</div>
             <?php endif; ?>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:360px;margin:0 auto;">
                 <div style="text-align:center;">
-                    <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8b9a96;font-weight:700;margin-bottom:2px;">Left hand</div>
+                    <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#918d9c;font-weight:700;margin-bottom:2px;">Left hand</div>
                     <?= _fh_hand_svg($fingers['left'], $status) ?>
                 </div>
                 <div style="text-align:center;">
-                    <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#8b9a96;font-weight:700;margin-bottom:2px;">Right hand</div>
+                    <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#918d9c;font-weight:700;margin-bottom:2px;">Right hand</div>
                     <?= _fh_hand_svg($fingers['right'], $status) ?>
                 </div>
             </div>
             <div style="display:flex;gap:14px;justify-content:center;margin-top:8px;flex-wrap:wrap;">
-                <span style="font-size:11px;color:#5a6b67;display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;"></span>Enrolled</span>
-                <span style="font-size:11px;color:#5a6b67;display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>Low quality</span>
-                <span style="font-size:11px;color:#5a6b67;display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#94a3b8;display:inline-block;"></span>Not enrolled</span>
+                <span style="font-size:11px;color:#625e6e;display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;"></span>Enrolled</span>
+                <?php if ($has_quality): ?>
+                <span style="font-size:11px;color:#625e6e;display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block;"></span>Low quality</span>
+                <?php endif; ?>
+                <span style="font-size:11px;color:#625e6e;display:inline-flex;align-items:center;gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:#94a3b8;display:inline-block;"></span>Not enrolled</span>
             </div>
+            <?php if ($show_face): ?>
+                <?= render_face_status($conn, $employee_id, ['model' => $opts['face_model'] ?? 'facenet']) ?>
+            <?php endif; ?>
         </div>
         <?php
         return ob_get_clean();

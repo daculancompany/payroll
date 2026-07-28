@@ -92,7 +92,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="sched-modal-title">
-                        <i class="ri-time-line me-2" style="color:#009688;"></i>Add Shift
+                        <i class="ri-time-line me-2" style="color:#673bb6;"></i>Add Shift
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -206,7 +206,7 @@ function editSchedule(row) {
     document.querySelector('input[name="has_nsd"][value="' + row.has_nsd + '"]').checked = true;
     toggleNsdRate(row.has_nsd == 1);
     document.getElementById('sched-modal-title').innerHTML =
-        '<i class="ri-time-line me-2" style="color:#009688;"></i>Edit Shift';
+        '<i class="ri-time-line me-2" style="color:#673bb6;"></i>Edit Shift';
     new bootstrap.Modal(document.getElementById('modal-schedule')).show();
 }
 
@@ -215,7 +215,7 @@ document.getElementById('modal-schedule').addEventListener('hidden.bs.modal', fu
     document.getElementById('sched-id').value = '';
     document.getElementById('nsd-rate-group').style.display = 'none';
     document.getElementById('sched-modal-title').innerHTML =
-        '<i class="ri-time-line me-2" style="color:#009688;"></i>Add Shift';
+        '<i class="ri-time-line me-2" style="color:#673bb6;"></i>Add Shift';
 });
 
 document.getElementById('form-schedule').addEventListener('submit', async function (e) {

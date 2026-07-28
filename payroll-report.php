@@ -59,7 +59,7 @@ function plr_status($s) {
 function plr_money($v){ return '₱' . number_format((float)$v, 2); }
 ?>
 <style>
-    .plr-filter-bar { background:#009688; color:#fff; border-radius:6px; padding:9px 16px; margin-bottom:12px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:12px; }
+    .plr-filter-bar { background:#673bb6; color:#fff; border-radius:6px; padding:9px 16px; margin-bottom:12px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:12px; }
     .plr-filter-bar .val { font-weight:700; }
     .plr-ref { font-weight:700; color:#1976d2; font-family:monospace; }
 </style>
@@ -70,7 +70,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
 
     <div class="row mb-3"><div class="col-12">
         <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-            <h4 class="mb-sm-0"><i class="ri-list-check-2 me-2" style="color:#009688;"></i>Payroll List Report</h4>
+            <h4 class="mb-sm-0"><i class="ri-list-check-2 me-2" style="color:#673bb6;"></i>Payroll List Report</h4>
             <ol class="breadcrumb m-0">
                 <li class="breadcrumb-item"><a href="index.php?page=reports">Reports</a></li>
                 <li class="breadcrumb-item active">Payroll List Report</li>
@@ -87,7 +87,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
                 <?php endif; ?>
                 <button type="button" onclick="repExportCSV('report-table','payroll-list-report.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
                 <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
-                <button type="button" class="btn btn-sm text-white" style="background:#009688;border-color:#009688;" data-bs-toggle="modal" data-bs-target="#modal-filter-add">
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-add">
                     <i class="ri-filter-3-line me-1"></i>Filter
                 </button>
             </div>
@@ -158,12 +158,12 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#009688;"></i>Filter Payroll List</h6>
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Payroll List</h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                             <i class="ri-calendar-range-line me-1"></i>Date Range <span class="text-muted fw-normal">(optional)</span>
                         </label>
                         <div class="row g-2">
@@ -184,7 +184,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
                         </div>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;"><i class="ri-pulse-line me-1"></i>Status</label>
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-pulse-line me-1"></i>Status</label>
                         <select name="status" class="form-control report-select2" data-placeholder="— All Statuses —">
                             <option value="" <?= $f_status===-1?'selected':'' ?>>— All Statuses —</option>
                             <option value="0" <?= $f_status===0?'selected':'' ?>>New</option>
@@ -194,7 +194,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
                         </select>
                     </div>
                     <div class="mb-1">
-                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;"><i class="ri-building-2-line me-1"></i>Employer <span class="text-muted fw-normal">(optional)</span></label>
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-building-2-line me-1"></i>Employer <span class="text-muted fw-normal">(optional)</span></label>
                         <select name="employer_id" class="form-control report-select2" data-placeholder="— All Employers —">
                             <option value="" <?= !$f_employer?'selected':'' ?>>— All Employers —</option>
                             <?php foreach ($employers as $e): ?>
@@ -205,7 +205,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
                 </div>
                 <div class="modal-footer" style="background:#f8f9fa;">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
-                    <button type="submit" class="btn btn-sm text-white" style="background:#009688;border-color:#009688;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
                 </div>
             </div>
         </div>

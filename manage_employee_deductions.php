@@ -7,7 +7,7 @@
 			<div class="col-md-5">
 				<label for="" class="control-label">Deduction</label>
 				<select id="deduction_id" class="borwser-default select2">
-					<option value=""></option>
+					<option value="">Select Deduction</option>
 					<?php
 					$deduction = $conn->query("SELECT * FROM deductions order by deduction asc");
 					while ($row = $deduction->fetch_assoc()):

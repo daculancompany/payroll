@@ -46,7 +46,7 @@
                                     ?>
                                     <tr>
                                         <td><?= $i++ ?></td>
-                                        <td><span style="font-family:monospace;font-weight:700;color:#009688;"><?= htmlspecialchars($row['branch_code']) ?></span></td>
+                                        <td><span style="font-family:monospace;font-weight:700;color:#673bb6;"><?= htmlspecialchars($row['branch_code']) ?></span></td>
                                         <td><?= htmlspecialchars($row['branch_name']) ?></td>
                                         <td><?= htmlspecialchars($row['city'] ?? '—') ?></td>
                                         <td><?= htmlspecialchars($row['phone'] ?? '—') ?></td>
@@ -87,7 +87,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="branch-modal-title">
-                        <i class="ri-building-2-line me-2" style="color:#009688;"></i>Add Branch
+                        <i class="ri-building-2-line me-2" style="color:#673bb6;"></i>Add Branch
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -95,34 +95,34 @@
                     <input type="hidden" id="branch-id" name="id" value="">
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Branch Code <span class="text-danger">*</span></label>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Branch Code <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="branch-code" name="branch_code" placeholder="e.g. BR-001" required>
                         </div>
                         <div class="col-md-8">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Branch Name <span class="text-danger">*</span></label>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Branch Name <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="branch-name" name="branch_name" placeholder="e.g. Main Office" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">City</label>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">City</label>
                             <input type="text" class="form-control" id="branch-city" name="city" placeholder="e.g. Cebu City">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Phone</label>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Phone</label>
                             <input type="text" class="form-control" id="branch-phone" name="phone" placeholder="e.g. 032-123-4567">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Email</label>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Email</label>
                             <input type="email" class="form-control" id="branch-email" name="email" placeholder="e.g. branch@company.com">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Status</label>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Status</label>
                             <select class="form-control" id="branch-status" name="status">
                                 <option value="1">Active</option>
                                 <option value="0">Inactive</option>
                             </select>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#009688;">Address</label>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Address</label>
                             <textarea class="form-control" id="branch-address" name="address" rows="2" placeholder="Street address"></textarea>
                         </div>
                     </div>
@@ -147,7 +147,7 @@ function editBranch(row) {
     document.getElementById('branch-address').value = row.address || '';
     document.getElementById('branch-status').value  = row.status;
     document.getElementById('branch-modal-title').innerHTML =
-        '<i class="ri-building-2-line me-2" style="color:#009688;"></i>Edit Branch';
+        '<i class="ri-building-2-line me-2" style="color:#673bb6;"></i>Edit Branch';
     new bootstrap.Modal(document.getElementById('modal-branch')).show();
 }
 
@@ -155,7 +155,7 @@ document.getElementById('modal-branch').addEventListener('hidden.bs.modal', func
     document.getElementById('form-branch').reset();
     document.getElementById('branch-id').value = '';
     document.getElementById('branch-modal-title').innerHTML =
-        '<i class="ri-building-2-line me-2" style="color:#009688;"></i>Add Branch';
+        '<i class="ri-building-2-line me-2" style="color:#673bb6;"></i>Add Branch';
 });
 
 document.getElementById('form-branch').addEventListener('submit', async function (e) {

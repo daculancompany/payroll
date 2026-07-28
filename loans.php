@@ -38,7 +38,7 @@ $loans_res = $conn->query("
             <div class="row mb-3">
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-                        <h4 class="mb-sm-0"><i class="ri-bank-line me-2" style="color:#219688;"></i>Active Loans</h4>
+                        <h4 class="mb-sm-0"><i class="ri-bank-line me-2" style="color:#6642aa;"></i>Active Loans</h4>
                         <ol class="breadcrumb m-0">
                             <li class="breadcrumb-item"><a href="javascript:void(0);">Pages</a></li>
                             <li class="breadcrumb-item active">Active Loans</li>
@@ -50,11 +50,11 @@ $loans_res = $conn->query("
             <!-- Stat cards -->
             <div class="row g-3 mb-3">
                 <div class="col-md-3">
-                    <div class="card" style="border-top:3px solid #219688;">
+                    <div class="card" style="border-top:3px solid #6642aa;">
                         <div class="card-body d-flex align-items-center gap-3 py-3">
-                            <div style="width:46px;height:46px;border-radius:10px;background:#e8f7f5;display:flex;align-items:center;justify-content:center;font-size:22px;"><i class="ri-group-line" style="color:#219688;"></i></div>
+                            <div style="width:46px;height:46px;border-radius:10px;background:#f0ecf6;display:flex;align-items:center;justify-content:center;font-size:22px;"><i class="ri-group-line" style="color:#6642aa;"></i></div>
                             <div>
-                                <div style="font-size:22px;font-weight:800;color:#219688;"><?= number_format($loan_stats['borrowers']) ?></div>
+                                <div style="font-size:22px;font-weight:800;color:#6642aa;"><?= number_format($loan_stats['borrowers']) ?></div>
                                 <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.4px;">Borrowers</div>
                             </div>
                         </div>
@@ -98,22 +98,22 @@ $loans_res = $conn->query("
             <!-- Table -->
             <div class="card">
                 <div class="card-header d-flex align-items-center py-2">
-                    <h6 class="card-title mb-0 flex-grow-1"><i class="ri-list-check me-2" style="color:#219688;"></i>Loan Records</h6>
+                    <h6 class="card-title mb-0 flex-grow-1"><i class="ri-list-check me-2" style="color:#6642aa;"></i>Loan Records</h6>
                 </div>
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-hover table-sm align-middle mb-0" id="loans-table">
                             <thead>
                                 <tr>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;">Employee</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;">Department</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;">Loan Type</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Loan Amount</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Paid</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Balance</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Per Period</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;">Progress</th>
-                                    <th style="background:#219688;color:#fff;padding:9px 12px;font-size:11px;border:none;">Date</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Employee</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Department</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Loan Type</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Loan Amount</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Paid</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Balance</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;">Per Period</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Progress</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Date</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -125,7 +125,7 @@ $loans_res = $conn->query("
                                         </td>
                                         <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($l['dept_name']) ?></td>
                                         <td style="padding:8px 12px;">
-                                            <span style="background:#e8f7f5;color:#176358;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;"><?= htmlspecialchars($l['loan_type_name']) ?></span>
+                                            <span style="background:#f0ecf6;color:#4e3483;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;"><?= htmlspecialchars($l['loan_type_name']) ?></span>
                                         </td>
                                         <td style="padding:8px 12px;text-align:right;font-size:12px;">₱<?= number_format($l['loan_amount'], 2) ?></td>
                                         <td style="padding:8px 12px;text-align:right;font-size:12px;color:#28a745;">₱<?= number_format($l['amount_paid'], 2) ?></td>
@@ -134,7 +134,7 @@ $loans_res = $conn->query("
                                         <td style="padding:8px 12px;min-width:120px;">
                                             <div style="display:flex;align-items:center;gap:6px;">
                                                 <div style="flex:1;height:6px;border-radius:3px;background:#eee;overflow:hidden;">
-                                                    <div style="width:<?= $pct ?>%;height:100%;border-radius:3px;background:linear-gradient(90deg,#219688,#176358);"></div>
+                                                    <div style="width:<?= $pct ?>%;height:100%;border-radius:3px;background:linear-gradient(90deg,#6642aa,#4e3483);"></div>
                                                 </div>
                                                 <span style="font-size:10px;color:#888;white-space:nowrap;"><?= $pct ?>%</span>
                                             </div>

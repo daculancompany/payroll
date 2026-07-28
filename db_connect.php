@@ -50,6 +50,50 @@ if (!function_exists('app_is_local')) {
     }
 }
 
+// ── Timekeeper (role 5) ─────────────────────────────────────────────────
+// The Timekeeper is a scanner-device operator. On the desktop/kiosk scanner
+// they sign in and enroll fingerprints; on the web portal they get a
+// read-only slice — the employee attendance report, the employee list, and
+// an employee detail page that shows NOTHING but the enrolled fingerprints.
+// No pay, no payroll, no leave, no user management.
+if (!defined('ROLE_TIMEKEEPER')) {
+    define('ROLE_TIMEKEEPER', 5);
+}
+
+// The only pages a Timekeeper may route to in index.php. Anything else is
+// bounced back to the attendance report, so a stray link or a hand-typed
+// ?page= can't open a screen they have no business seeing.
+if (!defined('TIMEKEEPER_ALLOWED_PAGES')) {
+    define('TIMEKEEPER_ALLOWED_PAGES', [
+        'attendance-summary',   // Employee Attendance Report (landing page)
+        'employee',             // Employee list
+        'employee-details',     // → fingerprints-only view (see index.php routing)
+        'profile',              // own account
+    ]);
+}
+
+if (!function_exists('is_timekeeper')) {
+    /**
+     * True when $role (default: the signed-in web session role) is a Timekeeper.
+     * Reads the session defensively so it is safe to call from AJAX endpoints
+     * that may not have a session at all.
+     */
+    function is_timekeeper($role = null)
+    {
+        if ($role === null) {
+            if (session_status() === PHP_SESSION_NONE) return false;
+            $role = $_SESSION['login_role'] ?? 0;
+        }
+        return (int) $role === ROLE_TIMEKEEPER;
+    }
+
+    /** Is $page reachable for a Timekeeper? */
+    function timekeeper_page_allowed($page)
+    {
+        return in_array($page, TIMEKEEPER_ALLOWED_PAGES, true);
+    }
+}
+
 // Application timezone — used by all PHP date()/DateTime calls.
 date_default_timezone_set('Asia/Manila');
 
@@ -215,6 +259,22 @@ if (!function_exists('leave_current_year')) {
     }
 }
 
+// Roles allowed to change leave credits / balances and the eligibility override.
+// HR (9) only — Admin (1) and Department Heads (8) get a read-only view.
+// Add a role id here to grant it back; every page and the AJAX handlers follow this.
+if (!defined('LEAVE_CREDIT_EDIT_ROLES')) {
+    define('LEAVE_CREDIT_EDIT_ROLES', [9]);
+}
+
+if (!function_exists('can_edit_leave_credits')) {
+    /** May this role edit leave credits? Defaults to the logged-in user. */
+    function can_edit_leave_credits($role = null): bool
+    {
+        $role = (int) ($role !== null ? $role : ($_SESSION['login_role'] ?? 0));
+        return in_array($role, LEAVE_CREDIT_EDIT_ROLES, true);
+    }
+}
+
 if (!function_exists('leave_eligibility_from')) {
     function leave_eligibility_from($classification, $override): bool
     {
@@ -322,7 +382,7 @@ if (!function_exists('clasif_badge_style')) {
             'ON-CALL'      => '#0dcaf0', // cyan
             'FULLTIME'     => '#198754', // green
         ];
-        $color = $map[strtoupper(trim((string) $name))] ?? '#009688';
+        $color = $map[strtoupper(trim((string) $name))] ?? '#673bb6';
         return 'background:' . $color . ';color:#fff;';
     }
 }

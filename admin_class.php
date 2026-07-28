@@ -85,7 +85,10 @@ class Action
         $ures = $stmt->get_result();
         if ($ures->num_rows === 1) {
             $row = $ures->fetch_assoc();
-            if ((int)$row['role'] !== 5 && !empty($row['password']) && password_verify($password, $row['password'])) {
+            // Timekeepers (role 5) are allowed in — index.php + the navbar cut
+            // them down to the attendance report, the employee list and the
+            // fingerprints-only employee detail page.
+            if (!empty($row['password']) && password_verify($password, $row['password'])) {
                 $this->clearLoginAttempts($identity);
                 @session_regenerate_id(true);
                 // clear any employee session, then set admin session
@@ -183,6 +186,7 @@ class Action
             2 => 'index.php?page=home',        // Staff
             3 => 'index.php?page=reports',     // Auditor
             4 => 'index.php?page=payroll',     // Payroll Clerk
+            5 => 'index.php?page=attendance-summary', // Timekeeper
             6 => 'index.php?page=daily-board', // PIC
             7 => 'index.php?page=reports',     // Auditor
             8 => 'index.php?page=leaves',      // Department Head
@@ -4716,14 +4720,26 @@ class Action
             return ['result' => false, 'message' => 'Invalid username or password'];
         }
 
-        // Only administrators may operate the scanner desktop app.
-        if ((int) $user['role'] !== 1) {
-            return ['result' => false, 'message' => 'Access denied — administrator account required'];
+        // Only administrators (1) and timekeepers (5) may operate the scanner
+        // device — the timekeeper role exists precisely for this.
+        if (!in_array((int) $user['role'], [1, ROLE_TIMEKEEPER], true)) {
+            return ['result' => false, 'message' => 'Access denied — administrator or timekeeper account required'];
         }
 
-        // Scanner posts attendance against a site; fall back to the first active
-        // site when the account has none assigned.
+        // Scanner posts attendance against a site. Resolve it in order of how
+        // specific the link is:
+        //   1. users.site_id            — explicitly set on the account
+        //   2. sites.timekeeper_id      — the site this timekeeper was assigned
+        //                                 to on the Biometric Sites screen
+        //   3. first active site        — last-resort fallback
         $site_id = (int) ($user['site_id'] ?? 0);
+        if (!$site_id) {
+            $own = $this->db->prepare("SELECT id FROM sites WHERE timekeeper_id = ? AND status = 1 ORDER BY id ASC LIMIT 1");
+            $own->bind_param('i', $user['id']);
+            $own->execute();
+            $row = $own->get_result()->fetch_assoc();
+            $site_id = $row ? (int) $row['id'] : 0;
+        }
         if (!$site_id) {
             $site = $this->db->query("SELECT id FROM sites WHERE status = 1 ORDER BY id ASC LIMIT 1")->fetch_assoc();
             $site_id = $site ? (int) $site['id'] : 0;
@@ -4741,6 +4757,7 @@ class Action
             'first_name'   => $first_name,
             'last_name'    => $last_name,
             'site_id'      => $site_id,
+            'role'         => (int) $user['role'],
         ];
     }
 
@@ -6962,24 +6979,25 @@ class Action
         return ['result' => false, 'message' => $this->db->error];
     }
 
-    // HR / Admin / Dept Head: change an employee's leave credits for a leave type.
+    // HR: change an employee's leave credits for a leave type.
     // mode = 'set' (absolute), 'add' (+amount) or 'deduct' (−amount, floored at 0).
     // add/deduct require a reason; every change is written to leave_credit_history.
     function save_leave_credit()
     {
         $employee_id   = (int) ($_POST['employee_id'] ?? 0);
         $leave_type_id = (int) ($_POST['leave_type_id'] ?? 0);
-        $mode          = in_array(($_POST['mode'] ?? 'set'), ['set', 'add', 'deduct'], true) ? $_POST['mode'] : 'set';
+        $mode          = $_POST['mode'] ?? 'set';
+        if (!in_array($mode, ['set', 'add', 'deduct'], true)) $mode = 'set';
         // 'amount' = delta for add/deduct or the absolute for set; falls back to the
         // legacy 'credits' field so the plain SET editor keeps working unchanged.
         $amount        = (float) ($_POST['amount'] ?? $_POST['credits'] ?? 0);
         $reason        = trim($_POST['reason'] ?? '');
 
-        // Server-side guard matching the UI: only Admin (1), Dept Head (8) and HR (9)
-        // may change credits; scoped Heads only within their own department.
+        // Server-side guard matching the UI: only HR may change credits
+        // (LEAVE_CREDIT_EDIT_ROLES); scoped users only within their own department.
         $role = (int) ($_SESSION['login_role'] ?? 0);
-        if (!in_array($role, [1, 8, 9], true)) {
-            return ['result' => false, 'message' => 'You are not allowed to change leave credits.'];
+        if (!can_edit_leave_credits($role)) {
+            return ['result' => false, 'message' => 'Only HR can change leave credits.'];
         }
         require_once __DIR__ . '/dept-scope.php';
         if (dept_scope_id() > 0) {
@@ -7067,13 +7085,13 @@ class Action
         return ['result' => true, 'message' => $labels[$mode] . '.'];
     }
 
-    // HR / Admin / Dept Head: set the per-employee leave eligibility override.
+    // HR only: set the per-employee leave eligibility override.
     // override = '' | 'auto' (NULL, follow classification) · '1' (force allow) · '0' (force block).
     function save_leave_override()
     {
         $role = (int) ($_SESSION['login_role'] ?? 0);
-        if (!in_array($role, [1, 8, 9], true)) {
-            return ['result' => false, 'message' => 'You are not allowed to change leave eligibility.'];
+        if (!can_edit_leave_credits($role)) {
+            return ['result' => false, 'message' => 'Only HR can change leave eligibility.'];
         }
         $employee_id = (int) ($_POST['employee_id'] ?? 0);
         $val         = $_POST['override'] ?? '';

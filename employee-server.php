@@ -2,6 +2,14 @@
 include 'db_connect.php';
 require_once 'dept-scope.php';
 
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Timekeeper (role 5) = scanner operator. They may see who's on the roster,
+// never what anyone is paid — the pay cells come back blank regardless of what
+// the browser asks for.
+$tk_hide_pay = is_timekeeper();
 
 $request = $_REQUEST;
 $status        = isset($request['status'])        && $request['status']        !== '' ? (int)$request['status']        : 2;
@@ -14,17 +22,28 @@ if (dept_scope_id() > 0) {
     $department_id = dept_scope_id();
 }
 
-$col = array(
-    0 => 'e.lastname',       // Employee (name + no.)
-    1 => 'p.name',           // Position
-    2 => 'd.name',           // Department
-    3 => 'e.basic_pay',
-    4 => 'e.salary',
-    5 => 'e.ot_rate',
-    6 => 'cl.clasification',
-    7 => 'e.status',
-    8 => 'e.employee_no',    // Action (fallback)
-);
+// Sort map, keyed by the DataTables column index the browser sends. The
+// timekeeper table drops the four pay columns, so its indexes shift.
+$col = $tk_hide_pay
+    ? array(
+        0 => 'e.lastname',       // Employee (name + no.)
+        1 => 'p.name',           // Position
+        2 => 'd.name',           // Department
+        3 => 'cl.clasification', // Classification
+        4 => 'e.status',         // Status
+        5 => 'e.employee_no',    // Action (fallback)
+    )
+    : array(
+        0 => 'e.lastname',       // Employee (name + no.)
+        1 => 'p.name',           // Position
+        2 => 'd.name',           // Department
+        3 => 'e.basic_pay',
+        4 => 'e.salary',
+        5 => 'e.ot_rate',
+        6 => 'cl.clasification',
+        7 => 'e.status',
+        8 => 'e.employee_no',    // Action (fallback)
+    );
 
 $filter_status = '';
 if ($status === 0 || $status === 1) {
@@ -77,7 +96,11 @@ $totalFilter = $totalData;
 $query = mysqli_query($conn, $sql);
 $totalData = mysqli_num_rows($query);
 
-$sql .= " ORDER BY " . $col[$request['order'][0]['column']] . "   " . $request['order'][0]['dir'] . "  LIMIT " . $request['start'] . " ," . $request['length'] . "  ";
+// An out-of-range column index (or one the current role's table doesn't have)
+// falls back to the name so the query can never break on it.
+$order_col = $col[$request['order'][0]['column'] ?? 0] ?? 'e.lastname';
+$order_dir = strtolower($request['order'][0]['dir'] ?? 'asc') === 'desc' ? 'DESC' : 'ASC';
+$sql .= " ORDER BY $order_col $order_dir LIMIT " . (int) $request['start'] . " ," . (int) $request['length'] . "  ";
 // Apply status filter
 
 $query = mysqli_query($conn, $sql);
@@ -98,10 +121,16 @@ while ($row = mysqli_fetch_array($query)) {
         . '</div>';
     $subdata[] = '<span class="emp-position">' . htmlspecialchars($row['position'] ?? '—') . '</span>';
     $subdata[] = '<span class="emp-position">' . htmlspecialchars($row['department'] ?? '—') . '</span>';
-    $subdata[] = '<span class="emp-currency">&#8369; ' . number_format($row['basic_pay'], 2) . '</span>';
-    $subdata[] = '<span class="emp-currency">&#8369; ' . number_format($row['salary'], 2) . '</span>';
-    $subdata[] = '<span class="emp-currency">&#8369; ' . number_format($row['ot_rate'], 2) . '</span>';
-    $subdata[] = number_format($row['loan'], 2); // kept but not displayed in table
+    // Pay figures never leave the server for a timekeeper.
+    $money = function ($v) use ($tk_hide_pay) {
+        return $tk_hide_pay
+            ? '<span class="text-muted">—</span>'
+            : '<span class="emp-currency">&#8369; ' . number_format($v, 2) . '</span>';
+    };
+    $subdata[] = $money($row['basic_pay']);
+    $subdata[] = $money($row['salary']);
+    $subdata[] = $money($row['ot_rate']);
+    $subdata[] = $tk_hide_pay ? '' : number_format($row['loan'], 2); // kept but not displayed in table
     $subdata[] = !empty($row['clasification'])
         ? '<span class="badge" style="' . clasif_badge_style($row['clasification']) . '"><i class="ri-shield-check-line me-1"></i>' . htmlspecialchars($row['clasification']) . '</span>'
         : '<span class="text-muted">—</span>';
@@ -119,7 +148,7 @@ while ($row = mysqli_fetch_array($query)) {
         'monthly' => ['#dbeafe', '#1d4ed8', 'Monthly'],
         'fixed'   => ['#ede9fe', '#6d28d9', 'Fixed'],
     ][$rt];
-    $subdata[] = '<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;background:'
+    $subdata[] = $tk_hide_pay ? '' : '<span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;background:'
         . $rtMeta[0] . ';color:' . $rtMeta[1] . ';" title="' . ($rt === 'fixed' ? 'Full salary, no attendance' : ($rt === 'monthly' ? 'Salary minus absences' : 'Paid per day present')) . '">'
         . $rtMeta[2] . '</span>';
     $data[] = $subdata;

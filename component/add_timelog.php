@@ -15,7 +15,7 @@
 							<div class="form-group">   
 								<label>Employee</label>                                 
 								<select id="employee_id" name="employee_id" class="form-control show-tick ms select2" data-placeholder="Select employee" data-parsley-required-message="Please select employee." required>
-                                    <option value=""></option>
+                                    <option value="">Select Employee</option>
                                     <?php 
                                     $employee = $conn->query("SELECT *,concat(lastname,', ',firstname,' ',middlename) as ename FROM employee order by concat(lastname,', ',firstname,' ',middlename) asc");
                                     while($row = $employee->fetch_assoc()):

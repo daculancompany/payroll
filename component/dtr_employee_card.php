@@ -85,7 +85,7 @@ function render_dtr_employee_card($empId, array $empGroup, array $empTotals, $lo
                     <?= date("D, M j", strtotime($date)) ?>
                 </span>
                 <div style="display:flex;gap:10px;font-size:10px;">
-                    <span style="color:#219688;font-weight:600;"><?= number_format($dayWH, 2) ?> hrs</span>
+                    <span style="color:#6642aa;font-weight:600;"><?= number_format($dayWH, 2) ?> hrs</span>
                     <?php if ($dayOT > 0): ?><span style="color:#c98a00;">OT <?= number_format($dayOT, 2) ?></span><?php endif; ?>
                     <?php if ($dayLate > 0): ?><span style="color:#c62828;">Late <?= number_format($dayLate, 2) ?></span><?php endif; ?>
                 </div>

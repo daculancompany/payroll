@@ -270,7 +270,7 @@ function stageBadge($status, $by_name, $remarks, $at)
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="leave-modal-title">
-                        <i class="ri-calendar-event-line me-2" style="color:#009688;"></i>File Leave
+                        <i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>File Leave
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -279,7 +279,7 @@ function stageBadge($status, $by_name, $remarks, $at)
                     <div class="mb-3">
                         <label class="form-label">Employee <span class="text-danger">*</span></label>
                         <select class="form-control" id="leave-employee" name="employee_id" data-live-search="true" required>
-                            <option value=""></option>
+                            <option value="">Select Employee</option>
                             <?php
                             $emps = $conn->query("SELECT id, employee_no, firstname, lastname FROM employee WHERE status = 1" . dept_scope_sql('department_id') . " ORDER BY lastname ASC");
                             if ($emps) while ($e = $emps->fetch_assoc()):
@@ -291,7 +291,7 @@ function stageBadge($status, $by_name, $remarks, $at)
                     <div class="mb-3">
                         <label class="form-label">Type of Leave <span class="text-danger">*</span></label>
                         <select class="form-control" id="leave-type" name="leave_type_id" required>
-                            <option value=""></option>
+                            <option value="">Select Leave Type</option>
                             <?php
                             $types = $conn->query("SELECT id, name, days_allowed FROM leave_types WHERE status = 1 ORDER BY name ASC");
                             if ($types) while ($t = $types->fetch_assoc()):
@@ -329,7 +329,7 @@ function stageBadge($status, $by_name, $remarks, $at)
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title"><i class="ri-history-line me-2" style="color:#009688;"></i>Approval Timeline</h6>
+                <h6 class="modal-title"><i class="ri-history-line me-2" style="color:#673bb6;"></i>Approval Timeline</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="leave-timeline-body"></div>
@@ -393,7 +393,7 @@ function resetLeaveModal() {
     document.getElementById('leave-duration-info').style.display = 'none';
     document.getElementById('leave-dates-hidden').value = '';
     if (leaveFp) leaveFp.clear();
-    document.getElementById('leave-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>File Leave';
+    document.getElementById('leave-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>File Leave';
     if (window.jQuery) {
         jQuery('#leave-employee').val('').trigger('change');
         jQuery('#leave-type').val('').trigger('change');
@@ -409,7 +409,7 @@ function editLeave(row) {
     resetLeaveModal();
     document.getElementById('leave-id').value = row.id;
     document.getElementById('leave-reason').value = row.reason || '';
-    document.getElementById('leave-modal-title').innerHTML = '<i class="ri-edit-line me-2" style="color:#009688;"></i>Edit Leave';
+    document.getElementById('leave-modal-title').innerHTML = '<i class="ri-edit-line me-2" style="color:#673bb6;"></i>Edit Leave';
     // Prefill exact days from stored JSON (falls back to the from–to range).
     let days = [];
     try { days = row.dates ? JSON.parse(row.dates) : []; } catch (e) { days = []; }

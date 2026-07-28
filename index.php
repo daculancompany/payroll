@@ -35,8 +35,8 @@ if (($_GET['page'] ?? '') === 'payroll_calculations') {
 <?php include 'includes/header.php' ?>
 <style>
     .table-dark th {
-        background-color: #009688 !important;
-        border-color: #24a192 !important;
+        background-color: #673bb6 !important;
+        border-color: #6b46b2 !important;
     }
 </style>
 <?php
@@ -95,8 +95,8 @@ function getRole($login_role)
             align-items: center;
             justify-content: center;
             background:
-                radial-gradient(circle at 30% 20%, #eafaf7 0, transparent 55%),
-                radial-gradient(circle at 75% 80%, #e3f5f2 0, transparent 50%),
+                radial-gradient(circle at 30% 20%, #f2eff9 0, transparent 55%),
+                radial-gradient(circle at 75% 80%, #ece8f4 0, transparent 50%),
                 #ffffff;
             transition: opacity .5s ease, visibility .5s ease;
         }
@@ -127,8 +127,8 @@ function getRole($login_role)
             position: absolute;
             inset: 0;
             border-radius: 50%;
-            border: 3px solid #e0f2f0;
-            border-top-color: #219688;
+            border: 3px solid #e9e5f2;
+            border-top-color: #6642aa;
             animation: jpSpin 1s linear infinite;
         }
 
@@ -143,8 +143,8 @@ function getRole($login_role)
             font-weight: 900;
             letter-spacing: 1px;
             color: #fff;
-            background: linear-gradient(135deg, #219688, #176358);
-            box-shadow: 0 10px 26px rgba(33, 150, 136, .40);
+            background: linear-gradient(135deg, #6642aa, #4e3483);
+            box-shadow: 0 10px 26px rgba(102, 66, 170, .40);
             animation: jpPulse 1.6s ease-in-out infinite;
         }
 
@@ -153,7 +153,7 @@ function getRole($login_role)
             font-size: 17px;
             font-weight: 800;
             letter-spacing: .3px;
-            background: linear-gradient(90deg, #176358, #2bb6a3);
+            background: linear-gradient(90deg, #4e3483, #7653bb);
             -webkit-background-clip: text;
             background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -166,7 +166,7 @@ function getRole($login_role)
             width: 170px;
             height: 4px;
             border-radius: 4px;
-            background: #e0f2f0;
+            background: #e9e5f2;
         }
 
         .jp-loader-bar span {
@@ -175,7 +175,7 @@ function getRole($login_role)
             width: 45%;
             height: 100%;
             border-radius: 4px;
-            background: linear-gradient(90deg, #219688, #2bb6a3);
+            background: linear-gradient(90deg, #6642aa, #7653bb);
             animation: jpSlide 1.1s cubic-bezier(.65, .05, .36, 1) infinite;
         }
 
@@ -185,7 +185,7 @@ function getRole($login_role)
             font-weight: 700;
             letter-spacing: 3px;
             text-transform: uppercase;
-            color: #9bb5b0;
+            color: #a7a0b7;
         }
 
         .jp-loader-text b {
@@ -912,6 +912,7 @@ function getRole($login_role)
                 'leaves'               => 'leaves',
                 'leave_types'          => 'leave_types',
                 'leave_balances'       => 'leave_balances',
+                'leave-balances-report' => 'leave-balances-report',
                 'calendar'             => 'calendar',
                 'work-schedules'       => 'work-schedules',
                 'schedule-roster'      => 'schedule-roster',
@@ -936,7 +937,20 @@ function getRole($login_role)
                 $page = 'dtr';
             }
 
-            include $routes[$page] . '.php';
+            // Timekeeper (role 5): attendance report + employee list only.
+            // Everything else — including the default 'home' dashboard — is
+            // bounced to the attendance report. Employee details is served by
+            // a stripped page carrying nothing but the enrolled fingerprints.
+            $tk = is_timekeeper($login_role);
+            if ($tk && !timekeeper_page_allowed($page)) {
+                $page = 'attendance-summary';
+            }
+
+            if ($tk && $page === 'employee-details') {
+                include 'employee-details-timekeeper.php';
+            } else {
+                include $routes[$page] . '.php';
+            }
             ?>
         </div>
         <footer class="footer">
@@ -1172,7 +1186,7 @@ function getRole($login_role)
                 const unread = n.is_read == 0;
                 const link = /^(javascript|data|vbscript):/i.test(String(n.link || '').trim()) ? '' : (n.link || '');
                 return '<a href="' + (escNotif(link) || 'javascript:void(0)') + '" class="text-reset notification-item d-block dropdown-item position-relative px-3 py-2" ' +
-                    'data-id="' + n.id + '" style="border-bottom:1px solid #f3f3f3;' + (unread ? 'background:#f0fbf9;' : '') + '">' +
+                    'data-id="' + n.id + '" style="border-bottom:1px solid #f3f3f3;' + (unread ? 'background:#f6f4fa;' : '') + '">' +
                     '<div class="d-flex">' +
                     '<div class="me-3 flex-shrink-0"><span class="avatar-title bg-' + (n.color || 'primary') + '-subtle text-' + (n.color || 'primary') + ' rounded-circle fs-16" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;"><i class="' + (n.icon || 'ri-notification-3-line') + '"></i></span></div>' +
                     '<div class="flex-grow-1">' +

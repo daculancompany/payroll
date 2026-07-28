@@ -41,7 +41,7 @@
 
                 <?php else: ?>
 
-                <?php if ($login_role !== 6 && $login_role !== 7): ?>
+                <?php if ($login_role !== 6 && $login_role !== 7 && !is_timekeeper($login_role)): ?>
 
                 <!-- ===== MENU ===== -->
                 <li class="menu-title"><span>Menu</span></li>
@@ -122,7 +122,7 @@
                 </li>
 
                 <!-- Leave sub-menu -->
-                <?php $lv_pages = ['leaves','leave_types','leave_balances','calendar']; ?>
+                <?php $lv_pages = ['leaves','leave_types','leave_balances','leave-balances-report','calendar']; ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= in_array($page, $lv_pages) ? 'active' : '' ?>"
                         href="#sidebarLeave" data-bs-toggle="collapse" role="button"
@@ -139,6 +139,11 @@
                             <li class="nav-item">
                                 <a href="leave_balances" class="nav-link <?= $page === 'leave_balances' ? 'active' : '' ?>">
                                     <i class="ri-coins-line me-1"></i>Leave Balances
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="leave-balances-report" class="nav-link <?= $page === 'leave-balances-report' ? 'active' : '' ?>">
+                                    <i class="ri-bar-chart-box-line me-1"></i>Leave Balances Report
                                 </a>
                             </li>
                             <li class="nav-item">
@@ -279,6 +284,23 @@
                 </li>
                 <?php endif; ?>
 
+                <?php endif; ?>
+
+                <!-- Role 5 (Timekeeper) — scanner operator. Two screens only:
+                     the employee attendance report and the employee list (whose
+                     detail page shows just the enrolled fingerprints). -->
+                <?php if (is_timekeeper($login_role)): ?>
+                <li class="menu-title"><span>Menu</span></li>
+                <li class="nav-item">
+                    <a href="index.php?page=attendance-summary" class="nav-link menu-link <?= $page === 'attendance-summary' ? 'active' : '' ?>">
+                        <i class="ri-time-line"></i> <span>Attendance Report</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="employee" class="nav-link menu-link <?= in_array($page, ['employee','employee-details']) ? 'active' : '' ?>">
+                        <i class="ri-group-line"></i> <span>Employees</span>
+                    </a>
+                </li>
                 <?php endif; ?>
 
                 <!-- Role 6 (PIC) -->

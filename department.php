@@ -95,7 +95,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="dept-modal-title">
-                        <i class="ri-building-3-line me-2" style="color:#009688;"></i>Add Department
+                        <i class="ri-building-3-line me-2" style="color:#673bb6;"></i>Add Department
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -131,14 +131,14 @@ document.addEventListener('DOMContentLoaded', function () {
 function editDept(id, name) {
     document.getElementById('dept-id').value = id;
     document.getElementById('dept-name').value = name;
-    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:#009688;"></i>Edit Department';
+    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:#673bb6;"></i>Edit Department';
     new bootstrap.Modal(document.getElementById('modal-department')).show();
 }
 
 document.getElementById('modal-department').addEventListener('hidden.bs.modal', function () {
     document.getElementById('dept-id').value = '';
     document.getElementById('dept-name').value = '';
-    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:#009688;"></i>Add Department';
+    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:#673bb6;"></i>Add Department';
 });
 
 document.getElementById('form-department').addEventListener('submit', async function (e) {

@@ -1,6 +1,6 @@
 <?php
-// Editable by Admin (1), Department Head (8), HR (9).
-$can_edit_credits = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9]);
+// Editable by HR only — see LEAVE_CREDIT_EDIT_ROLES in db_connect.php.
+$can_edit_credits = can_edit_leave_credits();
 $can_rollover     = in_array((int)($_SESSION['login_role'] ?? 0), [1, 9]);   // Admin + HR
 $sel_emp = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
 $leave_year = leave_current_year();   // credits are tracked per calendar year
@@ -23,7 +23,25 @@ if ($sel_emp > 0) {
 }
 // Eligibility: per-employee override first, else classification (Regular/Executive).
 $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasif'], $sel_emp_row['leave_override']);
+
+// Year totals + per-type pending days come from the report builder, so this
+// screen and the Leave Balances report can never disagree.
+$lb_row = null;
+if ($sel_emp) {
+    require_once 'includes/leave_balances_report.php';
+    $lb = lbr_data($conn, lbr_filters(['year' => $leave_year, 'emp' => $sel_emp, 'ineligible' => 1]));
+    $lb_row = $lb['rows'][0] ?? null;
+}
+$lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
 ?>
+<style>
+    .lbx-kpi { background:#fff; border:1px solid #ddd9e7; border-radius:10px; padding:10px 14px; height:100%; border-left:3px solid #673bb6; }
+    .lbx-kpi .l { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:#7a828c; font-weight:800; }
+    .lbx-kpi .v { font-size:20px; font-weight:800; color:#4f3288; line-height:1.2; font-variant-numeric:tabular-nums; }
+    .lbx-kpi .s { font-size:10.5px; color:#96a0a8; }
+    .lbx-bar { height:5px; border-radius:3px; background:#eef2f0; overflow:hidden; margin-top:6px; }
+    .lbx-bar > span { display:block; height:100%; background:#673bb6; border-radius:3px; }
+</style>
 <div class="main-content">
     <div class="page-content">
         <div class="container-fluid">
@@ -47,7 +65,7 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                             <form method="get" action="index.php" class="row g-2 align-items-end">
                                 <input type="hidden" name="page" value="leave_balances">
                                 <div class="col-md-6">
-                                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#009688;">
+                                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                         <i class="ri-user-search-line me-1"></i>Select Employee
                                     </label>
                                     <select name="emp" id="emp-select" class="form-control" data-live-search="true" required>
@@ -65,6 +83,11 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                                 <div class="col-md-3">
                                     <button type="submit" class="btn btn-success w-100"><i class="ri-search-line me-1"></i>View Balances</button>
                                 </div>
+                                <div class="col-md-3">
+                                    <a href="index.php?page=leave-balances-report&year=<?= $leave_year ?>" class="btn btn-outline-success w-100">
+                                        <i class="ri-bar-chart-box-line me-1"></i>All-Employee Report
+                                    </a>
+                                </div>
                             </form>
                         </div>
                     </div>
@@ -80,7 +103,7 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                                 <div class="text-muted" style="font-size:12px;">Carry over or reset every eligible employee's credits into the next year, per each leave type's policy.</div>
                             </div>
                             <div>
-                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;">From year</label>
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#673bb6;">From year</label>
                                 <select id="rollover-from" class="form-select form-select-sm" style="width:120px;">
                                     <?php $cy = (int)date('Y'); for ($y = $cy + 1; $y >= $cy - 3; $y--): ?>
                                         <option value="<?= $y ?>" <?= $y === $cy ? 'selected' : '' ?>><?= $y ?></option>
@@ -89,7 +112,7 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                             </div>
                             <div class="align-self-center text-muted pb-1"><i class="ri-arrow-right-line"></i></div>
                             <div>
-                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#009688;">To year</label>
+                                <label class="form-label mb-1" style="font-size:11px;font-weight:700;color:#673bb6;">To year</label>
                                 <input id="rollover-to" class="form-control form-control-sm text-center" style="width:100px;" readonly value="<?= (int)date('Y') + 1 ?>">
                             </div>
                             <button id="rollover-preview" class="btn btn-sm btn-outline-success"><i class="ri-eye-line me-1"></i>Preview</button>
@@ -101,14 +124,54 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                 <?php if ($sel_emp_row): ?>
                 <!-- Selected employee header -->
                 <div class="col-12">
-                    <div class="alert alert-success d-flex align-items-center" role="alert">
-                        <i class="ri-user-3-line fs-22 me-2"></i>
-                        <div>
+                    <div class="alert alert-success d-flex flex-wrap align-items-center gap-2" role="alert">
+                        <i class="ri-user-3-line fs-22 me-1"></i>
+                        <div class="flex-grow-1">
                             <b><?= htmlspecialchars($sel_emp_row['lastname'] . ', ' . $sel_emp_row['firstname']) ?></b>
-                            <span class="text-muted">&middot; <?= htmlspecialchars($sel_emp_row['dept']) ?> &middot; #<?= htmlspecialchars($sel_emp_row['employee_no']) ?></span>
+                            <span class="text-muted">&middot; <?= htmlspecialchars($sel_emp_row['dept']) ?> &middot; #<?= htmlspecialchars($sel_emp_row['employee_no']) ?> &middot; Leave year <?= $leave_year ?></span>
+                        </div>
+                        <a href="export-leave-balances.php?format=xlsx&<?= $lb_export_qs ?>" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>Excel</a>
+                        <a href="export-leave-balances.php?format=pdf&<?= $lb_export_qs ?>" class="btn btn-sm btn-outline-danger"><i class="ri-download-2-line me-1"></i>PDF</a>
+                    </div>
+                </div>
+
+                <?php if ($lb_row): $lt = $lb_row['tot'];
+                    $util = $lt['credits'] > 0 ? min(100, round($lt['used'] / $lt['credits'] * 100)) : 0; ?>
+                <!-- Year-to-date summary -->
+                <div class="col-12">
+                    <div class="row g-2 mb-1">
+                        <div class="col-6 col-md-3">
+                            <div class="lbx-kpi">
+                                <div class="l">Total Entitled</div>
+                                <div class="v"><?= lbr_fmt($lt['credits']) ?></div>
+                                <div class="s">days across all paid types</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="lbx-kpi" style="border-left-color:#f5a623;">
+                                <div class="l">Days Used</div>
+                                <div class="v"><?= lbr_fmt($lt['used']) ?></div>
+                                <div class="s"><?= $util ?>% of entitlement</div>
+                                <div class="lbx-bar"><span style="width:<?= $util ?>%;background:#f5a623;"></span></div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="lbx-kpi" style="border-left-color:#1976d2;">
+                                <div class="l">Pending Approval</div>
+                                <div class="v"><?= lbr_fmt($lt['pending']) ?></div>
+                                <div class="s">filed, not yet deducted</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="lbx-kpi" style="border-left-color:<?= $lt['remaining'] <= 0 ? '#e05c5c' : '#1c7a43' ?>;">
+                                <div class="l">Days Remaining</div>
+                                <div class="v" style="color:<?= $lt['remaining'] <= 0 ? '#b3352f' : '#4f3288' ?>;"><?= lbr_fmt($lt['remaining']) ?></div>
+                                <div class="s"><?= $lt['remaining'] <= 0 ? 'No credits left' : 'Available to file' ?></div>
+                            </div>
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <?php if (!$emp_leave_eligible): ?>
                 <div class="col-12">
@@ -162,13 +225,14 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                                         <th>Leave Type</th>
                                         <th class="text-center" style="width:160px;">Available</th>
                                         <th class="text-center" style="width:80px;">Used</th>
+                                        <th class="text-center" style="width:90px;" title="Filed but not yet fully approved — not deducted from Remaining">Pending</th>
                                         <th class="text-center" style="width:110px;">Remaining</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php
                                     $cr = $conn->query("
-                                        SELECT lt.id, lt.name, lt.days_allowed,
+                                        SELECT lt.id, lt.name, lt.days_allowed, lt.carryover, lt.carryover_cap,
                                             COALESCE(c.credits, lt.days_allowed) AS credits,
                                             COALESCE(u.used, 0) AS used
                                         FROM leave_types lt
@@ -182,9 +246,18 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                                     $fmt = function ($n) { return rtrim(rtrim(number_format($n, 1), '0'), '.'); };
                                     if ($cr) while ($c = $cr->fetch_assoc()):
                                         $avail = (float)$c['credits']; $used = (float)$c['used']; $rem = $avail - $used;
+                                        $pend  = (float)($lb_row['cells'][(int)$c['id']]['pending'] ?? 0);
                                     ?>
                                     <tr>
-                                        <td><b><i class="ri-calendar-event-line me-1 text-success"></i><?= htmlspecialchars($c['name']) ?></b></td>
+                                        <td>
+                                            <b><i class="ri-calendar-event-line me-1 text-success"></i><?= htmlspecialchars($c['name']) ?></b>
+                                            <div class="text-muted" style="font-size:10.5px;">
+                                                <?= $fmt($c['days_allowed']) ?> day default ·
+                                                <?= (int)$c['carryover']
+                                                    ? 'Carries over' . ($c['carryover_cap'] !== null ? ' (cap ' . $fmt($c['carryover_cap']) . ')' : '')
+                                                    : 'Resets each year' ?>
+                                            </div>
+                                        </td>
                                         <td class="text-center">
                                             <?php if ($can_edit_credits && $emp_leave_eligible): ?>
                                                 <div class="input-group input-group-sm" style="max-width:230px;margin:0 auto;">
@@ -201,6 +274,11 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-center"><span class="badge bg-warning-subtle text-warning"><?= $fmt($used) ?></span></td>
+                                        <td class="text-center">
+                                            <?= $pend > 0
+                                                ? '<span class="badge bg-info-subtle text-info"><i class="ri-time-line"></i> ' . $fmt($pend) . '</span>'
+                                                : '<span class="text-muted">—</span>' ?>
+                                        </td>
                                         <td class="text-center"><span class="badge <?= $rem <= 0 ? 'bg-danger' : 'bg-success' ?> rounded-pill"><?= $fmt($rem) ?></span></td>
                                     </tr>
                                     <?php endwhile; ?>
@@ -341,7 +419,7 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title"><i class="ri-calendar-todo-line me-2" style="color:#009688;"></i>Year-End Rollover Preview</h6>
+                <h6 class="modal-title"><i class="ri-calendar-todo-line me-2" style="color:#673bb6;"></i>Year-End Rollover Preview</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -368,7 +446,7 @@ $emp_leave_eligible = $sel_emp_row && leave_eligibility_from($sel_emp_row['clasi
     <div class="modal-dialog modal-dialog-centered">
         <form id="form-adjust-credit" class="modal-content">
             <div class="modal-header">
-                <h6 class="modal-title" id="adjust-title"><i class="ri-coins-line me-2" style="color:#009688;"></i>Adjust Credits</h6>
+                <h6 class="modal-title" id="adjust-title"><i class="ri-coins-line me-2" style="color:#673bb6;"></i>Adjust Credits</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -433,7 +511,7 @@ document.addEventListener('click', function (e) {
     document.getElementById('adj-reason').value = '';
     const isAdd = mode === 'add';
     document.getElementById('adjust-title').innerHTML =
-        '<i class="ri-coins-line me-2" style="color:#009688;"></i>' + (isAdd ? 'Add' : 'Deduct') + ' Credits';
+        '<i class="ri-coins-line me-2" style="color:#673bb6;"></i>' + (isAdd ? 'Add' : 'Deduct') + ' Credits';
     document.getElementById('adj-desc').innerHTML =
         (isAdd ? 'Add days to' : 'Deduct days from') + ' <b>' + b.dataset.typeName + '</b> balance.';
     document.getElementById('adj-submit').className = 'btn btn-sm ' + (isAdd ? 'btn-success' : 'btn-danger');

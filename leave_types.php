@@ -103,7 +103,7 @@
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="ltype-modal-title">
-                        <i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Add Leave Type
+                        <i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>Add Leave Type
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -192,7 +192,7 @@ function resetLeaveTypeModal() {
     document.getElementById('ltype-carryover').value = '0';
     toggleDaysAllowed(1);
     toggleCap();
-    document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Add Leave Type';
+    document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>Add Leave Type';
 }
 
 function editLeaveType(row) {
@@ -207,7 +207,7 @@ function editLeaveType(row) {
     document.querySelector('input[name="is_paid"][value="' + isPaid + '"]').checked = true;
     toggleDaysAllowed(isPaid);
     toggleCap();
-    document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#009688;"></i>Edit Leave Type';
+    document.getElementById('ltype-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>Edit Leave Type';
     new bootstrap.Modal(document.getElementById('modal-leave-type')).show();
 }
 

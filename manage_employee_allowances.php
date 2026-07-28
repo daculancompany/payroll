@@ -9,7 +9,7 @@
 			<div class="col-md-5">
 				<label for="" class="control-label">Allowance</label>
 				<select id="allowance_id" class="borwser-default select2">
-					<option value=""></option>
+					<option value="">Select Allowance</option>
 					<?php 
 					$allowance = $conn->query("SELECT * FROM allowances order by allowance asc");
 					while($row = $allowance->fetch_assoc()):

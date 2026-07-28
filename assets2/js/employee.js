@@ -22,6 +22,18 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 $(document).ready(function () {
+    // Timekeepers (role 5) get the roster without the pay columns — employee.php
+    // omits the matching <th>, so the column list has to drop them too or every
+    // header would be off by four.
+    var hidePay = window.EMP_HIDE_PAY === true;
+
+    var payColumns = [
+        { data: "3", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Basic Pay") },      // Basic Pay
+        { data: "4", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Daily Rate") },     // Daily Rate
+        { data: "10", className: "text-center", orderable: false, createdCell: (td) => td.setAttribute("data-label", "Rate Type") }, // Rate Type (chip)
+        { data: "5", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "OT Rate") },        // OT Rate
+    ];
+
     var oTable = $("#table-employee").DataTable({
         processing: true,
         serverSide: true,
@@ -39,14 +51,11 @@ $(document).ready(function () {
             { data: "0", createdCell: (td) => td.setAttribute("data-label", "Employee") },        // Employee (name + no.)
             { data: "1", createdCell: (td) => td.setAttribute("data-label", "Position") },         // Position
             { data: "2", createdCell: (td) => td.setAttribute("data-label", "Department") },       // Department
-            { data: "3", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Basic Pay") },      // Basic Pay
-            { data: "4", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "Daily Rate") },     // Daily Rate
-            { data: "10", className: "text-center", orderable: false, createdCell: (td) => td.setAttribute("data-label", "Rate Type") }, // Rate Type (chip)
-            { data: "5", className: "text-end", createdCell: (td) => td.setAttribute("data-label", "OT Rate") },        // OT Rate
+        ].concat(hidePay ? [] : payColumns).concat([
             { data: "7", className: "text-center", createdCell: (td) => td.setAttribute("data-label", "Classification") }, // Classification (6 = loan, hidden)
             { data: "8", className: "text-center", createdCell: (td) => td.setAttribute("data-label", "Status") },      // Status
             { data: "9", className: "text-center", orderable: false, createdCell: (td) => td.setAttribute("data-label", "Action") }, // Action
-        ],
+        ]),
         columnDefs: [
            
           

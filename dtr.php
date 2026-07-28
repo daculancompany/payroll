@@ -22,9 +22,9 @@ function dtr_status_badge($s) {
 }
 ?>
 <style>
-    .dtr-period { font-weight:700; color:#009688; font-size:13px; font-family:'Segoe UI',monospace; }
+    .dtr-period { font-weight:700; color:#673bb6; font-size:13px; font-family:'Segoe UI',monospace; }
     .dtr-period small { display:block; font-size:10px; color:#888; font-weight:400; font-family:inherit; margin-top:1px; }
-    .dtr-site-code { background:#009688; color:#fff; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; display:inline-block; margin-bottom:3px; }
+    .dtr-site-code { background:#673bb6; color:#fff; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; display:inline-block; margin-bottom:3px; }
     .dtr-site-name { font-size:12px; font-weight:600; color:#222; }
     .dtr-site-addr { font-size:11px; color:#888; }
     .dtr-user { font-size:13px; font-weight:600; }
@@ -38,7 +38,7 @@ function dtr_status_badge($s) {
             <div class="row">
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-                        <h4 class="mb-sm-0"><i class="ri-time-line me-2" style="color:#009688;"></i>Daily Time Record</h4>
+                        <h4 class="mb-sm-0"><i class="ri-time-line me-2" style="color:#673bb6;"></i>Daily Time Record</h4>
                         <div class="page-title-right">
                             <ol class="breadcrumb m-0">
                                 <li class="breadcrumb-item"><a href="javascript:void(0);">Pages</a></li>
@@ -48,10 +48,10 @@ function dtr_status_badge($s) {
                     </div>
                 </div>
 
-                <div class="card" style="border-top:3px solid #009688;">
+                <div class="card" style="border-top:3px solid #673bb6;">
                     <div class="card-header align-items-center d-flex flex-wrap gap-2 py-2">
                         <h4 class="card-title mb-0 flex-grow-1">
-                            <i class="ri-time-line me-2" style="color:#009688;"></i>DTR List
+                            <i class="ri-time-line me-2" style="color:#673bb6;"></i>DTR List
                         </h4>
                     </div>
 

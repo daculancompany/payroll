@@ -508,7 +508,7 @@ body {
 /* ─────────────── SCREEN TOOLBAR (hidden in print) ─────────────── */
 .ps-toolbar {
     position: fixed; top: 0; left: 0; right: 0;
-    background: #176358;
+    background: #4e3483;
     display: flex; align-items: center; justify-content: center; gap: 10px;
     padding: 9px 16px; z-index: 9999;
     box-shadow: 0 2px 10px rgba(0,0,0,.25);
@@ -520,8 +520,8 @@ body {
     font-size: 9.5pt; font-weight: 700; cursor: pointer;
     display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
 }
-.tb-btn.print { background: #fff; color: #176358; }
-.tb-btn.print:hover { background: #e6f5f3; }
+.tb-btn.print { background: #fff; color: #4e3483; }
+.tb-btn.print:hover { background: #eeeaf5; }
 .tb-btn.close { background: rgba(255,255,255,.16); color: #fff; }
 .tb-btn.close:hover { background: rgba(255,255,255,.28); }
 body.has-toolbar { padding-top: 50px; }
@@ -541,7 +541,7 @@ body.has-toolbar { padding-top: 50px; }
 
     /* Employee info → stacked full-width cells */
     .ps-emp, .ps-emp tr, .ps-emp td { display: block; width: 100% !important; }
-    .ps-emp td { border-right: none; border-bottom: 1px solid #c8e6e2; }
+    .ps-emp td { border-right: none; border-bottom: 1px solid #d7d0e6; }
     .ps-emp td:last-child { border-bottom: none; }
 
     /* Attendance summary: 7-col table → labelled list rows (Label ··· value) */
@@ -549,7 +549,7 @@ body.has-toolbar { padding-top: 50px; }
     .ps-summary td {
         display: flex; align-items: center; justify-content: space-between;
         text-align: left; padding: 9px 16px;
-        border-right: none; border-bottom: 1px solid #d9ece9;
+        border-right: none; border-bottom: 1px solid #e2deec;
     }
     .ps-summary td:last-child { border-bottom: none; }
     .ps-summary .sum-lbl { order: -1; margin-top: 0; font-size: 9.5pt; }
@@ -558,14 +558,14 @@ body.has-toolbar { padding-top: 50px; }
     /* Earnings / Deductions: two columns → stacked full-width sections */
     .ps-body, .ps-body > tbody, .ps-body > tbody > tr { display: block; width: 100%; }
     .ps-body > tbody > tr > td { display: block; width: 100% !important; border-right: none; }
-    .ps-body > tbody > tr > td:first-child { border-bottom: 2px solid #219688; }
+    .ps-body > tbody > tr > td:first-child { border-bottom: 2px solid #6642aa; }
 
     /* Totals: 3-col → stacked label ··· value rows */
     .ps-totals, .ps-totals tbody, .ps-totals tr, .ps-totals td { display: block; width: 100% !important; }
     .ps-totals td {
         display: flex; align-items: center; justify-content: space-between;
         text-align: left; padding: 11px 16px; border-right: none;
-        border-bottom: 1px solid #c8e6e2;
+        border-bottom: 1px solid #d7d0e6;
     }
     .ps-totals td:last-child { border-bottom: none; }
     .ps-totals .tot-lbl { margin-bottom: 0; }
@@ -662,8 +662,8 @@ body.has-toolbar { padding-top: 50px; }
 <!-- ══ EMPLOYEE RATE · YEAR TO DATE · LEAVES ══ -->
 <table class="ps-info" cellspacing="0" cellpadding="0" style="width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed;">
 <tr style="vertical-align:top;">
-    <td style="width:33.33%;border:1px solid #d8e6e2;background:#fafdfc;padding:8px 11px;">
-        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#176358;border-bottom:2px solid #219688;padding-bottom:3px;margin-bottom:6px;">EMPLOYEE RATE</div>
+    <td style="width:33.33%;border:1px solid #dedbe7;background:#fbfbfd;padding:8px 11px;">
+        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#4e3483;border-bottom:2px solid #6642aa;padding-bottom:3px;margin-bottom:6px;">EMPLOYEE RATE</div>
         <?php if ($is_monthly): ?>
         <table style="width:100%;font-size:9.5pt;"><tr><td>Monthly Rate</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($monthly_basic, 2) ?></td></tr></table>
         <?php else: ?>
@@ -671,13 +671,13 @@ body.has-toolbar { padding-top: 50px; }
         <table style="width:100%;font-size:9.5pt;"><tr><td>Hourly Rate</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($hourly_rate, 2) ?></td></tr></table>
         <?php endif; ?>
     </td>
-    <td style="width:33.33%;border:1px solid #d8e6e2;background:#fafdfc;padding:8px 11px;">
-        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#176358;border-bottom:2px solid #219688;padding-bottom:3px;margin-bottom:6px;">YEAR TO DATE</div>
+    <td style="width:33.33%;border:1px solid #dedbe7;background:#fbfbfd;padding:8px 11px;">
+        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#4e3483;border-bottom:2px solid #6642aa;padding-bottom:3px;margin-bottom:6px;">YEAR TO DATE</div>
         <table style="width:100%;font-size:9.5pt;"><tr><td>Taxable Pay</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($ytd_taxable, 2) ?></td></tr></table>
         <table style="width:100%;font-size:9.5pt;"><tr><td>Tax</td><td style="text-align:right;font-weight:700;">₱ <?= number_format($tax, 2) ?></td></tr></table>
     </td>
-    <td style="width:33.34%;border:1px solid #d8e6e2;background:#fafdfc;padding:8px 11px;">
-        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#176358;border-bottom:2px solid #219688;padding-bottom:3px;margin-bottom:6px;">LEAVES</div>
+    <td style="width:33.34%;border:1px solid #dedbe7;background:#fbfbfd;padding:8px 11px;">
+        <div style="font-weight:800;font-size:8.5pt;letter-spacing:.5px;color:#4e3483;border-bottom:2px solid #6642aa;padding-bottom:3px;margin-bottom:6px;">LEAVES</div>
         <?php if (!empty($leave_rows)): ?>
         <table style="width:100%;font-size:8.5pt;border-collapse:collapse;">
             <tr style="color:#999;"><td>Type</td><td style="text-align:right;">Used</td><td style="text-align:right;">Bal</td></tr>

@@ -1,5 +1,11 @@
 RewriteEngine On
 
+# ── Access ───────────────────────────────────────────────────────────────
+# Explicitly allow every visitor IP/network. This app does its own auth in
+# PHP; no LAN or IP range should ever be denied at the web-server level.
+# (Overrides any inherited directory-level restriction on the host.)
+Require all granted
+
 # ── Compression ──────────────────────────────────────────────────────────
 # Pages like dtr-details render one table row per attendance record, so a
 # 13-day / 361-employee batch is ~70 MB of HTML — over half of it indentation.

@@ -18,18 +18,19 @@
     overflow: auto;
     border-radius: 0 0 12px 12px;
     background: #fff;
+    /* Colours come from assets2/css/theme.css — recolour there, not here. */
     scrollbar-width: thin;                    /* Firefox */
-    scrollbar-color: #b8d8c2 #f1f6f2;
+    scrollbar-color: var(--sb-thumb) var(--sb-track);
 }
-.rpt-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
-.rpt-scroll::-webkit-scrollbar-track { background: #f1f6f2; border-radius: 8px; }
+.rpt-scroll::-webkit-scrollbar { width: var(--sb-size); height: var(--sb-size); }
+.rpt-scroll::-webkit-scrollbar-track { background: var(--sb-track); border-radius: var(--sb-radius); }
 .rpt-scroll::-webkit-scrollbar-thumb {
-    background: #b8d8c2;
-    border-radius: 8px;
-    border: 2px solid #f1f6f2;                 /* inset gap → soft pill */
+    background: var(--sb-thumb);
+    border-radius: var(--sb-radius);
+    border: 2px solid var(--sb-track);         /* inset gap → soft pill */
 }
-.rpt-scroll::-webkit-scrollbar-thumb:hover { background: #8fc7a6; }
-.rpt-scroll::-webkit-scrollbar-corner { background: #f1f6f2; }
+.rpt-scroll::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
+.rpt-scroll::-webkit-scrollbar-corner { background: var(--sb-track); }
 
 /* ── Soft Excel-style table ── */
 .rpt-table {

@@ -113,7 +113,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     FROM leave_requests WHERE employee_id = $emp_id");
 ?>
 <style>
-    :root { --emp-brand:#673bb6; --emp-brand-dark:#5d35a5; --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
+    /* Brand purple comes from assets2/css/theme.css — recolour app-wide there. */
+    :root { --emp-brand:var(--app-primary); --emp-brand-dark:var(--app-primary-dark); --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
 
     /* ---- Left profile sidebar ---- */
     .emp-sidebar { border:1px solid #d0d7ee; border-radius:10px; overflow:hidden; background:#fff; box-shadow:0 2px 10px rgba(20,30,60,.05); }
@@ -153,7 +154,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     /* ---- Custom segmented tab bar ---- */
     .emp-tabs-nav { display:flex; gap:4px; flex-wrap:nowrap; background:#fff; border:1px solid #d0d7ee; border-radius:10px; padding:6px; margin-bottom:14px; overflow-x:auto; scrollbar-width:thin; box-shadow:0 2px 8px rgba(20,30,60,.04); }
     .emp-tabs-nav::-webkit-scrollbar { height:4px; }
-    .emp-tabs-nav::-webkit-scrollbar-thumb { background:#d0d7ee; border-radius:4px; }
+    .emp-tabs-nav::-webkit-scrollbar-track { background:transparent; }
+    .emp-tabs-nav::-webkit-scrollbar-thumb { background:var(--sb-thumb); border-radius:4px; border:0; }
     .emp-tabs-nav .nav-item { flex-shrink:0; }
     .emp-tabs-nav .nav-link { display:flex; align-items:center; gap:7px; padding:8px 14px; border-radius:7px; font-size:12.5px; font-weight:600; color:#5a6474; white-space:nowrap; border:1px solid transparent; transition:all .18s ease; }
     .emp-tabs-nav .nav-link i { font-size:15px; line-height:1; }

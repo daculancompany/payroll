@@ -522,6 +522,8 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <link href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <link href="https://cdn.datatables.net/responsive/2.2.9/css/responsive.bootstrap.min.css" rel="stylesheet">
 <link href="<?= av('assets2/css/modal-stacking.css') ?>" rel="stylesheet">
+<!-- GLOBAL theme tokens (primary purple + every scrollbar in the app) -->
+<link href="<?= av('assets2/css/theme.css') ?>" rel="stylesheet">
 <!-- Clock-face timepicker web component (File a Request claimed times) — https://github.com/loebi-ch/clock-timepicker -->
 <script type="module" src="assets2/vendor/clock-timepicker.js"></script>
 <style>

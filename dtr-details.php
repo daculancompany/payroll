@@ -754,13 +754,14 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
     overflow-x: auto !important;                    /* fallback on very narrow screens */
     border: 1px solid #c0e0c8 !important;
     border-radius: 8px !important;
+    /* Scrollbar colours are global — see assets2/css/theme.css */
     scrollbar-width: thin;
-    scrollbar-color: #b8d8c2 #f1f6f2;
+    scrollbar-color: var(--sb-thumb) var(--sb-track);
 }
 .table-responsive2::-webkit-scrollbar { width: 9px; height: 9px; }
-.table-responsive2::-webkit-scrollbar-track { background: #f1f6f2; border-radius: 6px; }
-.table-responsive2::-webkit-scrollbar-thumb { background: #b8d8c2; border-radius: 6px; border: 2px solid #f1f6f2; }
-.table-responsive2::-webkit-scrollbar-thumb:hover { background: #8fc7a6; }
+.table-responsive2::-webkit-scrollbar-track { background: var(--sb-track); border-radius: 6px; }
+.table-responsive2::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: 6px; border: 2px solid var(--sb-track); }
+.table-responsive2::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); }
 
 /* Compact the wide columns so the table fits without horizontal scroll on normal screens */
 #table-1 thead th, #table-1 tbody td { padding: 5px 7px !important; }

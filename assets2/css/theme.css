@@ -1,0 +1,80 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   GLOBAL THEME — one source of truth for the app's primary colour and for
+   every custom scrollbar in the system.
+
+   Loaded early by includes/header.php (admin app) and employee-portal.php,
+   so every page — DTR, DTR details, payroll calculations, reports, the
+   portal — picks up the same purple without repeating hex codes.
+
+   To recolour the whole app, change the tokens in :root below. Nothing
+   else needs editing.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+:root {
+    /* ── Primary brand (purple) ── */
+    --app-primary:        #673bb6;
+    --app-primary-dark:   #5d35a5;
+    --app-primary-light:  #8a63cf;
+    --app-primary-soft:   #f3effa;   /* tinted surface / hover background */
+    --app-primary-border: #ddd2f0;   /* hairline borders on tinted surfaces */
+
+    /* ── Scrollbars ──
+       Every scrollable pane in the app reads these three. */
+    --sb-track:      #f2eefa;   /* the groove */
+    --sb-thumb:      #c6b3e6;   /* the pill at rest */
+    --sb-thumb-hover:#9d7ad4;   /* the pill under the cursor */
+    --sb-size:       10px;      /* width for vertical, height for horizontal */
+    --sb-radius:     8px;
+
+    /* Legacy aliases — older pages still reference --sb-primary. */
+    --sb-primary:      var(--app-primary);
+    --sb-primary-soft: rgba(103, 59, 182, .08);
+}
+
+/* ── Global scrollbar skin ────────────────────────────────────────────
+   Applied to every element, so a pane that only sets `overflow:auto`
+   still gets the purple bar with no extra CSS.
+
+   Deliberately written WITHOUT !important and at zero specificity: any
+   page-level rule (e.g. `.emp-tabs-nav::-webkit-scrollbar { height:4px }`)
+   still wins when it needs a different size. */
+
+/* Firefox / standards */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sb-thumb) var(--sb-track);
+}
+
+/* WebKit — Chrome, Edge, Safari */
+*::-webkit-scrollbar {
+    width: var(--sb-size);
+    height: var(--sb-size);
+}
+*::-webkit-scrollbar-track {
+    background: var(--sb-track);
+    border-radius: var(--sb-radius);
+}
+*::-webkit-scrollbar-thumb {
+    background: var(--sb-thumb);
+    border-radius: var(--sb-radius);
+    border: 2px solid var(--sb-track);   /* inset gap → reads as a soft pill */
+}
+*::-webkit-scrollbar-thumb:hover {
+    background: var(--sb-thumb-hover);
+}
+*::-webkit-scrollbar-corner {
+    background: var(--sb-track);
+}
+
+/* Panes that float over a coloured/white surface and want no visible
+   groove — add `.sb-ghost` and only the thumb shows. */
+.sb-ghost {
+    scrollbar-color: var(--sb-thumb) transparent;
+}
+.sb-ghost::-webkit-scrollbar-track,
+.sb-ghost::-webkit-scrollbar-corner {
+    background: transparent;
+}
+.sb-ghost::-webkit-scrollbar-thumb {
+    border-color: transparent;
+}

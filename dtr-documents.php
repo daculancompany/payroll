@@ -349,7 +349,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
     background:#eeeaf5; border-style:solid; border-color:#c0b5d5; color:#4f3288;
     box-shadow:0 0 0 1px #c0b5d5 inset;
 }
-.ddv-list { flex:1; overflow-y:auto; padding:5px 9px 9px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.ddv-list { flex:1; overflow-y:auto; padding:5px 9px 9px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .ddv-item {
     display:flex; align-items:center; gap:9px; width:100%;
     padding:6px 8px; margin-bottom:4px; text-align:left;
@@ -394,7 +394,11 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-doc-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; max-width:780px; margin:0 auto 9px; width:100%; }
 .ddv-doc-nav { display:flex; align-items:center; gap:6px; }
 .ddv-doc-pos { font-size:11px; color:#827d91; font-weight:600; }
-.ddv-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:#b8d8c2 transparent; padding-bottom:10px; }
+.ddv-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) transparent; padding-bottom:10px; }
+/* grooveless bar over the paper backdrop — thumb only (see theme.css .sb-ghost) */
+.ddv-paper-scroll::-webkit-scrollbar-track,
+.ddv-paper-scroll::-webkit-scrollbar-corner { background:transparent; }
+.ddv-paper-scroll::-webkit-scrollbar-thumb { border-color:transparent; }
 /* block + margin:auto (not flex centering) so a zoomed-in sheet that overflows
    horizontally stays fully reachable by scrolling */
 .ddv-paper-holder { display:block; }
@@ -424,7 +428,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 /* ── Right: summary + records ── */
 .ddv-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
 .ddv-right .ddv-panel.grow { flex:1; min-height:0; }
-.ddv-sum-body { padding:11px 13px; max-height:34vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.ddv-sum-body { padding:11px 13px; max-height:34vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .ddv-sum-emp { font-size:12.5px; font-weight:800; color:#3c3846; }
 .ddv-sum-sub { font-size:10.5px; color:#948ea5; margin:1px 0 9px; }
 .ddv-sum-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
@@ -481,7 +485,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-note-tpl:hover { background:#f2f0f7; border-style:solid; }
 
 /* Records list */
-.ddv-recs { flex:1; overflow-y:auto; min-height:0; padding:8px 10px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.ddv-recs { flex:1; overflow-y:auto; min-height:0; padding:8px 10px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .ddv-rec {
     border:1px solid #e8eeeb; border-radius:9px; padding:7px 9px; margin-bottom:7px; background:#fbfbfd;
 }
@@ -538,7 +542,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-chat-pop-head button { border:none; background:transparent; color:#827d91; cursor:pointer; font-size:16px; line-height:1; padding:0; }
 .ddv-chat-pop-head button:hover { color:var(--brand-dark); }
 .ddv-chat-pop-head #ddv-chat-refresh.spin i { animation:ddv-spin .7s linear infinite; display:inline-block; }
-.ddv-chat-list { display:flex; flex-direction:column; gap:5px; max-height:230px; overflow-y:auto; padding:9px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.ddv-chat-list { display:flex; flex-direction:column; gap:5px; max-height:230px; overflow-y:auto; padding:9px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .ddv-bub { max-width:85%; padding:5px 9px; border-radius:10px; font-size:11px; line-height:1.35; word-break:break-word; }
 .ddv-bub.me   { align-self:flex-end; background:#e1dcec; color:#4f3288; border-bottom-right-radius:3px; }
 .ddv-bub.them { align-self:flex-start; background:#f1f3f2; color:#3c3846; border-bottom-left-radius:3px; }
@@ -564,7 +568,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .drp-act-btn.resolve { margin-top:5px; background:#e9f7ef; color:#0f9d58; border-color:#b7e4c7; }
 .drp-act-btn:hover { filter:brightness(.97); }
 .drp-disputes { margin-top:9px; display:flex; flex-direction:column; gap:3px; }
-.drp-disputes.is-scroll { max-height:210px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.drp-disputes.is-scroll { max-height:210px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 /* ── Name-only sign-off rows (mirrors payroll_calculations.php) ────────────
    Icon, name, and a chat button when the employee left a message; the message
    itself opens in #modal-emp-review. UNREAD until someone opens it. */
@@ -572,7 +576,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .drp-note-pill { display:inline-flex; align-items:center; gap:3px; background:#fff6e2; border:1px solid #f2dfae;
     color:#a9700a; border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
 .drp-confirms { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
-.drp-confirms.is-scroll { max-height:190px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.drp-confirms.is-scroll { max-height:190px; overflow-y:auto; padding-right:4px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .drp-row { display:flex; align-items:center; gap:6px; min-width:0; padding:4px 8px; border-radius:7px;
     border:1px solid transparent; font-size:11.5px; }
 .drp-row.ok   { background:#f2faf6; border-color:#dceee5; }

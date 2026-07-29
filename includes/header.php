@@ -59,6 +59,10 @@
 
     <link rel="stylesheet" href="assets2/vendor/toastr/toastr.min.css">
 
+    <!-- GLOBAL theme tokens (primary purple + every scrollbar in the app).
+         Must load before reports.css / page styles so those can read the vars. -->
+    <link rel="stylesheet" href="assets2/css/theme.css">
+
     <!-- Shared soft-style report tables -->
     <link rel="stylesheet" href="assets2/css/reports.css">
 
@@ -187,11 +191,9 @@
             transition: all 0.2s ease;
         } */
 
-        /* ===== Clean white sidebar + solid purple active menu ===== */
-        :root {
-            --sb-primary: #673bb6;
-            --sb-primary-soft: rgba(103, 59, 182, .08);
-        }
+        /* ===== Clean white sidebar + solid purple active menu =====
+           --sb-primary / --sb-primary-soft now live in assets2/css/theme.css
+           (aliased to --app-primary). Change the colour there, not here. */
 
         .navbar-menu {
             background: #ffffff;

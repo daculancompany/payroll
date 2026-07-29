@@ -3534,7 +3534,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-rv-chips button i { font-size:11px; }
 .pcw-rv-chips button:hover:not(.on) { background:#f2faf5; }
 .pcw-rv-chips button.on { background:#e6f5ec; border-color:#b8d8c2; color:#0e6b37; box-shadow:0 0 0 1px #b8d8c2 inset; }
-.pcw-list { flex:1; overflow-y:auto; padding:5px 9px 9px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.pcw-list { flex:1; overflow-y:auto; padding:5px 9px 9px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .pcw-item { display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; margin-bottom:5px; text-align:left;
   background:#fff; border:1px solid #e8eeeb; border-radius:10px; border-left:3px solid transparent; cursor:pointer;
   transition:background .12s, border-color .12s, box-shadow .12s; }
@@ -3649,7 +3649,11 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-pg-btn:hover:not(:disabled) { background:#eef7f0; }
 .pcw-pg-btn:disabled { opacity:.35; cursor:not-allowed; }
 .pcw-zoom-val { min-width:48px; height:27px; padding:0 7px; border-radius:7px; cursor:pointer; border:1px solid #cfe9d6; background:#fff; color:#0e6b37; font-size:11px; font-weight:700; }
-.pcw-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:#b8d8c2 transparent; padding-bottom:10px; }
+.pcw-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) transparent; padding-bottom:10px; }
+/* grooveless bar over the paper backdrop — thumb only (see theme.css .sb-ghost) */
+.pcw-paper-scroll::-webkit-scrollbar-track,
+.pcw-paper-scroll::-webkit-scrollbar-corner { background:transparent; }
+.pcw-paper-scroll::-webkit-scrollbar-thumb { border-color:transparent; }
 .pcw-paper { background:#fffefb; width:100%; max-width:820px; margin:0 auto; border:1px solid #dcd8cc; border-radius:2px;
   box-shadow:0 2px 14px rgba(60,55,40,.14); padding:30px 36px 26px; font-family:'Times New Roman', Times, serif; color:#1a1a1a; zoom:var(--pcw-zoom, 1); }
 .pcw-doc-empty { text-align:center; color:#948ea5; font-size:13px; padding:60px 10px; font-family:'Segoe UI', system-ui, sans-serif; }
@@ -3720,13 +3724,13 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 /* Employee Review shares Batch Insights' shell: fixed head, body-only scroll. */
 .pcw-rv-panel { flex:0 1 auto; min-height:0; max-height:42%; }
 .pcw-rv-body { flex:1; min-height:0; overflow-y:auto; padding:10px 13px;
-  scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+  scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 /* The body is the only scroller — the inner lists must not scroll inside it. */
 .pcw-rv-body .prp-disputes.is-scroll,
 .pcw-rv-body .prp-confirms.is-scroll { max-height:none; overflow:visible; padding-right:0; }
-.pcw-sum-body { padding:11px 13px; max-height:42vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.pcw-sum-body { padding:11px 13px; max-height:42vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 /* ── Batch Insights panel ── */
-.pcw-ins-body { flex:1; min-height:0; overflow-y:auto; padding:11px 13px; scrollbar-width:thin; scrollbar-color:#b8d8c2 #f1f6f2; }
+.pcw-ins-body { flex:1; min-height:0; overflow-y:auto; padding:11px 13px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .pcw-ins-sec { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:2px 0 6px; }
 .pcw-ins-sec:not(:first-child) { margin-top:15px; }
 .pcw-ins-stats { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }

@@ -225,30 +225,31 @@ th.primary-header {
     border: 1px solid #c0e0c8;
     border-radius: 6px;
     background: #fff;
-    /* Firefox — soft slim scrollbar */
+    /* Firefox — soft slim scrollbar.
+       Colours come from assets2/css/theme.css — recolour there, not here. */
     scrollbar-width: thin;
-    scrollbar-color: #b8d8c2 #f1f6f2;
+    scrollbar-color: var(--sb-thumb) var(--sb-track);
 }
 
 /* WebKit (Chrome / Edge / Safari) — soft rounded scrollbar */
 .table-responsive2::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: var(--sb-size);
+    height: var(--sb-size);
 }
 .table-responsive2::-webkit-scrollbar-track {
-    background: #f1f6f2;
-    border-radius: 8px;
+    background: var(--sb-track);
+    border-radius: var(--sb-radius);
 }
 .table-responsive2::-webkit-scrollbar-thumb {
-    background: #b8d8c2;
-    border-radius: 8px;
-    border: 2px solid #f1f6f2;   /* inset gap so the thumb reads as a soft pill */
+    background: var(--sb-thumb);
+    border-radius: var(--sb-radius);
+    border: 2px solid var(--sb-track);   /* inset gap so the thumb reads as a soft pill */
 }
 .table-responsive2::-webkit-scrollbar-thumb:hover {
-    background: #8fc7a6;
+    background: var(--sb-thumb-hover);
 }
 .table-responsive2::-webkit-scrollbar-corner {
-    background: #f1f6f2;
+    background: var(--sb-track);
 }
 
 /* ── Custom Excel-style table ── */

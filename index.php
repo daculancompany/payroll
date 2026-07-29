@@ -825,6 +825,9 @@ function getRole($login_role)
                                 <!-- item-->
                                 <h6 class="dropdown-header">Welcome <?= $_SESSION['login_name'] ?>!</h6>
                                 <a class="dropdown-item" href="index.php?page=profile"><i class="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Profile</span></a>
+                                <!-- Revealed by assets2/js/pwa-install.js once the browser offers an
+                                     install (or on iOS, where it opens the manual steps instead). -->
+                                <a class="dropdown-item" href="#" data-pwa-install data-pwa-display="block" style="display:none;"><i class="mdi mdi-cellphone-arrow-down text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Install App</span></a>
                                 <!-- <a class="dropdown-item" href="apps-chat.html"><i class="mdi mdi-message-text-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Messages</span></a>
                                 <a class="dropdown-item" href="apps-tasks-kanban.html"><i class="mdi mdi-calendar-check-outline text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Taskboard</span></a>
                                 <a class="dropdown-item" href="pages-faqs.html"><i class="mdi mdi-lifebuoy text-muted fs-16 align-middle me-1"></i> <span class="align-middle">Help</span></a>

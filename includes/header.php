@@ -20,13 +20,19 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="COMC Payroll">
+    <!-- Must load before the SW registration below so it catches
+         beforeinstallprompt, which fires once and isn't replayed. -->
+    <script src="assets2/js/pwa-install.js"></script>
     <script>
         // Registers the same root-scoped SW the portal uses; its no-op fetch
         // handler is what makes Chrome offer "Install app". HTTPS/localhost only.
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
                 navigator.serviceWorker.register('firebase-messaging-sw.js')
-                    .catch(function (e) { console.warn('[PWA] SW registration failed:', e); });
+                    .catch(function (e) {
+                        console.warn('[PWA] SW registration failed:', e);
+                        if (window.pwaNoteSwError) window.pwaNoteSwError(e.message || e);
+                    });
             });
         }
     </script>

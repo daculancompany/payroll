@@ -505,6 +505,9 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="COMC Portal">
+<!-- Loads early and un-deferred: it must catch beforeinstallprompt, which the
+     browser fires once and never replays for a late listener. -->
+<script src="<?= av('assets2/js/pwa-install.js') ?>"></script>
 <!-- Warm up CDN connections early — faster first paint on mobile networks -->
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
@@ -554,6 +557,9 @@ body{
 .ptop-icbtn:active{transform:scale(.92);}
 .ptop-bell .emp-bell-dot{position:absolute;top:6px;right:7px;width:9px;height:9px;background:#ff4d4f;border:2px solid #fff;border-radius:50%;}
 .ptop-icbtn.spinning i{animation:ptop-spin .7s linear infinite;}
+/* Install button — tinted so it reads as an offer, not another utility icon */
+.ptop-install{background:#ece5fb;border-color:#cdbcf0;color:#5b34a8;}
+.ptop-install:hover{background:#e0d5f7;}
 @keyframes ptop-spin{to{transform:rotate(360deg);}}
 /* Per-screen title — only surfaces in the mobile app header */
 .ptop-screen-title{display:none;}
@@ -1922,6 +1928,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <button type="button" class="ptop-icbtn ptop-bell" id="emp-bell" onclick="toggleEmpBell(event)" title="Notifications" aria-label="Notifications">
             <i class="ri-notification-3-line"></i>
             <span class="emp-bell-dot" id="emp-bell-dot" style="display:none;"></span>
+        </button>
+        <!-- Hidden until assets2/js/pwa-install.js confirms the app can be installed
+             (on iOS it stays visible and opens the Add-to-Home-Screen steps). -->
+        <button type="button" class="ptop-icbtn ptop-install" data-pwa-install style="display:none;"
+                title="Install app" aria-label="Install app">
+            <i class="ri-download-2-line"></i>
         </button>
         <a href="?logout=1" class="ptop-logout"><i class="ri-logout-box-line"></i><span class="ptop-logout-txt">Logout</span></a>
     </div>
@@ -3361,7 +3373,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
         navigator.serviceWorker.register('firebase-messaging-sw.js')
-            .catch(function (e) { console.warn('[PWA] SW registration failed:', e); });
+            .catch(function (e) {
+                console.warn('[PWA] SW registration failed:', e);
+                if (window.pwaNoteSwError) window.pwaNoteSwError(e.message || e);
+            });
     });
 }
 </script>

@@ -20,11 +20,15 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="COMC Payroll">
+    <script src="assets2/js/pwa-install.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
                 navigator.serviceWorker.register('firebase-messaging-sw.js')
-                    .catch(function (e) { console.warn('[PWA] SW registration failed:', e); });
+                    .catch(function (e) {
+                        console.warn('[PWA] SW registration failed:', e);
+                        if (window.pwaNoteSwError) window.pwaNoteSwError(e.message || e);
+                    });
             });
         }
     </script>
@@ -148,7 +152,13 @@
                                             <button class="btn btn-success w-100" type="submit">Sign In</button>
                                         </div>
 
-                                        
+                                        <!-- Revealed by assets2/js/pwa-install.js when the app can be
+                                             installed (or on iOS, where it opens the manual steps). -->
+                                        <div class="mt-3" data-pwa-install data-pwa-display="block" style="display:none;">
+                                            <button class="btn btn-outline-light w-100" type="button">
+                                                <i class="ri-download-2-line align-middle me-1"></i>Install App
+                                            </button>
+                                        </div>
                                     </form>
                                 </div>
                             </div>

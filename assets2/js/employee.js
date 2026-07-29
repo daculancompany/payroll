@@ -200,6 +200,17 @@ $(function () {
         },
     });
 
+    // Portal Login → show / hide the typed password (admin-only fields, so the
+    // markup is absent for every other role and this simply never fires).
+    $("#togglePortalPassword").on("click", function () {
+        var $pw = $("#portal_password");
+        var show = $pw.attr("type") === "password";
+        $pw.attr("type", show ? "text" : "password");
+        $("#togglePortalIcon")
+            .toggleClass("ri-eye-off-line", !show)
+            .toggleClass("ri-eye-line", show);
+    });
+
     $('[name="department_id"]').change(function () {
         var did = $(this).val();
         var $pos = $("#position-select");

@@ -839,6 +839,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                             <!-- SCHEDULE TAB -->
                             <div class="tab-pane" id="arrow-schedule" role="tabpanel">
                                 <?php
+                                // Deleting a schedule period or a fingerprint destroys history the
+                                // rest of the app already computed against — Administrator (role 1)
+                                // only. The server re-checks the role; this just hides the buttons.
+                                $ed_can_delete = (int) ($_SESSION['login_role'] ?? 0) === 1;
+
                                 $cur_sched_q = $conn->query("
                                     SELECT es.effective_from, es.rest_days,
                                            ws.description, ws.start_time, ws.end_time,
@@ -919,6 +924,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <th class="text-center">Effective To</th>
                                                 <th>Changed By</th>
                                                 <th>Notes</th>
+                                                <?php if ($ed_can_delete): ?><th class="text-center" style="width:60px;">Action</th><?php endif; ?>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -957,6 +963,18 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 </td>
                                                 <td><?= esc($h['changed_by_name'] ?? '—') ?></td>
                                                 <td><small class="text-muted"><?= esc($h['notes'] ?? '') ?></small></td>
+                                                <?php if ($ed_can_delete): ?>
+                                                <td class="text-center">
+                                                    <button type="button" class="btn btn-sm btn-outline-danger js-sched-del"
+                                                            data-id="<?= (int) $h['id'] ?>"
+                                                            data-label="<?= esc($h['description']) ?> (from <?= date('M d, Y', strtotime($h['effective_from'])) ?>)"
+                                                            data-current="<?= $h['effective_to'] ? 0 : 1 ?>"
+                                                            title="Delete this schedule period"
+                                                            style="padding:2px 7px;">
+                                                        <i class="ri-delete-bin-line"></i>
+                                                    </button>
+                                                </td>
+                                                <?php endif; ?>
                                             </tr>
                                             <?php endwhile; ?>
                                         </tbody>
@@ -970,11 +988,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 <div class="row mt-4">
                                     <?php /* Mobile Kiosk card (incl. face registration) — hidden for now.
                                     <div class="col-md-6 mb-3">
-                                        <?= render_finger_hands($conn, $emp_id) ?>
+                                        <?= render_finger_hands($conn, $emp_id, ['can_delete' => $ed_can_delete]) ?>
                                     </div>
                                     */ ?>
                                     <div class="col-md-6 mb-3">
-                                        <?= render_finger_hands($conn, $emp_id, ['source' => 'device']) ?>
+                                        <?= render_finger_hands($conn, $emp_id, ['source' => 'device', 'can_delete' => $ed_can_delete]) ?>
                                     </div>
                                 </div>
                             </div>
@@ -1483,6 +1501,51 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                 Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to update day off. Please try again.' });
             }
         });
+
+        <?php if ($ed_can_delete): ?>
+        // Delete a schedule period (Administrator only — ajax.php re-checks the role).
+        // Deleting the current period reopens the previous one server-side, so the
+        // employee is never left without a schedule.
+        document.addEventListener('click', async function (e) {
+            const btn = e.target.closest('.js-sched-del');
+            if (!btn) return;
+
+            const isCurrent = btn.dataset.current === '1';
+            const ask = await Swal.fire({
+                icon: 'warning',
+                title: 'Are you sure?',
+                html: 'Delete the schedule period <b>' + btn.dataset.label + '</b>?'
+                    + (isCurrent
+                        ? '<br><small class="text-muted">This is the current schedule — the previous period will become current again.</small>'
+                        : '<br><small class="text-muted">DTR and payroll already computed with this period will not be recalculated.</small>'),
+                showCancelButton: true,
+                confirmButtonText: 'Yes, delete it',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#e15b64',
+                reverseButtons: true,
+            });
+            if (!ask.isConfirmed) return;
+
+            btn.disabled = true;
+            try {
+                const res  = await fetch('ajax.php?action=delete_employee_schedule', {
+                    method: 'POST',
+                    body: new URLSearchParams({ id: btn.dataset.id }),
+                });
+                const json = await res.json();
+                if (json?.result) {
+                    await Swal.fire({ icon: 'success', title: 'Deleted', text: json.message || 'Schedule period deleted', timer: 1400, showConfirmButton: false });
+                    location.reload();
+                } else {
+                    btn.disabled = false;
+                    Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to delete schedule period.' });
+                }
+            } catch (err) {
+                btn.disabled = false;
+                Swal.fire({ icon: 'error', title: 'Error', text: 'Failed to delete schedule period. Please try again.' });
+            }
+        });
+        <?php endif; ?>
     </script>
 
     <script>

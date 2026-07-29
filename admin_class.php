@@ -217,17 +217,31 @@ class Action
     }
 
     /**
-     * Give a newly created employee a portal login on the default password.
+     * True only for an Administrator (role 1). Portal credentials on the
+     * employee form are admin-only — Staff/Auditor may still save the record,
+     * they just can't set or change the login.
+     */
+    private function is_admin_session()
+    {
+        return (int) ($_SESSION['login_role'] ?? 0) === 1;
+    }
+
+    /**
+     * Give a newly created employee a portal login.
      *
      * Username is the supplied email when it is a real one, otherwise
      * firstname.lastname@<default domain>. employee_portal_accounts.username is
      * UNIQUE, so a numeric suffix is added until the candidate is free —
      * duplicate emails across staff are common and must not abort the insert.
      *
+     * $password is the admin-typed password; blank falls back to
+     * PORTAL_DEFAULT_PASSWORD with must_change = 1 so the employee is asked to
+     * pick their own. A password the admin chose deliberately is left as-is.
+     *
      * No-op when the employee already has an account, which keeps re-imports
      * from resetting a password the employee has already changed.
      */
-    private function ensure_portal_account($employee_id, $firstname, $lastname, $email = '')
+    private function ensure_portal_account($employee_id, $firstname, $lastname, $email = '', $password = '')
     {
         if (!$this->tableExists('employee_portal_accounts')) return null;
         $employee_id = (int) $employee_id;
@@ -264,13 +278,70 @@ class Action
             $candidate = $local . $n . '@' . $domain;
         }
 
-        $hash = password_hash(PORTAL_DEFAULT_PASSWORD, PASSWORD_BCRYPT);
+        $password    = (string) $password;
+        $must_change = $password === '' ? 1 : 0;
+        $hash = password_hash($password === '' ? PORTAL_DEFAULT_PASSWORD : $password, PASSWORD_BCRYPT);
         $ins  = $this->db->prepare("INSERT INTO employee_portal_accounts
-            (employee_id, username, password, is_active, must_change) VALUES (?, ?, ?, 1, 1)");
-        $ins->bind_param('iss', $employee_id, $candidate, $hash);
+            (employee_id, username, password, is_active, must_change) VALUES (?, ?, ?, 1, ?)");
+        $ins->bind_param('issi', $employee_id, $candidate, $hash, $must_change);
         $ins->execute();
 
         return $candidate;
+    }
+
+    /**
+     * Admin-only edit of an existing employee's portal login.
+     *
+     * Blank email keeps the current username, blank password keeps the current
+     * password — so an admin can change one without touching the other. Unlike
+     * ensure_portal_account() a taken email is an ERROR here rather than being
+     * silently suffixed: the admin typed a specific address and has to be told
+     * it belongs to someone else.
+     *
+     * Returns an 'error:…' string when the input is rejected, null on success.
+     */
+    private function update_portal_account($employee_id, $email, $password)
+    {
+        if (!$this->tableExists('employee_portal_accounts')) return null;
+        $employee_id = (int) $employee_id;
+        $email       = strtolower(trim((string) $email));
+        $password    = (string) $password;
+        if ($employee_id <= 0 || ($email === '' && $password === '')) return null;
+
+        $cur = $this->db->query("SELECT id, username FROM employee_portal_accounts WHERE employee_id = $employee_id LIMIT 1");
+        $row = $cur ? $cur->fetch_assoc() : null;
+
+        // No account yet (imported or pre-portal employee) — create one now.
+        if (!$row) {
+            $e = $this->db->query("SELECT firstname, lastname FROM employee WHERE id = $employee_id LIMIT 1");
+            $emp = $e ? $e->fetch_assoc() : ['firstname' => '', 'lastname' => ''];
+            $this->ensure_portal_account($employee_id, $emp['firstname'], $emp['lastname'], $email, $password);
+            return null;
+        }
+
+        if ($email !== '') {
+            $dup = $this->db->prepare("SELECT id FROM employee_portal_accounts WHERE LOWER(username) = LOWER(?) AND employee_id <> ? LIMIT 1");
+            $dup->bind_param('si', $email, $employee_id);
+            $dup->execute();
+            $dup->store_result();
+            $taken = $dup->num_rows > 0;
+            $dup->free_result();
+            if ($taken) return 'error:That login email is already used by another employee.';
+
+            $u = $this->db->prepare("UPDATE employee_portal_accounts SET username = ? WHERE employee_id = ?");
+            $u->bind_param('si', $email, $employee_id);
+            $u->execute();
+        }
+
+        if ($password !== '') {
+            // Set by an admin on purpose, so it is not flagged for a forced change.
+            $hash = password_hash($password, PASSWORD_BCRYPT);
+            $p = $this->db->prepare("UPDATE employee_portal_accounts SET password = ?, must_change = 0, is_active = 1 WHERE employee_id = ?");
+            $p->bind_param('si', $hash, $employee_id);
+            $p->execute();
+        }
+
+        return null;
     }
 
     // Returns true if the given column exists on the given table.
@@ -597,6 +668,22 @@ class Action
         if ($basic_pay > 100000000 || $salary > 100000000) return 'error:Pay value is unrealistically large.';
         if ($bday !== '' && strtotime($bday) === false)     return 'error:Birthday is not a valid date.';
 
+        // ── Portal login (email + password) — ADMINISTRATOR ONLY ──
+        // Every other role that can open this form saves the employee record
+        // without ever touching the login, whatever they post.
+        $portal_email    = '';
+        $portal_password = '';
+        if ($this->is_admin_session()) {
+            $portal_email    = strtolower(trim($_POST['email'] ?? ''));
+            $portal_password = (string) ($_POST['portal_password'] ?? '');
+            if ($portal_email !== '' && !filter_var($portal_email, FILTER_VALIDATE_EMAIL))
+                return 'error:Login email is not a valid email address.';
+            if (mb_strlen($portal_email) > 100)
+                return 'error:Login email is too long (max 100 characters).';
+            if ($portal_password !== '' && strlen($portal_password) < 6)
+                return 'error:Login password must be at least 6 characters.';
+        }
+
         // Calculate deductions. Weekly payroll was removed — every employee is
         // semi-monthly, so the monthly SSS/PhilHealth tables always apply.
         $sss = $this->getSSSMonthlyDeduction($basic_pay);
@@ -673,9 +760,10 @@ class Action
                     }
                 }
 
-                // Every new employee gets a portal login on the default password
-                // (must_change = 1) so they can sign in without an extra step.
-                $this->ensure_portal_account($employee_id, $firstname, $lastname, $_POST['email'] ?? '');
+                // Every new employee gets a portal login straight away. An admin
+                // may set the email/password here; anything left blank falls back
+                // to a generated address and the default password (must_change = 1).
+                $this->ensure_portal_account($employee_id, $firstname, $lastname, $portal_email, $portal_password);
 
                 $this->db->commit();
                 return $employee_id;
@@ -688,6 +776,15 @@ class Action
                 $stmt = $this->db->prepare($query);
                 $stmt->bind_param("sssssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $bank_id, $bank_account_no, $id);
                 $stmt->execute();
+
+                // Portal login — only an admin gets this far with values set.
+                // A rejected email (already taken) rolls the whole edit back so
+                // the form can be corrected and resubmitted as one change.
+                $acct_err = $this->update_portal_account($id, $portal_email, $portal_password);
+                if ($acct_err !== null) {
+                    $this->db->rollback();
+                    return $acct_err;
+                }
 
                 $this->db->commit();
                 return 'updated';
@@ -912,6 +1009,111 @@ class Action
         }
     }
 
+    /**
+     * Remove one period from an employee's schedule history. ADMIN ONLY —
+     * a period defines the shift and rest days that DTR and payroll were
+     * already computed against, so dropping one rewrites history.
+     *
+     * When the deleted row was the open (current) period, the newest remaining
+     * one is reopened (effective_to = NULL) so the employee is never left
+     * without a current schedule.
+     */
+    function delete_employee_schedule()
+    {
+        if (!$this->is_admin_session()) {
+            return ['result' => false, 'message' => 'Only an Administrator may delete a schedule period.'];
+        }
+
+        $id = (int) ($_POST['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing schedule id'];
+
+        $stmt = $this->db->prepare("SELECT employee_id, effective_to FROM employee_schedules WHERE id=? LIMIT 1");
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Schedule period not found.'];
+
+        $employee_id = (int) $row['employee_id'];
+        $was_open    = $row['effective_to'] === null;
+
+        $this->db->begin_transaction();
+        try {
+            $del = $this->db->prepare("DELETE FROM employee_schedules WHERE id=?");
+            $del->bind_param('i', $id);
+            $del->execute();
+
+            if ($was_open) {
+                $prev = $this->db->prepare(
+                    "SELECT id FROM employee_schedules WHERE employee_id=?
+                     ORDER BY effective_from DESC, id DESC LIMIT 1"
+                );
+                $prev->bind_param('i', $employee_id);
+                $prev->execute();
+                if ($p = $prev->get_result()->fetch_assoc()) {
+                    $reopen = $this->db->prepare("UPDATE employee_schedules SET effective_to=NULL WHERE id=?");
+                    $reopen->bind_param('i', $p['id']);
+                    $reopen->execute();
+                }
+            }
+
+            $this->db->commit();
+            return ['result' => true, 'message' => 'Schedule period deleted'];
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Delete enrolled fingerprint template(s) for an employee. ADMIN ONLY.
+     *
+     * $_POST: employee_id, source ('device' | 'kiosk'),
+     *         finger_index (canonical code, or '' to clear every finger).
+     * The two scanners keep their templates in separate tables (see
+     * component/finger_hands.php), so the source picks which one is touched.
+     */
+    function delete_employee_fingerprint()
+    {
+        if (!$this->is_admin_session()) {
+            return ['result' => false, 'message' => 'Only an Administrator may delete a fingerprint.'];
+        }
+
+        $employee_id  = (int) ($_POST['employee_id'] ?? 0);
+        $finger_index = trim((string) ($_POST['finger_index'] ?? ''));
+        $source       = ($_POST['source'] ?? 'device') === 'kiosk' ? 'kiosk' : 'device';
+        if (!$employee_id) return ['result' => false, 'message' => 'Missing employee_id'];
+
+        // Older rows may hold legacy codes ("finger-1"), so only the shape is
+        // checked — enough to keep an arbitrary value out of the DELETE.
+        if ($finger_index !== '' && !preg_match('/^[A-Za-z0-9_\-]{1,32}$/', $finger_index)) {
+            return ['result' => false, 'message' => 'Invalid finger'];
+        }
+
+        $sql = $source === 'kiosk'
+            ? "DELETE FROM biometric_kiosk_templates WHERE employee_id=? AND format='sourceafis'"
+            : "DELETE FROM employee_fingerprints WHERE employee_id=?";
+        if ($finger_index !== '') $sql .= " AND finger_index=?";
+
+        $stmt = $this->db->prepare($sql);
+        if ($finger_index !== '') $stmt->bind_param('is', $employee_id, $finger_index);
+        else                      $stmt->bind_param('i', $employee_id);
+
+        try {
+            $stmt->execute();
+        } catch (Exception $e) {
+            return ['result' => false, 'message' => 'Failed to delete fingerprint: ' . $e->getMessage()];
+        }
+
+        $n = $stmt->affected_rows;
+        return [
+            'result'  => true,
+            'deleted' => $n,
+            'message' => $n === 0
+                ? 'No matching fingerprint found.'
+                : ($finger_index !== '' ? 'Fingerprint deleted' : $n . ' fingerprint(s) deleted'),
+        ];
+    }
+
     // Normalize a rest-days value into a canonical CSV of weekday numbers 0..6 (0=Sun … 6=Sat),
     // sorted, de-duped, out-of-range values dropped. Accepts a CSV string or an array.
     // Returns '' when nothing valid was given (i.e. no rest day).
@@ -941,6 +1143,27 @@ class Action
             }
         }
         return '';
+    }
+
+    /**
+     * Standard daily hours for $ymd from the same preloaded schedule periods
+     * restDaysForDate() reads — i.e. how many worked hours make one full day
+     * for this employee on that date.
+     *
+     * Falls back to PAYROLL_DEFAULT_DAY_HOURS when the employee has no schedule
+     * covering the date, which is the only case where a fixed 8-hour day is
+     * still assumed.
+     */
+    private function dayHoursForDate($periods, $ymd)
+    {
+        if (!empty($periods)) {
+            foreach ($periods as $p) {
+                if ($p['effective_from'] <= $ymd && ($p['effective_to'] === null || $p['effective_to'] >= $ymd)) {
+                    return day_hours_or_default($p['total_hours'] ?? null);
+                }
+            }
+        }
+        return (float) PAYROLL_DEFAULT_DAY_HOURS;
     }
 
     // True if $ymd (a Y-m-d date) falls on one of the employee's rest days per $periods.
@@ -1404,6 +1627,29 @@ class Action
 
         if (!$employee_id || !in_array($request_type, ['incident', 'overtime'], true) || !$request_date || !$reason) {
             return ['result' => false, 'message' => 'Missing required fields'];
+        }
+
+        // Same ceiling the employee portal enforces: OT can only be filed against
+        // scans that actually ran past the shift end, and never for more hours
+        // than those scans show for that date (see ot_request_limit).
+        if ($request_type === 'overtime') {
+            if (!$ot_hours) {
+                return ['result' => false, 'message' => 'Please provide the number of OT hours requested.'];
+            }
+            $lim = ot_request_limit($this->db, $employee_id, $request_date);
+            if (!$lim['allowed']) {
+                return ['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim];
+            }
+            if ($ot_hours < OT_REQUEST_MIN_HOURS) {
+                return ['result' => false, 'message' => 'The smallest overtime that can be filed is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim];
+            }
+            if ($ot_hours > $lim['max_hours'] + 0.001) {
+                return [
+                    'result'   => false,
+                    'message'  => 'Only up to ' . $lim['max_hours'] . ' hr of overtime can be filed for that date. ' . $lim['message'],
+                    'ot_limit' => $lim,
+                ];
+            }
         }
 
         $stmt = $this->db->prepare(
@@ -2777,16 +3023,25 @@ class Action
                 $grouped_data = [];
                 $ipresent = 0;
                 $employeeCount = [];
+                // Standard daily hours per employee, resolved from their shift as
+                // the DTR rows are read and frozen onto the payroll item below.
+                $emp_day_hours = [];
 
                 // Preload each employee's rest-day schedule periods overlapping this payroll
                 // period, so we can auto-count rest-day duty from the DTR (replacing the old
                 // hardcoded "Sunday" assumption). Keyed by employee_id.
+                // The same rows also carry the shift's total_hours, which is what
+                // one full day of work means for that employee — used below to turn
+                // worked hours into days present and a daily rate into an hourly
+                // one, in place of a hardcoded 8-hour day.
                 $restMap = [];
                 $rq = $this->db->prepare(
-                    "SELECT employee_id, effective_from, effective_to, rest_days
-                     FROM employee_schedules
-                     WHERE effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)
-                     ORDER BY effective_from DESC"
+                    "SELECT es.employee_id, es.effective_from, es.effective_to, es.rest_days,
+                            ws.total_hours
+                     FROM employee_schedules es
+                     LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
+                     WHERE es.effective_from <= ? AND (es.effective_to IS NULL OR es.effective_to >= ?)
+                     ORDER BY es.effective_from DESC"
                 );
                 $rq->bind_param('ss', $date_to, $date_from);
                 $rq->execute();
@@ -2865,22 +3120,27 @@ class Action
                         $employeeCount[$employee_id] = 1;
                     }
 
-                    // Cap hours at 8 (1 day)
-                    // Cap hours at 8 (1 day)
-                    $work_hours = floor($row["work_hours"]) >= 8 ? 8 : $row["work_hours"];
+                    $ymd = date('Y-m-d', strtotime($row['date_time']));
+                    // One full day for THIS employee on THIS date, from the shift
+                    // they were on (work_schedules.total_hours). Only an employee
+                    // with no schedule at all falls back to an 8-hour day.
+                    $day_hours = $this->dayHoursForDate($restMap[$employee_id] ?? [], $ymd);
+                    $emp_day_hours[$employee_id] = $day_hours;
 
-                    // Convert to days using your special rules
-                    if ($work_hours == 8) {
+                    // Cap a single day's worth of hours at one full day
+                    $work_hours = floor($row["work_hours"]) >= $day_hours ? $day_hours : $row["work_hours"];
+
+                    // Convert to days
+                    if ($work_hours == $day_hours) {
                         $days = 1;
-                    } else if ($work_hours == 4.5625) {
+                    } else if ($day_hours == 8 && $work_hours == 4.5625) {
+                        // Long-standing special case for the 8-hour day; left exactly
+                        // as it was so existing runs keep reproducing. It has no
+                        // meaning on any other shift length, hence the guard.
                         $days = 0.5625;
                     } else {
-                        $days = $work_hours / 8;
+                        $days = $work_hours / $day_hours;
                     }
-
-
-
-                    // Convert to days using your special rules
 
                     // Initialize the employee bucket first so the accumulators
                     // below never touch undefined keys.
@@ -2902,7 +3162,6 @@ class Action
                     // Rest-day duty: if this DTR day is one of the employee's rest days
                     // (effective on that date), the worked fraction counts toward the
                     // rest-day premium instead of being assumed to be Sunday.
-                    $ymd = date('Y-m-d', strtotime($row['date_time']));
                     if ($this->isRestDay($restMap[$employee_id] ?? [], $ymd)) {
                         $grouped_data[$employee_id]["rest_duty"] += $days;
                     }
@@ -2912,7 +3171,7 @@ class Action
 
                     $per_day = $row['salary'];
                     $basic_pay = $row['basic_pay'];
-                    $per_hour = $per_day / 8;
+                    $per_hour = $per_day / $day_hours;
                     $minutesPerDay = 24 * 60;
                     $per_minute =  round($per_day / $minutesPerDay, 2);
                     $salary = $work_hours * $per_hour;
@@ -2952,11 +3211,15 @@ class Action
                     $data__details = [];
                     if ($result2->num_rows > 0) {
                         foreach ($result2 as $row2) {
-                            $work_hours2 = floor($row2["work_hours"]) >= 8 ? 8 : $row2["work_hours"];
+                            // Same one-full-day cap as the main loop, on the shift the
+                            // employee was working that date.
+                            $dh2 = $this->dayHoursForDate($restMap[$employee_id] ?? [], date('Y-m-d', strtotime($row2["date_time"])));
+                            $work_hours2 = floor($row2["work_hours"]) >= $dh2 ? $dh2 : $row2["work_hours"];
                             $data__details[] = [
                                 "site_id" => $row2["site_id"],
                                 "date_time" => $row2["date_time"],
                                 "work_hours" => $work_hours2,
+                                "day_hours" => $dh2,
                                 "overtime" => $row2["overtime"],
                                 "undertime" => $row2["undertime"],
                                 "present" => $row2["present"],
@@ -2974,11 +3237,11 @@ class Action
                                 $data['overtime'] += $data__detail['overtime'];
                                 $data['undertime'] += $data__detail['undertime'];
                                 $data['late_in_minutes'] += $data__detail['late'];
-                                $data['present'] += $data__detail['work_hours'] / 8;
+                                $data['present'] += $data__detail['work_hours'] / $data__detail['day_hours'];
                                 // Count rest-day duty from cross-cluster attendance too.
                                 $d2ymd = date('Y-m-d', strtotime($data__detail['date_time']));
                                 if ($this->isRestDay($restMap[$employee_id] ?? [], $d2ymd)) {
-                                    $data['rest_duty'] = ($data['rest_duty'] ?? 0) + $data__detail['work_hours'] / 8;
+                                    $data['rest_duty'] = ($data['rest_duty'] ?? 0) + $data__detail['work_hours'] / $data__detail['day_hours'];
                                 }
                             }
                         } else {
@@ -3113,6 +3376,11 @@ class Action
                     // Pay basis for this employee, frozen onto the payroll item so a later
                     // rate-type change doesn't retro-alter this run.
                     $rate_type = in_array($data['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $data['rate_type'] : 'daily';
+                    // Standard hours in one working day for this employee, frozen for the
+                    // same reason: payslips, prints and net recalculation divide by THIS
+                    // value, so re-opening an old payroll after a shift change can't move
+                    // its hourly rate or its days-present figures.
+                    $day_hours = day_hours_or_default($emp_day_hours[$employee_id] ?? null);
                     // Absences are only meaningful for MONTHLY-rate employees (their pay is
                     // salary − absences). Expected working days = period days that are NOT the
                     // employee's rest days; absent = expected − days present (floored, whole days).
@@ -3147,8 +3415,8 @@ class Action
                     $sql2 = "INSERT INTO payroll_items
                     (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
                      deduction_amount, deductions, contributions, total_hours,
-                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type)
-                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours)
+                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     $stmt2 = $this->db->prepare($sql2);
                     if (!$stmt2) {
@@ -3156,7 +3424,7 @@ class Action
                     }
 
                     $stmt2->bind_param(
-                        'sssssssssssssssssssssssss',
+                        'ssssssssssssssssssssssssss',
                         $payroll_id,
                         $employee_id,
                         $salary,
@@ -3181,7 +3449,8 @@ class Action
                         $rest_duty,
                         $absent,
                         $paid_leave,
-                        $rate_type
+                        $rate_type,
+                        $day_hours
                     );
 
                     try {
@@ -3358,18 +3627,22 @@ class Action
             $allowance_amount = (float) $emp['allowance_rate'];
             $zero = 0;
             $rate_type = 'fixed';
+            // A salaried employee has no attendance here, but the payslip still
+            // derives an hourly / per-minute rate from their daily rate — so their
+            // shift length is frozen onto the item exactly like the DTR path.
+            $day_hours = payroll_day_hours($this->db, $employee_id, $date_from);
 
             $ins = $this->db->prepare("INSERT INTO payroll_items
                 (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
                  deduction_amount, deductions, contributions, total_hours,
-                 per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans, basic_pay, sss_fund, refunds, sunday_duty, absent, rate_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                 per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans, basic_pay, sss_fund, refunds, sunday_duty, absent, rate_type, day_hours)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             if (!$ins) continue;
             $ins->bind_param(
-                'ssssssssssssssssssssssss',
+                'sssssssssssssssssssssssss',
                 $payroll_id, $employee_id, $salary, $allowance_amount, $contribute_amount,
                 $deduction_amount, $deductions_j, $contributions_j, $zero,
-                $per_day, $zero, $zero, $zero, $ot_rate, $per_minute, $zero, $first_site, $loans_j, $basic_pay, $sss_fund, $refunds_j, $zero, $zero, $rate_type
+                $per_day, $zero, $zero, $zero, $ot_rate, $per_minute, $zero, $first_site, $loans_j, $basic_pay, $sss_fund, $refunds_j, $zero, $zero, $rate_type, $day_hours
             );
             $ins->execute();
             $inserted++;
@@ -5191,12 +5464,17 @@ class Action
                 WHERE pi.id = $itemId")->fetch_assoc();
         if (!$row) return;
 
-        $perMinute = $row['per_day'] / (8 * 60);
+        // Hours in this employee's working day, frozen on the item at calc time.
+        $dayHours  = day_hours_or_default($row['day_hours'] ?? null);
+        $perMinute = $row['per_day'] / ($dayHours * 60);
         $allowance = $row['allowance_amount'] * $row['allowance_days'];
         $ot        = $row['ot'] * $row['ot_rate'];
         $late      = $row['late'] * $perMinute;
         $legal     = $row['legal_holiday'] * $row['per_day'];
         $sunday    = $row['sunday_duty'] * $row['per_day'];
+        // NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30% special
+        // holiday premium. Leave the literals alone — swapping in the shift hours
+        // would silently change the premium rate.
         $special   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
 
         // Same pay-basis split as get_payroll_rows_data().
@@ -5792,13 +6070,17 @@ class Action
 
         while ($row = $result->fetch_assoc()) {
             $payroll_type     = isset($row['payroll_type']) ? (int) $row['payroll_type'] : 0;
-            $perMinute        = $row['per_day'] / (8 * 60);
+            // Hours in this employee's working day, frozen on the item at calc time.
+            $dayHours         = day_hours_or_default($row['day_hours'] ?? null);
+            $perMinute        = $row['per_day'] / ($dayHours * 60);
             $allowance_total  = $row['allowance_amount'] * $row['allowance_days'];
             $absent_amount    = $row['absent'] * $row['per_day'];
             $overtime_amount  = $row['ot'] * $row['ot_rate'];
             $late_amount      = $row['late'] * $perMinute;
             $legal_amount     = $row['legal_holiday'] * $row['per_day'];
             $sunday_amount    = $row['sunday_duty'] * $row['per_day'];
+            // NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30%
+            // special holiday premium. Leave the literals alone.
             $special_amount   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
 
             // Pay basis is now per-employee (rate_type), frozen on the payroll item at calc.

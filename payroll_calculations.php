@@ -1476,7 +1476,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                             while ($row = $query->fetch_assoc()) {
                                                 $i++;
-                                                $minutesPerDay = 8 * 60;
+                                                // Minutes in this employee's working day (their
+                                                // shift length, frozen on the item), not a fixed 8h.
+                                                $minutesPerDay = day_hours_or_default($row['day_hours'] ?? null) * 60;
                                                 $perMinute = $row['per_day'] / $minutesPerDay;
                                                 $employee_id = $row['employee_id'];
                                                 $total_basic_rate = $row['basic_pay'];
@@ -1500,6 +1502,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $sunday_duty = $row['sunday_duty'];
                                                 $sunday_duty_amount =  $sunday_duty * $perDay;
                                                 $special_holiday = $row['special_holiday'];
+                                                // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
 
                                                 $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;
@@ -2147,7 +2150,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                             while ($row = $query->fetch_assoc()) {
                                                 $i++;
-                                                $minutesPerDay = 8 * 60;
+                                                // Minutes in this employee's working day (their
+                                                // shift length, frozen on the item), not a fixed 8h.
+                                                $minutesPerDay = day_hours_or_default($row['day_hours'] ?? null) * 60;
                                                 $perMinute = $row['per_day'] / $minutesPerDay;
                                                 $employee_id = $row['employee_id'];
                                                 $rate_type = in_array($row['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $row['rate_type'] : 'daily';
@@ -2171,6 +2176,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $sunday_duty = $row['sunday_duty'];
                                                 $sunday_duty_amount =  $sunday_duty * $perDay;
                                                 $special_holiday = $row['special_holiday'];
+                                                // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
 
                                                 // Rate-type-aware Total Basic Rate — matches the authoritative net

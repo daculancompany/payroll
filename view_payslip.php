@@ -42,9 +42,12 @@ if (!$is_staff_session && (int)$payroll['employee_id'] !== (int)($_SESSION['emp_
 }
 
 $contributions_settings = json_decode($payroll['settings'], true) ?: [];
-// Per-minute rate = daily rate / (8h × 60m). (Matches payroll_calculations.php /
-// admin_class.php; NOT the stored per_minute column, which is per_day/1440.)
-$perMinute        = $payroll['per_day'] / (8 * 60);
+// Per-minute rate = daily rate / (day hours × 60m), where the day length is the
+// employee's shift frozen onto the item at calc time. (Matches
+// payroll_calculations.php / admin_class.php; NOT the stored per_minute column,
+// which is per_day/1440.)
+$dayHours         = day_hours_or_default($payroll['day_hours'] ?? null);
+$perMinute        = $payroll['per_day'] / ($dayHours * 60);
 $overtime_amount  = $payroll['ot'] * $payroll['ot_rate'];
 $undertime_amount = $payroll['under_time'] * $perMinute;   // informational only — not deducted in semi-monthly payroll
 $late_amount      = $payroll['late'] * $perMinute;
@@ -54,6 +57,8 @@ $monthly_basic    = $payroll['basic_pay'];
 
 $legal_holiday_amt   = $payroll['legal_holiday']   * $payroll['per_day'];
 $sunday_duty_amt     = $payroll['sunday_duty']      * $payroll['per_day'];
+// NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30% special
+// holiday premium. Leave the literals alone.
 $special_holiday_amt = (($payroll['per_day'] / 8) * 2.4) * $payroll['special_holiday'];
 
 // Gross per the employee's pay basis — MUST mirror get_payroll_rows_data() /
@@ -141,7 +146,7 @@ $total_all_deductions = $total_contributions + $total_deductions + $total_loans
 $net_pay = $payroll['net'];
 
 // ── Employee Rate box ──
-$hourly_rate = $payroll['per_day'] / 8;
+$hourly_rate = $payroll['per_day'] / $dayHours;
 
 // ── Year-to-Date Taxable Pay (option 1: accumulated gross earnings) ──
 // Gross isn't stored, so recompute it per payroll item with the same rate-type
@@ -153,7 +158,7 @@ $curTo = $conn->real_escape_string($payroll['date_to']);
 $ytd_taxable = 0;
 $ytdq = $conn->query("SELECT pi.present, pi.paid_leave, pi.basic_pay, pi.allowance_amount, pi.allowance_days,
         pi.absent, pi.per_day, pi.ot, pi.ot_rate, pi.late, pi.legal_holiday, pi.sunday_duty,
-        pi.special_holiday, pi.rate_type, pi.adjustment
+        pi.special_holiday, pi.rate_type, pi.day_hours, pi.adjustment
     FROM payroll_items pi INNER JOIN payroll p ON p.id = pi.payroll_id
     WHERE pi.employee_id = $eid AND YEAR(p.date_from) = $yy AND p.date_to <= '$curTo'");
 if ($ytdq) while ($yr = $ytdq->fetch_assoc()) {
@@ -161,9 +166,10 @@ if ($ytdq) while ($yr = $ytdq->fetch_assoc()) {
     $yAllow   = (float)$yr['allowance_amount'] * (float)$yr['allowance_days'];
     $yAbsent  = (float)$yr['absent'] * $yPerDay;
     $yOt      = (float)$yr['ot'] * (float)$yr['ot_rate'];
-    $yLate    = (float)$yr['late'] * ($yPerDay / 480);
+    $yLate    = (float)$yr['late'] * ($yPerDay / (day_hours_or_default($yr['day_hours'] ?? null) * 60));
     $yLegal   = (float)$yr['legal_holiday'] * $yPerDay;
     $ySunday  = (float)$yr['sunday_duty'] * $yPerDay;
+    // /8 * 2.4 is the 30% special-holiday premium, not a day-length divisor.
     $ySpecial = (($yPerDay / 8) * 2.4) * (float)$yr['special_holiday'];
     if (in_array($yr['rate_type'] ?? 'daily', ['monthly', 'fixed'], true)) {
         $yGross = (($yr['basic_pay'] + $yAllow - $yAbsent) / 2) + $yOt + $yLegal + $ySunday + $ySpecial - $yLate;

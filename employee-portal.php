@@ -132,6 +132,19 @@ $s = $conn->prepare("
 $s->bind_param('i', $emp_id); $s->execute();
 $emp = $s->get_result()->fetch_assoc();
 
+// ── Portal login (My Info → Login & Security) ───────────────────────────
+// must_change = 1 means the account is still on the password HR handed out, so
+// the portal nags until the employee picks their own. No row yet = a pre-portal
+// employee signing in with the bday/employee_no fallback; the change-password
+// form creates the account row on first use.
+$portal_acct = null;
+if ($conn->query("SHOW TABLES LIKE 'employee_portal_accounts'")->num_rows) {
+    $pa = $conn->prepare("SELECT username, must_change, last_login FROM employee_portal_accounts WHERE employee_id = ? LIMIT 1");
+    $pa->bind_param('i', $emp_id); $pa->execute();
+    $portal_acct = $pa->get_result()->fetch_assoc() ?: null;
+}
+$portal_must_change = $portal_acct ? ((int)$portal_acct['must_change'] === 1) : true;
+
 // ── All payroll items ───────────────────────────────────────────
 // Only payroll batches that are Ready for Review (3) or Locked (2) are visible here —
 // employees shouldn't see draft/unfinished numbers before HR sends them for review.
@@ -1689,6 +1702,24 @@ clock-timepicker{
 .info-val.mono{font-family:monospace;font-size:12px;}
 .info-val.accent{color:#6642aa;}
 
+/* Login & Security — change-password form (My Info tab) */
+.pw-warn{display:flex;align-items:flex-start;gap:8px;background:#fff6e5;border:1px solid #ffd591;color:#8a5a00;border-radius:10px;padding:9px 11px;font-size:12px;font-weight:600;line-height:1.35;margin:12px 0 4px;}
+.pw-warn i{font-size:15px;line-height:1.2;}
+.pw-field{margin-top:12px;}
+.pw-field label{display:block;font-size:10px;color:#8b8796;font-weight:800;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px;}
+.pw-input{position:relative;}
+.pw-input input.form-control{width:100%;height:42px;padding:0 42px 0 12px;border:1px solid #d9d5e2;border-radius:10px;font-size:14px;color:#222;background:#fff;box-shadow:none;}
+.pw-input input.form-control:focus{border-color:#6642aa;box-shadow:0 0 0 2px rgba(102,66,170,.15);outline:none;}
+.pw-eye{position:absolute;top:0;right:0;width:42px;height:42px;border:none;background:transparent;color:#9d9ba4;font-size:17px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.pw-eye:hover{color:#6642aa;}
+.pw-meter{height:4px;border-radius:3px;background:#eeecf3;margin-top:6px;overflow:hidden;}
+.pw-meter span{display:block;height:100%;width:0;border-radius:3px;background:#dc3545;transition:width .2s, background .2s;}
+.pw-hint{font-size:11px;color:#98a2ad;margin-top:4px;}
+.pw-hint.ok{color:#1e7e34;font-weight:700;}
+.pw-hint.bad{color:#c62828;font-weight:700;}
+.pw-save{margin-top:14px;width:100%;height:44px;border:none;border-radius:11px;background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-size:13px;font-weight:800;letter-spacing:.3px;display:flex;align-items:center;justify-content:center;gap:7px;box-shadow:0 4px 14px -6px rgba(78,52,131,.65);cursor:pointer;}
+.pw-save:disabled{opacity:.6;cursor:not-allowed;}
+
 /* Empty state — uniform card across every tab */
 .empty-state{text-align:center;padding:34px 22px;background:#ffffff;border:1px solid #e7e6ed;border-radius:14px;box-shadow:0 1px 2px rgba(58,40,93,.05), 0 8px 22px -14px rgba(58,40,93,.18);}
 .empty-ic{width:52px;height:52px;border-radius:50%;background:#f0ecf6;color:#6642aa;display:flex;align-items:center;justify-content:center;font-size:23px;margin:0 auto 12px;}
@@ -3141,6 +3172,61 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             </div>
         </div>
 
+        <!-- Login & Security — the one thing on this tab the employee CAN change. -->
+        <div class="info-section" id="sec-security">
+            <div class="info-sec-title"><i class="ri-shield-keyhole-line"></i> Login &amp; Security</div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <div class="info-lbl">Sign in with</div>
+                    <div class="info-val mono"><?= $portal_acct ? htmlspecialchars($portal_acct['username']) : htmlspecialchars($emp['employee_no']) ?></div>
+                </div>
+                <div class="info-item">
+                    <div class="info-lbl">Last Sign-in</div>
+                    <div class="info-val"><?= ($portal_acct && !empty($portal_acct['last_login'])) ? date('M d, Y g:i A', strtotime($portal_acct['last_login'])) : '—' ?></div>
+                </div>
+            </div>
+            <div style="padding:0 16px 14px;">
+                <?php if ($portal_must_change): ?>
+                <div class="pw-warn" id="pw-warn">
+                    <i class="ri-error-warning-line"></i>
+                    <span>You are still using the password HR gave you. Please set your own below.</span>
+                </div>
+                <?php endif; ?>
+                <form id="form-change-password" autocomplete="off" onsubmit="return submitChangePassword(event);">
+                    <div class="pw-field">
+                        <label for="pw-current">Current password</label>
+                        <div class="pw-input">
+                            <input type="password" id="pw-current" name="current_password" class="form-control" autocomplete="current-password" required>
+                            <button type="button" class="pw-eye" onclick="togglePw('pw-current',this)" aria-label="Show password"><i class="ri-eye-line"></i></button>
+                        </div>
+                    </div>
+                    <div class="pw-field">
+                        <label for="pw-new">New password</label>
+                        <div class="pw-input">
+                            <input type="password" id="pw-new" name="new_password" class="form-control" autocomplete="new-password" minlength="8" maxlength="72" required oninput="pwStrength()">
+                            <button type="button" class="pw-eye" onclick="togglePw('pw-new',this)" aria-label="Show password"><i class="ri-eye-line"></i></button>
+                        </div>
+                        <div class="pw-meter"><span id="pw-bar"></span></div>
+                        <div class="pw-hint" id="pw-hint">At least 8 characters. Mix letters, numbers and a symbol.</div>
+                    </div>
+                    <div class="pw-field">
+                        <label for="pw-confirm">Confirm new password</label>
+                        <div class="pw-input">
+                            <input type="password" id="pw-confirm" name="confirm_password" class="form-control" autocomplete="new-password" minlength="8" maxlength="72" required oninput="pwStrength()">
+                            <button type="button" class="pw-eye" onclick="togglePw('pw-confirm',this)" aria-label="Show password"><i class="ri-eye-line"></i></button>
+                        </div>
+                        <div class="pw-hint" id="pw-match"></div>
+                    </div>
+                    <button type="submit" class="pw-save" id="pw-save-btn">
+                        <i class="ri-lock-password-line"></i> Change Password
+                    </button>
+                </form>
+                <div style="font-size:11px;color:#98a2ad;margin-top:8px;">
+                    <i class="ri-information-line me-1"></i>Forgot your password? Only HR can reset it for you.
+                </div>
+            </div>
+        </div>
+
         <div style="text-align:center;font-size:11px;color:#bbb;margin-top:6px;">
             <i class="ri-information-line"></i> To update any of these details, please contact your HR / Payroll department.
         </div>
@@ -3295,6 +3381,87 @@ function toggleAttFields(type) {
     });
     var form = document.getElementById('att-request-form');
     if (form && window.jQuery && jQuery(form).parsley) { jQuery(form).parsley().reset(); }
+    refreshOtLimit();
+}
+
+// ── OT ceiling for the selected date ─────────────────────────────────────────
+// Overtime may only be filed for hours the employee's own scans actually show
+// past their shift end, so the modal asks the server (ot_request_limit) for the
+// cap the moment a date is picked and shows it inline. Advisory only — the same
+// limit is re-checked in submit_attendance_request, which is what actually
+// blocks an over-claim.
+var _otLimit = null;      // last resolved limit for the selected date
+var _otLimitSeq = 0;      // stale-response guard (date changed mid-flight)
+
+function setOtHint(text, tone) {
+    var hint = document.getElementById('att-ot-limit-hint');
+    if (!hint) return;
+    var palette = {
+        ok:      ['#eef6ee', '#1b5e20', 'ri-checkbox-circle-line'],
+        blocked: ['#fdeaea', '#b3261e', 'ri-error-warning-line'],
+        busy:    ['#f5f3f9', '#6b6b6b', 'ri-loader-4-line'],
+    }[tone] || ['#f5f3f9', '#6b6b6b', 'ri-information-line'];
+    hint.style.display    = text ? 'block' : 'none';
+    hint.style.background = palette[0];
+    hint.style.color      = palette[1];
+    hint.innerHTML        = '<i class="' + palette[2] + ' me-1"></i>' + text;
+}
+
+function refreshOtLimit() {
+    var typeEl = document.getElementById('att-req-type');
+    var input  = document.getElementById('att-ot-hours');
+    if (!input) return;
+    var dateEl = document.getElementById('att-req-date-hidden');
+    var date   = dateEl ? dateEl.value : '';
+
+    _otLimit = null;
+    input.setAttribute('max', '12');
+    input.removeAttribute('data-parsley-otlimit-message');
+
+    if (!typeEl || typeEl.value !== 'overtime') { setOtHint('', 'busy'); return; }
+    if (!date) { setOtHint('Pick the date first — the OT you may file is limited to the hours your scans show past your shift end.', 'busy'); return; }
+
+    setOtHint('Checking your scans for that date…', 'busy');
+    var seq = ++_otLimitSeq;
+    fetch('emp-portal-ajax.php?action=ot_request_limit', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'request_date=' + encodeURIComponent(date)
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        if (seq !== _otLimitSeq) return;               // a newer date won
+        var lim = (res && res.limit) || null;
+        _otLimit = lim;
+        if (lim && lim.allowed) {
+            input.setAttribute('max', String(lim.max_hours));
+            input.setAttribute('data-parsley-otlimit-message',
+                'Your scans for that date only support up to ' + lim.max_hours + ' hr of overtime.');
+            setOtHint(lim.message, 'ok');
+        } else {
+            input.value = '';
+            // Short message on the field — the full reason is in the hint below it.
+            input.setAttribute('data-parsley-otlimit-message', 'No overtime can be filed for that date — see the note below.');
+            setOtHint((lim && lim.message) || 'Overtime cannot be filed for that date.', 'blocked');
+        }
+        if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().reset();
+    }).catch(function () {
+        if (seq !== _otLimitSeq) return;
+        setOtHint('Could not check your scans for that date. You can still submit — it will be verified on the server.', 'busy');
+    });
+}
+
+// Parsley gate on the OT input: never let a value through that the day's scans
+// don't support (and never let one through at all on a date with no OT).
+if (window.Parsley) {
+    window.Parsley.addValidator('otlimit', {
+        requirementType: 'string',
+        validateString: function (value) {
+            if (!_otLimit) return true;               // not resolved yet — server decides
+            if (!_otLimit.allowed) return false;
+            var n = parseFloat(value);
+            return isNaN(n) ? true : n <= _otLimit.max_hours + 0.001;
+        },
+        messages: { en: 'That is more overtime than your scans for that date support.' }
+    });
 }
 
 // FAQ accordion — expand the clicked question, collapse the others in its group.
@@ -3818,6 +3985,115 @@ function refreshLwopDerived() {
 
 // Leave/LWOP "at least one day" validation is handled by Parsley via the
 // required, readonly #lv-dates / #lwop-dates inputs that the picker populates.
+
+// ── My Info → Login & Security: change my own password ──────────────────────
+function togglePw(id, btn) {
+    var el = document.getElementById(id);
+    var show = el.type === 'password';
+    el.type = show ? 'text' : 'password';
+    btn.innerHTML = show ? '<i class="ri-eye-off-line"></i>' : '<i class="ri-eye-line"></i>';
+}
+
+// Advisory only — the server is what actually enforces the rules.
+function pwStrength() {
+    var v = document.getElementById('pw-new').value || '';
+    var score = 0;
+    if (v.length >= 8) score++;
+    if (v.length >= 12) score++;
+    if (/[a-z]/.test(v) && /[A-Z]/.test(v)) score++;
+    if (/[0-9]/.test(v)) score++;
+    if (/[^A-Za-z0-9]/.test(v)) score++;
+    var pct = [0, 20, 40, 60, 80, 100][score];
+    var col = score <= 1 ? '#dc3545' : (score <= 3 ? '#f0ad4e' : '#28a745');
+    var bar = document.getElementById('pw-bar');
+    bar.style.width = pct + '%';
+    bar.style.background = col;
+    var hint = document.getElementById('pw-hint');
+    if (!v) { hint.className = 'pw-hint'; hint.textContent = 'At least 8 characters. Mix letters, numbers and a symbol.'; }
+    else if (v.length < 8) { hint.className = 'pw-hint bad'; hint.textContent = 'Too short — at least 8 characters.'; }
+    else { hint.className = 'pw-hint'; hint.textContent = score <= 3 ? 'Okay — adding a capital letter, number or symbol makes it stronger.' : 'Strong password.'; }
+
+    var c = document.getElementById('pw-confirm').value || '';
+    var match = document.getElementById('pw-match');
+    if (!c) { match.className = 'pw-hint'; match.textContent = ''; }
+    else if (c === v) { match.className = 'pw-hint ok'; match.textContent = 'Passwords match.'; }
+    else { match.className = 'pw-hint bad'; match.textContent = 'Passwords do not match yet.'; }
+}
+
+function submitChangePassword(ev) {
+    ev.preventDefault();
+    var cur = document.getElementById('pw-current').value;
+    var nw  = document.getElementById('pw-new').value;
+    var cf  = document.getElementById('pw-confirm').value;
+    if (!cur || !nw || !cf) {
+        Swal.fire({ icon: 'warning', title: 'Incomplete', text: 'Please fill in all three password fields.' });
+        return false;
+    }
+    if (nw !== cf) {
+        Swal.fire({ icon: 'warning', title: 'Check again', text: 'The new password and its confirmation do not match.' });
+        return false;
+    }
+    if (nw.length < 8) {
+        Swal.fire({ icon: 'warning', title: 'Too short', text: 'Your new password must be at least 8 characters long.' });
+        return false;
+    }
+    var btn = document.getElementById('pw-save-btn');
+    btn.disabled = true;
+    var label = btn.innerHTML;
+    btn.innerHTML = '<i class="ri-loader-4-line"></i> Saving…';
+
+    var params = new URLSearchParams();
+    params.append('current_password', cur);
+    params.append('new_password', nw);
+    params.append('confirm_password', cf);
+    fetch('emp-portal-ajax.php?action=change_my_password', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+    }).then(function (r) { return r.json(); }).then(function (res) {
+        btn.disabled = false; btn.innerHTML = label;
+        if (!res.result) {
+            Swal.fire({ icon: 'error', title: 'Not changed', text: res.message || 'Something went wrong.' });
+            return;
+        }
+        document.getElementById('form-change-password').reset();
+        pwStrength();
+        var warn = document.getElementById('pw-warn');
+        if (warn) warn.remove();
+        Swal.fire({ icon: 'success', title: 'Password changed', text: res.message, timer: 3000, showConfirmButton: false });
+    }).catch(function () {
+        btn.disabled = false; btn.innerHTML = label;
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
+    });
+    return false;
+}
+
+<?php if ($portal_must_change): ?>
+// Still on the password HR handed out — offer to set a real one on load. It is
+// dismissible on purpose (an employee mid-task shouldn't be blocked), and the
+// warning banner in My Info → Login & Security stays until they change it.
+document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Set your own password',
+            text: 'You are still signing in with the password HR gave you. Please change it to something only you know.',
+            showCancelButton: true,
+            confirmButtonText: 'Change it now',
+            cancelButtonText: 'Later',
+            confirmButtonColor: '#6642aa'
+        }).then(function (r) {
+            if (r.isConfirmed) {
+                switchTab('info', null);
+                var sec = document.getElementById('sec-security');
+                if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                var f = document.getElementById('pw-current');
+                if (f) f.focus({ preventScroll: true });
+            }
+        });
+    }, 900);
+});
+<?php endif; ?>
 
 // ── AJAX submit: Leave / LWOP / Attendance requests (no page reload) ─────────
 function ajaxSubmitForm(form, action, onSuccess) {
@@ -5203,10 +5479,12 @@ $(function () {
         $rd.val(picker.startDate.format('MMM D, YYYY'));
         $('#att-req-date-hidden').val(picker.startDate.format('YYYY-MM-DD'));
         if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().validate();
+        refreshOtLimit();               // OT ceiling is per-date — re-check it
     });
     $rd.on('cancel.daterangepicker', function () {
         $rd.val('');
         $('#att-req-date-hidden').val('');
+        refreshOtLimit();
     });
 });
 
@@ -5849,10 +6127,20 @@ jQuery(function ($) {
                         </div>
 
                         <!-- OT fields -->
-                        <div class="col-12 col-md-6 att-ot-field" style="display:none;">
-                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
-                            <input type="number" name="ot_hours_requested" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5"
-                                data-parsley-type="number" data-parsley-required-message="Please enter the OT hours requested.">
+                        <div class="col-12 att-ot-field" style="display:none;">
+                            <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
+                                    <input type="number" name="ot_hours_requested" id="att-ot-hours" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5"
+                                        data-parsley-type="number" data-parsley-otlimit="true"
+                                        data-parsley-required-message="Please enter the OT hours requested.">
+                                </div>
+                                <!-- Live ceiling from the day's actual scans (ot_request_limit) — the
+                                     same rule the server re-checks on submit. -->
+                                <div class="col-12">
+                                    <div id="att-ot-limit-hint" style="display:none;font-size:11.5px;line-height:1.4;border-radius:10px;padding:9px 12px;"></div>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="col-12">

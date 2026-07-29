@@ -517,6 +517,13 @@ if ($action == 'delete_work_schedule') {
 if ($action == 'assign_employee_schedule') {
     echo json_encode($crud->assign_employee_schedule());
 }
+// Admin-only destructive actions on an employee's record (role check lives in the class).
+if ($action == 'delete_employee_schedule') {
+    echo json_encode($crud->delete_employee_schedule());
+}
+if ($action == 'delete_employee_fingerprint') {
+    echo json_encode($crud->delete_employee_fingerprint());
+}
 if ($action == 'roster_assign_schedule') {
     echo json_encode($crud->roster_assign_schedule());
 }

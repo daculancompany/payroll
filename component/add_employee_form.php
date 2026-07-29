@@ -125,6 +125,74 @@
                         </div>
                     </div>
 
+                    <?php
+                    /* ── Portal Login ────────────────────────────────────────────────
+                       The employee signs in to the portal with this email + password
+                       (their Employee No. keeps working as a username too).
+
+                       ADMIN ONLY: the other roles that can reach this form (Staff,
+                       Auditor) never see the fields, and save_employee() ignores them
+                       when posted by anyone but an Administrator — hiding them here is
+                       layout, the server is the boundary. */
+                    $__is_admin    = (int) ($_SESSION['login_role'] ?? 0) === 1;
+                    $__portal_eid  = isset($emp_id) ? (int) $emp_id : (isset($_GET['id']) ? (int) $_GET['id'] : 0);
+                    $__portal_user = '';
+                    if ($__is_admin && $__portal_eid > 0) {
+                        // The table is optional on a fresh deploy — check before reading it.
+                        $__pt = $conn->query("SHOW TABLES LIKE 'employee_portal_accounts'");
+                        if ($__pt && $__pt->num_rows) {
+                            $__pq = $conn->query("SELECT username FROM employee_portal_accounts WHERE employee_id = $__portal_eid LIMIT 1");
+                            if ($__pq && ($__pr = $__pq->fetch_assoc())) $__portal_user = $__pr['username'];
+                        }
+                    }
+                    ?>
+                    <?php if ($__is_admin): ?>
+                        <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#673bb6;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
+                            <i class="ri-shield-user-line me-1"></i>Portal Login
+                        </div>
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                    <i class="ri-at-line me-1"></i>Email <small style="text-transform:none;color:#888;">(sign-in username)</small>
+                                </label>
+                                <input type="email" class="form-control" name="email" autocomplete="off"
+                                    value="<?= htmlspecialchars($__portal_user) ?>"
+                                    placeholder="e.g. juan.delacruz@example.com"
+                                    data-parsley-type="email"
+                                    data-parsley-type-message="Please enter a valid email address.">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                    <i class="ri-lock-password-line me-1"></i>Password
+                                </label>
+                                <div class="input-group">
+                                    <input type="password" class="form-control" id="portal_password" name="portal_password"
+                                        autocomplete="new-password" minlength="6"
+                                        placeholder="<?= isset($employee_no) ? 'Leave blank to keep current' : 'Leave blank for the default' ?>"
+                                        data-parsley-minlength="6"
+                                        data-parsley-minlength-message="Password must be at least 6 characters.">
+                                    <button class="btn btn-outline-secondary" type="button" id="togglePortalPassword" tabindex="-1">
+                                        <i class="ri-eye-off-line" id="togglePortalIcon"></i>
+                                    </button>
+                                </div>
+                                <!-- keeps the browser from autofilling the field above -->
+                                <input type="password" style="display:none" autocomplete="off">
+                            </div>
+                            <div class="col-12">
+                                <div style="font-size:11px;color:#57339d;background:#f4f3f8;border:1px dashed #cabede;border-radius:6px;padding:6px 10px;">
+                                    <i class="ri-information-line me-1"></i>
+                                    <?php if (isset($employee_no)): ?>
+                                        Leave both blank to keep the current login. The employee can always sign in with their
+                                        Employee No. as well.
+                                    <?php else: ?>
+                                        Blank email &rarr; one is generated as <b>firstname.lastname@<?= htmlspecialchars(PORTAL_DEFAULT_EMAIL_DOMAIN) ?></b>.
+                                        Blank password &rarr; the default password, which the employee is asked to change.
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
                     <!-- Compensation -->
                     <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#673bb6;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
                         <i class="ri-money-dollar-circle-line me-1"></i>Compensation

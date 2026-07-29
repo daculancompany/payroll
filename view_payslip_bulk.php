@@ -25,9 +25,11 @@ function buildPayslip($conn, $id) {
     if (!$p) return null;
 
     $settings = json_decode($p['settings'], true) ?: [];
-    // Per-minute = daily rate / (8h × 60m) — matches the payroll page and
+    // Per-minute = daily rate / (day hours × 60m), the day length being the
+    // employee's shift frozen on the item — matches the payroll page and
     // view_payslip.php (NOT the stored per_minute column, which is /1440).
-    $perMinute        = $p['per_day'] / (8 * 60);
+    $dayHours         = day_hours_or_default($p['day_hours'] ?? null);
+    $perMinute        = $p['per_day'] / ($dayHours * 60);
     $overtime_amount  = $p['ot'] * $p['ot_rate'];
     $undertime_amount = $p['under_time'] * $perMinute;   // informational only
     $late_amount      = $p['late'] * $perMinute;
@@ -35,6 +37,7 @@ function buildPayslip($conn, $id) {
     $allowance_amount = $p['allowance_amount'] * $p['allowance_days'];
     $legal_amt   = $p['legal_holiday'] * $p['per_day'];
     $sunday_amt  = $p['sunday_duty'] * $p['per_day'];
+    // /8 * 2.4 is the 30% special-holiday premium, not a day-length divisor.
     $special_amt = (($p['per_day'] / 8) * 2.4) * $p['special_holiday'];
     // Gross per pay basis — mirrors get_payroll_rows_data() / the details page.
     $rate_type  = $p['rate_type'] ?? 'daily';

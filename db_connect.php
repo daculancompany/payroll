@@ -189,6 +189,48 @@ if (!function_exists('dtr_clean_condition_sql')) {
     }
 }
 
+// ── Standard hours per working day (GLOBAL) ─────────────────────────────
+// One full day of work = this many hours. Everything that turns hours into
+// days ("days present") or a daily rate into an hourly / per-minute rate
+// divides by the EMPLOYEE'S OWN schedule hours (work_schedules.total_hours).
+// This constant is only the fallback for an employee who has no schedule at
+// all — it is NOT the company-wide standard day.
+if (!defined('PAYROLL_DEFAULT_DAY_HOURS')) {
+    define('PAYROLL_DEFAULT_DAY_HOURS', 8);
+}
+
+// Normalises an hours value read from a schedule or from the frozen
+// payroll_items.day_hours column. Missing, zero, negative or absurd values
+// fall back to the default instead of producing a division by zero.
+if (!function_exists('day_hours_or_default')) {
+    function day_hours_or_default($hours): float
+    {
+        $h = (float) $hours;
+        return ($h > 0 && $h <= 24) ? $h : (float) PAYROLL_DEFAULT_DAY_HOURS;
+    }
+}
+
+// Standard daily hours for ONE employee on ONE date, taken from the schedule
+// in effect that day. Use this at calculation time; anything reading an
+// already-calculated payroll must use the frozen payroll_items.day_hours
+// (via day_hours_or_default) so history can't shift under it.
+if (!function_exists('payroll_day_hours')) {
+    function payroll_day_hours(mysqli $db, int $employee_id, string $date): float
+    {
+        $dateEsc = $db->real_escape_string($date);
+        $row = $db->query("
+            SELECT ws.total_hours FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = " . (int) $employee_id . "
+              AND es.effective_from <= '$dateEsc'
+              AND (es.effective_to IS NULL OR es.effective_to >= '$dateEsc')
+            ORDER BY es.effective_from DESC LIMIT 1
+        ");
+        $r = $row ? $row->fetch_assoc() : null;
+        return day_hours_or_default($r['total_hours'] ?? null);
+    }
+}
+
 // ── DTR day math (GLOBAL) ───────────────────────────────────────────────
 // Single source of truth for computing one DTR_details row's figures from
 // its raw log timestamps + the employee's effective schedule + the holiday
@@ -243,6 +285,172 @@ if (!function_exists('dtr_compute_day')) {
             'late' => $late, 'nsd_hours' => $nsd_hours, 'day_type' => $day_type,
             'is_complete' => $out_ts ? 1 : 0,
         ];
+    }
+}
+
+// ── Overtime request limits (GLOBAL) ────────────────────────────────────
+// An OT request may only claim hours the employee's OWN scans actually show.
+// Without this, anyone could file "8 hrs OT" for a day they went home on time
+// (or never scanned at all) and an approver writing it straight onto the DTR
+// would pay it. The ceiling for one date is therefore:
+//
+//     regular day → the time scanned PAST the shift end (dtr_compute_day's
+//                   `overtime`, the same figure the DTR itself shows)
+//     rest day    → the whole worked span (minus break) — every hour on a
+//                   rest day is overtime, there is no shift to exceed
+//
+// then floored onto the 0.5-hour grid the form uses, clamped to the per-day
+// hard ceiling, and reduced by whatever the employee already has pending or
+// approved for that same date (so 4 × "2 hrs" can't sneak past a 3-hour cap).
+if (!defined('OT_REQUEST_MIN_HOURS'))         define('OT_REQUEST_MIN_HOURS', 0.5);
+if (!defined('OT_REQUEST_STEP_HOURS'))        define('OT_REQUEST_STEP_HOURS', 0.5);
+if (!defined('OT_REQUEST_MAX_HOURS_PER_DAY')) define('OT_REQUEST_MAX_HOURS_PER_DAY', 12);
+
+if (!function_exists('ot_request_limit')) {
+    /**
+     * How much overtime this employee may still file for ONE date.
+     *
+     * $exclude_request_id lets an edit/re-file ignore its own pending row when
+     * totalling what has already been filed.
+     *
+     * Returns:
+     *   allowed      bool   — may file at least OT_REQUEST_MIN_HOURS right now
+     *   max_hours    float  — hours still fileable (0 when not allowed)
+     *   excess_hours float  — raw overtime the scans show for that date
+     *   already      float  — hours already pending/approved for that date
+     *   message      string — why it is blocked / how the cap was derived
+     *   time_in/time_out/shift_end — display strings for the UI hint
+     */
+    function ot_request_limit(mysqli $db, int $employee_id, string $date, int $exclude_request_id = 0): array
+    {
+        $out = [
+            'allowed'      => false,
+            'max_hours'    => 0.0,
+            'excess_hours' => 0.0,
+            'already'      => 0.0,
+            'message'      => '',
+            'time_in'      => '',
+            'time_out'     => '',
+            'shift_end'    => '',
+            'rest_day'     => false,
+        ];
+
+        $ts = strtotime($date);
+        if ($employee_id <= 0 || !$ts) {
+            $out['message'] = 'Please select a valid date.';
+            return $out;
+        }
+        $ymd = date('Y-m-d', $ts);
+        if ($ymd > date('Y-m-d')) {
+            $out['message'] = 'You cannot file overtime for a future date — file it after you have rendered and scanned it.';
+            return $out;
+        }
+        $ymdEsc  = $db->real_escape_string($ymd);
+        $dateStr = date('M d, Y', $ts);
+
+        // The schedule in effect that date — its end time is what OT is measured
+        // against, and its rest days decide whether the whole span counts.
+        $sched = $db->query("
+            SELECT ws.end_time, ws.break_minutes, ws.is_graveyard, es.rest_days
+            FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = " . (int) $employee_id . "
+              AND es.effective_from <= '$ymdEsc'
+              AND (es.effective_to IS NULL OR es.effective_to >= '$ymdEsc')
+            ORDER BY es.effective_from DESC LIMIT 1
+        ");
+        $sched = $sched ? $sched->fetch_assoc() : null;
+        if (!$sched) {
+            $out['message'] = "You have no work schedule on file for $dateStr, so there are no duty hours to measure overtime against. Ask HR to set your schedule first.";
+            return $out;
+        }
+        $out['shift_end'] = date('g:i A', strtotime($ymd . ' ' . $sched['end_time']));
+
+        // The day's actual scans.
+        $rec = $db->query(
+            "SELECT logs FROM DTR_details
+             WHERE employee_id = " . (int) $employee_id . " AND DATE(date_time) = '$ymdEsc'
+             ORDER BY id DESC LIMIT 1"
+        );
+        $rec = $rec ? $rec->fetch_assoc() : null;
+        if (!$rec) {
+            $out['message'] = "No attendance record for $dateStr yet. Overtime can only be filed for a day you actually scanned — if a scan is missing, file an Incident Report for that date first.";
+            return $out;
+        }
+
+        $log_ts = [];
+        foreach ((json_decode($rec['logs'] ?? '[]', true) ?: []) as $lg) {
+            $t = strtotime($lg['dateTime'] ?? '');
+            if ($t) $log_ts[] = $t;
+        }
+        sort($log_ts);
+        if (count($log_ts) < 2) {
+            $out['message'] = "Your record for $dateStr has no time-out scan, so there is nothing showing you worked past your shift. File an Incident Report for the missing scan first.";
+            return $out;
+        }
+        $in_ts  = $log_ts[0];
+        $out_ts = $log_ts[count($log_ts) - 1];
+        if ($out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
+        $out['time_in']  = date('g:i A', $in_ts);
+        $out['time_out'] = date('g:i A', $out_ts);
+
+        // Rest day → the whole worked span is overtime; otherwise only the part
+        // past the shift end (dtr_compute_day, so this always agrees with the DTR).
+        $rest = array_filter(array_map('intval', explode(',', (string) ($sched['rest_days'] ?? ''))), function ($d) {
+            return $d >= 0 && $d <= 6;
+        });
+        $out['rest_day'] = in_array((int) date('w', $ts), $rest, true);
+
+        if ($out['rest_day']) {
+            $break  = ($sched['break_minutes'] ?? 60) / 60;
+            $excess = round(max(0, ($out_ts - $in_ts) / 3600 - $break), 2);
+        } else {
+            $calc   = dtr_compute_day($db, $employee_id, $ymd, $log_ts);
+            $excess = round(max(0, (float) $calc['overtime']), 2);
+        }
+        $out['excess_hours'] = $excess;
+
+        // Floor onto the form's 0.5 grid so the cap is never rounded UP past
+        // what was actually rendered, then apply the per-day hard ceiling.
+        $step = OT_REQUEST_STEP_HOURS;
+        $cap  = min(floor($excess / $step) * $step, (float) OT_REQUEST_MAX_HOURS_PER_DAY);
+
+        if ($cap < OT_REQUEST_MIN_HOURS) {
+            $min  = rtrim(rtrim(number_format(OT_REQUEST_MIN_HOURS, 2), '0'), '.');
+            $span = "$dateStr ({$out['time_in']} – {$out['time_out']})";
+            if ($out['rest_day']) {
+                $out['message'] = "Your scans for $span total less than $min hr of work, so there is no overtime to file.";
+            } elseif ($excess > 0) {
+                // Went past the shift end, but by less than one filing step.
+                $out['message'] = "Your scans for $span go past your {$out['shift_end']} shift end by only $excess hr — less than the $min hr minimum, so there is no overtime to file.";
+            } else {
+                $out['message'] = "Your scans for $span do not go past your {$out['shift_end']} shift end, so you have no overtime to file for that date.";
+            }
+            return $out;
+        }
+
+        // Hours already claimed for the same date (pending or approved).
+        $ex  = $exclude_request_id > 0 ? " AND id <> " . (int) $exclude_request_id : '';
+        $agg = $db->query(
+            "SELECT COALESCE(SUM(ot_hours_requested), 0) AS h FROM attendance_requests
+             WHERE employee_id = " . (int) $employee_id . " AND request_type = 'overtime'
+               AND request_date = '$ymdEsc' AND status IN (0, 1)$ex"
+        );
+        $already = round((float) ($agg ? ($agg->fetch_assoc()['h'] ?? 0) : 0), 2);
+        $out['already'] = $already;
+
+        $remaining = round($cap - $already, 2);
+        if ($remaining < OT_REQUEST_MIN_HOURS) {
+            $out['message'] = "You have already filed $already of the $cap overtime hours your scans support for $dateStr.";
+            return $out;
+        }
+
+        $out['allowed']   = true;
+        $out['max_hours'] = $remaining;
+        $out['message']   = $out['rest_day']
+            ? "Rest day — your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) support up to $remaining hr of overtime."
+            : "Your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) run past your {$out['shift_end']} shift end, so you may file up to $remaining hr of overtime.";
+        return $out;
     }
 }
 

@@ -582,6 +582,15 @@ switch ($action) {
         break;
     }
 
+    // ── OT ceiling for one date: feeds the live hint in the "File a Request"
+    // modal so the employee sees the cap BEFORE submitting. Advisory only —
+    // submit_attendance_request re-checks the same limit server-side.
+    case 'ot_request_limit': {
+        $lim = ot_request_limit($conn, $emp_id, trim($_POST['request_date'] ?? $_GET['request_date'] ?? ''));
+        echo json_encode(['result' => true, 'limit' => $lim, 'min_hours' => OT_REQUEST_MIN_HOURS, 'step' => OT_REQUEST_STEP_HOURS]);
+        break;
+    }
+
     // ── Attendance / OT request: employee files an incident or OT request ──
     case 'submit_attendance_request': {
         $req_type  = trim($_POST['request_type'] ?? '');
@@ -603,6 +612,27 @@ switch ($action) {
         if ($req_type === 'overtime' && !$ot_hours) {
             echo json_encode(['result' => false, 'message' => 'Please provide the number of OT hours requested.']);
             break;
+        }
+        // OT is only fileable against scans that actually ran past the shift end,
+        // and never for more hours than those scans show (see ot_request_limit).
+        if ($req_type === 'overtime') {
+            $lim = ot_request_limit($conn, $emp_id, $req_date);
+            if (!$lim['allowed']) {
+                echo json_encode(['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim]);
+                break;
+            }
+            if ($ot_hours < OT_REQUEST_MIN_HOURS) {
+                echo json_encode(['result' => false, 'message' => 'The smallest overtime you can file is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim]);
+                break;
+            }
+            if ($ot_hours > $lim['max_hours'] + 0.001) {
+                echo json_encode([
+                    'result'  => false,
+                    'message' => 'You can only file up to ' . $lim['max_hours'] . ' hr of overtime for that date. ' . $lim['message'],
+                    'ot_limit' => $lim,
+                ]);
+                break;
+            }
         }
 
         $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes) VALUES (?,?,?,?,?,?,?,?)");
@@ -722,6 +752,140 @@ switch ($action) {
             'paid_posted' => $paid_total,
             'rows'        => $rows,
         ]);
+        break;
+    }
+
+    // ── Change my portal password ───────────────────────────────────────────
+    // Self-service only: the employee id comes from the session, never from the
+    // request, so this can only ever change the caller's own password.
+    //
+    // The current password is verified the same way login2() does it, including
+    // the legacy fallback for employees who have no employee_portal_accounts row
+    // yet (they sign in with bday mdY or their employee_no) — those employees get
+    // an account row created here so the new password actually sticks.
+    case 'change_my_password': {
+        $current = (string) ($_POST['current_password'] ?? '');
+        $new     = (string) ($_POST['new_password'] ?? '');
+        $confirm = (string) ($_POST['confirm_password'] ?? '');
+
+        if ($current === '' || $new === '' || $confirm === '') {
+            echo json_encode(['result' => false, 'message' => 'Please fill in all three password fields.']);
+            break;
+        }
+        if ($new !== $confirm) {
+            echo json_encode(['result' => false, 'message' => 'The new password and its confirmation do not match.']);
+            break;
+        }
+        if (strlen($new) < 8) {
+            echo json_encode(['result' => false, 'message' => 'Your new password must be at least 8 characters long.']);
+            break;
+        }
+        if (strlen($new) > 72) {
+            // bcrypt silently ignores anything past 72 bytes — reject instead of
+            // storing a password that is not fully checked on sign-in.
+            echo json_encode(['result' => false, 'message' => 'Your new password must be 72 characters or fewer.']);
+            break;
+        }
+        if (trim($new) === '') {
+            echo json_encode(['result' => false, 'message' => 'Your new password cannot be blank spaces.']);
+            break;
+        }
+        if ($new === $current) {
+            echo json_encode(['result' => false, 'message' => 'Your new password must be different from your current one.']);
+            break;
+        }
+        if (strcasecmp($new, PORTAL_DEFAULT_PASSWORD) === 0) {
+            echo json_encode(['result' => false, 'message' => 'That is the default password. Please choose your own.']);
+            break;
+        }
+
+        // Employee identity for the legacy (no account row) password fallback.
+        $eq = $conn->prepare("SELECT employee_no, bday FROM employee WHERE id = ? AND status = 1 LIMIT 1");
+        $eq->bind_param('i', $emp_id);
+        $eq->execute();
+        $me = $eq->get_result()->fetch_assoc();
+        if (!$me) {
+            echo json_encode(['result' => false, 'message' => 'Your employee record is inactive. Please contact HR.']);
+            break;
+        }
+        if (strcasecmp($new, (string) $me['employee_no']) === 0) {
+            echo json_encode(['result' => false, 'message' => 'Your password cannot be your employee number.']);
+            break;
+        }
+
+        $aq = $conn->prepare("SELECT id, password, is_active FROM employee_portal_accounts WHERE employee_id = ? LIMIT 1");
+        $aq->bind_param('i', $emp_id);
+        $aq->execute();
+        $acct = $aq->get_result()->fetch_assoc();
+
+        if ($acct && $acct['password'] !== '') {
+            if ((int) $acct['is_active'] !== 1) {
+                echo json_encode(['result' => false, 'message' => 'Your portal account is disabled. Please contact HR.']);
+                break;
+            }
+            $ok = password_verify($current, $acct['password']);
+        } else {
+            $def = !empty($me['bday']) ? date('mdY', strtotime($me['bday'])) : (string) $me['employee_no'];
+            $ok  = hash_equals($def, $current) || hash_equals((string) $me['employee_no'], $current);
+        }
+        if (!$ok) {
+            echo json_encode(['result' => false, 'message' => 'Your current password is incorrect.']);
+            break;
+        }
+
+        $hash = password_hash($new, PASSWORD_BCRYPT);
+        if ($acct) {
+            $up = $conn->prepare("UPDATE employee_portal_accounts SET password = ?, must_change = 0, is_active = 1 WHERE employee_id = ?");
+            $up->bind_param('si', $hash, $emp_id);
+            $saved = $up->execute();
+        } else {
+            // No account row yet — build the username the same way
+            // ensure_portal_account() does (firstname.lastname@default domain;
+            // the employee table holds no email), suffixing until the UNIQUE
+            // username is free.
+            $er = $conn->prepare("SELECT firstname, lastname FROM employee WHERE id = ? LIMIT 1");
+            $er->bind_param('i', $emp_id);
+            $er->execute();
+            $ei = $er->get_result()->fetch_assoc() ?: ['firstname' => '', 'lastname' => ''];
+
+            $slug = function ($s) { return preg_replace('/[^a-z0-9]+/', '', strtolower(trim((string) $s))); };
+            $base = $slug($ei['firstname']) . '.' . $slug($ei['lastname']);
+            if ($base === '' || $base === '.') $base = 'user' . $emp_id;
+            $local  = $base;
+            $domain = PORTAL_DEFAULT_EMAIL_DOMAIN;
+            $mail   = $local . '@' . $domain;
+            $find = $conn->prepare("SELECT id FROM employee_portal_accounts WHERE LOWER(username) = LOWER(?) LIMIT 1");
+            $candidate = $mail;
+            $n = 1;
+            while (true) {
+                $find->bind_param('s', $candidate);
+                $find->execute();
+                $find->store_result();
+                $taken = $find->num_rows > 0;
+                $find->free_result();
+                if (!$taken) break;
+                $n++;
+                $candidate = $local . $n . '@' . $domain;
+            }
+            $ins = $conn->prepare("INSERT INTO employee_portal_accounts (employee_id, username, password, is_active, must_change) VALUES (?, ?, ?, 1, 0)");
+            $ins->bind_param('iss', $emp_id, $candidate, $hash);
+            $saved = $ins->execute();
+        }
+
+        if (!$saved) {
+            echo json_encode(['result' => false, 'message' => 'Could not save your new password. Please try again.']);
+            break;
+        }
+
+        // Tell the employee, in the portal bell, that the password changed — an
+        // unexpected notification here is how they'd notice someone else did it.
+        $nt = $conn->prepare("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link)
+                              VALUES (?, 'employee', 'Password changed', ?, 'ri-lock-line', 'warning', 'employee-portal.php')");
+        $nmsg = 'Your portal password was changed on ' . date('M d, Y g:i A') . '. If this was not you, contact HR immediately.';
+        $nt->bind_param('is', $emp_id, $nmsg);
+        $nt->execute();
+
+        echo json_encode(['result' => true, 'message' => 'Your password has been changed. Use it the next time you sign in.']);
         break;
     }
 

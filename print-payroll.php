@@ -389,7 +389,9 @@ LEFT JOIN sites f ON f.id = a.site_id
 
                     while ($row = $query->fetch_assoc()) {
                         $i++;
-                        $minutesPerDay = 8 * 60;
+                        // Minutes in this employee's working day (their shift length,
+                        // frozen on the payroll item at calc time), not a fixed 8h.
+                        $minutesPerDay = day_hours_or_default($row['day_hours'] ?? null) * 60;
                         $perMinute = $row['per_day'] / $minutesPerDay;
                         $employee_id = $row['employee_id'];
                         $total_basic_rate = $row['present'] * $row['per_day'];
@@ -413,6 +415,7 @@ LEFT JOIN sites f ON f.id = a.site_id
                         $sunday_duty = $row['sunday_duty'];
                         $sunday_duty_amount =  $sunday_duty * $perDay;
                         $special_holiday = $row['special_holiday'];
+                        // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                         $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
 
                         $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;

@@ -86,11 +86,27 @@ $emp = $conn->query("SELECT e.*,d.name as dname,p.name as pname FROM employee e 
 	}
 </style>
 <script>
+<?php
+	// Built once and escaped: the name parts come from the employee record, so a
+	// quote or a </script> stored in a name would otherwise break out of this JS
+	// string. The id is always numeric, so cast it.
+	//
+	// NOTE: the ucwords() call below passes $middlename as ucwords' *delimiters*
+	// argument (a "," that should have been a "."), so the middle name has never
+	// actually appeared in this label. Behaviour is preserved here deliberately —
+	// escaping is the fix being applied; correcting the label is a separate call.
+	$emp_label   = htmlspecialchars(
+		$employee_no . ' - ' . ucwords($lastname . ", " . $firstname . " ", $middlename),
+		ENT_QUOTES,
+		'UTF-8'
+	);
+	$emp_view_id = (int) ($_GET['id'] ?? 0);
+?>
 	$('#new_allowance').click(function(){
-		uni_modal("New Allowace for <?php echo $employee_no.' - '.ucwords($lastname.", ".$firstname." ",$middlename) ?>",'manage_employee_allowances.php?id=<?php echo $_GET['id'] ?>','mid-large')
+		uni_modal("New Allowace for <?php echo $emp_label ?>",'manage_employee_allowances.php?id=<?php echo $emp_view_id ?>','mid-large')
 	})
 	$('#new_deduction').click(function(){
-		uni_modal("New Deduction for <?php echo $employee_no.' - '.ucwords($lastname.", ".$firstname." ",$middlename) ?>",'manage_employee_deductions.php?id=<?php echo $_GET['id'] ?>','mid-large')
+		uni_modal("New Deduction for <?php echo $emp_label ?>",'manage_employee_deductions.php?id=<?php echo $emp_view_id ?>','mid-large')
 	})
 	$('.remove_allowance').click(function(){
 				_conf("Are you sure to delete this allowance?","remove_allowance",[$(this).attr('data-id')])

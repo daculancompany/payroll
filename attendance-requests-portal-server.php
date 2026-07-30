@@ -4,7 +4,7 @@
 // employee — employee_id always comes from the session, never client input.
 // Feeds both the desktop DataTable (#att-req-tbl) and the mobile
 // infinite-scroll card feed (#areq-mlist).
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 header('Content-Type: application/json');
 
 if (empty($_SESSION['emp_is_login'])) {

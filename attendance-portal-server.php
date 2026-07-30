@@ -2,7 +2,7 @@
 // Server-side DataTables source for the employee self-service portal's
 // Attendance Records tab. Scoped strictly to the logged-in employee —
 // employee_id always comes from the session, never from client input.
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 header('Content-Type: application/json');
 
 if (empty($_SESSION['emp_is_login'])) {

@@ -10,7 +10,7 @@
  * screen. Passing emp=<id> narrows to a single employee and adds that
  * employee's leave request history.
  */
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/includes/session_bootstrap.php';
 if (empty($_SESSION['is_login']) && empty($_SESSION['login_id'])) {
     http_response_code(403);
     exit('Not authorized.');

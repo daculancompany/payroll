@@ -2,7 +2,7 @@
 // BIR Alphalist CSV — same figures as the on-screen report, one row per
 // employee for the calendar year. Import-friendly for the BIR Alphalist
 // Data Entry / e-submission transcription.
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/includes/session_bootstrap.php';
 if (empty($_SESSION['is_login']) && empty($_SESSION['login_id'])) {
     http_response_code(403);
     exit('Not authorized.');

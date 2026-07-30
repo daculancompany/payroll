@@ -3,7 +3,7 @@ include 'db_connect.php';
 require_once 'dept-scope.php';
 
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+    require_once __DIR__ . '/includes/session_bootstrap.php';
 }
 
 // Timekeeper (role 5) = scanner operator. They may see who's on the roster,

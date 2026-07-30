@@ -11,7 +11,7 @@
  * #modal-table-editor ("Edit Sheet"); all editing/saving still runs through
  * assets2/js/payroll_calculations.js and the same ajax.php actions.
  */
-if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 if ((empty($_SESSION['is_login'])) && !empty($_SESSION['emp_is_login'])) {
     header('Location: employee-portal.php');
     exit;
@@ -384,6 +384,11 @@ $refund_names = [];   // refund id => display name
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Payroll Details &mdash; <?= date('M d', strtotime($payroll['date_from'])) ?>&ndash;<?= date('M d, Y', strtotime($payroll['date_to'])) ?></title>
+    <meta name="robots" content="noindex, nofollow">
+    <!-- Standalone <head> (not includes/header.php), so publish the CSRF token
+         here as well — this page's $.ajax calls write payroll items. -->
+    <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : '', ENT_QUOTES, 'UTF-8') ?>">
+    <script src="assets2/js/csrf.js"></script>
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/icons.min.css" rel="stylesheet">
     <link rel="stylesheet" href="assets2/css/my-style.css">

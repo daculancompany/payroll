@@ -1,6 +1,6 @@
 <?php
 ini_set('serialize_precision', '-1');
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 
 // Error reporting is centralised in db_connect.php (APP_ENV switch).
 
@@ -357,87 +357,37 @@ class Action
         return $count > 0;
     }
 
-    function login2()
+    /* login2() and signup() removed — see the note in ajax.php.
+     *
+     * Both concatenated $_POST directly into SQL, so `email=' OR 1=1 -- `
+     * matched the first users row and was written into $_SESSION as a full
+     * admin session without any password. Both also hashed with unsalted
+     * md5(), bypassed the login_attempts rate limiting, and (via a typo that
+     * filtered 'passwors' instead of 'password') copied the stored password
+     * hash into the session. Neither had any caller. Use login() to sign in
+     * and save_user() to create accounts. */
+
+    /** Clear the session and return to the sign-in screen. */
+    private function endSession($redirect)
     {
-        extract($_POST);
+        // Empty the array first: session_destroy() drops the server-side store
+        // but leaves $_SESSION populated for the rest of this request.
+        $_SESSION = [];
+        session_destroy();
 
-        $qry = $this->db->query("SELECT * FROM users where username = '" . $email . "' and password = '" . md5($password) . "' ");
-
-        if ($qry->num_rows > 0) {
-            foreach ($qry->fetch_array() as $key => $value) {
-                if ($key != 'passwors' && !is_numeric($key)) {
-                    $_SESSION['login_' . $key] = $value;
-                }
-            }
-
-            return 1;
-        } else {
-            return 3;
-        }
+        header('location:' . $redirect);
     }
 
     function logout()
     {
-        session_destroy();
-
-        foreach ($_SESSION as $key => $value) {
-            unset($_SESSION[$key]);
-        }
-
-        header("location:login.php");
+        $this->endSession('login.php');
     }
 
     function logout2()
     {
-        session_destroy();
-
-        foreach ($_SESSION as $key => $value) {
-            unset($_SESSION[$key]);
-        }
-
-        header("location:../index.php");
-    }
-
-
-    function signup()
-    {
-        extract($_POST);
-
-        $data = " name = '$name' ";
-
-        $data .= ", contact = '$contact' ";
-
-        $data .= ", address = '$address' ";
-
-        $data .= ", username = '$email' ";
-
-        $data .= ", password = '" . md5($password) . "' ";
-
-        $data .= ", type = 3";
-
-        $chk = $this->db->query("SELECT * FROM users where username = '$email' ")->num_rows;
-
-        if ($chk > 0) {
-            return 2;
-
-            exit();
-        }
-
-        $save = $this->db->query("INSERT INTO users set " . $data);
-
-        if ($save) {
-            $qry = $this->db->query("SELECT * FROM users where username = '" . $email . "' and password = '" . md5($password) . "' ");
-
-            if ($qry->num_rows > 0) {
-                foreach ($qry->fetch_array() as $key => $value) {
-                    if ($key != 'passwors' && !is_numeric($key)) {
-                        $_SESSION['login_' . $key] = $value;
-                    }
-                }
-            }
-
-            return 1;
-        }
+        // Was '../index.php', which resolves above the app directory and lands
+        // on the XAMPP dashboard / a 404 instead of this app's own login page.
+        $this->endSession('login.php');
     }
 
 
@@ -594,25 +544,94 @@ class Action
     }
 
 
-    function save_settings()
+    /**
+     * Validate an uploaded image and store it under $destDir with a safe,
+     * server-generated name. Returns the stored basename, or false if the file
+     * is not a real image.
+     *
+     * The name is NEVER derived from $_FILES['name']: the previous code did
+     * exactly that, so uploading "shell.php" wrote an executable PHP file into
+     * a web-served directory — remote code execution. The extension here comes
+     * from the image type the server itself detected, so a disguised payload
+     * cannot pick its own.
+     */
+    private function storeImageUpload(array $file, $destDir)
     {
-        extract($_POST);
-        $data = " name = '" . str_replace("'", "&#x2019;", $name) . "' ";
-        $data .= ", email = '$email' ";
-        $data .= ", contact = '$contact' ";
-        $data .= ", about_content = '" . htmlentities(str_replace("'", "&#x2019;", $about)) . "' ";
-        if ($_FILES['img']['tmp_name'] != '') {
-            $fname = strtotime(date('y-m-d H:i')) . '_' . $_FILES['img']['name'];
-            $move = move_uploaded_file($_FILES['img']['tmp_name'], 'assets/img/' . $fname);
-            $data .= ", cover_img = '$fname' ";
+        if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+            return false;
+        }
+        // Guards against a caller faking $_FILES to point at an arbitrary path.
+        if (!is_uploaded_file($file['tmp_name'])) {
+            return false;
         }
 
-        $chk = $this->db->query("SELECT * FROM system_settings");
-        if ($chk->num_rows > 0) {
-            $save = $this->db->query("UPDATE system_settings set " . $data);
-        } else {
-            $save = $this->db->query("INSERT INTO system_settings set " . $data);
+        // Decide the type from the file's own contents, not its filename.
+        $info = @getimagesize($file['tmp_name']);
+        if ($info === false) {
+            return false;
         }
+        $allowed = [
+            IMAGETYPE_JPEG => 'jpg',
+            IMAGETYPE_PNG  => 'png',
+            IMAGETYPE_GIF  => 'gif',
+            IMAGETYPE_WEBP => 'webp',
+        ];
+        if (!isset($allowed[$info[2]])) {
+            return false;
+        }
+
+        if (!is_dir($destDir) && !@mkdir($destDir, 0755, true)) {
+            return false;
+        }
+
+        $basename = uniqid('img_', true) . '.' . $allowed[$info[2]];
+        if (!move_uploaded_file($file['tmp_name'], rtrim($destDir, '/') . '/' . $basename)) {
+            return false;
+        }
+        return $basename;
+    }
+
+    function save_settings()
+    {
+        // ── Read inputs explicitly (no extract() — avoids variable injection) ──
+        $name    = trim($_POST['name'] ?? '');
+        $email   = trim($_POST['email'] ?? '');
+        $contact = trim($_POST['contact'] ?? '');
+        $about   = (string) ($_POST['about'] ?? '');
+
+        $cover_img = null;
+        if (!empty($_FILES['img']['tmp_name'])) {
+            $cover_img = $this->storeImageUpload($_FILES['img'], 'assets/img/');
+            if ($cover_img === false) {
+                return ['result' => false, 'message' => 'The cover image must be a JPG, PNG, GIF or WebP image.'];
+            }
+        }
+
+        // Parameterised: $name/$email/$contact/$about are free text straight
+        // from the form, and were previously concatenated into the statement.
+        $has_row = (int) $this->db->query("SELECT COUNT(*) AS c FROM system_settings")->fetch_assoc()['c'] > 0;
+
+        if ($has_row) {
+            $sql = "UPDATE system_settings SET name = ?, email = ?, contact = ?, about_content = ?"
+                 . ($cover_img !== null ? ", cover_img = ?" : "");
+        } else {
+            $sql = $cover_img !== null
+                 ? "INSERT INTO system_settings (name, email, contact, about_content, cover_img) VALUES (?, ?, ?, ?, ?)"
+                 : "INSERT INTO system_settings (name, email, contact, about_content) VALUES (?, ?, ?, ?)";
+        }
+
+        $stmt = $this->db->prepare($sql);
+        if (!$stmt) {
+            return ['result' => false, 'message' => 'Could not save settings.'];
+        }
+        if ($cover_img !== null) {
+            $stmt->bind_param('sssss', $name, $email, $contact, $about, $cover_img);
+        } else {
+            $stmt->bind_param('ssss', $name, $email, $contact, $about);
+        }
+        $save = $stmt->execute();
+        $stmt->close();
+
         if ($save) {
             $query = $this->db->query("SELECT * FROM system_settings limit 1")->fetch_array();
             foreach ($query as $key => $value) {

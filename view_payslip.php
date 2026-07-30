@@ -1,5 +1,5 @@
 <?php
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/includes/session_bootstrap.php';
 include 'db_connect.php';
 
 // Auth: staff sessions may view any payslip; employee-portal sessions only their own

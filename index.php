@@ -8,7 +8,7 @@ $clasification_array = ['bg-primary', 'bg-secondary', 'bg-warning', 'bg-danger',
 ?>
 <?php include 'db_connect.php'; ?>
 <?php
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 // The offline payroll machine (APP_ROLE=local) is admin-only — it never serves
 // the employee portal, so an employee session here is meaningless.
 if (!app_is_local()) {

@@ -4,9 +4,82 @@
 <head>
 
     <meta charset="utf-8" />
-    <title>Payroll System</title>
+<?php
+/* Per-page <title>.
+ *
+ * Every admin screen used to render the same literal "Payroll System", which
+ * made browser tabs indistinguishable (payroll work routinely means half a
+ * dozen open at once) and gave screen-reader users no page announcement on
+ * navigation. index.php routes everything through ?page=<slug>, so deriving the
+ * title from that slug fixes all of them in one place.
+ *
+ * A page can still override it by setting $page_title before the include.
+ */
+if (!isset($page_title)) {
+    $__slug = (string) ($_GET['page'] ?? 'home');
+    // Only ever a routing slug; never trust it into the document unescaped.
+    $__slug = preg_replace('/[^a-zA-Z0-9_-]/', '', $__slug);
+
+    $__titles = [
+        'home'                 => 'Dashboard',
+        'dtr'                  => 'DTR',
+        'dtr-details'          => 'DTR Details',
+        'dtr-documents'        => 'DTR Documents',
+        'compare-dtr'          => 'Compare DTR',
+        'biometric-dtr'        => 'Biometric DTR',
+        'payroll'              => 'Payroll',
+        'payroll_items'        => 'Payroll Items',
+        'payroll-register'     => 'Payroll Register',
+        'payroll-report'       => 'Payroll Report',
+        'payroll-comparison'   => 'Payroll Comparison',
+        'bir-alphalist'        => 'BIR Alphalist',
+        'bank-payout'          => 'Bank Payout',
+        'thirteenth-month'     => '13th Month Pay',
+        'leave_types'          => 'Leave Types',
+        'leave_balances'       => 'Leave Balances',
+        'leaves'               => 'Leave Requests',
+        'leave-dashboard'      => 'Leave Dashboard',
+        'leave-balances-report' => 'Leave Balances Report',
+        'employee'             => 'Employees',
+        'employee-details'     => 'Employee Details',
+        'employee-masterlist'  => 'Employee Masterlist',
+        'schedule-roster'      => 'Schedule Roster',
+        'work-schedules'       => 'Work Schedules',
+        'attendance'           => 'Attendance',
+        'attendance-summary'   => 'Attendance Summary',
+        'attendance-requests'  => 'Attendance Requests',
+        'daily-board'          => 'Daily Board',
+        'visitors-logs'        => 'Visitor Logs',
+        'remittance-report'    => 'Remittance Report',
+        'loan-deduction-ledger' => 'Loan Deduction Ledger',
+        'pay-settings'         => 'Pay Settings',
+        'users'                => 'Users',
+        'sites'                => 'Sites',
+        'clusters'             => 'Clusters',
+        'branch'               => 'Branches',
+        'department'           => 'Departments',
+        'position'             => 'Positions',
+        'calendar'             => 'Calendar & Holidays',
+        'reports'              => 'Reports',
+        'profile'              => 'My Profile',
+    ];
+
+    // Fall back to humanising the slug so a page added later still gets a
+    // sensible title without touching this map.
+    $page_title = $__titles[$__slug]
+        ?? ucwords(str_replace(['-', '_'], ' ', $__slug ?: 'Dashboard'));
+}
+?>
+    <title><?= htmlspecialchars($page_title, ENT_QUOTES, 'UTF-8') ?> &middot; Payroll System</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta content="Payroll System" name="description" />
+    <!-- Internal tool: never index payroll data, even if a box is reachable. -->
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- CSRF: the token every non-GET request must echo back. csrf.js reads this
+         tag and attaches it to all fetch() calls, so it must load first. -->
+    <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : '', ENT_QUOTES, 'UTF-8') ?>">
+    <script src="assets2/js/csrf.js"></script>
     <meta content="Niel Daculan" name="author" />
     <!-- App favicon -->
     <link rel="shortcut icon" href="assets/images/favicon.ico">

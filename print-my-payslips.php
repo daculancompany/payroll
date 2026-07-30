@@ -4,7 +4,7 @@
 // the browser's Save-as-PDF produces a single multi-payslip file.
 // Security: ids are always re-scoped to the logged-in employee — any payslip
 // that isn't theirs (or whose payroll isn't Ready-for-Review / Locked) is dropped.
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 
 if (empty($_SESSION['emp_is_login'])) {
     http_response_code(403);

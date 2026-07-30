@@ -11,7 +11,7 @@
  * Columns G and I are unused by the importer. They are kept as reserved spacers
  * purely to preserve the index positions of the columns after them.
  */
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 require 'vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;

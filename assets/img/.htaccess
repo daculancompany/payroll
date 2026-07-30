@@ -1,0 +1,30 @@
+# No script execution in this directory.
+#
+# Everything here is user-supplied content (uploaded images, scanned faces,
+# attendance photos), and some of it arrives from endpoints that write files
+# directly. If a validation bug ever lets a .php file land here, Apache must
+# refuse to execute it and serve it as inert text instead. This is defence in
+# depth: the upload validator in admin_class.php::storeImageUpload() is the
+# primary control, and this is what saves us when that control has a bug.
+#
+# Applies to subdirectories too (faces/, attendance/), so those need no copy.
+
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php5.c>
+    php_flag engine off
+</IfModule>
+
+# php_flag only exists under mod_php. These work however PHP is wired up
+# (mod_php, CGI, or PHP-FPM via a handler), so keep both.
+RemoveHandler .php .phtml .php3 .php4 .php5 .php7 .phar
+AddType text/plain .php .phtml .php3 .php4 .php5 .php7 .phar
+
+# Belt and braces: refuse the request outright rather than serving the source.
+<FilesMatch "\.(php|phtml|php3|php4|php5|php7|phar|pl|py|cgi|asp|aspx|jsp|sh|htaccess)$">
+    Require all denied
+</FilesMatch>

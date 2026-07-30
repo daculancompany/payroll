@@ -2,7 +2,7 @@
 // ── Employee self-service portal AJAX ──────────────────────────────────────
 // Strictly scoped to the logged-in employee (id from session, never client input).
 // Handles the portal notification bell and the DTR employee-review sign-off.
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 header('Content-Type: application/json');
 
 if (empty($_SESSION['emp_is_login'])) {
@@ -10,6 +10,11 @@ if (empty($_SESSION['emp_is_login'])) {
     echo json_encode(['result' => false, 'message' => 'Not authenticated']);
     exit;
 }
+
+// Every mutation here is authenticated by the session cookie alone, so a
+// third-party page could otherwise POST on a signed-in employee's behalf
+// (filing leave, signing off a DTR). GET reads are exempt inside csrf_verify().
+csrf_require();
 
 include 'db_connect.php';
 

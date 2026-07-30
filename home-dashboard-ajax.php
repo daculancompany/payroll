@@ -1,7 +1,7 @@
 <?php
 // Dynamic data source for the admin dashboard (home.php).
 // Admin sessions only — employees and guests get a 403.
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 header('Content-Type: application/json');
 
 if (empty($_SESSION['is_login'])) {

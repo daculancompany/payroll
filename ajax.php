@@ -1,7 +1,4 @@
 <?php
-$staticToken = 'jejors_api_token9343876536753';
-$encodedToken = base64_encode($staticToken);
-define('API_TOKEN', $encodedToken );
 ob_start();
 if (!isset($_GET['action'])) {
 	header("HTTP/1.0 404 Not Found");
@@ -10,16 +7,96 @@ if (!isset($_GET['action'])) {
 }
 
 $action = $_GET['action'];
-include 'admin_class.php';
+include 'admin_class.php';   // also opens the session
 $crud = new Action();
 
+/* ──────────────────────────────────────────────────────────────────────────
+ * AUTHORISATION GATE
+ *
+ * This runs BEFORE every handler below, on purpose. It used to sit ~80 lines
+ * down, which left the mobile/legacy actions above it reachable with no
+ * credentials at all — an anonymous GET could dump the whole employee table.
+ * Any new action added to this file is therefore protected by default; making
+ * something public now requires deliberately naming it in PUBLIC_ACTIONS.
+ * ────────────────────────────────────────────────────────────────────────── */
 
+// Sign-in / sign-out only. These cannot require a session — they create it.
+// login() is itself rate-limited per username+IP inside admin_class.php.
+$PUBLIC_ACTIONS = ['login', 'mobile-login-check', 'logout', 'logout2'];
+
+// Endpoints for field devices (old scanner/kiosk builds) that hold no session
+// cookie. They authenticate with a shared secret instead of a session. The
+// secret lives in the server environment, never in this file.
+$DEVICE_ACTIONS = [
+	'mobile-all-employee', 'mobile-sync-local', 'mobile-save-logs',
+	'mobile-push-dtr', 'manual-push-dtr',
+];
+
+/** Reject the request and stop. */
+function ajax_deny($message = 'Access Forbidden')
+{
+	header('HTTP/1.0 403 Forbidden');
+	header('Content-Type: application/json');
+	echo json_encode(['result' => false, 'message' => $message]);
+	exit();
+}
+
+/**
+ * True when the caller presented the device shared secret.
+ *
+ * Set PAYROLL_API_TOKEN in the web-server environment to enable the device
+ * endpoints. Unset (the default) means no token can ever match, so those
+ * endpoints stay closed unless an operator opts in.
+ */
+function ajax_device_authorized()
+{
+	$expected = (string) getenv('PAYROLL_API_TOKEN');
+	if ($expected === '') {
+		return false;   // fail closed
+	}
+	$presented = (string) ($_SERVER['HTTP_X_API_TOKEN'] ?? '');
+	if ($presented === '') {
+		$auth = (string) ($_SERVER['HTTP_AUTHORIZATION'] ?? '');
+		if (stripos($auth, 'Bearer ') === 0) {
+			$presented = substr($auth, 7);
+		}
+	}
+	// hash_equals: constant-time, so a wrong token leaks nothing by timing.
+	return $presented !== '' && hash_equals($expected, $presented);
+}
+
+if (in_array($action, $DEVICE_ACTIONS, true)) {
+	// A logged-in operator OR a valid device token may call these.
+	if (empty($_SESSION['is_login']) && !ajax_device_authorized()) {
+		ajax_deny('This endpoint requires a valid device token.');
+	}
+	// No CSRF check here on purpose: these callers present an explicit token
+	// rather than an ambient session cookie, so there is nothing for a third
+	// party site to ride on.
+} elseif (!in_array($action, $PUBLIC_ACTIONS, true)) {
+	// empty() covers both "never set" and "set but false" — the old condition
+	// used && with a mis-parsed !$x === true and let a false value through.
+	if (empty($_SESSION['is_login'])) {
+		ajax_deny();
+	}
+
+	// Session-cookie-authenticated mutation: require the CSRF token. Without
+	// this, any page a signed-in admin visited could POST here on their behalf.
+	// GET/HEAD are exempt inside csrf_verify(). The sign-in actions above are
+	// exempt because no session (and so no token) exists yet, and login() is
+	// separately protected by per-username+IP rate limiting.
+	if (function_exists('csrf_require')) {
+		csrf_require();
+	}
+}
+
+
+// ── Authentication ──
 if ($action == "mobile-login-check") {
 	$save = $crud->loginMobile();
 	echo json_encode($save);
 	return;
 }
-
 
 if ($action == 'login') {
 	$save = $crud->login();
@@ -27,8 +104,31 @@ if ($action == 'login') {
 	return;
 }
 
-// mobile
+if ($action == 'logout') {
+	$logout = $crud->logout();
+	if ($logout)
+		echo $logout;
+		return;
+}
+if ($action == 'logout2') {
+	$logout = $crud->logout2();
+	if ($logout)
+		echo $logout;
+	return;
+}
 
+/* login2 / signup removed.
+ *
+ * login2() built its WHERE clause by concatenating $_POST straight into SQL,
+ * so `email=' OR 1=1 -- ` returned the first users row and was copied into
+ * $_SESSION as a full admin login — an unauthenticated auth bypass. It also
+ * hashed with unsalted md5() and skipped the login_attempts rate limiting that
+ * login() enforces. signup() shared both flaws and self-registered type=3
+ * users. Neither had a single caller anywhere in the codebase or the mobile
+ * app. Use login() / save_user() instead.
+ */
+
+// ── Device / legacy mobile sync (gated above) ──
 if ($action == "mobile-all-employee") {
 	$save = $crud->gel_all_employee();
 	echo json_encode($save);
@@ -36,7 +136,6 @@ if ($action == "mobile-all-employee") {
 }
 
 if ($action == "mobile-sync-local") {
-	// var_dump(API_TOKEN);
 	$save = $crud->localSync();
 	echo json_encode($save);
 	return;
@@ -61,51 +160,10 @@ if ($action == "manual-push-dtr") {
 }
 
 
-if ($action == 'login2') {
-	$login = $crud->login2();
-	if ($login)
-		echo $login;
-		return;
-}
-if ($action == 'logout') {
-	$logout = $crud->logout();
-	if ($logout)
-		echo $logout;
-		return;
-}
-if ($action == 'logout2') {
-	$logout = $crud->logout2();
-	if ($logout)
-		echo $logout;
-	return;
-}
-
-
-// end mobile
-if (!isset($_SESSION['is_login']) && !$_SESSION['is_login'] === true) {
-	header("HTTP/1.0 403 Forbidden");
-	echo "<h1>403 Error: Access Forbidden</h1>";
-	exit();
-}
-
-
-
-if ($action == "isLock222") {  
+if ($action == "isLock222") {
 	$save = $crud->isLock();
 	echo json_encode($save);
 }
-
-
-if ($action == 'signup') {
-	$save = $crud->signup();
-	if ($save)
-		echo $save;
-}
-// if ($action == "save_settings") {
-// 	$save = $crud->save_settings();
-// 	if ($save)
-// 		echo $save;
-// }
 if ($action == "save_employee") {
 	$save = $crud->save_employee();
 	if ($save)

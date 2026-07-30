@@ -1,7 +1,7 @@
 <?php
 // Bank payout CSV — one row per employee with bank, account no and net pay,
 // for upload to the bank's disbursement facility.
-if (session_status() === PHP_SESSION_NONE) { session_start(); }
+require_once __DIR__ . '/includes/session_bootstrap.php';
 if (empty($_SESSION['is_login']) && empty($_SESSION['login_id'])) {
     http_response_code(403);
     exit('Not authorized.');

@@ -1,12 +1,39 @@
 <?php
 /* ──────────────────────────────────────────────────────────────
  * Central error-reporting switch.
- * Change APP_ENV to 'prod' before deploying to a live server.
  *   dev  → show every error on screen (for debugging)
  *   prod → never show errors to users; log them to logs/php-error.log
+ *
+ * This USED to be a hardcoded 'dev', which meant a deploy that forgot to edit
+ * this line served stack traces, absolute paths and SQL fragments to every
+ * visitor — and turned any injection point into an easily-exploited
+ * error-based one. It now fails SAFE: anything not positively identified as a
+ * local development host is treated as production.
+ *
+ * Resolution order:
+ *   1. APP_ENV in the web-server environment (authoritative — set this on the
+ *      live box: SetEnv APP_ENV prod).
+ *   2. Loopback/private hostnames → dev, so local XAMPP work keeps its errors
+ *      on screen with no configuration.
+ *   3. Everything else → prod.
  * ────────────────────────────────────────────────────────────── */
 if (!defined('APP_ENV')) {
-    define('APP_ENV', 'dev');   // 'dev' | 'prod'
+    $__env = strtolower(trim((string) getenv('APP_ENV')));
+
+    if (!in_array($__env, ['dev', 'prod'], true)) {
+        $__host = strtolower((string) ($_SERVER['HTTP_HOST'] ?? php_uname('n')));
+        $__host = preg_replace('/:\d+$/', '', $__host);   // strip :8080 etc.
+
+        $__is_local = in_array($__host, ['localhost', '127.0.0.1', '::1', ''], true)
+            || substr($__host, -6) === '.local'
+            || substr($__host, -5) === '.test'
+            || preg_match('/^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/', $__host) === 1;
+
+        $__env = $__is_local ? 'dev' : 'prod';
+    }
+
+    define('APP_ENV', $__env);
+    unset($__env, $__host, $__is_local);
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -808,14 +835,30 @@ if (APP_ENV === 'prod') {
     ini_set('display_errors', '1');
 }
 
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "payroll";
+/* Database credentials.
+ *
+ * Read from the environment when provided so the live box never has to keep a
+ * real password in a web-served file (set DB_USER / DB_PASS via SetEnv or the
+ * PHP-FPM pool config). The XAMPP defaults remain the fallback so an existing
+ * local install keeps working untouched.
+ *
+ * ACTION REQUIRED ON THE LIVE SERVER: 'root' with an empty password gives the
+ * app — and anything that finds an injection hole in it — full control of the
+ * MySQL instance. Create a dedicated user restricted to the payroll schema
+ * with only SELECT/INSERT/UPDATE/DELETE (no FILE, DROP or GRANT), and export
+ * DB_USER/DB_PASS for it.
+ */
+$servername = getenv('DB_HOST') ?: "localhost";
+$username   = getenv('DB_USER') ?: "root";
+$password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : "";
+$dbname     = getenv('DB_NAME') ?: "payroll";
 
-// Biometric scanner API key — change this before deploying, keep it secret.
+// Biometric scanner API key. Prefer the environment: a literal here is readable
+// by anyone who obtains the source or the git history, and rotating it means
+// editing and redeploying a file.
 if (!defined('BIOMETRIC_API_KEY')) {
-    define('BIOMETRIC_API_KEY', 'accdad483efc02d030a269bc704cf3230608159f90ff90ba2ee10a3dfda74318');
+    define('BIOMETRIC_API_KEY', getenv('BIOMETRIC_API_KEY')
+        ?: 'accdad483efc02d030a269bc704cf3230608159f90ff90ba2ee10a3dfda74318');
 }
 
 // Create connection
@@ -823,6 +866,13 @@ $conn = new mysqli($servername, $username, $password, $dbname);
 
 // Check connection
 if ($conn->connect_error) {
+    // The raw driver message names the host, user and database, so it only goes
+    // to the log in production; users get a generic failure.
+    error_log('DB connection failed: ' . $conn->connect_error);
+    if (APP_ENV === 'prod') {
+        http_response_code(503);
+        die('The service is temporarily unavailable. Please try again shortly.');
+    }
     die("Connection failed: " . $conn->connect_error);
 }
 

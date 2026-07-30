@@ -1,7 +1,7 @@
 <?php
 // Employee login is now unified with the main login page (Option A).
 // Keep this URL working for old bookmarks / links → redirect appropriately.
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 if (isset($_SESSION['emp_is_login']) && $_SESSION['emp_is_login']) {
     header('location:employee-portal.php'); exit;
 }

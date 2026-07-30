@@ -12,7 +12,7 @@
  *
  * POST: id (payroll id, for the filename) + html (the <table> markup).
  */
-if (session_status() === PHP_SESSION_NONE) session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 if (empty($_SESSION['is_login'])) {
     http_response_code(403);
     exit('Not authorised.');

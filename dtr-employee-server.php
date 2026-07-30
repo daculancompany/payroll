@@ -16,7 +16,7 @@
  * Everything is scoped to one ddtr_id and every parameter is bound or cast.
  */
 
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 
 if (empty($_SESSION['is_login'])) {
     http_response_code(403);

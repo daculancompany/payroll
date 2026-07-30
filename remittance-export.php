@@ -1,6 +1,6 @@
 <?php
 // CSV export for the Government Remittance Report
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 if (!isset($_SESSION['is_login']) || !$_SESSION['is_login']) { header('HTTP/1.0 403 Forbidden'); exit('Forbidden'); }
 include 'db_connect.php';
 

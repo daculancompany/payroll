@@ -59,7 +59,7 @@ $pt = array(1 => "Monhtly", 2 => "Semi-Monthly");
 						</div>
 						<div class="col-sm-6 text-right">
 							<button class="btn btn-outline-info" type="button" id="new_payroll_btn"><span class="fa fa-refresh"></span> Re-Caclulate Payroll</button>
-							<a href="payroll_items_pdf.php?id=<?php echo $_GET['id'] ?>" target="blank" class="btn btn-sm btn-outline-danger" type="button"><i class="fa fa-file-pdf-o"></i> View PDF</a>
+							<a href="payroll_items_pdf.php?id=<?php echo (int) ($_GET['id'] ?? 0) ?>" target="blank" class="btn btn-sm btn-outline-danger" type="button"><i class="fa fa-file-pdf-o"></i> View PDF</a>
 							<!-- <button class="btn btn-outline-danger" type="button" id=""><span class="fa fa-file-pdf-o"></span> Print in PDF</button> -->
 						</div>
 					</div>
@@ -136,5 +136,7 @@ $pt = array(1 => "Monhtly", 2 => "Semi-Monthly");
 	</div>
 </div>
 <script>
-	var id = "<?= $_GET['id'] ?>";
+	// Cast, don't echo raw: this lands inside a JS string, so an id of
+	// ";alert(1)// used to execute. It is always a record id, never text.
+	var id = "<?= (int) ($_GET['id'] ?? 0) ?>";
 </script>

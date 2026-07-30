@@ -1,5 +1,5 @@
 <?php
-session_start();
+require_once __DIR__ . '/includes/session_bootstrap.php';
 require_once __DIR__ . '/db_connect.php';
 // The offline payroll machine (APP_ROLE=local) does not serve the employee
 // portal at all — employees use the internet-facing deployment instead.
@@ -498,6 +498,13 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>My Portal — <?= htmlspecialchars($emp['firstname']) ?></title>
+<!-- This portal is the internet-facing deployment; keep it out of search results. -->
+<meta name="robots" content="noindex, nofollow">
+
+<!-- CSRF: csrf.js reads this token and attaches it to every fetch() the portal
+     makes, so it must load before any other script that issues a request. -->
+<meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : '', ENT_QUOTES, 'UTF-8') ?>">
+<script src="<?= av('assets2/js/csrf.js') ?>"></script>
 
 <!-- ── PWA: installable home-screen app (Android + iOS) ── -->
 <link rel="manifest" href="manifest.webmanifest">

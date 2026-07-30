@@ -2,7 +2,7 @@
 
 <div class="container-fluid">
 	<form action="" id="employee-deduction">
-		<input type="hidden" name="employee_id" value="<?php echo $_GET['id'] ?>">
+		<input type="hidden" name="employee_id" value="<?php echo (int) ($_GET['id'] ?? 0) ?>">
 		<div class="row form-group">
 			<div class="col-md-5">
 				<label for="" class="control-label">Deduction</label>

@@ -5,7 +5,7 @@
 // set (0 / NULL) keep full visibility so existing unassigned accounts are not
 // locked out.
 if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+    require_once __DIR__ . '/includes/session_bootstrap.php';
 }
 
 /** Department id the current session is locked to, or 0 when unscoped. */

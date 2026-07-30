@@ -40,6 +40,52 @@ Require all granted
     Require all denied
 </Files>
 
+# ── Never serve data, source or backup files ─────────────────────────────
+# Real files bypass the router by design (the -f rule below), so anything
+# sitting in this folder is downloadable by default. payroll.sql (full schema
+# + data), vendor.zip (1.9 MB of source) and the stray *.txt query dumps were
+# all publicly fetchable. Deny by extension rather than naming files one at a
+# time, so a future dump doesn't quietly become public too.
+<FilesMatch "\.(sql|zip|tar|gz|tgz|bak|old|log|ini|md|lock|yml|yaml|sh)$">
+    Require all denied
+</FilesMatch>
+
+# The scratch query dumps in this folder are .txt, but robots.txt must stay
+# fetchable, so .txt is handled separately from the list above.
+<FilesMatch "\.txt$">
+    Require all denied
+</FilesMatch>
+<Files "robots.txt">
+    Require all granted
+</Files>
+
+# composer.json/lock and the Firebase service account are the only .json files
+# here and none should ever be served. (The PWA manifests are .webmanifest and
+# are unaffected.)
+<FilesMatch "\.json$">
+    Require all denied
+</FilesMatch>
+
+# Version-control metadata. <Directory>/<DirectoryMatch> are not permitted in
+# .htaccess (Apache 500s on them), so match on the request path instead.
+RedirectMatch 404 /\.git
+RedirectMatch 404 /\.DS_Store
+
+# Script execution is disabled inside the writable upload directories by the
+# dedicated .htaccess files in uploads/ and assets/img/ — per-directory rules
+# cannot be expressed from here.
+
+# ── Baseline security response headers ───────────────────────────────────
+<IfModule mod_headers.c>
+    # Stop the browser MIME-sniffing a user upload into something executable.
+    Header always set X-Content-Type-Options "nosniff"
+    # This is an internal payroll tool; it has no business being framed.
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # Keep payroll data out of search indexes even if a box is internet-facing.
+    Header always set X-Robots-Tag "noindex, nofollow"
+</IfModule>
+
 # Serve the PWA manifest with the correct MIME type (some Apache builds don't
 # map .webmanifest by default) so browsers treat the app as installable.
 <IfModule mod_mime.c>

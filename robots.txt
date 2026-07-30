@@ -1,0 +1,9 @@
+# Internal payroll system — nothing here is meant to be indexed.
+#
+# Every page sits behind authentication, but the login screen and the employee
+# portal are reachable on the internet-facing deployment (APP_ROLE=portal), and
+# an indexed login page is free reconnaissance for an attacker. The X-Robots-Tag
+# header in .htaccess enforces the same thing for crawlers that ignore this file.
+
+User-agent: *
+Disallow: /

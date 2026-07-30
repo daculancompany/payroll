@@ -61,10 +61,10 @@
 
     <!-- GLOBAL theme tokens (primary purple + every scrollbar in the app).
          Must load before reports.css / page styles so those can read the vars. -->
-    <link rel="stylesheet" href="assets2/css/theme.css">
+    <link rel="stylesheet" href="<?= av('assets2/css/theme.css') ?>">
 
     <!-- Shared soft-style report tables -->
-    <link rel="stylesheet" href="assets2/css/reports.css">
+    <link rel="stylesheet" href="<?= av('assets2/css/reports.css') ?>">
 
     <!-- Keeps SweetAlert dialogs above Bootstrap modals -->
     <link rel="stylesheet" href="assets2/css/modal-stacking.css">

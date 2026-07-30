@@ -1,4 +1,10 @@
-<?php $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9]); ?>
+<?php
+// Admin (1) and HR (9) maintain the holiday calendar. Supervisors and
+// Department Heads can reach this page from their leave-only menu, but the
+// calendar is org-wide policy — they read it, they do not edit it.
+$can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
+             && !is_leave_approver();
+?>
 <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.css" rel="stylesheet">
 <div class="main-content">
     <div class="page-content">

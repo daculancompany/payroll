@@ -72,6 +72,53 @@ if (!defined('TIMEKEEPER_ALLOWED_PAGES')) {
     ]);
 }
 
+// ── Leave approvers: Supervisor + Department Head ───────────────────────
+// These two roles exist only to review their OWN department's leave. They get
+// a leave-only slice of the admin app — a dashboard, the requests awaiting
+// their stage, and a name + leave-count roster of their department.
+//
+// Explicitly NOT theirs: DTR, payroll, salary figures, employee personal
+// details, users, reports, settings. Everything outside the allowlist below
+// redirects to the dashboard, so a stray link or a hand-typed ?page= cannot
+// open a screen with pay data on it.
+//
+// HR (role 9) is a leave approver too but is deliberately NOT listed here —
+// HR keeps full app access. Edit these two constants to adjust app-wide.
+if (!defined('LEAVE_APPROVER_ROLES')) {
+    define('LEAVE_APPROVER_ROLES', [8, 10]);   // 8 = Department Head, 10 = Supervisor
+}
+
+if (!defined('LEAVE_APPROVER_ALLOWED_PAGES')) {
+    define('LEAVE_APPROVER_ALLOWED_PAGES', [
+        'leave-dashboard',   // landing page: counts + department roster
+        'leaves',            // the requests they must act on (already dept-scoped)
+        'calendar',          // holiday calendar — READ-ONLY (see calendar.php)
+        'profile',           // own account
+    ]);
+}
+
+if (!function_exists('is_leave_approver')) {
+    /**
+     * True when $role (default: the signed-in web session role) is restricted to
+     * the leave-only slice. Reads the session defensively so it is safe to call
+     * from AJAX endpoints that may not have a session at all.
+     */
+    function is_leave_approver($role = null): bool
+    {
+        if ($role === null) {
+            if (session_status() === PHP_SESSION_NONE) return false;
+            $role = $_SESSION['login_role'] ?? 0;
+        }
+        return in_array((int) $role, LEAVE_APPROVER_ROLES, true);
+    }
+
+    /** Is $page reachable for a Supervisor / Department Head? */
+    function leave_approver_page_allowed($page): bool
+    {
+        return in_array($page, LEAVE_APPROVER_ALLOWED_PAGES, true);
+    }
+}
+
 if (!function_exists('is_timekeeper')) {
     /**
      * True when $role (default: the signed-in web session role) is a Timekeeper.
@@ -96,6 +143,24 @@ if (!function_exists('is_timekeeper')) {
 
 // Application timezone — used by all PHP date()/DateTime calls.
 date_default_timezone_set('Asia/Manila');
+
+// ── Asset cache-busting (GLOBAL) ────────────────────────────────────────
+// Stamp local CSS/JS with its file mtime so an edited stylesheet can never be
+// served from a stale browser cache. This used to live only in
+// employee-portal.php, which is why the admin pages kept rendering old rules
+// after a CSS change. Use it for EVERY local asset link, by echoing av($path)
+// into the href of a <link> or the src of a <script>.
+//
+// NOTE: do NOT put a literal PHP close tag in a comment here — even inside a
+// "//" comment it ends PHP mode, and everything below (including $conn) would
+// silently stop executing. php -l does not flag it.
+if (!function_exists('av')) {
+    function av($path)
+    {
+        $t = @filemtime(__DIR__ . '/' . $path);
+        return $path . '?v=' . ($t ?: '1');
+    }
+}
 
 // ── Leave eligibility (GLOBAL) ──────────────────────────────────────────
 // Only these employee classifications are entitled to leave / leave credits.
@@ -261,8 +326,8 @@ if (!function_exists('dtr_compute_day')) {
         ")->fetch_assoc();
 
         $raw_hours  = ($in_ts && $out_ts) ? ($out_ts - $in_ts) / 3600 : 0;
-        $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
-        $work_hours = $out_ts ? round(max(0, $raw_hours - $break_hrs), 2) : 0;
+        $break_hrs  = (isset($schedule['break_minutes']) ? $schedule['break_minutes'] : 60) / 60;
+        $work_hours = 0;
         $overtime = $late = $undertime = $nsd_hours = 0;
         if ($out_ts && $schedule) {
             $sched_start = strtotime($date . ' ' . $schedule['start_time']);
@@ -271,13 +336,26 @@ if (!function_exists('dtr_compute_day')) {
             $late       = round(max(0, ($in_ts - $sched_start) / 3600), 2);
             $undertime  = round(max(0, ($sched_end - $out_ts) / 3600), 2);
             $overtime   = round(max(0, ($out_ts - $sched_end) / 3600), 2);
+
+            // Only time INSIDE the shift counts as work. Clocking in early does not
+            // earn anything, and time past the shift end is overtime — already
+            // measured above, so counting it here too would pay it twice.
+            // Without this clamp an early arrival inflated work_hours, and the
+            // giveaway was work_hours + undertime exceeding the shift length
+            // (e.g. 07:47→13:10 on an 08:00–17:00 shift gave 4.39 + 3.82 = 8.21).
+            $eff_in     = max($in_ts, $sched_start);
+            $eff_out    = min($out_ts, $sched_end);
+            $work_hours = round(max(0, ($eff_out - $eff_in) / 3600 - $break_hrs), 2);
             $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+
             foreach ([[$date . ' 22:00:00', $date . ' 23:59:59'], [$date . ' 00:00:00', $date . ' 06:00:00']] as $w) {
                 $nsd_hours += max(0, min($out_ts, strtotime($w[1])) - max($in_ts, strtotime($w[0]))) / 3600;
             }
             $nsd_hours = round($nsd_hours, 2);
         } elseif ($out_ts) {
-            $work_hours = round(min(8, $work_hours), 2);
+            // No schedule on file — nothing to clamp against, so fall back to the
+            // raw span (capped at 8h) exactly as before.
+            $work_hours = round(min(8, max(0, $raw_hours - $break_hrs)), 2);
         }
 
         return [
@@ -493,6 +571,45 @@ if (!function_exists('leave_eligibility_from')) {
     }
 }
 
+// ── Leave vs attendance overlap (GLOBAL) ────────────────────────────────
+// Which of $days this employee already has DTR attendance on (hours > 0).
+//
+// Filing leave on such a day is ALLOWED — a half-day, or an emergency leave
+// taken mid-shift, is legitimate and the punches are real. It is only flagged
+// so the filer and the approver can see it. The money side is handled
+// separately: get_payroll_rows_data caps worked-fraction + leave-fraction at
+// one day, so an overlapping day can never be paid twice.
+if (!function_exists('leave_dates_with_attendance')) {
+    function leave_dates_with_attendance(mysqli $db, int $employee_id, array $days): array
+    {
+        if ($employee_id <= 0 || !$days) return [];
+        $esc = [];
+        foreach ($days as $d) {
+            $t = strtotime((string) $d);
+            if ($t) $esc[] = "'" . $db->real_escape_string(date('Y-m-d', $t)) . "'";
+        }
+        if (!$esc) return [];
+        $in  = implode(',', array_unique($esc));
+        $res = $db->query("SELECT DISTINCT date_time FROM DTR_details
+                           WHERE employee_id = $employee_id AND work_hours > 0
+                             AND date_time IN ($in) ORDER BY date_time");
+        $hit = [];
+        if ($res) while ($r = $res->fetch_row()) $hit[] = $r[0];
+        return $hit;
+    }
+
+    /** Human-readable "attendance already recorded on …" note, or '' when clear. */
+    function leave_attendance_note(mysqli $db, int $employee_id, array $days): string
+    {
+        $hit = leave_dates_with_attendance($db, $employee_id, $days);
+        if (!$hit) return '';
+        $nice = array_map(function ($d) { return date('M j', strtotime($d)); }, array_slice($hit, 0, 5));
+        return ' Note: attendance is already recorded on ' . implode(', ', $nice)
+            . (count($hit) > 5 ? '…' : '')
+            . ' — those days will be paid as worked + leave capped at one day.';
+    }
+}
+
 // ── Leave approval workflow (GLOBAL) ────────────────────────────────────
 // The ORDERED chain a leave request must pass through. Edit THIS ONE array to
 // reorder, add, or remove approval stages — the leaves page, employee portal,
@@ -504,11 +621,20 @@ if (!function_exists('leave_eligibility_from')) {
 //     {key}_remarks (reason, mainly on reject)
 //     {key}_at      (decision timestamp)
 // `role` is the users.role allowed to act on that stage.
-// Current flow:  Employee → Supervisor → Department Head → HR (final).
+//
+// `optional` => true marks a stage that is SKIPPED when the employee's
+// department has nobody holding that role. Filing resolves this once and
+// stamps the stage approved with an "auto-skipped" remark, so the chain simply
+// moves on instead of parking the request on an approver who does not exist.
+// Leave it out (or set false) to make a stage mandatory — a request will then
+// wait indefinitely if no such approver is assigned.
+//
+// Current flow:  Employee → Department Head → Supervisor (skipped when the
+//                department has none) → HR (final).
 if (!defined('LEAVE_APPROVAL_STAGES')) {
     define('LEAVE_APPROVAL_STAGES', [
-        'sup'   => ['label' => 'Supervisor',      'role' => 10, 'icon' => 'ri-user-star-line'],
         'admin' => ['label' => 'Department Head', 'role' => 8,  'icon' => 'ri-shield-check-line'],
+        'sup'   => ['label' => 'Supervisor',      'role' => 10, 'icon' => 'ri-user-star-line', 'optional' => true],
         'hr'    => ['label' => 'HR',              'role' => 9,  'icon' => 'ri-user-settings-line'],
     ]);
 }
@@ -569,6 +695,82 @@ if (!function_exists('leave_stages')) {
         $conds = ['status=0', "{$stageKey}_status=0"];
         for ($j = 0; $j < $idx; $j++) $conds[] = $keys[$j] . '_status=1';
         return implode(' AND ', $conds);
+    }
+
+    /**
+     * Does anyone exist who could actually decide $stageKey for this employee?
+     *
+     * Uses the SAME predicate that decides who gets NOTIFIED for a stage
+     * (notifyRoleForEmployee in admin_class.php): an active user holding the
+     * stage's role, either in the employee's own department or unscoped
+     * (department_id NULL/0 = covers every department). Keeping the two in step
+     * matters — a stage we consider "staffed" but never notify would strand the
+     * request in silence.
+     */
+    function leave_stage_has_approver(mysqli $db, string $stageKey, int $employee_id): bool
+    {
+        $stages = LEAVE_APPROVAL_STAGES;
+        if (!isset($stages[$stageKey])) return false;
+        $role = (int) $stages[$stageKey]['role'];
+
+        $dept = 0;
+        $er = $db->query("SELECT department_id FROM employee WHERE id = " . (int) $employee_id);
+        if ($er && ($e = $er->fetch_assoc())) $dept = (int) $e['department_id'];
+
+        $r = $db->query(
+            "SELECT 1 FROM users
+             WHERE role = $role AND status = 1
+               AND (department_id = $dept OR department_id IS NULL OR department_id = 0)
+             LIMIT 1"
+        );
+        return (bool) ($r && $r->num_rows);
+    }
+
+    /**
+     * Resolve every `optional` stage that has no approver for this employee and
+     * stamp it approved with an auto-skip remark, so the chain moves straight to
+     * the next real approver.
+     *
+     * Resolved ONCE, at filing time, deliberately: the alternative — deciding it
+     * live on every read — would silently re-route a request in flight the
+     * moment someone is hired or reassigned. Stamping it makes the skip a fact
+     * of record that shows up in the timeline like any other decision.
+     *
+     * Returns the labels of the stages that were skipped.
+     */
+    function leave_autoskip_stages(mysqli $db, int $leave_id, int $employee_id): array
+    {
+        $skipped = [];
+        foreach (LEAVE_APPROVAL_STAGES as $key => $cfg) {
+            if (empty($cfg['optional'])) continue;
+            if (leave_stage_has_approver($db, $key, $employee_id)) continue;
+
+            $note = $db->real_escape_string(
+                'Auto-skipped — no ' . $cfg['label'] . ' assigned to this department.'
+            );
+            $db->query(
+                "UPDATE leave_requests
+                 SET {$key}_status = 1, {$key}_by = NULL,
+                     {$key}_remarks = '$note', {$key}_at = NOW()
+                 WHERE id = " . (int) $leave_id
+            );
+            $skipped[] = $cfg['label'];
+        }
+        return $skipped;
+    }
+
+    /**
+     * The stage a freshly filed request is actually waiting on, and its config —
+     * i.e. the first stage that was not auto-skipped. Returns [key, cfg] or
+     * [null, null] when every stage got skipped (nobody left to notify).
+     */
+    function leave_first_open_stage(mysqli $db, int $leave_id): array
+    {
+        $row = $db->query("SELECT * FROM leave_requests WHERE id = " . (int) $leave_id);
+        $row = $row ? $row->fetch_assoc() : null;
+        if (!$row) return [null, null];
+        $key = leave_current_stage($row);
+        return $key === null ? [null, null] : [$key, LEAVE_APPROVAL_STAGES[$key]];
     }
 }
 

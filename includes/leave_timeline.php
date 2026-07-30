@@ -72,7 +72,17 @@ if (!function_exists('leave_timeline_html')) {
             $remark = trim((string) ($row[$key . '_remarks'] ?? ''));
             $label  = $esc($s['label']);
 
-            if ($status === 1) {          // approved
+            // An auto-skipped stage is stored as approved so the chain advances,
+            // but it has no approver — showing it as "Approved" would credit a
+            // decision nobody made. A real approval always stamps {key}_by.
+            $skipped = ($status === 1 && ($row[$key . '_by'] ?? null) === null && $remark !== '');
+
+            if ($skipped) {
+                $dot  = '<span class="lvtl-dot" style="background:#eceff1;color:#78909c;"><i class="ri-skip-forward-line"></i></span>';
+                $line = '<span class="lvtl-stage" style="color:#78909c;">' . $label . '</span> '
+                      . '<span class="lvtl-name" style="color:#78909c;">Skipped</span>'
+                      . '<div class="lvtl-remark"><i class="ri-information-line"></i> ' . $esc($remark) . '</div>';
+            } elseif ($status === 1) {    // approved
                 $dot  = '<span class="lvtl-dot ok"><i class="ri-check-line"></i></span>';
                 $line = '<span class="lvtl-stage">' . $label . '</span> '
                       . '<span class="lvtl-name">Approved' . ($name ? ' · ' . $esc($name) : '') . '</span>'

@@ -3155,6 +3155,10 @@ class Action
                             "undertime" => 0,
                             "under_time" => 0,
                             "rest_duty" => 0,
+                            // Worked day-fraction per date ('Y-m-d' => float). Mirrors what
+                            // goes into "present", so approved paid leave on a day that was
+                            // partly worked can be capped below (worked + leave <= 1 day).
+                            "worked_frac" => [],
                         ];
                         $ipresent++;
                     }
@@ -3185,6 +3189,9 @@ class Action
                     $grouped_data[$employee_id]["per_minute"] = $per_minute;
                     $grouped_data[$employee_id]["per_day"] = $per_day;
                     $grouped_data[$employee_id]["present"] += $days;
+                    // Same fraction, keyed by date — the paid-leave cap reads this.
+                    $grouped_data[$employee_id]["worked_frac"][$ymd] =
+                        ($grouped_data[$employee_id]["worked_frac"][$ymd] ?? 0) + $days;
                     $grouped_data[$employee_id]["overtime"] +=  $row['overtime'];
                     $grouped_data[$employee_id]["late_in_minutes"]  += $row['late'];
                     $grouped_data[$employee_id]["undertime"]  +=  $row['undertime'];
@@ -3240,6 +3247,10 @@ class Action
                                 $data['present'] += $data__detail['work_hours'] / $data__detail['day_hours'];
                                 // Count rest-day duty from cross-cluster attendance too.
                                 $d2ymd = date('Y-m-d', strtotime($data__detail['date_time']));
+                                // Keep the per-date worked fraction in step with "present"
+                                // so the paid-leave cap sees cross-cluster days too.
+                                $data['worked_frac'][$d2ymd] = ($data['worked_frac'][$d2ymd] ?? 0)
+                                    + $data__detail['work_hours'] / $data__detail['day_hours'];
                                 if ($this->isRestDay($restMap[$employee_id] ?? [], $d2ymd)) {
                                     $data['rest_duty'] = ($data['rest_duty'] ?? 0) + $data__detail['work_hours'] / $data__detail['day_hours'];
                                 }
@@ -3394,7 +3405,14 @@ class Action
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
                             $ymd = date('Y-m-d', $d);
                             if (isset($leaveMap[$employee_id][$ymd]) && !$this->isRestDay($restMap[$employee_id] ?? [], $ymd)) {
-                                $paid_leave += (float) $leaveMap[$employee_id][$ymd];
+                                // A day that was PARTLY WORKED can only take leave for the
+                                // remainder of itself. "present" is already a fraction
+                                // (work_hours / day_hours), so without this cap a half-day
+                                // worked plus a filed leave paid the same date more than
+                                // once — e.g. worked 0.52 + full-day leave 1.0 = 1.52 days.
+                                // Clamped here, never below zero, so it can only ever reduce.
+                                $worked = (float) ($data['worked_frac'][$ymd] ?? 0);
+                                $paid_leave += min((float) $leaveMap[$employee_id][$ymd], max(0, 1 - $worked));
                             }
                         }
                     }
@@ -7117,17 +7135,23 @@ class Action
         }
 
         if ($stmt->execute()) {
+            $skipped = [];
             if ($id === 0) {
                 $new_id = $this->db->insert_id;
+                // Resolve optional stages with no approver in this department
+                // BEFORE notifying, so the alert goes to whoever is actually next.
+                $skipped = leave_autoskip_stages($this->db, (int) $new_id, $employee_id);
                 $info = $this->leaveInfo($new_id);
-                // Notify the FIRST approver in the configured chain (scoped to the
-                // employee's department) that a new request needs their review.
-                $stages   = leave_stages();
-                $firstKey = array_key_first($stages);
-                $firstCfg = $stages[$firstKey];
-                $this->notifyRoleForEmployee((int) $firstCfg['role'], $employee_id, 'New leave request', "{$info['emp']} filed a {$info['type']} ({$info['dur']} day/s). Needs {$firstCfg['label']} approval.", $firstCfg['icon'] ?? 'ri-calendar-event-line', 'warning', 'index.php?page=leaves');
+                [$firstKey, $firstCfg] = leave_first_open_stage($this->db, (int) $new_id);
+                if ($firstCfg) {
+                    $this->notifyRoleForEmployee((int) $firstCfg['role'], $employee_id, 'New leave request', "{$info['emp']} filed a {$info['type']} ({$info['dur']} day/s). Needs {$firstCfg['label']} approval.", $firstCfg['icon'] ?? 'ri-calendar-event-line', 'warning', 'index.php?page=leaves');
+                }
             }
-            return ['result' => true, 'message' => $id === 0 ? 'Leave request filed. Sent to HR for review.' : 'Leave request updated.'];
+            // Non-blocking: overlapping attendance is legitimate (half-day, or
+            // leave taken mid-shift), so the filer is told rather than stopped.
+            $msg = $id === 0 ? 'Leave request filed. Sent to HR for review.' : 'Leave request updated.';
+            if ($skipped) $msg .= ' Skipped: ' . implode(', ', $skipped) . ' (none assigned to this department).';
+            return ['result' => true, 'message' => $msg . leave_attendance_note($this->db, $employee_id, $days)];
         }
         return ['result' => false, 'message' => $stmt->error];
     }

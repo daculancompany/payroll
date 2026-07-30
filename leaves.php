@@ -48,8 +48,13 @@ $where_sql = 'WHERE 1=1'
     . $lv_scope_dept;
 
 // Render an approval-stage badge with approver + reason tooltip.
-function stageBadge($status, $by_name, $remarks, $at)
+function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
 {
+    // Auto-skipped stage: stored approved so the chain advances, but with no
+    // approver. Distinguished so the column never credits a decision to nobody.
+    if ($status == 1 && !$by_id && $remarks) {
+        return '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" title="' . htmlspecialchars($remarks) . '"><i class="ri-skip-forward-line me-1"></i>Skipped</span>';
+    }
     if ($status == 1) {
         $t = 'Approved' . ($by_name ? ' by ' . htmlspecialchars($by_name) : '') . ($at ? ' • ' . date('M d, Y', strtotime($at)) : '');
         return '<span class="badge bg-success-subtle text-success border border-success-subtle" title="' . $t . '"><i class="ri-check-line me-1"></i>Approved</span>'
@@ -230,7 +235,7 @@ function stageBadge($status, $by_name, $remarks, $at)
                                             </td>
                                             <td style="max-width:200px;"><span class="text-muted"><?= nl2br(htmlspecialchars($row['reason'] ?? '')) ?></span></td>
                                             <?php foreach ($leave_stage_defs as $skey => $sdef): ?>
-                                            <td class="text-center"><?= stageBadge($row[$skey . '_status'], $row[$skey . '_name'] ?? '', $row[$skey . '_remarks'], $row[$skey . '_at']) ?></td>
+                                            <td class="text-center"><?= stageBadge($row[$skey . '_status'], $row[$skey . '_name'] ?? '', $row[$skey . '_remarks'], $row[$skey . '_at'], (int) ($row[$skey . '_by'] ?? 0)) ?></td>
                                             <?php endforeach; ?>
                                             <td class="text-center"><span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span></td>
                                             <td class="text-center">

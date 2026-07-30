@@ -39,6 +39,30 @@
                     </a>
                 </li>
 
+                <?php elseif (is_leave_approver($login_role)): ?>
+                <!-- ═══ SUPERVISOR / DEPARTMENT HEAD ═══
+                     Leave-only slice: their department's dashboard and the
+                     requests awaiting their approval. No DTR, no payroll, no
+                     salary. index.php enforces the same list server-side, so
+                     this menu is convenience, not the security boundary. -->
+                <li class="menu-title"><span>Leave Management</span></li>
+
+                <li class="nav-item">
+                    <a href="leave-dashboard" class="nav-link menu-link <?= $page === 'leave-dashboard' ? 'active' : '' ?>">
+                        <i class="ri-dashboard-fill"></i> <span>Leave Dashboard</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="leaves" class="nav-link menu-link <?= $page === 'leaves' ? 'active' : '' ?>">
+                        <i class="ri-file-list-3-line"></i> <span>Leave Requests</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a href="calendar" class="nav-link menu-link <?= $page === 'calendar' ? 'active' : '' ?>">
+                        <i class="ri-calendar-2-line"></i> <span>Holiday Calendar</span>
+                    </a>
+                </li>
+
                 <?php else: ?>
 
                 <?php if ($login_role !== 6 && $login_role !== 7 && !is_timekeeper($login_role)): ?>
@@ -122,7 +146,7 @@
                 </li>
 
                 <!-- Leave sub-menu -->
-                <?php $lv_pages = ['leaves','leave_types','leave_balances','leave-balances-report','calendar']; ?>
+                <?php $lv_pages = ['leave-dashboard','leaves','leave_types','leave_balances','leave-balances-report','calendar']; ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= in_array($page, $lv_pages) ? 'active' : '' ?>"
                         href="#sidebarLeave" data-bs-toggle="collapse" role="button"
@@ -131,6 +155,11 @@
                     </a>
                     <div class="menu-dropdown collapse <?= in_array($page, $lv_pages) ? 'show' : '' ?>" id="sidebarLeave">
                         <ul class="nav nav-sm flex-column">
+                            <li class="nav-item">
+                                <a href="leave-dashboard" class="nav-link <?= $page === 'leave-dashboard' ? 'active' : '' ?>">
+                                    <i class="ri-dashboard-3-line me-1"></i>Leave Dashboard
+                                </a>
+                            </li>
                             <li class="nav-item">
                                 <a href="leaves" class="nav-link <?= $page === 'leaves' ? 'active' : '' ?>">
                                     <i class="ri-file-list-3-line me-1"></i>Leave Requests

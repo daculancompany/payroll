@@ -162,6 +162,28 @@ if ($action === 'filter_opts') {
     $r2 = $q2->get_result();
     while ($row = $r2->fetch_assoc()) $out['positions'][] = ['id' => (int)$row['id'], 'name' => $row['name']];
 
+    // Work schedules actually assigned to someone in this batch, over the batch
+    // period. Same rule the schedule filter below uses, so the dropdown can
+    // never offer an option that returns nothing.
+    $out['schedules'] = [];
+    $q3 = $conn->prepare("SELECT DISTINCT ws.id, ws.description AS name, ws.start_time, ws.end_time
+                          FROM DTR_details d
+                          INNER JOIN employee_schedules es ON es.employee_id = d.employee_id
+                               AND es.effective_from <= ?
+                               AND (es.effective_to IS NULL OR es.effective_to >= ?)
+                          INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+                          WHERE d.ddtr_id = ? ORDER BY ws.description");
+    $q3->bind_param('ssi', $batch['date_to'], $batch['date_from'], $ddtrId);
+    $q3->execute();
+    $r3 = $q3->get_result();
+    while ($row = $r3->fetch_assoc()) {
+        $out['schedules'][] = [
+            'id'   => (int)$row['id'],
+            'name' => $row['name'] . ' (' . date('g:i A', strtotime($row['start_time']))
+                    . '–' . date('g:i A', strtotime($row['end_time'])) . ')',
+        ];
+    }
+
     header('Content-Type: application/json');
     echo json_encode(['result' => true] + $out);
     exit;
@@ -212,6 +234,51 @@ if ($action === 'docs') {
     if ($depF > 0) $where .= " AND e.department_id = $depF";
     $posF = (int)($_GET['pos'] ?? 0);
     if ($posF > 0) $where .= " AND e.position_id = $posF";
+
+    // Batch period, escaped once — several of the filters below are period-scoped.
+    $bF = $conn->real_escape_string((string)($batch['date_from'] ?? ''));
+    $bT = $conn->real_escape_string((string)($batch['date_to'] ?? ''));
+
+    // Schedule filter: employees on a given work schedule at any point in the
+    // batch period. An employee whose schedule changed mid-period matches both.
+    $schF = (int)($_GET['sch'] ?? 0);
+    if ($schF > 0 && $bF !== '' && $bT !== '') {
+        $where .= " AND e.id IN (SELECT employee_id FROM employee_schedules
+                                 WHERE schedule_id = $schF AND effective_from <= '$bT'
+                                   AND (effective_to IS NULL OR effective_to >= '$bF'))";
+    }
+
+    // "Has …" filters — employees with at least one day of the given kind.
+    // Unlike the exception flags above these are not problems, they are things
+    // a reviewer often wants to isolate (pay OT, check leave, audit night diff).
+    $hasF = (string)($_GET['has'] ?? '');
+    $dayConds = [
+        'ot'   => "overtime > 0",
+        'late' => "late > 0",
+        'ut'   => "undertime > 0",
+        'nsd'  => "nsd_hours > 0",
+        'hol'  => "day_type <> 'regular'",
+    ];
+    if (isset($dayConds[$hasF])) {
+        $where .= " AND e.id IN (SELECT employee_id FROM DTR_details
+                                 WHERE ddtr_id = $idInt AND {$dayConds[$hasF]})";
+    } elseif ($hasF === 'leave' && $bF !== '') {
+        $where .= " AND e.id IN (SELECT employee_id FROM leave_requests
+                                 WHERE status IN (0,1) AND date_from <= '$bT' AND date_to >= '$bF')";
+    } elseif ($hasF === 'req' && $bF !== '') {
+        $where .= " AND e.id IN (SELECT employee_id FROM attendance_requests
+                                 WHERE status IN (0,1) AND request_date BETWEEN '$bF' AND '$bT')";
+    } elseif ($hasF === 'lvclash') {
+        // Worked hours AND an approved leave on the SAME day. Payroll caps the
+        // two at one day, but the reviewer should still eyeball these — it is
+        // usually either a half-day that was never flagged as one, or a leave
+        // filed for a day the employee actually came in.
+        $where .= " AND e.id IN (SELECT d3.employee_id FROM DTR_details d3
+                                 INNER JOIN leave_requests lr
+                                    ON lr.employee_id = d3.employee_id AND lr.status = 1
+                                   AND d3.date_time BETWEEN lr.date_from AND lr.date_to
+                                 WHERE d3.ddtr_id = $idInt AND d3.work_hours > 0)";
+    }
 
     // Activity filters: employees with internal admin notes or a message thread
     // in this batch. Guarded with table-existence so older DBs don't error.

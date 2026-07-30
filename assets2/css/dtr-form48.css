@@ -25,7 +25,15 @@
 .dtrf48-table td { border: 1px solid #1a1a1a; text-align: center; padding: 2.5px 3px; }
 .dtrf48-table th { font-weight: 700; }
 .dtrf48-table th.x-col { white-space: nowrap; }
-.dtrf48-table td.day { font-weight: 700; width: 52px; white-space: nowrap; position: relative; }
+/* Day column — wide enough that a marker chip never crowds the number.
+   The left/right padding is SYMMETRIC and sized to the chip gutter, so the
+   number centers on the same x whether or not the day carries a badge. */
+.dtrf48-table td.day {
+    font-weight: 700;
+    width: 76px; min-width: 76px;
+    padding-left: 22px; padding-right: 22px;
+    white-space: nowrap; position: relative;
+}
 .dtrf48-table tr.wkend td { background: #f4f1e7; }
 .dtrf48-table tr.absent td:not(.day) { color: #b9b3a2; }
 .dtrf48-table td.ut   { width: 40px; }
@@ -64,10 +72,18 @@
     content: ''; position: absolute; left: calc(100% + 3px); top: 50%; transform: translateY(-50%);
     border: 5px solid transparent; border-right-color: #263733; z-index: 60; pointer-events: none;
 }
-/* Marked days: the number stays perfectly centered; chips overlay the cell's
-   top-right corner without displacing it */
-.dtrf48-table td.day .day-no { display: inline-block; }
-.dtrf48-table td.day .day-marks { position: absolute; top: 1px; right: 1px; display: inline-flex; gap: 1px; }
+/* Marked days: the number stays perfectly centered; chips ride in the right
+   gutter (vertically centered) and never displace it. Because the chips are
+   absolutely positioned they are out of flow, so a day with a badge and a day
+   without one put their number at exactly the same x. */
+.dtrf48-table td.day .day-no { display: block; text-align: center; }
+.dtrf48-table td.day .day-marks {
+    position: absolute; top: 50%; right: 3px; transform: translateY(-50%);
+    display: inline-flex; gap: 2px;
+}
+/* Two or more chips on one day (e.g. holiday + leave) shrink slightly so they
+   stay inside the gutter instead of reaching into the number. */
+.dtrf48-table td.day .day-marks .dm:not(:only-child) { min-width: 13px; padding: 0 2px; }
 .dtrf48 .dm-hol, .dtrf48-legend .dm-hol { background: #fdecea; color: #c62828; border: 1px solid #f5c6cb; }
 .dtrf48 .dm-spc, .dtrf48-legend .dm-spc { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
 .dtrf48 .dm-lv,  .dtrf48-legend .dm-lv  { background: #e3f2fd; color: #1565c0; border: 1px solid #a8cff5; }
@@ -100,9 +116,12 @@
 .dtrf48.is-compact .p-title { font-size: 17px; margin: 3px 0 11px; }
 .dtrf48.is-compact .dtrf48-table { font-size: 10.5px; }
 .dtrf48.is-compact .p-sign { margin-top: 18px; }
+/* Keep the gutters symmetric when the column narrows, so the number stays centered. */
+.dtrf48.is-compact .dtrf48-table td.day { width: 68px; min-width: 68px; padding-left: 19px; padding-right: 19px; }
 
 @media (max-width: 575.98px) {
     .dtrf48 .p-name { margin: 0 6px; padding: 0 6px 2px; }
     .dtrf48-table { font-size: 9.5px; }
     .dtrf48-table th, .dtrf48-table td { padding: 2px 2px; }
+    .dtrf48-table td.day { width: 58px; min-width: 58px; padding-left: 16px; padding-right: 16px; }
 }

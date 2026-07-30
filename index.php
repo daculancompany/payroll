@@ -912,6 +912,7 @@ function getRole($login_role)
                 'payroll-register'     => 'payroll-register',
                 'employee-masterlist'  => 'employee-masterlist',
                 'attendance-summary'   => 'attendance-summary',
+                'leave-dashboard'      => 'leave-dashboard',
                 'leaves'               => 'leaves',
                 'leave_types'          => 'leave_types',
                 'leave_balances'       => 'leave_balances',
@@ -947,6 +948,15 @@ function getRole($login_role)
             $tk = is_timekeeper($login_role);
             if ($tk && !timekeeper_page_allowed($page)) {
                 $page = 'attendance-summary';
+            }
+
+            // Supervisor (10) / Department Head (8): leave-only slice. Anything
+            // outside LEAVE_APPROVER_ALLOWED_PAGES — DTR, payroll, employee
+            // details, reports, settings, and the default 'home' dashboard —
+            // lands on the leave dashboard instead. This is the server-side
+            // gate; hiding the menu items alone would not stop a typed URL.
+            if (is_leave_approver($login_role) && !leave_approver_page_allowed($page)) {
+                $page = 'leave-dashboard';
             }
 
             if ($tk && $page === 'employee-details') {

@@ -140,7 +140,7 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/icons.min.css" rel="stylesheet">
     <!-- Global DTR (Form 48) template — shared with the employee portal -->
-    <link href="assets2/css/dtr-form48.css" rel="stylesheet">
+    <link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
     <script src="assets2/js/dtr-form48.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -509,6 +509,30 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-flag { display:inline-flex; align-items:center; gap:3px; padding:1px 7px; border-radius:10px; font-size:9px; font-weight:800; }
 .ddv-flag.block { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
 .ddv-flag.info  { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
+/* Day carries BOTH worked hours and a leave request — payroll caps the two at
+   one day, so the reviewer should see it before approving. Blue, matching the
+   leave marker (.dm-lv) on the Form 48 sheet. */
+.ddv-flag.leave { background:#e3f2fd; color:#1565c0; border:1px solid #a8cff5; }
+
+/* ── Cross-employee bulk selection ── */
+.ddv-bulk {
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    margin:0 9px 6px; padding:7px 9px; border-radius:8px;
+    background:var(--app-primary-soft, #f3effa); border:1px solid var(--app-primary-border, #ddd2f0);
+}
+.ddv-bulk-txt  { font-size:10.5px; font-weight:700; color:#4e2b8e; }
+.ddv-bulk-txt b { font-size:12px; }
+.ddv-bulk-acts { margin-left:auto; display:flex; gap:4px; }
+/* The employee card is itself a <button>, so the tick is a role="checkbox"
+   span (same trick the chat button uses) — a nested <input> would be invalid. */
+.ddv-item-chk {
+    flex-shrink:0; display:inline-flex; align-items:center; justify-content:center;
+    width:18px; height:18px; border-radius:4px; cursor:pointer;
+    color:#b3adc2; font-size:15px; line-height:1;
+}
+.ddv-item-chk:hover { color:var(--app-primary, #673bb6); }
+.ddv-item-chk.on    { color:var(--app-primary, #673bb6); }
+.ddv-item.is-picked { background:var(--app-primary-soft, #f3effa); }
 .ddv-rec-note {
     margin-top:5px; padding:4px 8px; border-radius:6px; font-size:10px; font-weight:600;
     background:#fdf4f4; color:#a33; border:1px dashed #e8b8b8;
@@ -793,7 +817,32 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
                     <div class="ddv-fp-lbl">Employee</div>
                     <select id="ddv-f-dep" class="ddv-fp-select" onchange="filterSel('dep', this.value)"><option value="">Department: All</option></select>
                     <select id="ddv-f-pos" class="ddv-fp-select" onchange="filterSel('pos', this.value)"><option value="">Position: All</option></select>
+                    <select id="ddv-f-sch" class="ddv-fp-select" onchange="filterSel('sch', this.value)"><option value="">Schedule: All</option></select>
+                    <div class="ddv-fp-lbl">Has</div>
+                    <div class="ddv-flag-chips" id="ddv-has-chips" title="Click again to clear">
+                        <button type="button" data-has="ot"><i class="ri-sun-line"></i> Overtime</button>
+                        <button type="button" data-has="leave"><i class="ri-calendar-check-line"></i> Leave</button>
+                        <button type="button" data-has="late"><i class="ri-alarm-warning-line"></i> Late</button>
+                        <button type="button" data-has="ut"><i class="ri-logout-circle-line"></i> Undertime</button>
+                        <button type="button" data-has="nsd"><i class="ri-moon-line"></i> Night diff</button>
+                        <button type="button" data-has="hol"><i class="ri-flag-line"></i> Holiday duty</button>
+                        <button type="button" data-has="req"><i class="ri-file-list-3-line"></i> Request</button>
+                        <button type="button" data-has="lvclash" title="Worked hours AND an approved leave on the same day"><i class="ri-error-warning-line"></i> Leave clash</button>
+                    </div>
                 </div>
+            </div>
+            <!-- Cross-employee bulk bar: shown only once employees are ticked, so
+                 it never takes room from the list when there is nothing to do. -->
+            <div class="ddv-bulk" id="ddv-bulk" style="display:none;">
+                <span class="ddv-bulk-txt">
+                    <b id="ddv-bulk-emps">0</b> employee/s ·
+                    <b id="ddv-bulk-recs">0</b> pending record/s
+                </span>
+                <span class="ddv-bulk-acts">
+                    <button type="button" class="ddv-mini-btn ok" onclick="approvePicked(1)" title="Approve every pending record of the ticked employees"><i class="ri-check-double-line"></i> Approve</button>
+                    <button type="button" class="ddv-mini-btn no" onclick="approvePicked(2)" title="Disapprove every pending record of the ticked employees"><i class="ri-close-line"></i> Reject</button>
+                    <button type="button" class="ddv-mini-btn" onclick="clearPicked()" title="Clear selection"><i class="ri-eraser-line"></i></button>
+                </span>
             </div>
             <div class="ddv-list" id="ddv-list">
                 <div class="ddv-loader show"><span class="ddv-ring"></span> Loading...</div>
@@ -1012,7 +1061,10 @@ const OT_HOURS  = <?= (float)DTR_HIGH_OT_HOURS ?>;
 const MIN_DAYS  = <?= (int)$minDays ?>;
 const ME        = <?= json_encode($loginName) ?>;         // for instant audit lines
 
-const st = { page: 0, size: 20, q: '', flag: '', status: '', dep: '', pos: '', act: '', erv: '', total: 0, emps: [], sel: -1, seq: 0, chatRec: null };
+// picked = employee ids ticked for a cross-employee bulk decision. Scoped to
+// the loaded page (st.emps); loadPage clears it so a page change can never act
+// on employees you can no longer see.
+const st = { page: 0, size: 20, q: '', flag: '', status: '', dep: '', pos: '', sch: '', has: '', act: '', erv: '', total: 0, emps: [], sel: -1, seq: 0, chatRec: null, picked: new Set() };
 
 const $id = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1028,6 +1080,8 @@ async function loadPage(keepSel) {
             + (st.status ? '&status=' + st.status : '')
             + (st.dep ? '&dep=' + st.dep : '')
             + (st.pos ? '&pos=' + st.pos : '')
+            + (st.sch ? '&sch=' + st.sch : '')
+            + (st.has ? '&has=' + st.has : '')
             + (st.act ? '&act=' + st.act : '')
             + (st.erv !== '' ? '&erv=' + st.erv : '');
         const r = await fetch(u);
@@ -1037,7 +1091,7 @@ async function loadPage(keepSel) {
         st.total = j.total;
         st.emps  = j.employees || [];
         st.sel   = st.emps.length ? Math.min(keepSel ?? 0, st.emps.length - 1) : -1;
-        renderList(); renderPager(); renderSelected();
+        renderList(); renderPager(); renderSelected(); syncBulkBar();
     } catch (e) {
         if (seq !== st.seq) return;
         $id('ddv-list').innerHTML = '<div class="ddv-list-empty">Could not load employees.<br>' + esc(e.message) + '</div>';
@@ -1096,7 +1150,16 @@ function renderList() {
             marks.push(`<span role="button" tabindex="0" class="ddv-item-msg${cv.st === 2 ? ' disp' : ''}${cv.new ? ' new' : ''}"
                 data-convo="${e.id}" title="${cv.new ? 'UNREAD — ' : ''}${cv.st === 2 ? 'Disputed' : 'Confirmed'} their DTR with a message — click to read"><i class="ri-chat-3-fill"></i></span>`);
         }
-        return `<button type="button" class="ddv-item ${i === st.sel ? 'active' : ''}" data-i="${i}">
+        // Tick only offered where there is something to decide and the user may
+        // decide it — an employee with no pending records can't be bulk-approved.
+        const pickable = CAN_EDIT && e.pend > 0;
+        const picked   = st.picked.has(e.id);
+        const chk = pickable
+            ? `<span role="checkbox" aria-checked="${picked}" tabindex="0" class="ddv-item-chk${picked ? ' on' : ''}"
+                     data-pick="${e.id}" title="Select for bulk approve/reject (${e.pend} pending)"><i class="${picked ? 'ri-checkbox-fill' : 'ri-checkbox-blank-line'}"></i></span>`
+            : '<span class="ddv-item-chk" style="visibility:hidden;"></span>';
+        return `<button type="button" class="ddv-item ${i === st.sel ? 'active' : ''}${picked ? ' is-picked' : ''}" data-i="${i}">
+            ${chk}
             <span class="ddv-thumb ${dot}"><span></span><span></span><span></span><span></span></span>
             <span style="min-width:0;">
                 <span class="ddv-item-name">${esc(e.lastname)}, ${esc(e.firstname)}</span>
@@ -1107,6 +1170,13 @@ function renderList() {
     }).join('');
 }
 $id('ddv-list').addEventListener('click', ev => {
+    // Tick toggles bulk selection without selecting/opening the card.
+    const pk = ev.target.closest('[data-pick]');
+    if (pk) {
+        ev.stopPropagation();
+        togglePick(parseInt(pk.dataset.pick, 10));
+        return;
+    }
     // Chat button opens the sign-off message without selecting the card.
     const cv = ev.target.closest('[data-convo]');
     if (cv) {
@@ -1346,6 +1416,14 @@ function renderRecords(e) {
                 const m = FLAG_META[f];
                 return m ? `<span class="ddv-flag ${m.cls}"><i class="${m.icon}"></i>${m.lbl}</span>` : '';
             }).join('');
+            // Leave-vs-attendance conflict: this date carries a leave request AND
+            // real worked hours. Legitimate (half-day, or leave taken mid-shift),
+            // but payroll caps worked + leave at one day — so show it here, where
+            // the record is actually approved, not just as an "L" on the sheet.
+            const lv = ((e.marks || {})[date] || []).find(m => m.k === 'leave');
+            const lvFlag = (lv && Number(r.wh) > 0)
+                ? `<span class="ddv-flag leave" title="${esc(String(lv.lbl || 'Leave').toUpperCase())}${lv.half ? ' · half day' : ''} — this day also has ${Number(r.wh).toFixed(2)} worked hours; payroll pays worked + leave capped at one day"><i class="ri-calendar-check-line"></i>${lv.s === 1 ? 'Also on leave' : 'Leave pending'}</span>`
+                : '';
             const note = (r.status === 2 && r.note)
                 ? `<div class="ddv-rec-note"><i class="ri-chat-1-line"></i> ${esc(r.note)}</div>` : '';
             const audit = (r.status !== 0 && r.by)
@@ -1359,7 +1437,7 @@ function renderRecords(e) {
             html += `<div class="ddv-rec ${cls}" id="rec-${r.id}">
                 <div class="ddv-rec-top"><span class="ddv-rec-date"><i class="ri-calendar-event-line" style="color:#6642aa;"></i> ${dLbl}</span>${badge}</div>
                 <div class="ddv-rec-logs">${logs}</div>
-                ${flags ? `<div class="ddv-rec-flags">${flags}</div>` : ''}
+                ${(flags || lvFlag) ? `<div class="ddv-rec-flags">${flags}${lvFlag}</div>` : ''}
                 ${note}${audit}
                 <div class="ddv-rec-stats">
                     <span>Hrs <b>${Number(r.wh).toFixed(2)}</b></span>
@@ -1417,7 +1495,7 @@ function recomputeEmp(e) {
         }
     }
 }
-function rerenderAll() { renderList(); renderSelected(); refreshBatch(); }
+function rerenderAll() { renderList(); renderSelected(); refreshBatch(); syncBulkBar(); }
 
 // ── Actions (same ajax.php endpoints as the old table screen) ────────────────
 function decideRecs(ids, decision, confirmText) {
@@ -1463,6 +1541,77 @@ function decideRecs(ids, decision, confirmText) {
             error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
         });
     });
+}
+
+// ── Cross-employee bulk approve / reject ─────────────────────────────────────
+// Works on the PENDING records of every ticked employee. The server already
+// accepts an explicit id list (decide_dtr_details), so this only has to gather
+// the ids — the decision, the required reject reason and the audit stamp all
+// go through the same decideRecs path a single record uses.
+function togglePick(empId) {
+    if (st.picked.has(empId)) st.picked.delete(empId); else st.picked.add(empId);
+    renderList();
+    syncBulkBar();
+}
+
+function clearPicked() {
+    st.picked.clear();
+    renderList();
+    syncBulkBar();
+}
+
+// The tick is a role="checkbox" span, so Space/Enter has to be wired by hand.
+$id('ddv-list').addEventListener('keydown', ev => {
+    const pk = ev.target.closest && ev.target.closest('[data-pick]');
+    if (!pk || (ev.key !== ' ' && ev.key !== 'Enter')) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    togglePick(parseInt(pk.dataset.pick, 10));
+});
+
+// Still-undecided record ids for one employee.
+function pendingRecIds(e) {
+    const ids = [];
+    Object.values(e.days || {}).forEach(d => (d.recs || []).forEach(r => {
+        if (r.status !== 1 && r.status !== 2) ids.push(r.id);
+    }));
+    return ids;
+}
+
+// Pending record ids across the ticked employees, in list order.
+function pickedRecIds() {
+    return st.emps.filter(e => st.picked.has(e.id)).reduce((a, e) => a.concat(pendingRecIds(e)), []);
+}
+
+// Self-cleaning: forgets employees that left the page or ran out of pending
+// records, so the bar can never offer an action with nothing behind it (and a
+// finished bulk approve dismisses itself).
+function syncBulkBar() {
+    const bar = $id('ddv-bulk');
+    if (!bar) return;
+    Array.from(st.picked).forEach(id => {
+        const e = st.emps.find(x => x.id === id);
+        if (!e || !pendingRecIds(e).length) st.picked.delete(id);
+    });
+    const n = st.picked.size;
+    bar.style.display = n ? 'flex' : 'none';
+    if (!n) return;
+    $id('ddv-bulk-emps').textContent = n;
+    $id('ddv-bulk-recs').textContent = pickedRecIds().length;
+}
+
+function approvePicked(decision) {
+    const ids = pickedRecIds();
+    if (!ids.length) {
+        return Swal.fire({ icon: 'info', title: 'Nothing pending',
+            text: 'The selected employee(s) have no pending records left.' });
+    }
+    const names = st.emps.filter(e => st.picked.has(e.id))
+        .map(e => `${e.lastname}, ${e.firstname}`);
+    const who = names.length <= 3 ? names.join('; ') : `${names.slice(0, 3).join('; ')} and ${names.length - 3} more`;
+    const verb = decision === 1 ? 'approved' : 'disapproved';
+    decideRecs(ids, decision,
+        `${ids.length} pending record(s) across ${names.length} employee(s) will be ${verb}: ${who}.`);
 }
 
 function approveEmployee() {
@@ -1777,7 +1926,7 @@ document.addEventListener('click', ev => {
 
 // Active-filter badge on the funnel icon
 function updateFilterCount() {
-    const n = [st.status, st.flag, st.dep, st.pos, st.act].filter(Boolean).length + (st.erv !== '' ? 1 : 0);
+    const n = [st.status, st.flag, st.dep, st.pos, st.sch, st.has, st.act].filter(Boolean).length + (st.erv !== '' ? 1 : 0);
     const b = $id('ddv-filter-count');
     b.style.display = n ? 'flex' : 'none';
     b.textContent = n;
@@ -1793,15 +1942,26 @@ function filterSel(key, val) {
 }
 
 function resetFilters() {
-    st.status = st.flag = st.dep = st.pos = st.act = st.erv = '';
+    st.status = st.flag = st.dep = st.pos = st.sch = st.has = st.act = st.erv = '';
     document.querySelectorAll('#ddv-status-seg button').forEach(x => x.classList.toggle('on', x.dataset.st === ''));
-    document.querySelectorAll('#ddv-flag-chips button').forEach(x => x.classList.remove('on'));
+    document.querySelectorAll('#ddv-flag-chips button, #ddv-has-chips button').forEach(x => x.classList.remove('on'));
     document.querySelectorAll('#ddv-act-chips button, #ddv-erv-chips button').forEach(x => x.classList.remove('on'));
-    ['ddv-f-dep', 'ddv-f-pos'].forEach(i => { $id(i).value = ''; });
+    ['ddv-f-dep', 'ddv-f-pos', 'ddv-f-sch'].forEach(i => { $id(i).value = ''; });
     st.page = 0;
     loadPage();
     updateFilterCount();
 }
+
+// ── "Has" chips (OT / leave / late / … — single-select, click again to clear) ─
+$id('ddv-has-chips').addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    st.has = (st.has === b.dataset.has) ? '' : b.dataset.has;
+    document.querySelectorAll('#ddv-has-chips button').forEach(x => x.classList.toggle('on', x.dataset.has === st.has));
+    st.page = 0;
+    loadPage();
+    updateFilterCount();
+});
 
 // ── Activity chips (has notes / has messages — single-select) ────────────────
 $id('ddv-act-chips').addEventListener('click', ev => {
@@ -1838,6 +1998,7 @@ async function loadFilterOpts() {
         };
         fill('ddv-f-dep', j.departments, 'Department');
         fill('ddv-f-pos', j.positions, 'Position');
+        fill('ddv-f-sch', j.schedules, 'Schedule');
     } catch (e) { /* filters simply stay at "All" */ }
 }
 loadFilterOpts();

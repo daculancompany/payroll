@@ -474,10 +474,14 @@ if ($latest) {
 // installed app on an old portal-mobile.css for as long as the browser kept
 // its copy — the payslip viewer and other sheets rendered with stale rules.
 // filemtime moves on every edit, so a deploy can never serve a stale asset.
-function av($path)
-{
-    $t = @filemtime(__DIR__ . '/' . $path);
-    return $path . '?v=' . ($t ?: '1');
+// Now defined globally in db_connect.php so the admin pages get it too;
+// kept guarded here in case this file is ever loaded standalone.
+if (!function_exists('av')) {
+    function av($path)
+    {
+        $t = @filemtime(__DIR__ . '/' . $path);
+        return $path . '?v=' . ($t ?: '1');
+    }
 }
 
 function n2($v) { return number_format((float)$v, 2); }

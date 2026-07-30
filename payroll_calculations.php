@@ -388,7 +388,7 @@ $refund_names = [];   // refund id => display name
     <link href="assets/css/icons.min.css" rel="stylesheet">
     <link rel="stylesheet" href="assets2/css/my-style.css">
     <!-- Global DTR (Form 48) template — same sheet dtr-documents.php renders -->
-    <link href="assets2/css/dtr-form48.css" rel="stylesheet">
+    <link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
     <!-- defer keeps these off the critical render path so the loading overlay
          paints immediately instead of the page hanging blank on the CDN fetches.
          None of the inline scripts use jQuery at parse time, so order is safe. -->

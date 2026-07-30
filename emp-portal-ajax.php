@@ -533,9 +533,16 @@ switch ($action) {
         $durLabel = $is_half
             ? ($dur . ' day/s — ' . $half_per . ' half on ' . date('M j', strtotime($half_date)))
             : $dur . ' day/s';
-        // First approver in the configured chain (currently the Supervisor).
-        $stages     = leave_stages();
-        $firstCfg   = $stages[array_key_first($stages)];
+        // Skip optional stages this department has nobody for, THEN resolve who
+        // is actually first in line — otherwise the alert goes to a role that
+        // does not exist here and the request sits unseen.
+        $lv_skipped = leave_autoskip_stages($conn, (int) $new_id, (int) $emp_id);
+        [$firstKey, $firstCfg] = leave_first_open_stage($conn, (int) $new_id);
+        if (!$firstCfg) {   // every stage skipped — fall back to the last stage
+            $stages   = leave_stages();
+            $firstKey = array_key_last($stages);
+            $firstCfg = $stages[$firstKey];
+        }
         $firstRole  = (int) $firstCfg['role'];
         $firstLabel = $firstCfg['label'];
         $edept      = (int) ($conn->query("SELECT department_id FROM employee WHERE id = $emp_id")->fetch_assoc()['department_id'] ?? 0);
@@ -565,7 +572,12 @@ switch ($action) {
 
         echo json_encode([
             'result'  => true,
-            'message' => "Leave request submitted! Your {$firstLabel} will review it shortly.",
+            // Non-blocking heads-up when a chosen day already has attendance —
+            // legitimate for a half-day, but the employee should know payroll
+            // will cap worked + leave at one day (see leave_attendance_note).
+            'message' => "Leave request submitted! Your {$firstLabel} will review it shortly."
+                . ($lv_skipped ? ' (' . implode(', ', $lv_skipped) . ' skipped — none assigned to your department.)' : '')
+                . leave_attendance_note($conn, (int) $emp_id, $days),
             'leave_pending_count' => $leave_pending_count,
             'request' => [
                 'id' => (int) $new_id,

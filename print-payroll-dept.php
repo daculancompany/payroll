@@ -22,12 +22,14 @@ $stmt2 = $conn->prepare("
         SUM(pi.sunday_duty * pi.per_day)                              AS total_sunday,
         SUM((pi.per_day / 8 * 2.4) * pi.special_holiday)             AS total_special,
         SUM(pi.late * (pi.per_day / 480))                             AS total_late,
+        SUM(COALESCE(pi.nsd_amount, 0))                               AS total_nsd,
         SUM(
             ((pi.basic_pay + (pi.allowance_amount * pi.allowance_days) - (pi.absent * pi.per_day)) / 2)
             + (pi.ot * pi.ot_rate)
             + (pi.legal_holiday * pi.per_day)
             + (pi.sunday_duty * pi.per_day)
             + ((pi.per_day / 8 * 2.4) * pi.special_holiday)
+            + COALESCE(pi.nsd_amount, 0)
             - (pi.late * (pi.per_day / 480))
         )                                                             AS total_gross,
         SUM(COALESCE(pi.deduction_amount, 0))                         AS total_contributions,
@@ -49,7 +51,7 @@ $stmt2->bind_param("i", $id);
 $stmt2->execute();
 $dept_rows = $stmt2->get_result()->fetch_all(MYSQLI_ASSOC);
 
-$g = ['emp'=>0,'basic'=>0,'allow'=>0,'absent'=>0,'amount'=>0,'ot'=>0,'legal'=>0,'sunday'=>0,'special'=>0,'late'=>0,'gross'=>0,'contribs'=>0,'other_ded'=>0,'tax'=>0,'jei'=>0,'jcc'=>0,'sss'=>0,'adjustment'=>0,'net'=>0];
+$g = ['emp'=>0,'basic'=>0,'allow'=>0,'absent'=>0,'amount'=>0,'ot'=>0,'legal'=>0,'sunday'=>0,'special'=>0,'nsd'=>0,'late'=>0,'gross'=>0,'contribs'=>0,'other_ded'=>0,'tax'=>0,'jei'=>0,'jcc'=>0,'sss'=>0,'adjustment'=>0,'net'=>0];
 foreach ($dept_rows as $r) {
     $g['emp']      += $r['emp_count'];
     $g['basic']    += $r['total_basic'];
@@ -60,6 +62,7 @@ foreach ($dept_rows as $r) {
     $g['legal']    += $r['total_legal'];
     $g['sunday']   += $r['total_sunday'];
     $g['special']  += $r['total_special'];
+    $g['nsd']      += $r['total_nsd'];
     $g['late']     += $r['total_late'];
     $g['gross']    += $r['total_gross'];
     $g['contribs'] += $r['total_contributions'];
@@ -127,7 +130,7 @@ thead { display: table-header-group; }
       <tr>
         <th rowspan="2" style="text-align:left;">Department</th>
         <th rowspan="2">Emp.</th>
-        <th colspan="9">Earnings</th>
+        <th colspan="10">Earnings</th>
         <th colspan="7">Deductions</th>
         <th rowspan="2">Adjustment</th>
         <th rowspan="2">Net Pay</th>
@@ -141,6 +144,7 @@ thead { display: table-header-group; }
         <th>Legal Hol.</th>
         <th>Rest Duty</th>
         <th>Sp. Hol.</th>
+        <th>Night Diff</th>
         <th>Late</th>
         <th>Gross</th>
         <th>Contribs.</th>
@@ -164,6 +168,7 @@ thead { display: table-header-group; }
         <td class="r"><?= n2($r['total_legal']) ?></td>
         <td class="r"><?= n2($r['total_sunday']) ?></td>
         <td class="r"><?= n2($r['total_special']) ?></td>
+        <td class="r"><?= n2($r['total_nsd']) ?></td>
         <td class="r">(<?= n2($r['total_late']) ?>)</td>
         <td class="r"><?= n2($r['total_gross']) ?></td>
         <td class="r"><?= n2($r['total_contributions']) ?></td>
@@ -189,6 +194,7 @@ thead { display: table-header-group; }
         <th><?= n2($g['legal']) ?></th>
         <th><?= n2($g['sunday']) ?></th>
         <th><?= n2($g['special']) ?></th>
+        <th><?= n2($g['nsd']) ?></th>
         <th><?= n2($g['late']) ?></th>
         <th><?= n2($g['gross']) ?></th>
         <th><?= n2($g['contribs']) ?></th>

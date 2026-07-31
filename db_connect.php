@@ -309,17 +309,120 @@ if (!function_exists('day_hours_or_default')) {
 if (!function_exists('payroll_day_hours')) {
     function payroll_day_hours(mysqli $db, int $employee_id, string $date): float
     {
+        // Same resolver as dtr_compute_day — a day whose DTR computed against an
+        // 11h shift must not be paid against a flat 8h default.
+        $r = resolve_employee_schedule($db, (int) $employee_id, $date);
+        return day_hours_or_default($r['total_hours'] ?? null);
+    }
+}
+
+// Same choice as resolve_employee_schedule(), but over a window list already
+// fetched for a date range — one query for a whole batch instead of one per
+// employee per day. Covering window wins; otherwise the nearest one, so a day
+// still names the shift it was actually computed against when the assignment
+// was created after the fact. Returns null only for an employee with none.
+if (!function_exists('pick_schedule_window')) {
+    function pick_schedule_window(array $windows, string $date)
+    {
+        $cover = $near = null;
+        $bestGap = null;
+        foreach ($windows as $w) {
+            if ($w['effective_from'] <= $date
+                && (empty($w['effective_to']) || $w['effective_to'] >= $date)) {
+                $cover = $w;   // latest covering window wins, as elsewhere
+            }
+            $gap = abs(strtotime($w['effective_from']) - strtotime($date));
+            if ($bestGap === null || $gap < $bestGap) { $bestGap = $gap; $near = $w; }
+        }
+        return $cover ?: $near;
+    }
+}
+
+// ── Punch display (GLOBAL) ──────────────────────────────────────────────
+// A punch time, flagged when it lands on a LATER calendar day than the DTR row
+// it belongs to. An overnight shift's 5:00 AM time-out is stored on the row of
+// the evening the shift started, so unmarked it reads as if the employee
+// clocked out nine hours before clocking in. Renders "5:00 AM +1"; the full
+// date stays available as a tooltip. Day shifts get no marker at all.
+if (!function_exists('dtr_punch_time')) {
+    function dtr_punch_time(string $row_date, $ts, string $fmt = 'h:i A'): string
+    {
+        if (empty($ts)) return '—';
+        $ts = is_numeric($ts) ? (int) $ts : strtotime((string) $ts);
+        if (!$ts) return '—';
+
+        $label = date($fmt, $ts);
+        try {
+            // Date-only diff — a raw /86400 would be off by an hour under DST.
+            $days = (int) (new DateTime($row_date))->diff(new DateTime(date('Y-m-d', $ts)))->format('%r%a');
+        } catch (Exception $e) {
+            return $label;
+        }
+        if ($days <= 0) return $label;
+
+        // tabindex makes the chip focusable, so a TAP shows the detail on touch
+        // devices — :hover alone never fires there. On a touch screen the short
+        // date is also rendered inline (see .nx-d in dtr-form48.css), so the
+        // information is readable with no interaction at all.
+        $lead = $days === 1 ? 'Next day' : $days . ' days later';
+        return $label
+             . '<sup class="dtr-nextday" tabindex="0" role="note" data-tip="'
+             . htmlspecialchars($lead . ' — punched after midnight' . "\n" . date('D, M j, Y · g:i A', $ts))
+             . '">+' . $days . '<span class="nx-d">' . date('M j', $ts) . '</span></sup>';
+    }
+}
+
+// ── Schedule resolution (GLOBAL) ────────────────────────────────────────
+// The work schedule that applies to ONE employee on ONE date. Scan ingestion
+// (Action::save_biometric_attendance) and dtr_compute_day MUST agree on this —
+// when they didn't, an Evening 15:00–00:00 row recomputed 15 hours before the
+// shift began (see the note in dtr_compute_day), so both now call this.
+//
+// Falls back in three steps, because "no row covers this date" used to mean
+// "no schedule at all", and that silently disabled BOTH overnight punch pairing
+// and all hour math for the day:
+//   1. The assignment in effect on $date — the normal path.
+//   2. The nearest assignment the employee has. A schedule assigned today with
+//      effective_from = today does not cover punches the employee already made
+//      this week; without this, a night-shift clock-out at 07:01 opened its own
+//      next-day row instead of closing the shift that started the evening before.
+//   3. DEFAULT_WORK_SCHEDULE_ID (Day Shift) when the employee has no assignment
+//      at all, so a day still computes against something sane rather than zero.
+// Returns null only if the default schedule row itself is missing.
+if (!defined('DEFAULT_WORK_SCHEDULE_ID')) define('DEFAULT_WORK_SCHEDULE_ID', 1);
+
+if (!function_exists('resolve_employee_schedule')) {
+    function resolve_employee_schedule(mysqli $db, int $employee_id, string $date)
+    {
         $dateEsc = $db->real_escape_string($date);
-        $row = $db->query("
-            SELECT ws.total_hours FROM employee_schedules es
+        $eid     = (int) $employee_id;
+
+        // 1. Covering assignment.
+        $res = $db->query("
+            SELECT ws.* FROM employee_schedules es
             INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-            WHERE es.employee_id = " . (int) $employee_id . "
-              AND es.effective_from <= '$dateEsc'
+            WHERE es.employee_id = $eid AND es.effective_from <= '$dateEsc'
               AND (es.effective_to IS NULL OR es.effective_to >= '$dateEsc')
             ORDER BY es.effective_from DESC LIMIT 1
         ");
-        $r = $row ? $row->fetch_assoc() : null;
-        return day_hours_or_default($r['total_hours'] ?? null);
+        $row = $res ? $res->fetch_assoc() : null;
+        if ($row) return $row;
+
+        // 2. Nearest assignment by effective_from — covers punches recorded
+        //    before the schedule was ever assigned (new hires, back-entry).
+        $res = $db->query("
+            SELECT ws.* FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = $eid
+            ORDER BY ABS(DATEDIFF(es.effective_from, '$dateEsc')) ASC, es.effective_from ASC
+            LIMIT 1
+        ");
+        $row = $res ? $res->fetch_assoc() : null;
+        if ($row) return $row;
+
+        // 3. System default.
+        $res = $db->query("SELECT * FROM work_schedules WHERE id = " . (int) DEFAULT_WORK_SCHEDULE_ID . " LIMIT 1");
+        return $res ? $res->fetch_assoc() : null;
     }
 }
 
@@ -344,13 +447,7 @@ if (!function_exists('dtr_compute_day')) {
         $hol = $db->query("SELECT type FROM calendar_events WHERE '$dateEsc' BETWEEN start_date AND COALESCE(end_date,'$dateEsc') AND type IN (1,3) LIMIT 1")->fetch_assoc();
         if ($hol) $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
 
-        $schedule = $db->query("
-            SELECT ws.* FROM employee_schedules es
-            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-            WHERE es.employee_id = $employee_id AND es.effective_from <= '$dateEsc'
-              AND (es.effective_to IS NULL OR es.effective_to >= '$dateEsc')
-            ORDER BY es.effective_from DESC LIMIT 1
-        ")->fetch_assoc();
+        $schedule = resolve_employee_schedule($db, $employee_id, $date);
 
         $raw_hours  = ($in_ts && $out_ts) ? ($out_ts - $in_ts) / 3600 : 0;
         $break_hrs  = (isset($schedule['break_minutes']) ? $schedule['break_minutes'] : 60) / 60;
@@ -359,7 +456,16 @@ if (!function_exists('dtr_compute_day')) {
         if ($out_ts && $schedule) {
             $sched_start = strtotime($date . ' ' . $schedule['start_time']);
             $sched_end   = strtotime($date . ' ' . $schedule['end_time']);
-            if ($schedule['is_graveyard']) $sched_end = strtotime('+1 day', $sched_end);
+            // A shift is overnight when the flag says so OR when its end time
+            // wraps past midnight (Evening 3PM–12AM, Night 11PM–8AM) even though
+            // the flag was never ticked. This MUST match the predicate scan
+            // ingestion uses (Action::save_biometric_attendance) — when the two
+            // disagreed, an Evening 15:00–00:00 row recomputed to sched_end =
+            // midnight at the START of the day, 15 hours before the shift began,
+            // giving work_hours 0 and overtime 24.00.
+            if ($schedule['is_graveyard'] || $schedule['end_time'] <= $schedule['start_time']) {
+                $sched_end = strtotime('+1 day', $sched_end);
+            }
             $late       = round(max(0, ($in_ts - $sched_start) / 3600), 2);
             $undertime  = round(max(0, ($sched_end - $out_ts) / 3600), 2);
             $overtime   = round(max(0, ($out_ts - $sched_end) / 3600), 2);
@@ -375,8 +481,25 @@ if (!function_exists('dtr_compute_day')) {
             $work_hours = round(max(0, ($eff_out - $eff_in) / 3600 - $break_hrs), 2);
             $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
 
-            foreach ([[$date . ' 22:00:00', $date . ' 23:59:59'], [$date . ' 00:00:00', $date . ' 06:00:00']] as $w) {
-                $nsd_hours += max(0, min($out_ts, strtotime($w[1])) - max($in_ts, strtotime($w[0]))) / 3600;
+            // Night differential = time worked inside 22:00–06:00. That window is
+            // ONE contiguous 8-hour block crossing midnight, so it is built as
+            // such and swept across the shift's neighbouring days.
+            //
+            // It used to be two windows both anchored to $date — 22:00–23:59:59
+            // and 00:00–06:00 of the SAME day. For a graveyard shift the second
+            // resolved to the morning BEFORE the shift started, so max(0, …)
+            // zeroed it and the whole after-midnight half earned nothing: a
+            // 22:00→06:00 shift returned 2.00 instead of 8.00. Ingestion always
+            // computed this correctly, which meant a manual edit or a recompute
+            // silently cut 6 hours of ND off an already-correct row.
+            //
+            // Sweeping -1/0/+1 days also covers a row whose punches belong to
+            // the previous evening's shift. Break is NOT deducted here, matching
+            // Action::save_biometric_attendance.
+            for ($k = -1; $k <= 1; $k++) {
+                $w_start = strtotime(date('Y-m-d', strtotime("$date $k day")) . ' 22:00:00');
+                $w_end   = strtotime('+8 hours', $w_start);   // 22:00 → 06:00 next day
+                $nsd_hours += max(0, min($out_ts, $w_end) - max($in_ts, $w_start)) / 3600;
             }
             $nsd_hours = round($nsd_hours, 2);
         } elseif ($out_ts) {

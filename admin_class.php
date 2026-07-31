@@ -1194,6 +1194,21 @@ class Action
         return in_array($w, array_map('intval', explode(',', $rd)), true);
     }
 
+    /**
+     * The schedule period in effect on $ymd, from the same preloaded periods
+     * restDaysForDate() reads (they carry ws.has_nsd / ws.nsd_rate as well).
+     * Returns the matching row, or null when no assignment covers the date.
+     */
+    private function scheduleOnDate($periods, $ymd)
+    {
+        foreach ($periods as $p) {
+            if ($p['effective_from'] <= $ymd && ($p['effective_to'] === null || $p['effective_to'] >= $ymd)) {
+                return $p;
+            }
+        }
+        return null;
+    }
+
     // Core shift-assignment for ONE employee. Closes the open period / opens a new one
     // (with same-day correction). Caller owns the transaction. Returns 'updated' | 'unchanged' | 'skipped'.
     private function applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by, $rest_days = '0')
@@ -3056,7 +3071,7 @@ class Action
                 $restMap = [];
                 $rq = $this->db->prepare(
                     "SELECT es.employee_id, es.effective_from, es.effective_to, es.rest_days,
-                            ws.total_hours
+                            ws.total_hours, ws.has_nsd, ws.nsd_rate
                      FROM employee_schedules es
                      LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
                      WHERE es.effective_from <= ? AND (es.effective_to IS NULL OR es.effective_to >= ?)
@@ -3174,6 +3189,12 @@ class Action
                             "undertime" => 0,
                             "under_time" => 0,
                             "rest_duty" => 0,
+                            // Night differential, carried from the DTR. Hours are summed
+                            // and the peso amount is accrued per day at that day's own
+                            // hourly rate and shift nsd_rate, so a mid-period schedule or
+                            // rate change is priced on the day it applied.
+                            "nsd_hours" => 0,
+                            "nsd_amount" => 0,
                             // Worked day-fraction per date ('Y-m-d' => float). Mirrors what
                             // goes into "present", so approved paid leave on a day that was
                             // partly worked can be capped below (worked + leave <= 1 day).
@@ -3211,6 +3232,23 @@ class Action
                     // Same fraction, keyed by date — the paid-leave cap reads this.
                     $grouped_data[$employee_id]["worked_frac"][$ymd] =
                         ($grouped_data[$employee_id]["worked_frac"][$ymd] ?? 0) + $days;
+                    // Night differential (Labor Code: a premium on each hour worked
+                    // between 10PM and 6AM). The DTR row already holds the hours;
+                    // they used to stop there — payroll_items had no ND column, so
+                    // view_payslip's $payroll['nsd_hours'] read a key that never
+                    // existed and every payslip showed ND as 0.00.
+                    // Priced here, per day, at this shift's own rate.
+                    $nsd_day = (float) ($row['nsd_hours'] ?? 0);
+                    if ($nsd_day > 0) {
+                        $sched_nsd = $this->scheduleOnDate($restMap[$employee_id] ?? [], $ymd);
+                        // has_nsd off => the shift does not earn the premium at all.
+                        $nsd_rate  = (empty($sched_nsd) || (int) ($sched_nsd['has_nsd'] ?? 0) !== 1)
+                            ? 0.0
+                            : (float) ($sched_nsd['nsd_rate'] ?? 0);
+                        $grouped_data[$employee_id]["nsd_hours"]  += $nsd_day;
+                        $grouped_data[$employee_id]["nsd_amount"] += $nsd_day * $per_hour * $nsd_rate;
+                    }
+
                     $grouped_data[$employee_id]["overtime"] +=  $row['overtime'];
                     $grouped_data[$employee_id]["late_in_minutes"]  += $row['late'];
                     $grouped_data[$employee_id]["undertime"]  +=  $row['undertime'];
@@ -3221,6 +3259,64 @@ class Action
                     $grouped_data[$employee_id]["rate_type"]  = in_array($row['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $row['rate_type'] : 'daily';
                     $grouped_data[$employee_id]["date_time"]  = $row['date_time'];
                 }
+                // ── Leave-only employees (approved paid leave, zero attendance) ──
+                // $grouped_data is built solely from approved DTR rows, so an
+                // employee whose whole period is covered by approved paid leave
+                // used to vanish from the batch entirely — their leave was never
+                // paid. Seed a zero-attendance row for them here; the paid-leave
+                // pricing below fills in the payable days. Scoped to this batch's
+                // sites via the employee's most recent DTR site (an employee with
+                // no DTR history at all is included on the first configured site).
+                $leaveOnly = array_diff(array_keys($leaveMap), array_keys($grouped_data));
+                if ($leaveOnly) {
+                    $loIds = implode(',', array_map('intval', $leaveOnly));
+                    $siteIntList = array_map('intval', $site_ids);
+                    $loq = $this->db->query(
+                        "SELECT employee.id, employee.salary, employee.allowance_rate, employee.sss_fund,
+                                employee.basic_pay, employee.rate_type, employee.ot_rate, employee.isAutoDeduct
+                         FROM employee
+                         WHERE employee.id IN ($loIds) AND employee.status = 1 $exclude_clause"
+                    );
+                    if ($loq) while ($lo = $loq->fetch_assoc()) {
+                        $lo_id = (int) $lo['id'];
+                        $lsq = $this->db->query(
+                            "SELECT DTR.site_id FROM DTR_details
+                             INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
+                             WHERE DTR_details.employee_id = $lo_id
+                             ORDER BY DTR_details.date_time DESC LIMIT 1"
+                        );
+                        $lastSite = ($lsq && $lsq->num_rows) ? (int) $lsq->fetch_assoc()['site_id'] : null;
+                        if ($lastSite !== null && !in_array($lastSite, $siteIntList, true)) continue;
+                        $lo_per_day = (float) $lo['salary'];
+                        $grouped_data[$lo_id] = [
+                            "total_hours" => 0,
+                            "salary" => 0,
+                            "present" => 0,
+                            "per_minute" => round($lo_per_day / (24 * 60), 2),
+                            "overtime" => 0,
+                            "late_in_minutes" => 0,
+                            "undertime" => 0,
+                            "under_time" => 0,
+                            "rest_duty" => 0,
+                            "nsd_hours" => 0,
+                            "nsd_amount" => 0,
+                            "worked_frac" => [],
+                            "basic_pay" => $lo['basic_pay'],
+                            "ot_rate" => $lo['ot_rate'],
+                            "sss_fund" => $lo['sss_fund'],
+                            "per_day" => $lo_per_day,
+                            "isAutoDeduct" => $lo['isAutoDeduct'],
+                            "site_id" => $lastSite ?? (int) ($siteIntList[0] ?? 0),
+                            "allowance_amount" => $lo['allowance_rate'],
+                            "rate_type" => in_array($lo['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $lo['rate_type'] : 'daily',
+                            // Period start stands in for "last attendance" — the
+                            // cross-cluster comparison below needs a valid date.
+                            "date_time" => $date_from,
+                        ];
+                        $ipresent++;
+                    }
+                }
+
                 foreach ($grouped_data as $employee_id => $data) {
                     $last_attendance = $data['date_time'];
                     $sql2 = "SELECT DTR_details.*, DTR.site_id
@@ -3403,6 +3499,11 @@ class Action
                     // sunday_duty column (int) — rounded to whole days, matching the prior
                     // manual whole-day entry. Admin can still adjust it afterward.
                     $rest_duty = (int) round($data['rest_duty'] ?? 0);
+                    // Night differential accumulated per day above: total 10PM–6AM hours
+                    // and their peso premium, each day priced at that day's own hourly
+                    // rate x the shift's nsd_rate. Frozen here like everything else.
+                    $nsd_hours_total  = round((float) ($data['nsd_hours'] ?? 0), 2);
+                    $nsd_amount_total = round((float) ($data['nsd_amount'] ?? 0), 2);
                     // Pay basis for this employee, frozen onto the payroll item so a later
                     // rate-type change doesn't retro-alter this run.
                     $rate_type = in_array($data['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $data['rate_type'] : 'daily';
@@ -3452,8 +3553,8 @@ class Action
                     $sql2 = "INSERT INTO payroll_items
                     (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
                      deduction_amount, deductions, contributions, total_hours,
-                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours)
-                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours,nsd_hours,nsd_amount)
+                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     $stmt2 = $this->db->prepare($sql2);
                     if (!$stmt2) {
@@ -3461,7 +3562,7 @@ class Action
                     }
 
                     $stmt2->bind_param(
-                        'ssssssssssssssssssssssssss',
+                        'ssssssssssssssssssssssssssss',
                         $payroll_id,
                         $employee_id,
                         $salary,
@@ -3487,7 +3588,9 @@ class Action
                         $absent,
                         $paid_leave,
                         $rate_type,
-                        $day_hours
+                        $day_hours,
+                        $nsd_hours_total,
+                        $nsd_amount_total
                     );
 
                     try {
@@ -4196,11 +4299,40 @@ class Action
         $data .= ", category = '$category' ";
         $data .= ", p2 = '$p2' ";
         if (empty($id)) {
+            // Refuse a second run for a cutoff that already has one. Without
+            // this, a double-clicked Create (or two concurrent requests) built
+            // two full payrolls for the same period, each with its own payslip
+            // set — the same employee paid twice, with nothing to indicate which
+            // run was the real one.
+            $dupFrom = $this->db->real_escape_string($date_from);
+            $dupTo   = $this->db->real_escape_string($date_to);
+            $dupType = (int) $type;
+            $dupCat  = (int) $category;
+            $dup = $this->db->query(
+                "SELECT id, ref_no FROM payroll
+                 WHERE date_from = '$dupFrom' AND date_to = '$dupTo'
+                   AND type = $dupType AND category = $dupCat
+                 ORDER BY id DESC LIMIT 1"
+            );
+            if ($dup && ($dupRow = $dup->fetch_assoc())) {
+                return [
+                    'result'  => false,
+                    'message' => 'A payroll for ' . $date_from . ' to ' . $date_to
+                               . ' already exists (ref ' . $dupRow['ref_no'] . '). Open or delete it instead of creating a second one.',
+                    'id'      => (int) $dupRow['id'],
+                ];
+            }
+
+            // ref_no must be unique. The retry loop below only protects the
+            // serial case; the UNIQUE index added on payroll.ref_no is what
+            // stops two concurrent creates from landing the same number.
             $i = 1;
-            while ($i == 1) {
+            $attempts = 0;
+            while ($i == 1 && $attempts < 50) {
+                $attempts++;
                 $ref_no = date('Y') . '-' . mt_rand(1, 9999);
 
-                $chk = $this->db->query("SELECT * FROM payroll where ref_no = '$ref_no' ")->num_rows;
+                $chk = $this->db->query("SELECT id FROM payroll where ref_no = '$ref_no' ")->num_rows;
 
                 if ($chk <= 0) {
                     $i = 0;
@@ -4655,24 +4787,18 @@ class Action
         $scan_ts   = $dt->getTimestamp();
         $device_id = 0;
 
-        // Resolve employee's current schedule
-        $stmt_sched = $this->db->prepare("
-            SELECT ws.* FROM employee_schedules es
-            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-            WHERE es.employee_id = ? AND es.effective_from <= ? AND (es.effective_to IS NULL OR es.effective_to >= ?)
-            ORDER BY es.effective_from DESC LIMIT 1
-        ");
-        $stmt_sched->bind_param('iss', $employee_id, $scan_date, $scan_date);
-        $stmt_sched->execute();
-        $schedule = $stmt_sched->get_result()->fetch_assoc();
+        // Resolve employee's current schedule. Shared with dtr_compute_day so the
+        // two can never disagree, and it falls back (nearest assignment → Day
+        // Shift) instead of returning nothing — a punch made before the schedule
+        // was assigned used to skip the overnight re-dating below entirely.
+        $schedule = resolve_employee_schedule($this->db, $employee_id, $scan_date);
 
         // Overnight shift = graveyard flag OR any schedule whose end time wraps past
         // midnight (e.g. Evening 3PM–12AM, Night 11PM–8AM), even when the flag
         // wasn't ticked on the schedule.
         $is_overnight = $schedule && ($schedule['is_graveyard'] || $schedule['end_time'] <= $schedule['start_time']);
 
-        // For overnight shifts a scan may belong to the shift that STARTED the
-        // previous day. Three cases:
+        // A scan may belong to the shift that STARTED the previous day. Three cases:
         //  1. Yesterday has an OPEN record and the gap since its last punch still
         //     looks like a single shift (≤16h) → this scan is its time-out. The gap
         //     guard is what keeps a stray punch from an unrelated time of day
@@ -4682,11 +4808,30 @@ class Action
         //     duplicate window of its closing punch → re-date it so the debounce
         //     below swallows the double-tap instead of opening a fresh day.
         //  3. No record yesterday at all, but the scan lands after midnight and
-        //     BEFORE yesterday's scheduled end → a LATE time-in; anchor it to
-        //     yesterday's shift so late/undertime compute against the right day
-        //     instead of opening (and mangling) today.
-        if ($is_overnight) {
-            $prev_date = date('Y-m-d', strtotime('-1 day', strtotime($scan_date)));
+        //     BEFORE (or exactly AT) yesterday's scheduled end → a LATE time-in;
+        //     anchor it to yesterday's shift so late/undertime compute against the
+        //     right day instead of opening (and mangling) today.
+        //
+        // This used to run only for overnight ($is_overnight) schedules — but a
+        // NON-wrapping evening shift (PM 3–11PM) spills past midnight too when OT
+        // runs long: its clock-out landed on the next day, where it was taken as
+        // that day's TIME-IN. Every such day then read "complete" with the whole
+        // shift as phantom undertime and the OT hours lost. So cases 1–2 now also
+        // run for a non-overnight schedule, gated to scans that could plausibly
+        // still belong to yesterday's shift: at most 12h (the per-day OT ceiling)
+        // past yesterday's scheduled end. Case 3 re-anchors on the scheduled end
+        // and stays overnight-only.
+        $prev_date = date('Y-m-d', strtotime('-1 day', strtotime($scan_date)));
+        $prev_end  = null;
+        if ($schedule) {
+            $prev_end = strtotime($prev_date . ' ' . $schedule['end_time']);
+            if ($schedule['end_time'] <= $schedule['start_time']) {
+                $prev_end = strtotime('+1 day', $prev_end); // wraps → ends today
+            }
+        }
+        $spill_window = $is_overnight
+            || ($prev_end !== null && $scan_ts <= $prev_end + 12 * 3600);
+        if ($schedule && $spill_window) {
             $chk_prev = $this->db->prepare(
                 "SELECT id, logs, is_complete FROM DTR_details
                  WHERE employee_id = ? AND date_time = ? ORDER BY id DESC LIMIT 1"
@@ -4699,25 +4844,28 @@ class Action
                 $prevTs   = array_map(function ($l) { return strtotime($l['dateTime']); }, $prevLogs);
                 $lastTs   = $prevTs ? max($prevTs) : 0;
                 $gap      = $lastTs ? $scan_ts - $lastTs : -1;
-                if (!$prevRec['is_complete']) {
-                    if ($gap > 0 && $gap <= 16 * 3600) $scan_date = $prev_date;   // case 1: time-out
-                } elseif ($gap >= 0 && $gap < 300) {
-                    $scan_date = $prev_date;                                      // case 2: double-tap
+                // Non-overnight: only a scan BEFORE today's own shift start may
+                // drift back to yesterday — once today's start has passed, the
+                // scan is today's (possibly late) time-in, not yesterday's out.
+                $before_today_start = $scan_ts < strtotime($scan_date . ' ' . $schedule['start_time']);
+                if ($is_overnight || $before_today_start) {
+                    if (!$prevRec['is_complete']) {
+                        if ($gap > 0 && $gap <= 16 * 3600) $scan_date = $prev_date;   // case 1: time-out
+                    } elseif ($gap >= 0 && $gap < 300) {
+                        $scan_date = $prev_date;                                      // case 2: double-tap
+                    }
                 }
-            } else {
-                $prev_end = strtotime($prev_date . ' ' . $schedule['end_time']);
-                if ($schedule['end_time'] <= $schedule['start_time']) {
-                    $prev_end = strtotime('+1 day', $prev_end); // wraps → ends today
-                }
-                if ($scan_ts < $prev_end) $scan_date = $prev_date;                // case 3: late time-in
+            } elseif ($is_overnight) {
+                // Was `<`: an out-punch at EXACTLY the scheduled end (06:00:00 on a
+                // 10PM–6AM shift) failed the strict compare and opened a next-day —
+                // next-cutoff — orphan row. `<=` keeps it on the shift's own day.
+                if ($scan_ts <= $prev_end) $scan_date = $prev_date;                   // case 3: late time-in
             }
 
             // The re-dated day may fall under a different schedule assignment —
             // resolve it again so hours compute against the shift actually worked.
             if ($scan_date === $prev_date) {
-                $stmt_sched->bind_param('iss', $employee_id, $scan_date, $scan_date);
-                $stmt_sched->execute();
-                $resched = $stmt_sched->get_result()->fetch_assoc();
+                $resched = resolve_employee_schedule($this->db, $employee_id, $scan_date);
                 if ($resched) $schedule = $resched;
                 $is_overnight = $schedule && ($schedule['is_graveyard'] || $schedule['end_time'] <= $schedule['start_time']);
             }
@@ -5515,13 +5663,17 @@ class Action
         $special   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
 
         // Same pay-basis split as get_payroll_rows_data().
+        // Night differential premium, priced at calculation time (per-day hourly
+        // rate x shift nsd_rate) and frozen on the item like every other figure.
+        $nsd = (float) ($row['nsd_amount'] ?? 0);
+
         $rt = $row['rate_type'] ?? 'daily';
         $isMonthly = $rt === 'monthly' || $rt === 'fixed' || ((int)$row['payroll_type'] === 5);
         if ($isMonthly) {
             $absent = $row['absent'] * $row['per_day'];
-            $gross  = (($row['basic_pay'] + $allowance - $absent) / 2) + $ot + $legal + $sunday + $special - $late;
+            $gross  = (($row['basic_pay'] + $allowance - $absent) / 2) + $ot + $legal + $sunday + $special + $nsd - $late;
         } else {
-            $gross  = ($row['present'] * $row['per_day']) + $ot + $allowance + $legal + $sunday + $special - $late;
+            $gross  = ($row['present'] * $row['per_day']) + $ot + $allowance + $legal + $sunday + $special + $nsd - $late;
         }
 
         $ded = 0.0;
@@ -6023,6 +6175,7 @@ class Action
                         + (pi.legal_holiday * pi.per_day)
                         + (pi.sunday_duty   * pi.per_day)
                         + ((pi.per_day/8*2.4) * pi.special_holiday)
+                        + COALESCE(pi.nsd_amount, 0)
                         - (pi.late * (pi.per_day/480))
                     )                                                                   AS gross,
                     pi.net
@@ -6119,6 +6272,8 @@ class Action
             // NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30%
             // special holiday premium. Leave the literals alone.
             $special_amount   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
+            // Night differential premium, priced at calc time and stored on the item.
+            $nsd_amount       = floatval($row['nsd_amount'] ?? 0);
 
             // Pay basis is now per-employee (rate_type), frozen on the payroll item at calc.
             // 'fixed' shares the salary-based formula but always has absent=0 (full pay,
@@ -6130,14 +6285,14 @@ class Action
                 // and unpaid absences are deducted at the daily rate (0 for fixed). Gross folds in premiums.
                 $total_basic_rate = $row['basic_pay'];
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
-                $gross            = $total_amount + $overtime_amount + $legal_amount + $sunday_amount + $special_amount - $late_amount;
+                $gross            = $total_amount + $overtime_amount + $legal_amount + $sunday_amount + $special_amount + $nsd_amount - $late_amount;
             } else {
                 // Daily rate: Total Basic Rate = (days present + approved paid-leave days) ×
                 // rate per day — daily staff are paid for approved paid leave. gross = basic +
                 // overtime + allowance − late (matches table-2 in the page).
                 $total_basic_rate = ($row['present'] + ($row['paid_leave'] ?? 0)) * $row['per_day'];
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
-                $gross            = ($total_basic_rate + $overtime_amount + $allowance_total) - $late_amount;
+                $gross            = ($total_basic_rate + $overtime_amount + $allowance_total + $nsd_amount) - $late_amount;
             }
 
             $contributions = json_decode($row['contributions'], true) ?: [];
@@ -6184,6 +6339,8 @@ class Action
                 'legal_amount'         => $legal_amount,
                 'sunday_amount'        => $sunday_amount,
                 'special_amount'       => $special_amount,
+                'nsd_hours'            => floatval($row['nsd_hours'] ?? 0),
+                'nsd_amount'           => $nsd_amount,
                 'gross'                => $gross,
                 'net'                  => $net,
                 'total_deductions'     => $total_ded,
@@ -6217,6 +6374,7 @@ class Action
         static $allowed_fields = [
             'present', 'per_day', 'allowance_days', 'allowance_amount', 'ot', 'ot_rate',
             'late', 'under_time', 'absent', 'legal_holiday', 'sunday_duty', 'special_holiday',
+            'nsd_amount',
             'sss_fund', 'jei_advances', 'jcc_advances', 'tax', 'other_deduction',
             'adjustment', 'adjustment_remarks', 'net',
             'contribution', 'deduction', 'loan', 'refund',
@@ -6335,25 +6493,69 @@ class Action
 
     function save_payroll_amount()
     {
-        $ids = $_POST['id'];
-        $nets = $_POST['net'];
-        foreach ($ids as $index =>  $k) {
-            $id = $k;
-            $net =  $nets[$index];
+        $ids  = $_POST['id']  ?? [];
+        $nets = $_POST['net'] ?? [];
+        if (!is_array($ids) || !is_array($nets) || !$ids) {
+            return ['result' => false, 'message' => 'Invalid parameters'];
+        }
 
-            $query_update = "UPDATE payroll_items SET net = ? WHERE id = ?";
-            $stmt3 = $this->db->prepare($query_update);
-            if ($stmt3 === false) {
-                throw new Exception('Failed to prepare the statement: ' . $this->db->error);
-            }
-            $stmt3->bind_param("si", $net, $id);
-            try {
-                $stmt3->execute();
-            } catch (Exception $e) {
+        // A LOCKED payroll (status 2) is paid history: its loan deductions are
+        // committed and its figures have been approved. This endpoint used to
+        // UPDATE payroll_items.net with no reference to the parent payroll at
+        // all, so a locked period's amounts could be rewritten by posting
+        // straight to it — bypassing the UI, with no audit entry. Resolve the
+        // parent for every id and refuse if any belongs to a locked run.
+        $idList = implode(',', array_map('intval', $ids));
+        $locked = [];
+        $parents = [];
+        $res = $this->db->query(
+            "SELECT pi.id, pi.payroll_id, p.status
+             FROM payroll_items pi INNER JOIN payroll p ON p.id = pi.payroll_id
+             WHERE pi.id IN ($idList)"
+        );
+        while ($res && $r = $res->fetch_assoc()) {
+            $parents[(int)$r['id']] = (int)$r['payroll_id'];
+            if ((int)$r['status'] === 2) $locked[] = (int)$r['id'];
+        }
+        if ($locked) {
+            return ['result' => false, 'message' => 'Cannot edit a locked payroll. Unlock it first.'];
+        }
+        // Any id with no parent row is an unknown/orphaned payslip — refuse
+        // rather than writing money to a record we cannot attribute to a run.
+        foreach ($ids as $k) {
+            if (!isset($parents[(int)$k])) {
+                return ['result' => false, 'message' => 'Unknown payroll item: ' . (int)$k];
             }
         }
 
-        $this->db->commit();
+        $stmt3 = $this->db->prepare("UPDATE payroll_items SET net = ? WHERE id = ?");
+        if ($stmt3 === false) {
+            throw new Exception('Failed to prepare the statement: ' . $this->db->error);
+        }
+
+        $this->db->begin_transaction();
+        try {
+            foreach ($ids as $index => $k) {
+                $id  = (int) $k;
+                $net = $nets[$index] ?? null;
+                if ($net === null) continue;
+                $stmt3->bind_param("di", $net, $id);
+                // No empty catch here: a failed write used to be swallowed and
+                // then commit()ed, reporting success for money that never saved.
+                if (!$stmt3->execute()) {
+                    throw new Exception('Failed to update payroll item ' . $id . ': ' . $this->db->error);
+                }
+            }
+            // Every amount edit is auditable — who changed a net, and when.
+            foreach (array_unique(array_values($parents)) as $pid) {
+                $this->save_payroll_history($pid, 5, 'Edit net amount');
+            }
+            $this->db->commit();
+            return ['result' => true, 'message' => 'save'];
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
     }
 
     function isLock()
@@ -6552,6 +6754,7 @@ class Action
         $zero = [];
         $swings = [];
         $missing = [];
+        $nd_zero = [];
         foreach ($data['rows'] as $r) {
             $iid = $r['id'];
             $eid = $emps[$iid] ?? 0;
@@ -6561,6 +6764,11 @@ class Action
 
             if ($net <= 0) $negative[] = ['name' => $nm, 'net' => round($net, 2)];
             if (!$isFixed && (float) $r['present'] <= 0) $zero[] = ['name' => $nm];
+            // Night hours logged but the premium never priced — the shift's
+            // has_nsd flag is off (or its nsd_rate is 0). Silently unpaid ND.
+            if ((float) ($r['nsd_hours'] ?? 0) > 0 && (float) ($r['nsd_amount'] ?? 0) <= 0) {
+                $nd_zero[] = ['name' => $nm, 'hours' => round((float) $r['nsd_hours'], 2)];
+            }
             if (isset($prevNet[$eid]) && $prevNet[$eid] > 0) {
                 $pct = ($net - $prevNet[$eid]) / $prevNet[$eid] * 100;
                 if (abs($pct) > $threshold) {
@@ -6591,6 +6799,7 @@ class Action
             'zero_days' => $zero,
             'swings' => $swings,
             'missing' => $missing,
+            'nd_zero' => $nd_zero,
         ];
     }
 
@@ -6857,7 +7066,7 @@ class Action
             $stmt->execute();
             $result = $stmt->get_result();
             $emp = $result->fetch_assoc();
-            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Rest Day Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys", 'adjustment' => "Adjustment", 'adjustment_remarks' => "Adjustment Remarks"];
+            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Rest Day Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys", 'adjustment' => "Adjustment", 'adjustment_remarks' => "Adjustment Remarks", 'nsd_amount' => "Night Differential"];
             $details = "Employee: " . $emp['lastname'] . ", " . $emp['firstname'] . " & Field: {$files_types[$field]} & Value: $value";
         }
 
@@ -7138,6 +7347,36 @@ class Action
                 . implode(', ', $nice) . (count($dup_hit) > 5 ? '…' : '') . '.'];
         }
 
+        // Balance guard (paid leave only — LWOP consumes no credits): the same
+        // rule the employee portal enforces on self-filing, so an HR/admin
+        // filing can't overbook an employee past their credits and drive the
+        // portal balance negative. Remaining counts approved AND still-pending
+        // requests; when editing, the request being edited is excluded.
+        $lt_row = $this->db->query("SELECT is_paid FROM leave_types WHERE id = $leave_type_id LIMIT 1")->fetch_assoc();
+        if ($lt_row && (int) $lt_row['is_paid'] === 1) {
+            $ly = leave_current_year();
+            $balq = $this->db->query("
+                SELECT COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+                FROM leave_types lt
+                LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id AND c.year = $ly
+                LEFT JOIN (
+                    SELECT leave_type_id, SUM(duration) AS used
+                    FROM leave_requests
+                    WHERE employee_id = $employee_id AND status IN (0,1) AND YEAR(date_from) = $ly"
+                    . ($id > 0 ? " AND id <> $id" : '') . "
+                    GROUP BY leave_type_id
+                ) u ON u.leave_type_id = lt.id
+                WHERE lt.id = $leave_type_id");
+            $remaining = $balq ? (float) ($balq->fetch_assoc()['remaining'] ?? 0) : 0.0;
+            $need = (float) count($days);
+            if ($need > $remaining + 0.001) {
+                $fmtd = function ($v) { return rtrim(rtrim(number_format((float) $v, 1), '0'), '.'); };
+                return ['result' => false, 'message' =>
+                    'Not enough leave credits — this request needs ' . $fmtd($need) . ' day(s) but the employee only has '
+                    . $fmtd(max(0, $remaining)) . ' left for this leave type (pending requests included).'];
+            }
+        }
+
         $duration   = count($days);
         $date_from  = $days[0];
         $date_to    = $days[count($days) - 1];
@@ -7173,6 +7412,49 @@ class Action
             return ['result' => true, 'message' => $msg . leave_attendance_note($this->db, $employee_id, $days)];
         }
         return ['result' => false, 'message' => $stmt->error];
+    }
+
+    // Filing helper for the admin/HR File Leave modal: the selected employee's
+    // remaining credits per leave type plus the dates already covered by their
+    // pending/approved requests, so the picker can disable them up front and
+    // the form can show a live balance — the same behavior the employee portal
+    // has. exclude_id skips the request currently being edited.
+    function get_leave_filing_info()
+    {
+        $employee_id = (int) ($_POST['employee_id'] ?? 0);
+        $exclude_id  = (int) ($_POST['exclude_id'] ?? 0);
+        if ($employee_id <= 0) return ['result' => false, 'message' => 'No employee selected.'];
+        $excl = $exclude_id > 0 ? " AND id <> $exclude_id" : '';
+        $ly = leave_current_year();
+        $remain = [];
+        $rq = $this->db->query("
+            SELECT lt.id, lt.is_paid,
+                   COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+            FROM leave_types lt
+            LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id AND c.year = $ly
+            LEFT JOIN (
+                SELECT leave_type_id, SUM(duration) AS used
+                FROM leave_requests
+                WHERE employee_id = $employee_id AND status IN (0,1) AND YEAR(date_from) = $ly $excl
+                GROUP BY leave_type_id
+            ) u ON u.leave_type_id = lt.id
+            WHERE lt.status = 1");
+        if ($rq) while ($r = $rq->fetch_assoc()) {
+            // Unpaid (LWOP) types consume no credits — null = no cap to show.
+            $remain[(int) $r['id']] = ((int) $r['is_paid'] === 1) ? (float) $r['remaining'] : null;
+        }
+        $taken = [];
+        $tq = $this->db->query("SELECT dates, date_from, date_to FROM leave_requests
+            WHERE employee_id = $employee_id AND status IN (0,1) $excl");
+        if ($tq) while ($t = $tq->fetch_assoc()) {
+            $dd = [];
+            if (!empty($t['dates'])) { $j = json_decode($t['dates'], true); if (is_array($j)) $dd = $j; }
+            if (!$dd) { for ($s = strtotime($t['date_from']); $s <= strtotime($t['date_to']); $s = strtotime('+1 day', $s)) $dd[] = date('Y-m-d', $s); }
+            foreach ($dd as $d1) $taken[date('Y-m-d', strtotime($d1))] = true;
+        }
+        $taken = array_keys($taken);
+        sort($taken);
+        return ['result' => true, 'remain' => $remain, 'taken' => $taken];
     }
 
     // Config-driven approval decision. `stage` is a key in LEAVE_APPROVAL_STAGES

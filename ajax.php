@@ -527,6 +527,9 @@ if ($action == "delete_leave_type") {
 if ($action == "save_leave_request") {
 	echo json_encode($crud->save_leave_request());
 }
+if ($action == "get_leave_filing_info") {
+	echo json_encode($crud->get_leave_filing_info());
+}
 if ($action == "decide_leave") {
 	echo json_encode($crud->decide_leave());
 }

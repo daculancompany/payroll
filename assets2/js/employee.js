@@ -200,6 +200,56 @@ $(function () {
         },
     });
 
+    // Birthdate — opens on the year list (viewMode) so a birth year is one click
+    // away instead of paging back through hundreds of months. Future dates are
+    // out of range, and an empty field lands on ~30 years ago rather than today.
+    var $bday = $(".datetimepicker2emp");
+    $bday.datetimepicker({
+        allowInputToggle: true,
+        showClose: true,
+        showClear: true,
+        useCurrent: false,
+        // The input is readonly (picker-only entry); without this the plugin's
+        // show() bails out on readonly inputs and nothing ever opens.
+        ignoreReadonly: true,
+        viewMode: "years",
+        format: "YYYY-MM-DD",
+        minDate: moment("1940-01-01"),
+        maxDate: moment().endOf("day"),
+        icons: {
+            time: "fa fa-clock-o",
+            date: "fa fa-calendar",
+            up: "fa fa-chevron-up",
+            down: "fa fa-chevron-down",
+            previous: "fa fa-chevron-left",
+            next: "fa fa-chevron-right",
+            today: "fa fa-crosshairs",
+            clear: "fa fa-trash",
+            close: "fa fa-times",
+        },
+    });
+
+    // Empty field → start the year list around a plausible birth year. An
+    // employee being edited keeps their own year, so this only fires when blank.
+    $bday.on("dp.show", function () {
+        var dtp = $(this).data("DateTimePicker");
+        if (dtp && !$.trim($(this).val())) dtp.viewDate(moment().subtract(30, "years"));
+    });
+
+    // Drilling down to a day leaves the widget in day mode; put it back on the
+    // year list so the next open behaves like the first (safe while closed —
+    // the plugin's showMode() no-ops when the widget isn't built).
+    $bday.on("dp.hide", function () {
+        var dtp = $(this).data("DateTimePicker");
+        if (dtp) dtp.viewMode("years");
+    });
+
+    // The plugin already opens on focus, so the icon just hands focus over —
+    // calling toggle() here would close what that focus just opened.
+    $(document).on("click", ".bday-toggle", function () {
+        $(this).closest(".input-group").find(".datetimepicker2emp").focus();
+    });
+
     // Portal Login → show / hide the typed password (admin-only fields, so the
     // markup is absent for every other role and this simply never fires).
     $("#togglePortalPassword").on("click", function () {

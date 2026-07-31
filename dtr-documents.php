@@ -147,13 +147,21 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
     <link href="assets/css/icons.min.css" rel="stylesheet">
     <!-- Global DTR (Form 48) template — shared with the employee portal -->
     <link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
-    <script src="assets2/js/dtr-form48.js"></script>
+    <script src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
+    <!-- Shared employee quick-view drawer (data-emp-view="<id>" opens it) -->
+    <script src="<?= av('assets2/js/employee-view.js') ?>" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
-:root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; }
+:root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent; }
 html, body { height:100%; }
 body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans-serif; overflow:hidden; }
+/* ── Soft purple scrollbars, everywhere on this page (standalone — no theme.css) ── */
+* { scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+*::-webkit-scrollbar { width:9px; height:9px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background:transparent; }
+*::-webkit-scrollbar-thumb { background:var(--sb-thumb); border-radius:8px; border:2px solid transparent; background-clip:content-box; }
+*::-webkit-scrollbar-thumb:hover { background:#b7a7d9; background-clip:content-box; }
 .ddv-app { display:flex; flex-direction:column; height:100vh; }
 
 /* ── Top bar ── */
@@ -272,13 +280,6 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
     font-size:12px; font-weight:800; color:var(--brand-dark);
 }
 .ddv-panel-head i { color:var(--brand); }
-/* Collapsible right-column panel heads */
-.ddv-panel-head.ddv-ch { cursor:pointer; user-select:none; }
-.ddv-panel-head.ddv-ch:hover { background:#f2f0f6; }
-.ddv-collapse-ic { margin-left:auto; color:#827d91 !important; font-size:17px; transition:transform .2s; flex-shrink:0; }
-.ddv-panel.collapsed .ddv-collapse-ic { transform:rotate(-90deg); }
-.ddv-panel.collapsed > :not(.ddv-panel-head) { display:none; }
-.ddv-panel.collapsed { flex:0 0 auto !important; }
 
 /* ── Left: previews ── */
 .ddv-left { min-height:0; }
@@ -431,16 +432,58 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 }
 .ddv-zoom-val:hover { background:#f2f0f7; }
 
-/* ── Right: summary + records ── */
-.ddv-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
-.ddv-right .ddv-panel.grow { flex:1; min-height:0; }
-.ddv-sum-body { padding:11px 13px; max-height:34vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
-.ddv-sum-emp { font-size:12.5px; font-weight:800; color:#3c3846; }
+/* ── Right: one docs-style panel with sliding tabs (Summary / Records / …) ── */
+.ddv-right { min-height:0; display:flex; flex-direction:column; }
+.ddv-right > .ddv-panel { flex:1; min-height:0; }
+
+/* Tab bar — Google-Docs-like: quiet gray labels, active gets the brand ink bar */
+.ddv-rtabs {
+    position:relative; flex-shrink:0; display:flex; align-items:stretch; gap:2px;
+    padding:0 6px; background:#fff; border-bottom:1px solid #eceaf1;
+}
+.ddv-rtabs button[data-tab] {
+    flex:1; min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:5px;
+    border:none; background:transparent; cursor:pointer; padding:11px 4px 10px;
+    font-size:11px; font-weight:700; color:#8a8599; white-space:nowrap;
+    border-radius:8px 8px 0 0; transition:color .15s, background .15s;
+}
+.ddv-rtabs button[data-tab] i { font-size:14px; }
+.ddv-rtabs button[data-tab]:hover { color:var(--brand-dark); background:#faf9fc; }
+.ddv-rtabs button[data-tab].on { color:var(--brand-dark); }
+.ddv-rtab-ink {
+    position:absolute; bottom:-1px; left:0; width:0; height:2.5px; border-radius:2px;
+    background:var(--brand); transition:left .25s cubic-bezier(.4,0,.2,1), width .25s cubic-bezier(.4,0,.2,1);
+}
+.ddv-rtab-n {
+    min-width:16px; height:15px; padding:0 4px; border-radius:8px;
+    display:inline-flex; align-items:center; justify-content:center;
+    background:#eeeaf5; color:#4f3288; font-size:9px; font-weight:800;
+}
+.ddv-rtab-n:empty { display:none; }
+.ddv-rtab-dot { width:7px; height:7px; border-radius:50%; background:#3557b7; flex-shrink:0; }
+
+/* Views slide horizontally as one track; each view is the scroller */
+.ddv-rtab-views { flex:1; min-height:0; overflow:hidden; }
+.ddv-rtab-track { display:flex; height:100%; transition:transform .3s cubic-bezier(.4,0,.2,1); }
+.ddv-rtab-view {
+    flex:0 0 100%; min-width:0; height:100%; overflow-y:auto; overflow-x:hidden;
+    scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track);
+}
+.ddv-sum-body { padding:13px 15px; }
+/* The name doubles as the trigger for the shared employee quick-view drawer */
+.ddv-sum-emp {
+    display:inline-flex; align-items:center; gap:5px; padding:0; text-align:left;
+    border:none; background:transparent; cursor:pointer;
+    font-size:12.5px; font-weight:800; color:#3c3846; font-family:inherit;
+}
+.ddv-sum-emp i { color:#b3a8ca; font-size:14px; transition:color .12s; }
+.ddv-sum-emp:hover { color:var(--brand-dark); text-decoration:underline; }
+.ddv-sum-emp:hover i { color:var(--brand); }
 .ddv-sum-sub { font-size:10.5px; color:#948ea5; margin:1px 0 9px; }
-.ddv-sum-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
-.ddv-sum-tile { border:1px solid #e8eeeb; border-radius:8px; padding:6px 4px; background:#fbfbfd; text-align:center; }
-.ddv-sum-tile .v { font-size:13px; font-weight:800; color:var(--brand); line-height:1.1; }
-.ddv-sum-tile .l { font-size:8.5px; color:#948ea5; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
+.ddv-sum-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:7px; }
+.ddv-sum-tile { border:1px solid #eceaf1; border-radius:10px; padding:8px 4px; background:#fff; text-align:center; }
+.ddv-sum-tile .v { font-size:14.5px; font-weight:800; color:var(--brand); line-height:1.1; }
+.ddv-sum-tile .l { font-size:8.5px; color:#948ea5; text-transform:uppercase; letter-spacing:.4px; margin-top:3px; }
 .ddv-sum-tile.ot .v { color:#c98a00; } .ddv-sum-tile.ut .v { color:#1565c0; } .ddv-sum-tile.late .v { color:#c62828; }
 .ddv-chips { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
 .ddv-chip { display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:700; padding:2px 8px; border-radius:12px; }
@@ -490,10 +533,10 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-note-tpl { border:1px dashed #ddd9e7; background:#f9f9fb; color:#635f73; border-radius:12px; font-size:9px; font-weight:600; padding:2px 8px; cursor:pointer; }
 .ddv-note-tpl:hover { background:#f2f0f7; border-style:solid; }
 
-/* Records list */
-.ddv-recs { flex:1; overflow-y:auto; min-height:0; padding:8px 10px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+/* Records list (the tab view scrolls, not this box) */
+.ddv-recs { padding:10px 12px; }
 .ddv-rec {
-    border:1px solid #e8eeeb; border-radius:9px; padding:7px 9px; margin-bottom:7px; background:#fbfbfd;
+    border:1px solid #eceaf1; border-radius:10px; padding:8px 10px; margin-bottom:7px; background:#fff;
 }
 .ddv-rec.is-appr { background:#f2fbf6; border-color:#cdeeda; }
 .ddv-rec.is-disa { background:#fdf4f4; border-color:#f3d3d3; }
@@ -586,7 +629,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-mini-btn:hover:not(:disabled) { filter:brightness(.96); }
 .ddv-mini-btn:disabled { opacity:.4; cursor:not-allowed; }
 /* ── Employee Review Progress (ported from dtr-details.php) ── */
-.drp-body { padding:10px 13px; }
+.drp-body { padding:12px 15px; }
 .drp-counts { display:flex; gap:5px; flex-wrap:wrap; }
 .drp-chip { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; padding:2px 9px; border-radius:12px; }
 .drp-chip.appr { background:#eafaf0; color:#0f9d58; border:1px solid #b7e4c7; }
@@ -668,8 +711,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-item-msg.new::after { content:''; position:absolute; top:-3px; right:-3px; width:7px; height:7px;
     border-radius:50%; background:#3557b7; border:1.5px solid #fff; }
 
-.ddv-batch-rows { overflow-y:auto; }
-.ddv-batch-row { display:flex; justify-content:space-between; align-items:center; padding:5px 13px; font-size:11px; color:#635f73; border-bottom:1px dashed #eef2f0; }
+.ddv-batch-row { display:flex; justify-content:space-between; align-items:center; padding:8px 15px; font-size:11px; color:#635f73; border-bottom:1px solid #f2f0f6; }
 .ddv-batch-row:last-child { border-bottom:none; }
 .ddv-batch-row b { color:var(--brand-dark); font-size:11.5px; }
 
@@ -873,6 +915,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
                     <span><span class="dm dm-lv">L</span> Leave</span>
                     <span><span class="dm dm-off">D</span> Day off</span>
                     <span><span class="dm dm-req">R</span> Request</span>
+                    <span><span class="dm dm-sch dm-sch-day"><i class="ri-calendar-2-line"></i></span> Day shift</span>
+                    <span><span class="dm dm-sch dm-sch-eve"><i class="ri-calendar-2-line"></i></span> Afternoon</span>
+                    <span><span class="dm dm-sch dm-sch-noc"><i class="ri-calendar-2-line"></i></span> Night</span>
                 </div>
                 <div class="ddv-doc-zoom">
                     <button class="ddv-pg-btn" id="ddv-zoom-out" title="Zoom out (Ctrl+scroll or −)"><i class="ri-zoom-out-line"></i></button>
@@ -889,33 +934,36 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
             </div>
         </div>
 
-        <!-- RIGHT -->
+        <!-- RIGHT: one docs-style panel — sliding tabs instead of stacked boxes -->
         <div class="ddv-right">
             <div class="ddv-panel">
-                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)"><span><i class="ri-user-3-line"></i> Employee Summary</span><i class="ri-arrow-down-s-line ddv-collapse-ic"></i></div>
+                <div class="ddv-rtabs" id="ddv-rtabs">
+                    <button type="button" data-tab="summary" class="on"><i class="ri-user-3-line"></i> Summary</button>
+                    <button type="button" data-tab="records"><i class="ri-fingerprint-line"></i> Records <span class="ddv-rtab-n" id="ddv-rec-count"></span></button>
+                    <?php if (in_array($batchStatus, [2, 3], true)): ?>
+                    <button type="button" data-tab="review"><i class="ri-user-received-2-line"></i> Review<?php if ($ddvUnreadMsgs > 0): ?> <span class="ddv-rtab-dot" id="ddv-rtab-review-dot" title="Unread employee messages"></span><?php endif; ?></button>
+                    <?php endif; ?>
+                    <button type="button" data-tab="batch"><i class="ri-stack-line"></i> Batch</button>
+                    <button type="button" class="ddv-pg-btn" onclick="toggleDrawer(false)" style="display:none;align-self:center;margin-left:4px;" id="ddv-drawer-close" title="Close"><i class="ri-close-line"></i></button>
+                    <span class="ddv-rtab-ink"></span>
+                </div>
+                <div class="ddv-rtab-views">
+                    <div class="ddv-rtab-track" id="ddv-rtab-track">
+                <section class="ddv-rtab-view" data-view="summary">
                 <div class="ddv-sum-body" id="ddv-emp-summary">
                     <div style="font-size:12px;color:#948ea5;">No employee selected.</div>
                 </div>
-            </div>
-            <div class="ddv-panel grow">
-                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)">
-                    <span><i class="ri-fingerprint-line"></i> Records &amp; Logs</span>
-                    <span id="ddv-rec-count" style="font-weight:600;color:#827d91;font-size:10.5px;"></span>
-                    <i class="ri-arrow-down-s-line ddv-collapse-ic"></i>
-                </div>
+                </section>
+                <section class="ddv-rtab-view" data-view="records">
                 <div class="ddv-recs" id="ddv-recs">
                     <div style="font-size:11.5px;color:#948ea5;padding:8px;">No employee selected.</div>
                 </div>
-            </div>
+                </section>
             <?php if (in_array($batchStatus, [2, 3], true)): ?>
-            <div class="ddv-panel" style="flex-shrink:0;">
-                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)">
-                    <span><i class="ri-user-received-2-line"></i> Employee Review</span>
-                    <?php if ($batchStatus === 3): ?><span class="ddv-status-badge st-rev" style="margin-left:6px;">In progress</span><?php else: ?><span class="ddv-status-badge st-appr" style="margin-left:6px;">Approved</span><?php endif; ?>
-                    <i class="ri-arrow-down-s-line ddv-collapse-ic"></i>
-                </div>
+                <section class="ddv-rtab-view" data-view="review">
                 <div class="drp-body">
                     <div class="drp-counts">
+                        <?php if ($batchStatus === 3): ?><span class="ddv-status-badge st-rev">In progress</span><?php else: ?><span class="ddv-status-badge st-appr">Approved</span><?php endif; ?>
                         <span class="drp-chip appr"><i class="ri-checkbox-circle-line"></i> <?= $reviewConfirmed ?> Confirmed</span>
                         <span class="drp-chip disp"><i class="ri-error-warning-line"></i> <?= $reviewDisputed ?> Disputed</span>
                         <span class="drp-chip pend"><i class="ri-time-line"></i> <?= $reviewPending ?> Awaiting</span>
@@ -989,19 +1037,18 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
                     <div class="drp-empty">No employees have reviewed yet.</div>
                     <?php endif; ?>
                 </div>
-            </div>
+                </section>
             <?php endif; ?>
-            <div class="ddv-panel" style="flex-shrink:0;">
-                <div class="ddv-panel-head ddv-ch" onclick="togglePanel(this)"><span><i class="ri-stack-line"></i> Batch Summary</span>
-                    <button type="button" class="ddv-pg-btn" onclick="event.stopPropagation();toggleDrawer(false)" style="display:none;" id="ddv-drawer-close" title="Close"><i class="ri-close-line"></i></button>
-                    <i class="ri-arrow-down-s-line ddv-collapse-ic"></i>
-                </div>
+                <section class="ddv-rtab-view" data-view="batch">
                 <div class="ddv-batch-rows" id="ddv-batch">
                     <div class="ddv-batch-row"><span>Employees</span><b data-b="employees"><?= (int)($agg['employees'] ?? 0) ?></b></div>
                     <div class="ddv-batch-row"><span>Total work hours</span><b data-b="work_hours"><?= number_format((float)($agg['work_hours'] ?? 0), 2) ?></b></div>
                     <div class="ddv-batch-row"><span>Approved</span><b data-b="approved" style="color:#0f9d58;"><?= (int)($agg['approved'] ?? 0) ?> / <?= (int)($agg['total'] ?? 0) ?></b></div>
                     <div class="ddv-batch-row"><span>Pending</span><b data-b="pending" style="color:#c98a00;"><?= (int)($agg['pending'] ?? 0) ?></b></div>
                     <div class="ddv-batch-row"><span>Disapproved</span><b data-b="disapproved" style="color:#c62828;"><?= (int)($agg['disapproved'] ?? 0) ?></b></div>
+                </div>
+                </section>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1273,7 +1320,7 @@ function renderSummary(e) {
     let periodDays = 0; eachDay(() => periodDays++);
     const pct = periodDays ? Math.round(daysPresent / periodDays * 100) : 0;
     box.innerHTML = `
-        <div class="ddv-sum-emp">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')}</div>
+        <button type="button" class="ddv-sum-emp" data-emp-view="${e.id}" title="View employee details">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></button>
         <div class="ddv-sum-sub">${esc(e.no)}${e.position ? ' · ' + esc(e.position) : ''}${e.department ? ' · ' + esc(e.department) : ''}</div>
         <div class="ddv-sum-grid">
             <div class="ddv-sum-tile"><div class="v">${Number(e.totals.wh).toFixed(2)}</div><div class="l">Hours</div></div>
@@ -1461,7 +1508,8 @@ function renderRecords(e) {
             </div>`;
         });
     });
-    $id('ddv-rec-count').textContent = n ? n + ' record' + (n > 1 ? 's' : '') : '';
+    $id('ddv-rec-count').textContent = n || '';
+    positionInk();   // the count pill changes the Records tab's width
     box.innerHTML = html || '<div style="font-size:11.5px;color:#948ea5;padding:8px;">No records.</div>';
 }
 
@@ -2194,7 +2242,11 @@ function ddvMarkReviewSeen(empId, r) {
     if (n) {
         const left = Math.max(0, (parseInt(n.textContent, 10) || 0) - 1);
         n.textContent = left;
-        if (!left && chip) chip.style.display = 'none';
+        if (!left) {
+            if (chip) chip.style.display = 'none';
+            const dot = $id('ddv-rtab-review-dot');
+            if (dot) { dot.remove(); positionInk(); }
+        }
     }
 }
 
@@ -2207,11 +2259,30 @@ document.addEventListener('keydown', ev => {
     row.click();
 });
 
-// ── Collapsible right-column panels ──────────────────────────────────────────
-function togglePanel(head) {
-    const panel = head.closest('.ddv-panel');
-    if (panel) panel.classList.toggle('collapsed');
+// ── Right-panel sliding tabs (Summary / Records / Review / Batch) ────────────
+const rtabsBar = $id('ddv-rtabs');
+function positionInk() {
+    const ink = rtabsBar.querySelector('.ddv-rtab-ink');
+    const on  = rtabsBar.querySelector('button[data-tab].on');
+    if (!ink || !on) return;
+    ink.style.left  = on.offsetLeft + 'px';
+    ink.style.width = on.offsetWidth + 'px';
 }
+function setRTab(name) {
+    const views = Array.from(document.querySelectorAll('.ddv-rtab-view'));
+    const i = views.findIndex(v => v.dataset.view === name);
+    if (i < 0) return;
+    rtabsBar.querySelectorAll('button[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+    $id('ddv-rtab-track').style.transform = `translateX(-${i * 100}%)`;
+    positionInk();
+}
+rtabsBar.addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-tab]');
+    if (b) setRTab(b.dataset.tab);
+});
+window.addEventListener('resize', positionInk);
+window.addEventListener('load', positionInk);   // reposition once fonts settle
+setRTab('summary');
 
 // ── Right-panel drawer (small screens) ───────────────────────────────────────
 function toggleDrawer(force) {

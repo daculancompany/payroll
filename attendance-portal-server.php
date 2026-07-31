@@ -91,8 +91,11 @@ foreach ($rows as $att) {
     $timeIn  = '';
     $timeOut = '';
     if (!empty($logs_obj)) {
-        $timeIn  = date('g:i A', strtotime($logs_obj[0]->dateTime ?? ''));
-        $timeOut = count($logs_obj) > 1 ? date('g:i A', strtotime(end($logs_obj)->dateTime ?? '')) : '';
+        // "+1" when the punch crosses midnight — a night shift's out is stored
+        // on the row of the evening it started, so an unmarked 5:00 AM reads
+        // like the employee clocked out before clocking in.
+        $timeIn  = dtr_punch_time($dt, $logs_obj[0]->dateTime ?? '', 'g:i A');
+        $timeOut = count($logs_obj) > 1 ? dtr_punch_time($dt, end($logs_obj)->dateTime ?? '', 'g:i A') : '';
     }
 
     $popLines = '';
@@ -101,7 +104,7 @@ foreach ($rows as $att) {
         $chip  = $isBio ? 'bio' : 'manual';
         $icon  = $isBio ? 'ri-fingerprint-line' : 'ri-edit-line';
         $lbl   = ($li === 0) ? 'IN' : (($li === count($logs_obj) - 1) ? 'OUT' : '#' . ($li + 1));
-        $ltime = date('g:i A', strtotime($lg->dateTime ?? ''));
+        $ltime = dtr_punch_time($dt, $lg->dateTime ?? '', 'g:i A');
         $popLines .= '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;">'
             . '<span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">' . $lbl . '</span>'
             . '<span class="dtr-log-chip ' . $chip . '"><i class="' . $icon . '"></i> ' . $ltime . '</span>'

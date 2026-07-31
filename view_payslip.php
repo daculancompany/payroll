@@ -60,6 +60,9 @@ $sunday_duty_amt     = $payroll['sunday_duty']      * $payroll['per_day'];
 // NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30% special
 // holiday premium. Leave the literals alone.
 $special_holiday_amt = (($payroll['per_day'] / 8) * 2.4) * $payroll['special_holiday'];
+// Night differential: hours worked 10PM–6AM, premium priced at calc time and
+// stored on the item (payroll_items.nsd_hours / nsd_amount).
+$nsd_amount = (float)($payroll['nsd_amount'] ?? 0);
 
 // Gross per the employee's pay basis — MUST mirror get_payroll_rows_data() /
 // the payroll details table, or the payslip's Gross − Deductions ≠ Net.
@@ -74,9 +77,11 @@ $daily_basic_amount  = ($payroll['present'] + (float)($payroll['paid_leave'] ?? 
 if ($is_monthly) {
     $gross_salary = $semi_monthly_amount
                   + $overtime_amount + $legal_holiday_amt + $sunday_duty_amt + $special_holiday_amt
+                  + $nsd_amount
                   - $late_amount;
 } else {
     $gross_salary = $daily_basic_amount + $overtime_amount + $allowance_amount
+                  + $nsd_amount
                   - $late_amount;
 }
 
@@ -747,6 +752,11 @@ body.has-toolbar { padding-top: 50px; }
     <?php if ($payroll['ot'] > 0): ?>
     <div class="grp-lbl">Overtime</div>
     <table class="item"><tr><td class="sub-lbl"><?= number_format($payroll['ot'], 2) ?> hrs × ₱<?= number_format($payroll['ot_rate'],2) ?>/hr</td><td class="sub-amt">₱ <?= number_format($overtime_amount, 2) ?></td></tr></table>
+    <?php endif; ?>
+
+    <?php if ($nsd_amount > 0 || (float)($payroll['nsd_hours'] ?? 0) > 0): ?>
+    <div class="grp-lbl">Night Differential</div>
+    <table class="item"><tr><td class="sub-lbl"><?= number_format((float)($payroll['nsd_hours'] ?? 0), 2) ?> hrs (10PM–6AM)</td><td class="sub-amt">₱ <?= number_format($nsd_amount, 2) ?></td></tr></table>
     <?php endif; ?>
 
     <?php /* One-off allowances added for this employee alone */ ?>

@@ -309,6 +309,8 @@ async function lockPayroll(id) {
             r => "<b>" + r.name + "</b> — " + peso(r.prev) + " → " + peso(r.net) + " (" + (r.pct > 0 ? "+" : "") + r.pct + "%)");
         html += section("🟡", "Missing DTR days", chk.missing,
             r => "<b>" + r.name + "</b> — " + r.missing + " day(s) unaccounted (" + r.counted + " of " + r.expected + ")");
+        html += section("🌙", "Night hours but ₱0 night differential", chk.nd_zero,
+            r => "<b>" + r.name + "</b> — " + r.hours + " hr(s) 10PM–6AM unpaid (check the shift's NSD setting)");
     }
 
     const allClear = chk?.result && issues === 0;
@@ -492,7 +494,7 @@ $(document).ready(function () {
         }
         // Instantly reflect adjustment / deduction edits in this row's Net Pay
         // (+1 = added to net, −1 = deducted). Server recomputes on Save.
-        const NET_FIELDS = { adjustment: 1, other_deduction: -1, sss_fund: -1, jei_advances: -1, jcc_advances: -1, tax: -1 };
+        const NET_FIELDS = { adjustment: 1, nsd_amount: 1, other_deduction: -1, sss_fund: -1, jei_advances: -1, jcc_advances: -1, tax: -1 };
         if (inputType in NET_FIELDS) {
             recalcRowNet(this, inputId, NET_FIELDS[inputType]);
         }

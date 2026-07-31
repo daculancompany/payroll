@@ -33,6 +33,32 @@
     // Undertime is stored as decimal hours; the paper form wants Hours + Minutes.
     function utSplit(ut) { var h = Math.floor(ut || 0); return [h, Math.round(((ut || 0) - h) * 60)]; }
 
+    // A punch time, marked "+N" when it landed N calendar days after the row it
+    // belongs to. An overnight shift's out is filed under the day the shift
+    // STARTED, so an unmarked "6:10" on the 29th looks like the employee left
+    // twelve hours before arriving. The marker carries the real date on hover.
+    function punch(txt, off, iso, tip) {
+        if (!txt) return '';
+        off = Number(off || 0);
+        if (off <= 0) return esc(txt);
+        // Line 1 states the fact, line 2 gives the full stamp the cell can't show
+        // — the sheet prints "6:10" with no AM/PM, which is the whole ambiguity.
+        var day = off === 1 ? 'Next day' : off + ' days later';
+        // tabindex: on a phone there is no hover, so the marker has to be
+        // focusable for a tap to reveal the tooltip.
+        return esc(txt)
+            + '<sup class="nextday" tabindex="0" role="note" data-tip="'
+            + esc(day + ' — punched after midnight') + '\n'
+            + esc(tip || fmtDay(iso, off) + ' · ' + txt) + '">+' + off + '</sup>';
+    }
+    var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    var DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    function fmtDay(iso, off) {
+        var d = new Date(iso + 'T00:00:00');
+        d.setDate(d.getDate() + Number(off || 0));
+        return DOW[d.getDay()] + ', ' + MON[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+    }
+
     function eachDay(from, to, cb) {
         if (!from || !to) return;
         var d = new Date(from + 'T00:00:00'), end = new Date(to + 'T00:00:00');
@@ -48,6 +74,22 @@
     //   holiday {k,t:'legal'|'special',lbl}  leave {k,lbl,s,half}
     //   off {k}                              req  {k,t:'incident'|'overtime',s}
     function markInfo(m) {
+        // Which shift the day ran on. Colour-coded by when it starts so a month
+        // of mixed rotations is readable at a glance: day / afternoon / night.
+        // Carries `note` for the tooltip only — it is not an absence reason, so
+        // blank days must not print it across their time cells (see below).
+        if (m.k === 'sched') {
+            var kind = m.g ? 'noc' : (m.sh >= 12 ? 'eve' : 'day');
+            var kindLbl = { day: 'Day shift', eve: 'Afternoon shift', noc: 'Night shift' }[kind];
+            return {
+                k: 'sched', cls: 'dm-sch dm-sch-' + kind,
+                ltr: '<i class="ri-calendar-2-line"></i>',
+                // Two lines: the shift's own name, then the hours it covers and
+                // what kind of shift that makes it.
+                note: String(m.lbl || 'SHIFT')
+                    + (m.st ? '\n' + m.st + ' – ' + m.et + ' · ' + kindLbl : '\n' + kindLbl)
+            };
+        }
         if (m.k === 'holiday') return {
             cls: m.t === 'legal' ? 'dm-hol' : 'dm-spc', ltr: 'H',
             note: (m.t === 'legal' ? 'LEGAL HOLIDAY' : 'SPECIAL HOLIDAY') + (m.lbl ? ' — ' + m.lbl : '')
@@ -83,14 +125,18 @@
             var wkend = (dow === 0 || dow === 6) ? ' wkend' : '';
             var infos = (marks[iso] || []).map(markInfo);
             var badges = infos.map(function (i) {
-                return '<span class="dm ' + i.cls + '" data-tip="' + esc(i.note) + '">' + i.ltr + '</span>';
+                return '<span class="dm ' + i.cls + '" tabindex="0" role="note" data-tip="'
+                    + esc(i.note) + '">' + i.ltr + '</span>';
             }).join('');
             if (!d) {
                 // A marked blank day explains itself across the time cells,
                 // the way a paper DTR is annotated (HOLIDAY / SL / DAY OFF).
-                var blankTimes = infos.length
-                    ? '<td class="dm-note ' + infos[0].cls + '" colspan="' + (ampm ? 4 : 2) + '">'
-                      + esc(infos.map(function (i) { return i.note; }).join(' · ')) + '</td>'
+                // The shift chip is excluded — it says what was scheduled, not
+                // why nobody clocked in, and would otherwise stamp every blank.
+                var reasons = infos.filter(function (i) { return i.k !== 'sched'; });
+                var blankTimes = reasons.length
+                    ? '<td class="dm-note ' + reasons[0].cls + '" colspan="' + (ampm ? 4 : 2) + '">'
+                      + esc(reasons.map(function (i) { return i.note; }).join(' · ')) + '</td>'
                     : (ampm ? '<td></td><td></td><td></td><td></td>' : '<td></td><td></td>');
                 rows += '<tr class="absent' + wkend + '"><td class="day">' + dayNo + '</td>' + blankTimes
                     + '<td class="x-col num"></td><td class="x-col num ot"></td>'
@@ -100,11 +146,25 @@
             }
             var ut = utSplit(d.ut);
             var times = ampm
-                ? '<td>' + esc(d.am_in) + '</td><td>' + esc(d.am_out) + '</td><td>' + esc(d.pm_in) + '</td><td>' + esc(d.pm_out) + '</td>'
-                : '<td>' + esc(d.in) + '</td><td>' + esc(d.out) + '</td>';
+                ? '<td>' + esc(d.am_in) + '</td><td>' + esc(d.am_out) + '</td><td>' + esc(d.pm_in) + '</td>'
+                  + '<td>' + punch(d.pm_out, d.out_off, iso, d.out_tip) + '</td>'
+                : '<td>' + punch(d.in, d.in_off, iso, d.in_tip) + '</td>'
+                  + '<td>' + punch(d.out, d.out_off, iso, d.out_tip) + '</td>';
+            // Hovering the day number of a worked day tells the whole story of
+            // that day: the shift it ran on, then whatever was written into
+            // DTR_details.notes. The chips stay for at-a-glance colour; this is
+            // the detail behind them, on the target an admin naturally points at.
+            var sched  = infos.filter(function (i) { return i.k === 'sched'; })[0];
+            var tipLines = [];
+            if (sched) tipLines.push(sched.note);
+            if (d.note) tipLines.push(d.note);
+            var noTip = tipLines.length
+                ? '<span class="day-no has-tip" tabindex="0" role="note" data-tip="'
+                  + esc(tipLines.join('\n')) + '">' + dayNo + '</span>'
+                : '<span class="day-no">' + dayNo + '</span>';
             var dayCell = badges
-                ? '<span class="day-no">' + dayNo + '</span><span class="day-marks">' + badges + '</span>'
-                : dayNo;
+                ? noTip + '<span class="day-marks">' + badges + '</span>'
+                : (tipLines.length ? noTip : dayNo);
             rows += '<tr class="' + wkend.trim() + '">'
                 + '<td class="day">' + dayCell + '</td>' + times
                 + '<td class="x-col num">' + (d.wh > 0 ? num(d.wh) : '') + '</td>'

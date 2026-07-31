@@ -304,12 +304,13 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                 <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?> (<?= (int)$t['days_allowed'] ?> days/yr)</option>
                             <?php endwhile; ?>
                         </select>
+                        <div id="leave-bal-hint" class="mt-1" style="display:none;font-size:11.5px;font-weight:700;"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Leave Day(s) <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" id="leave-dates" placeholder="Pick one or more days…" readonly>
                         <input type="hidden" name="dates" id="leave-dates-hidden">
-                        <small class="text-muted"><i class="ri-information-line"></i> Pick any individual days (e.g. Mon &amp; Wed). Holiday dates are disabled.</small>
+                        <small class="text-muted"><i class="ri-information-line"></i> Pick any individual days (e.g. Mon &amp; Wed). Holidays and this employee's already-filed leave dates are disabled.</small>
                     </div>
                     <div class="alert alert-info py-2 px-3 mb-3" id="leave-duration-info" style="display:none;">
                         <i class="ri-time-line me-1"></i>Total: <b id="leave-duration-val">0</b> day(s)
@@ -321,7 +322,7 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Submit</button>
+                    <button type="submit" id="leave-submit-btn" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Submit</button>
                 </div>
             </div>
         </form>
@@ -387,10 +388,69 @@ document.addEventListener('DOMContentLoaded', function () {
                 const box = document.getElementById('leave-duration-info');
                 if (sel.length) { document.getElementById('leave-duration-val').textContent = sel.length; box.style.display = 'block'; }
                 else box.style.display = 'none';
+                lvUpdateBalance();
             }
         });
     }
+    // Balance + taken-dates react to who/what is being filed (select2 fires
+    // jQuery change events, so wire through jQuery).
+    if (window.jQuery) {
+        jQuery('#leave-employee').on('change', lvFetchInfo);
+        jQuery('#leave-type').on('change', lvUpdateBalance);
+    }
 });
+
+// ── Per-employee filing info: remaining credits per leave type + dates already
+// covered by pending/approved requests. Mirrors the employee portal's live
+// balance hint and disables taken dates in the picker; the server re-checks
+// both on save (save_leave_request), so this is UX, not the security boundary.
+var lvInfo = { remain: {}, taken: [] };
+function lvSetPickerDisable() {
+    if (leaveFp) leaveFp.set('disable', LEAVE_BLOCKED.concat(lvInfo.taken));
+}
+function lvSelectedCount() {
+    return (document.getElementById('leave-dates-hidden').value || '').split(',').filter(Boolean).length;
+}
+function lvTrim(v) { v = Number(v) || 0; return v % 1 === 0 ? String(v) : v.toFixed(1); }
+function lvUpdateBalance() {
+    var hint = document.getElementById('leave-bal-hint');
+    var btn  = document.getElementById('leave-submit-btn');
+    if (!hint) return;
+    var tid = document.getElementById('leave-type').value;
+    var rem = lvInfo.remain[tid];
+    if (tid === '' || rem === undefined || rem === null) {   // no type picked, or an unpaid (LWOP) type — no credit cap
+        hint.style.display = 'none';
+        if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+        return;
+    }
+    var need = lvSelectedCount(), over = need > rem + 0.001;
+    hint.style.display = 'block';
+    hint.style.color = over ? '#c62828' : '#4e3483';
+    hint.innerHTML = over
+        ? '<i class="ri-error-warning-line"></i> Not enough credits — this needs <b>' + lvTrim(need) + '</b> day(s) but only <b>' + lvTrim(Math.max(0, rem)) + '</b> remain (pending requests included).'
+        : (need > 0
+            ? '<i class="ri-wallet-3-line"></i> Uses <b>' + lvTrim(need) + '</b> of <b>' + lvTrim(rem) + '</b> remaining day(s).'
+            : '<i class="ri-wallet-3-line"></i> <b>' + lvTrim(rem) + '</b> day(s) left for this leave type.');
+    if (btn) { btn.disabled = over; btn.style.opacity = over ? '.55' : ''; }
+}
+function lvFetchInfo() {
+    var emp = document.getElementById('leave-employee').value;
+    var exc = document.getElementById('leave-id').value || 0;
+    lvInfo = { remain: {}, taken: [] };
+    lvSetPickerDisable();
+    lvUpdateBalance();
+    if (!emp) return;
+    fetch('ajax.php?action=get_leave_filing_info', {
+        method: 'POST',
+        body: new URLSearchParams({ employee_id: emp, exclude_id: exc })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.result) {
+            lvInfo = { remain: j.remain || {}, taken: j.taken || [] };
+            lvSetPickerDisable();
+            lvUpdateBalance();
+        }
+    }).catch(function () { /* server still validates on save */ });
+}
 
 function resetLeaveModal() {
     document.getElementById('leave-id').value = '';
@@ -398,6 +458,9 @@ function resetLeaveModal() {
     document.getElementById('leave-duration-info').style.display = 'none';
     document.getElementById('leave-dates-hidden').value = '';
     if (leaveFp) leaveFp.clear();
+    lvInfo = { remain: {}, taken: [] };
+    lvSetPickerDisable();
+    lvUpdateBalance();
     document.getElementById('leave-modal-title').innerHTML = '<i class="ri-calendar-event-line me-2" style="color:#673bb6;"></i>File Leave';
     if (window.jQuery) {
         jQuery('#leave-employee').val('').trigger('change');
@@ -434,6 +497,15 @@ document.getElementById('modal-leave').addEventListener('hidden.bs.modal', reset
 
 document.getElementById('form-leave').addEventListener('submit', async function (e) {
     e.preventDefault();
+    // Client-side balance guard — same rule the server enforces on save.
+    const tid = document.getElementById('leave-type').value;
+    const rem = lvInfo.remain[tid];
+    if (rem !== undefined && rem !== null && lvSelectedCount() > rem + 0.001) {
+        Swal.fire({ icon: 'error', title: 'Not enough leave credits',
+            text: 'This request needs ' + lvTrim(lvSelectedCount()) + ' day(s) but the employee only has '
+                + lvTrim(Math.max(0, rem)) + ' left for this leave type (pending requests included).' });
+        return;
+    }
     // Confirm before saving — filing and editing both go through here.
     const isEdit = !!document.getElementById('leave-id').value;
     const c = await Swal.fire({

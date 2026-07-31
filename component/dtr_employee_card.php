@@ -41,7 +41,7 @@ function render_dtr_employee_card($empId, array $empGroup, array $empTotals, $lo
         <div class="ecard-left">
             <div class="dtr-emp-init"><?= $empInitials ?></div>
             <div>
-                <div class="ecard-name"><?= htmlspecialchars($info['lastname'] . ', ' . $info['firstname'] . ' ' . ($info['middlename'] ?? '')) ?></div>
+                <div class="ecard-name" data-emp-view="<?= (int)$empId ?>" title="View employee details"><?= htmlspecialchars($info['lastname'] . ', ' . $info['firstname'] . ' ' . ($info['middlename'] ?? '')) ?></div>
                 <div class="ecard-meta">
                     <span class="dtr-pos-chip"><?= htmlspecialchars($info['position']) ?></span>
                     <span class="ecard-days"><i class="ri-calendar-line"></i><?= $totalDays ?> day<?= $totalDays != 1 ? 's' : '' ?></span>

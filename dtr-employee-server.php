@@ -435,10 +435,17 @@ if ($action === 'docs') {
             $E = &$byEmp[$eid];
             $date = $row['attendance_date'];
             if (!isset($E['days'][$date])) {
-                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => []];
+                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => ''];
                 $E['_logs'][$date] = [];
             }
             $D = &$E['days'][$date];
+            // DTR_details.notes for the day — surfaced on hover over the day
+            // number. A date can carry more than one record (a split shift, a
+            // manual correction), so keep each distinct note rather than the last.
+            $rowNote = trim((string)($row['notes'] ?? ''));
+            if ($rowNote !== '' && strpos($D['note'], $rowNote) === false) {
+                $D['note'] = $D['note'] === '' ? $rowNote : $D['note'] . ' · ' . $rowNote;
+            }
             $D['wh']   += (float)$row['work_hours'];
             $D['ot']   += (float)$row['overtime'];
             $D['ut']   += (float)$row['undertime'];
@@ -564,11 +571,13 @@ if ($action === 'docs') {
         }
 
         $schedMap = [];   // eid => schedule windows overlapping the period (effective_from ASC)
-        $sq = $conn->prepare("SELECT employee_id, rest_days, effective_from, effective_to
-                              FROM employee_schedules
-                              WHERE employee_id IN ($idList) AND effective_from <= ?
-                                AND (effective_to IS NULL OR effective_to >= ?)
-                              ORDER BY effective_from ASC");
+        $sq = $conn->prepare("SELECT es.employee_id, es.rest_days, es.effective_from, es.effective_to,
+                                     ws.description AS sched_name, ws.start_time, ws.end_time, ws.is_graveyard
+                              FROM employee_schedules es
+                              LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
+                              WHERE es.employee_id IN ($idList) AND es.effective_from <= ?
+                                AND (es.effective_to IS NULL OR es.effective_to >= ?)
+                              ORDER BY es.effective_from ASC");
         $sq->bind_param('ss', $dTo, $dFrom);
         $sq->execute();
         $sres = $sq->get_result();
@@ -606,9 +615,24 @@ if ($action === 'docs') {
                 $f = function ($ts) { return date('g:i', $ts); };
                 $n = count($logs);
                 // Single-mode cells: plain first-in / last-out for the day.
-                $cells = ['am_in' => '', 'am_out' => '', 'pm_in' => '', 'pm_out' => '', 'in' => '', 'out' => ''];
+                $cells = ['am_in' => '', 'am_out' => '', 'pm_in' => '', 'pm_out' => '', 'in' => '', 'out' => '',
+                          'in_off' => 0, 'out_off' => 0];
                 if ($n >= 1) $cells['in']  = $f($logs[0]);
                 if ($n >= 2) $cells['out'] = $f($logs[$n - 1]);
+                // How many calendar days past the row's own date each punch fell
+                // on. A night shift's out is stored on the day the shift STARTED,
+                // so "6:10" alone reads as if they left before they arrived —
+                // the sheet renders these as "6:10 +1".
+                $dayOff = function ($ts) use ($date) {
+                    return (int) (new DateTime($date))->diff(new DateTime(date('Y-m-d', $ts)))->format('%r%a');
+                };
+                if ($n >= 1) $cells['in_off']  = max(0, $dayOff($logs[0]));
+                if ($n >= 2) $cells['out_off'] = max(0, $dayOff($logs[$n - 1]));
+                // Full stamp for the marker's tooltip. The cell prints "6:10"
+                // with no AM/PM, so the tooltip is where that gets resolved.
+                $tip = function ($ts) { return date('D, M j, Y · g:i A', $ts); };
+                if ($cells['in_off']  > 0) $cells['in_tip']  = $tip($logs[0]);
+                if ($cells['out_off'] > 0) $cells['out_tip'] = $tip($logs[$n - 1]);
                 // Positional mapping, the way the paper form is filled:
                 // in / lunch-out / lunch-in / out. Odd counts fall back on the
                 // clock: a middle log before 1 PM is the lunch-out, after is the
@@ -646,12 +670,31 @@ if ($action === 'docs') {
                 if (isset($holidays[$ymd]))       $m[] = ['k' => 'holiday'] + $holidays[$ymd];
                 if (isset($leaveMap[$eid][$ymd])) $m[] = ['k' => 'leave'] + $leaveMap[$eid][$ymd];
                 // Rest day: the latest schedule window covering this day wins.
+                // Deliberately covering-only — marking someone off duty on the
+                // strength of an assignment that doesn't cover the day would be
+                // inventing a day off.
                 $rest = null;
                 foreach ($sch as $srow) {
                     if ($srow['effective_from'] <= $ymd
                         && (empty($srow['effective_to']) || $srow['effective_to'] >= $ymd)) {
                         $rest = (string)$srow['rest_days'];
                     }
+                }
+                // Which shift the day was worked under — a calendar chip on the
+                // sheet, so an admin scanning a month can tell a 6AM–2PM day from
+                // a 6PM–6AM one without opening anything. Falls back to the
+                // nearest assignment (unlike $rest above) so the chip names the
+                // same shift the day's hours were computed against.
+                $shift = pick_schedule_window($sch, $ymd);
+                if ($shift && !empty($shift['sched_name'])) {
+                    $m[] = [
+                        'k'   => 'sched',
+                        'lbl' => $shift['sched_name'],
+                        'st'  => date('g:i A', strtotime($shift['start_time'])),
+                        'et'  => date('g:i A', strtotime($shift['end_time'])),
+                        'g'   => (int)$shift['is_graveyard'],
+                        'sh'  => (int)date('G', strtotime($shift['start_time'])),
+                    ];
                 }
                 if ($rest !== null && $rest !== ''
                     && in_array((int)date('w', $d), array_map('intval', explode(',', $rest)), true)) {

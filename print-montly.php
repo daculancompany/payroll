@@ -210,7 +210,6 @@ $payroll_type = $payroll['type'];
                                 <th rowspan="2" class="text-center primary-header">No.</th>
                                 <th rowspan="2" class="text-center primary-header">Name</th>
                                 <th rowspan="2" class="text-center primary-header">Position</th>
-                                <th rowspan="2" class="text-center primary-header">Project Code</th>
                                 <th rowspan="2" class="text-center   flip-text">
                                     <div class="flip-text">Monthly</div>
                                     <div class="flip-text">Basic Pay</div>
@@ -253,6 +252,8 @@ $payroll_type = $payroll['type'];
                                 <th rowspan="2" class="text-center  primary-header">Amount</th>
                                 <th colspan="3" class="text-center info-header">Overtime</th>
 
+                                <th colspan="2" class="text-center info-header">Night Diff</th>
+
                                 <th colspan="3" class="text-center info-header">Late</th>
                                 <th rowspan="2" class="text-center success-header">Total Gross PAY</th>
                                 <th colspan="<?= count($contributions_settings) + 4 ?>" class="text-center danger-header">Deduction</th>
@@ -271,6 +272,9 @@ $payroll_type = $payroll['type'];
                                 <th class="text-center  info-header">No. hr</th>
                                 <th class="text-center  info-header">Rate</th>
                                 <th class="text-center  info-header">Amount</th>
+
+                                <th class="text-center  info-header">ND Hrs</th>
+                                <th class="text-center  info-header">ND Amount</th>
 
                                 <th class="text-center  info-header">Min</th>
                                 <th class="text-center  info-header">Rate</th>
@@ -376,10 +380,15 @@ $payroll_type = $payroll['type'];
                                 $special_holiday = $row['special_holiday'];
                                 // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
+                                // Night differential — part of gross (mirrors the workbench and view_payslip).
+                                $nsd_hours  = (float)($row['nsd_hours'] ?? 0);
+                                $nsd_amount = (float)($row['nsd_amount'] ?? 0);
+                                $t_nsd_hrs  = ($t_nsd_hrs ?? 0) + $nsd_hours;
+                                $t_nsd_amt  = ($t_nsd_amt ?? 0) + $nsd_amount;
 
                                 $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;
                                 $t_total_amount += $total_amount;
-                                $gross_salary =  ($total_amount +   $overtime_amount   +  $legal_holiday_amount + $sunday_duty_amount +  $special_holiday_amount - $late_amount);
+                                $gross_salary =  ($total_amount +   $overtime_amount   +  $legal_holiday_amount + $sunday_duty_amount +  $special_holiday_amount + $nsd_amount - $late_amount);
 
                                 $contributions = json_decode($row['contributions'], true);
                                 $deductions = json_decode($row['deductions'], true);
@@ -404,9 +413,6 @@ $payroll_type = $payroll['type'];
                                     </td>
                                     <td class="text-center">
                                         <?= $row['position'] ?>
-                                    </td>
-                                    <td class="text-center">
-                                        <?= $row['site_code'] ?>
                                     </td>
                                     <td class="text-right">
                                         <?= number_format($row['basic_pay'], 2) ?>
@@ -472,6 +478,15 @@ $payroll_type = $payroll['type'];
                                     </td>
 
                                     <!-- /ot -->
+
+                                    <!-- Night diff -->
+                                    <td class="text-center">
+                                        <?= number_format($nsd_hours, 2) ?>
+                                    </td>
+                                    <td class="text-right">
+                                        <?= number_format($nsd_amount, 2) ?>
+                                    </td>
+                                    <!-- /Night diff -->
 
                                     <!-- Late -->
                                     <td class="text-center">
@@ -580,7 +595,7 @@ $payroll_type = $payroll['type'];
                         <tfoot>
                             <tr>
                                 <th></th>
-                                <th colspan="3" class="text-center">SUBTOTAL AMOUNT</th>
+                                <th colspan="2" class="text-center">SUBTOTAL AMOUNT</th>
                                 <th></th>
                                 <th></th>
                                 <th></th>
@@ -601,6 +616,8 @@ $payroll_type = $payroll['type'];
                                 <th class="text-right"><?= number_format($t_ot_rate, 2) ?></th>
 
                                 <th></th>
+                                <th class="text-center"><?= number_format($t_nsd_hrs ?? 0, 2) ?></th>
+                                <th class="text-right"><?= number_format($t_nsd_amt ?? 0, 2) ?></th>
                                 <th></th>
                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                 <th></th>

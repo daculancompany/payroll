@@ -59,6 +59,20 @@ $calendar_events_portal = [];
 $ceq = $conn->query("SELECT title, start_date, end_date, type, color, note FROM calendar_events WHERE COALESCE(end_date,start_date) >= CURDATE() ORDER BY start_date ASC LIMIT 40");
 if ($ceq) while ($c = $ceq->fetch_assoc()) $calendar_events_portal[] = $c;
 
+// Days already covered by this employee's own pending/approved leaves — the
+// leave and LWOP pickers disable them up front (matching the admin File Leave
+// modal); the server-side duplicate guard still re-checks on submit.
+$my_taken_leave_dates = [];
+$mtq = $conn->query("SELECT dates, date_from, date_to FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1)");
+if ($mtq) while ($mt = $mtq->fetch_assoc()) {
+    $dd = [];
+    if (!empty($mt['dates'])) { $j = json_decode($mt['dates'], true); if (is_array($j)) $dd = $j; }
+    if (!$dd) { for ($s = strtotime($mt['date_from']); $s <= strtotime($mt['date_to']); $s = strtotime('+1 day', $s)) $dd[] = date('Y-m-d', $s); }
+    foreach ($dd as $d1) $my_taken_leave_dates[date('Y-m-d', strtotime($d1))] = true;
+}
+$my_taken_leave_dates = array_keys($my_taken_leave_dates);
+sort($my_taken_leave_dates);
+
 // ── Leave data for the portal Leave tab ─────────────────────────────────
 $leave_types_list = [];
 $lwop_types_list  = [];
@@ -3769,6 +3783,9 @@ function prependLeaveRow(req) {
 
 // ── Leave modals ─────────────────────────────────────────────────────────────
 var BLOCKED = <?= json_encode(array_values(array_unique($blocked_dates))) ?>;
+// Own pending/approved leave days — disabled in the leave/LWOP pickers so a
+// duplicate filing can't even be selected (the server re-checks anyway).
+var LV_TAKEN = <?= json_encode($my_taken_leave_dates) ?>;
 
 function openLeaveModal() {
     var m = new bootstrap.Modal(document.getElementById('modal-leave-request'));
@@ -3812,7 +3829,7 @@ function makeMultiDatePicker(inputId, hiddenId, opts) {
         keepOpen: !opts.single,                          // stack several days per visit
         widgetPositioning: { horizontal: 'auto', vertical: 'bottom' },  // keep the month header reachable in the modal
         minDate: moment().startOf('day'),
-        disabledDates: BLOCKED.map(function (s) { return moment(s, 'YYYY-MM-DD'); }),
+        disabledDates: BLOCKED.concat(window.LV_TAKEN || []).map(function (s) { return moment(s, 'YYYY-MM-DD'); }),
         showClear: true,                                 // toolbar: wipe the selection…
         showClose: true,                                 // …and a Done button to dismiss
         tooltips: { clear: 'Clear all selected days', close: 'Done — keep my selection' },
@@ -4432,6 +4449,11 @@ function renderDtrReview(res) {
     res.days.forEach(function (d) {
         days[d.iso] = {
             in: d.time_in, out: d.time_out,
+            in_off: d.in_off || 0, out_off: d.out_off || 0,
+            in_tip: d.in_tip || '', out_tip: d.out_tip || '',
+            // DTR_details.notes — 'note' here, not d.note, which the endpoint
+            // uses for the rejection reason shown elsewhere in this view.
+            note: d.dtr_note || '',
             wh: d.work_hours, ot: d.overtime, ut: (d.undertime || 0), late: d.late
         };
         totals.wh += d.work_hours; totals.ot += d.overtime;
@@ -4448,7 +4470,8 @@ function renderDtrReview(res) {
         logMode: (window.DTR_LOG_MODE || 'single'),
         compact: true,
         days: days,
-        totals: totals
+        totals: totals,
+        marks: res.marks || {}
     });
 
     var reviewedNote = '';

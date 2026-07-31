@@ -154,7 +154,7 @@ switch ($action) {
         }
 
         $days = [];
-        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note
+        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
         $st->bind_param('ii', $ddtr_id, $emp_id);
         $st->execute();
@@ -162,9 +162,19 @@ switch ($action) {
         while ($d = $res->fetch_assoc()) {
             $logs = json_decode($d['logs'], true) ?: [];
             $tIn = $tOut = '';
+            // Day offsets: a night shift's out is filed under the day the shift
+            // STARTED, so the sheet flags it "+1" rather than showing a bare
+            // 6:10 AM that reads as leaving before arriving.
+            $rowDate = date('Y-m-d', strtotime($d['date_time']));
+            $inOff = $outOff = 0;
+            $dayOff = function ($t) use ($rowDate) {
+                return max(0, (int) (new DateTime($rowDate))->diff(new DateTime(date('Y-m-d', strtotime($t))))->format('%r%a'));
+            };
             if (!empty($logs)) {
                 $tIn  = date('g:i A', strtotime($logs[0]['dateTime']));
                 $tOut = count($logs) > 1 ? date('g:i A', strtotime(end($logs)['dateTime'])) : '';
+                $inOff  = $dayOff($logs[0]['dateTime']);
+                $outOff = count($logs) > 1 ? $dayOff(end($logs)['dateTime']) : 0;
             }
             // Full punch list so the detail view can mirror the admin DTR card
             // (IN / OUT / #n chips + biometric-vs-manual marker per punch).
@@ -184,6 +194,10 @@ switch ($action) {
                 'date'       => date('D, M j, Y', strtotime($d['date_time'])),
                 'time_in'    => $tIn,
                 'time_out'   => $tOut,
+                'in_off'     => $inOff,
+                'out_off'    => $outOff,
+                'in_tip'     => $inOff  > 0 ? date('D, M j, Y · g:i A', strtotime($logs[0]['dateTime'])) : '',
+                'out_tip'    => $outOff > 0 ? date('D, M j, Y · g:i A', strtotime(end($logs)['dateTime'])) : '',
                 'work_hours' => (float) $d['work_hours'],
                 'overtime'   => (float) $d['overtime'],
                 'undertime'  => (float) $d['undertime'],
@@ -194,6 +208,43 @@ switch ($action) {
                 // Why the timekeeper rejected this day — shown so a dispute
                 // can answer the actual reason instead of guessing it.
                 'note'       => (int)$d['status'] === 2 ? (string)($d['decision_note'] ?? '') : '',
+                // DTR_details.notes — surfaced on the day-number hover, same as
+                // the admin sheet. Kept apart from 'note' above, which this
+                // endpoint already spends on the rejection reason.
+                'dtr_note'   => trim((string)($d['notes'] ?? '')),
+            ];
+        }
+
+        // Shift per day, in the marker shape the shared Form 48 template expects,
+        // so the employee's copy carries the same calendar chip and day-hover
+        // detail as the admin sheet instead of a bare grid of times.
+        $marks = [];
+        $sq = $conn->prepare("SELECT es.effective_from, es.effective_to, ws.description AS sched_name,
+                                     ws.start_time, ws.end_time, ws.is_graveyard
+                              FROM employee_schedules es
+                              LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
+                              WHERE es.employee_id = ? AND es.effective_from <= ?
+                                AND (es.effective_to IS NULL OR es.effective_to >= ?)
+                              ORDER BY es.effective_from ASC");
+        $pFrom = date('Y-m-d', strtotime($dtr['date_from']));
+        $pTo   = date('Y-m-d', strtotime($dtr['date_to']));
+        $sq->bind_param('iss', $emp_id, $pTo, $pFrom);
+        $sq->execute();
+        $windows = $sq->get_result()->fetch_all(MYSQLI_ASSOC);
+        for ($t = strtotime($pFrom); $t <= strtotime($pTo); $t = strtotime('+1 day', $t)) {
+            $ymd = date('Y-m-d', $t);
+            // Covering window, else nearest — the same fallback the hours were
+            // computed with, so the chip can't name a different shift than the
+            // one the day's figures came from.
+            $shift = pick_schedule_window($windows, $ymd);
+            if (!$shift || empty($shift['sched_name'])) continue;
+            $marks[$ymd][] = [
+                'k'   => 'sched',
+                'lbl' => $shift['sched_name'],
+                'st'  => date('g:i A', strtotime($shift['start_time'])),
+                'et'  => date('g:i A', strtotime($shift['end_time'])),
+                'g'   => (int) $shift['is_graveyard'],
+                'sh'  => (int) date('G', strtotime($shift['start_time'])),
             ];
         }
 
@@ -211,6 +262,7 @@ switch ($action) {
                 'status' => (int) $dtr['status'],
             ],
             'days' => $days,
+            'marks' => $marks ?: new stdClass(),   // {} not [] when empty
             'review' => $review ?: null,
         ]);
         break;
@@ -495,6 +547,23 @@ switch ($action) {
             $nice = array_map(function ($d1) { return date('M d', strtotime($d1)); }, array_slice($dup_hit, 0, 5));
             echo json_encode(['result' => false, 'message' => 'You already have a pending or approved leave on: '
                 . implode(', ', $nice) . (count($dup_hit) > 5 ? '…' : '') . '. Please pick different day(s).']);
+            break;
+        }
+
+        // Holiday guard: reject days that fall on a leave-blocking calendar
+        // event. The picker greys them out, but the server must not trust the
+        // client — same rule the admin File Leave enforces (save_leave_request).
+        $lv_blocked = [];
+        $hbq = $conn->query("SELECT title, start_date, end_date FROM calendar_events WHERE blocks_leave = 1");
+        if ($hbq) while ($hb = $hbq->fetch_assoc()) {
+            $s = strtotime($hb['start_date']); $e2 = strtotime($hb['end_date'] ?: $hb['start_date']);
+            while ($s <= $e2) { $lv_blocked[date('Y-m-d', $s)] = $hb['title']; $s = strtotime('+1 day', $s); }
+        }
+        $holiday_hit = array_intersect($days, array_keys($lv_blocked));
+        if ($holiday_hit) {
+            $hnames = [];
+            foreach ($holiday_hit as $hd) $hnames[] = date('M d', strtotime($hd)) . ' (' . $lv_blocked[$hd] . ')';
+            echo json_encode(['result' => false, 'message' => 'Leave not allowed on: ' . implode(', ', $hnames) . '.']);
             break;
         }
 

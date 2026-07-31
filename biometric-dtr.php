@@ -61,6 +61,8 @@ $dayBadge = [
     'special_holiday' => ['Special Holiday 🟡', 'bg-warning text-dark'],
 ];
 ?>
+<?php // .dtr-nextday — the "+1" chip this page's Time In / Out cells emit. ?>
+<link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
 <div class="main-content">
     <div class="page-content">
         <div class="container-fluid">
@@ -137,8 +139,10 @@ $dayBadge = [
                                     <?php else: while ($row = $records->fetch_assoc()):
                                         $logs    = json_decode($row['logs'] ?? '[]', true) ?? [];
                                         $times   = array_map(function($l){ return strtotime($l['dateTime']); }, $logs);
-                                        $time_in  = !empty($times) ? date('h:i A', min($times)) : '—';
-                                        $time_out = count($times) > 1 ? date('h:i A', max($times)) : '—';
+                                        // Flagged with "+1" when the punch lands past midnight — an
+                                        // overnight shift's out belongs to the row it started on.
+                                        $time_in  = !empty($times) ? dtr_punch_time($row['date_time'], min($times)) : '—';
+                                        $time_out = count($times) > 1 ? dtr_punch_time($row['date_time'], max($times)) : '—';
                                         [$dtLabel, $dtClass] = $dayBadge[$row['day_type'] ?? 'regular'] ?? ['Regular','bg-secondary'];
                                     ?>
                                         <tr class="<?= !$row['is_complete'] ? 'table-warning' : '' ?>">

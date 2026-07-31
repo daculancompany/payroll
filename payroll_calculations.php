@@ -5,7 +5,7 @@
  *
  *   left    employee list (search + filters, payslip selection)
  *   center  the selected employee's categorized pay computation sheet
- *   right   employee summary + review progress + batch totals
+ *   right   tabbed panel — Summary / Insights (charts) / employee Review
  *
  * The classic Excel-style editing table now lives in the full-screen
  * #modal-table-editor ("Edit Sheet"); all editing/saving still runs through
@@ -304,6 +304,33 @@ function pcw_extra_totals($extras) {
     return $t;
 }
 
+// ── Name catalog for the one-off item picker ────────────────────────────
+// Suggestions come from the allowances / deductions masters plus every label
+// already used on a one-off line, so ad-hoc items stay named consistently.
+// Nothing is linked by id — payroll_item_extras stores the label as text —
+// so a name that isn't in the masters is still typed in and saved verbatim.
+$pcwExtraCatalog = ['allow' => [], 'deduct' => []];
+$pcwCatSeen      = ['allow' => [], 'deduct' => []];
+$pcwCatAdd = function ($bucket, $name, $desc, $used) use (&$pcwExtraCatalog, &$pcwCatSeen) {
+    $name = trim(preg_replace('/\s+/u', ' ', (string)$name));
+    if ($name === '') return;
+    $key = mb_strtolower($name);
+    if (isset($pcwCatSeen[$bucket][$key])) return;
+    $pcwCatSeen[$bucket][$key] = true;
+    $pcwExtraCatalog[$bucket][] = ['n' => $name, 'd' => trim((string)$desc), 'u' => $used ? 1 : 0];
+};
+if ($cq = $conn->query("SELECT allowance, description FROM allowances ORDER BY allowance ASC")) {
+    while ($cr = $cq->fetch_assoc()) $pcwCatAdd('allow', $cr['allowance'], $cr['description'], false);
+}
+if ($cq = $conn->query("SELECT deduction, description FROM deductions ORDER BY deduction ASC")) {
+    while ($cr = $cq->fetch_assoc()) $pcwCatAdd('deduct', $cr['deduction'], $cr['description'], false);
+}
+if ($pcwHasExtras && ($cq = $conn->query("SELECT DISTINCT kind, label FROM payroll_item_extras ORDER BY label ASC"))) {
+    while ($cr = $cq->fetch_assoc()) {
+        $pcwCatAdd((int)$cr['kind'] === 2 ? 'allow' : 'deduct', $cr['label'], '', true);
+    }
+}
+
 // ── Remittance breakdown accumulator ────────────────────────────────────
 // Filled inside both table loops (one call per deduction/refund cell), then
 // rendered as the Remittance modal. Keyed type-id: 1 contribution, 2 deduction,
@@ -339,6 +366,23 @@ $pay_rate_types = [];
 $rt_q = $conn->query("SELECT DISTINCT rate_type FROM payroll_items
     WHERE payroll_id = $id AND rate_type <> '' ORDER BY rate_type ASC");
 if ($rt_q) while ($rq2 = $rt_q->fetch_assoc()) $pay_rate_types[] = $rq2['rate_type'];
+
+// Shift effective on the period's last day, per employee in this payroll —
+// feeds the shift filter. Rows ordered by effective_from ASC so a later
+// assignment overwrites an earlier one and the newest schedule wins.
+$pay_schedules = [];
+$schedByEmp    = [];
+$sch_to = $conn->real_escape_string($payroll['date_to'] ?? date('Y-m-d'));
+$sch_q  = @$conn->query("SELECT es.employee_id, ws.description
+    FROM employee_schedules es
+    INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+    WHERE es.employee_id IN (SELECT employee_id FROM payroll_items WHERE payroll_id = $id)
+      AND es.effective_from <= '$sch_to'
+      AND (es.effective_to IS NULL OR es.effective_to >= '$sch_to')
+    ORDER BY es.effective_from ASC");
+if ($sch_q) while ($sr = $sch_q->fetch_assoc()) $schedByEmp[(int)$sr['employee_id']] = $sr['description'];
+$pay_schedules = array_values(array_unique(array_values($schedByEmp)));
+sort($pay_schedules, SORT_NATURAL | SORT_FLAG_CASE);
 
 $i = 0;
 $query = $conn->query("SELECT  a.*, f.site_code,f.site_name,f.site_address, e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay, d.name as department, p.name as position
@@ -879,8 +923,8 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 #pcw-boot.hide { opacity:0; pointer-events:none; }
 .pcw-boot-inner { display:flex; flex-direction:column; align-items:center; gap:14px; }
 .pcw-boot-ring { width:46px; height:46px; border-radius:50%;
-    border:4px solid #e1dcec; border-top-color:#107c41; animation:pcw-spin .8s linear infinite; }
-.pcw-boot-txt { font-size:13px; font-weight:700; color:#0e6b37; letter-spacing:.3px;
+    border:4px solid #e1dcec; border-top-color:#6642aa; animation:pcw-spin .8s linear infinite; }
+.pcw-boot-txt { font-size:13px; font-weight:700; color:#4e3483; letter-spacing:.3px;
     font-family:'Segoe UI', system-ui, Arial, sans-serif; }
 @keyframes pcw-spin { to { transform:rotate(360deg); } }
 </style>
@@ -1032,6 +1076,27 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                         <option value="<?= htmlspecialchars($prt, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($prt)) ?></option>
                                     <?php endforeach; ?>
                                 </select>
+                                <?php if ($pay_schedules): ?>
+                                <div class="pcw-fp-lbl">Shift</div>
+                                <select id="pcw-sch-filter" class="pcw-select">
+                                    <option value="">All Shifts</option>
+                                    <?php foreach ($pay_schedules as $ps): ?>
+                                        <option value="<?= htmlspecialchars($ps, ENT_QUOTES) ?>"><?= htmlspecialchars($ps) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <?php endif; ?>
+                                <?php /* Pay components — pull up everyone whose payslip carries
+                                         (or is missing) a given line: paid leave, OT, night
+                                         differential, holiday pay, rest-day duty. */ ?>
+                                <div class="pcw-fp-lbl">Pay components</div>
+                                <div class="pcw-rv-chips" id="pcw-has-chips">
+                                    <button type="button" data-has="" class="on">All</button>
+                                    <button type="button" data-has="leave" title="Has paid-leave days in this period"><i class="ri-flight-takeoff-line" style="color:#33a466;"></i> Paid leave</button>
+                                    <button type="button" data-has="ot" title="Has overtime hours"><i class="ri-timer-flash-line" style="color:#3f7fe0;"></i> Overtime</button>
+                                    <button type="button" data-has="nsd" title="Has night differential (10PM–6AM) hours"><i class="ri-moon-clear-line" style="color:#6642aa;"></i> Night diff</button>
+                                    <button type="button" data-has="hol" title="Worked a legal or special holiday"><i class="ri-calendar-event-line" style="color:#d68830;"></i> Holiday</button>
+                                    <button type="button" data-has="rest" title="Worked on a rest day"><i class="ri-hotel-bed-line" style="color:#c98a00;"></i> Rest day</button>
+                                </div>
                             </div>
                         </div>
                         <div class="pcw-list" id="pcw-list"></div>
@@ -1098,47 +1163,37 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                         </div>
                     </div>
 
-                    <!-- RIGHT: summary + insights + review -->
+                    <!-- RIGHT: one tabbed panel — Summary / Insights / Review -->
                     <div class="pcw-right">
-                        <div class="pcw-panel" style="flex-shrink:0;">
-                            <div class="pcw-panel-head pcw-ch" onclick="pcwTogglePanel(this)" title="Click to collapse / expand">
-                                <span><i class="ri-user-3-line"></i> Employee Summary</span>
-                                <i class="ri-arrow-down-s-line pcw-collapse-ic"></i>
-                            </div>
-                            <div class="pcw-sum-body" id="pcw-sum">
-                                <div style="font-size:12px;color:#948ea5;">No employee selected.</div>
-                            </div>
-                        </div>
-                        <!-- ── Batch Insights ── -->
                         <div class="pcw-panel grow">
-                            <div class="pcw-panel-head pcw-ch" onclick="pcwTogglePanel(this)" title="Click to collapse / expand">
-                                <span><i class="ri-lightbulb-flash-line"></i> Batch Insights</span>
-                                <span class="pcw-head-right">
-                                    <span id="pcw-ins-clear" style="display:none;font-weight:600;color:#c62828;font-size:10px;cursor:pointer;"><i class="ri-close-circle-line"></i> clear filter</span>
-                                    <i class="ri-arrow-down-s-line pcw-collapse-ic"></i>
-                                </span>
-                            </div>
-                            <div class="pcw-ins-body" id="pcw-insights"></div>
-                        </div>
-                        <?php if (in_array((int)$status, [2, 3], true)): ?>
-                        <!-- ── Employee Review Progress — same card shell as Batch Insights:
-                             fixed head, body-only scroll, collapsible. ── -->
-                        <div class="pcw-panel pcw-rv-panel">
-                            <div class="pcw-panel-head pcw-ch" onclick="pcwTogglePanel(this)" title="Click to collapse / expand">
-                                <span><i class="ri-user-received-2-line"></i> Employee Review</span>
-                                <span class="pcw-head-right">
-                                    <?php if ((int)$status === 3): ?>
-                                        <span class="pcw-head-badge rev">In progress</span>
-                                    <?php else: ?>
-                                        <span class="pcw-head-badge lock">Locked</span>
-                                    <?php endif; ?>
+                            <div class="pcw-rtabs" id="pcw-rtabs">
+                                <button type="button" class="pcw-rtab active" data-rtab="sum"><i class="ri-user-3-line"></i> Summary</button>
+                                <button type="button" class="pcw-rtab" data-rtab="ins"><i class="ri-donut-chart-fill"></i> Insights</button>
+                                <?php if (in_array((int)$status, [2, 3], true)): ?>
+                                <button type="button" class="pcw-rtab" data-rtab="rev">
+                                    <i class="ri-user-received-2-line"></i> Review
                                     <?php if ($pcwUnreadMsgs > 0): ?>
-                                    <span class="pcw-head-badge unread" id="prp-unread-chip" title="Employee messages nobody has opened yet">
-                                        <i class="ri-mail-unread-line"></i> <span id="prp-unread-n"><?= $pcwUnreadMsgs ?></span>
-                                    </span>
+                                    <span class="pcw-rtab-unread" id="prp-unread-chip" title="Employee messages nobody has opened yet"><span id="prp-unread-n"><?= $pcwUnreadMsgs ?></span></span>
                                     <?php endif; ?>
-                                    <i class="ri-arrow-down-s-line pcw-collapse-ic"></i>
-                                </span>
+                                </button>
+                                <?php endif; ?>
+                            </div>
+                            <div class="pcw-rpane active" data-rpane="sum">
+                                <div class="pcw-sum-body" id="pcw-sum">
+                                    <div style="font-size:12px;color:#948ea5;">No employee selected.</div>
+                                </div>
+                            </div>
+                            <div class="pcw-rpane" data-rpane="ins">
+                                <div class="pcw-ins-body" id="pcw-insights"></div>
+                            </div>
+                            <?php if (in_array((int)$status, [2, 3], true)): ?>
+                            <div class="pcw-rpane" data-rpane="rev">
+                            <div class="pcw-rv-status">
+                                <?php if ((int)$status === 3): ?>
+                                    <span class="pcw-head-badge rev">In progress</span>
+                                <?php else: ?>
+                                    <span class="pcw-head-badge lock">Locked</span>
+                                <?php endif; ?>
                             </div>
                             <div class="pcw-rv-body">
                                 <div class="prp-counts">
@@ -1213,8 +1268,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                 </details>
                                 <?php endif; ?>
                             </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
-                        <?php endif; ?>
                     </div>
                 </div>
             </div>
@@ -1363,6 +1419,8 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th colspan="6" class="text-center info-header">Holidays &amp; Extra Duties</th>
                                                 <!-- Overtime (3 cols) -->
                                                 <th colspan="3" class="text-center info-header">Overtime</th>
+                                                <!-- Night Diff (2 cols) -->
+                                                <th colspan="2" class="text-center info-header">Night Diff</th>
                                                 <!-- Late (3 cols) -->
                                                 <th colspan="3" class="text-center info-header">Late</th>
                                                 <th rowspan="2" class="text-center success-header">Total Gross Pay</th>
@@ -1402,6 +1460,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <!-- Overtime -->
                                                 <th class="text-center info-header">No. Hrs</th>
                                                 <th class="text-center info-header">Rate</th>
+                                                <th class="text-center info-header">Amount</th>
+                                                <!-- Night Diff -->
+                                                <th class="text-center info-header">Hrs</th>
                                                 <th class="text-center info-header">Amount</th>
                                                 <!-- Late -->
                                                 <th class="text-center info-header">Minutes</th>
@@ -1475,6 +1536,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                             $t_sun_d = 0; $t_sun_amt = 0;
                                             $t_spc_d = 0; $t_spc_amt = 0;
                                             $t_ot_hrs = 0; $t_ot_amt = 0;
+                                            $t_nsd_hrs = 0; $t_nsd_amt = 0;
                                             $t_late_min = 0; $t_late_amt = 0;
                                             $t_sss_fund = 0; $t_jei = 0; $t_jcc = 0; $t_tax = 0;
                                             $t_contrib = []; $t_refund = [];
@@ -1509,6 +1571,10 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $special_holiday = $row['special_holiday'];
                                                 // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
+                                                // Night differential — hours from the DTR, amount priced at calc
+                                                // time (stored on the item), both editable-visible on the sheet.
+                                                $nsd_hours  = (float)($row['nsd_hours'] ?? 0);
+                                                $nsd_amount = (float)($row['nsd_amount'] ?? 0);
 
                                                 $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;
                                                 $t_total_amount += $total_amount;
@@ -1516,7 +1582,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 // deductions are applied with the other deductions below.
                                                 $rowExtras = $pcwExtras[(int)$row['id']] ?? [];
                                                 $rowExtraT = pcw_extra_totals($rowExtras);
-                                                $gross_salary =  ($total_amount +   $overtime_amount   +  $legal_holiday_amount + $sunday_duty_amount +  $special_holiday_amount - $late_amount);
+                                                $gross_salary =  ($total_amount +   $overtime_amount   +  $legal_holiday_amount + $sunday_duty_amount +  $special_holiday_amount + $nsd_amount - $late_amount);
                                                 $gross_salary += $rowExtraT['add'];
 
                                                 $contributions = json_decode($row['contributions'], true);
@@ -1551,6 +1617,8 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $t_spc_amt     += $special_holiday_amount;
                                                 $t_ot_hrs      += $row['ot'];
                                                 $t_ot_amt      += $overtime_amount;
+                                                $t_nsd_hrs     += $nsd_hours;
+                                                $t_nsd_amt     += $nsd_amount;
                                                 $t_late_min    += $row['late'];
                                                 $t_late_amt    += $late_amount;
                                                 $t_sss_fund    += $sss_fund;
@@ -1747,6 +1815,23 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 
                                                     <!-- /ot -->
 
+                                                    <!-- Night differential: hours carried from the DTR (read-only);
+                                                         the amount was priced per day at calc time, so the amount —
+                                                         not the hours — is the editable figure. -->
+                                                    <td style="min-width: 70px;" class="text-center">
+                                                        <b><?= number_format($nsd_hours, 2) ?></b>
+                                                    </td>
+                                                    <td class="text-right" style="min-width: 90px;">
+                                                        <?php if ($rowShowInputs) { ?>
+                                                            <div class="input-group mb-3">
+                                                                <input type="text" value="<?= $nsd_amount ?>" data-id="<?= $row['id'] ?>" data-type="nsd_amount" class="form-control input-class"<?= $rowRO ?> placeholder="Amount" aria-label="Night Diff Amount">
+                                                            </div>
+                                                        <?php } else { ?>
+                                                            <b><?= number_format($nsd_amount, 2) ?></b>
+                                                        <?php } ?>
+                                                    </td>
+                                                    <!-- /night diff -->
+
                                                     <!-- Late -->
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
@@ -1940,6 +2025,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                         'rate_type' => (string)($row['rate_type'] ?? 'monthly'),
                                                         'monthly' => (float)$row['basic_pay'], 'quinsena' => (float)$row['basic_pay'] / 2, 'per_day' => (float)$perDay,
                                                         'present' => (float)$row['present'], 'absent' => (float)$row['absent'], 'absent_amt' => (float)$absent_amount,
+                                                        'pleave' => (float)($row['paid_leave'] ?? 0),
+                                                        'sch' => (string)($schedByEmp[(int)$row['employee_id']] ?? ''),
+                                                        'nsd_hrs' => (float)($row['nsd_hours'] ?? 0), 'nsd_amt' => (float)($row['nsd_amount'] ?? 0),
                                                         'late_min' => (float)$row['late'], 'late_amt' => (float)$late_amount,
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
@@ -2009,6 +2097,8 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th class="text-center"><?= number_format($t_ot_hrs, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ot_rate, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ot_amt, 2) ?></th>
+                                                <th class="text-center"><?= number_format($t_nsd_hrs, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_nsd_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_late_min, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_late_amt, 2) ?></th>
@@ -2045,6 +2135,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th rowspan="2" class="text-center  primary-header">Total Basic Rate</th>
                                                 <th colspan="3" class="text-center  info-header">Allowance</th>
                                                 <th colspan="3" class="text-center info-header">Overtime</th>
+                                                <th colspan="2" class="text-center info-header">Night Diff</th>
                                                 <th colspan="3" class="text-center info-header">Late</th>
                                                 <th rowspan="2" class="text-center success-header">GROSS SALARY</th>
                                                 <?php /* configured types + SSS Fund, JEI, JCC, Tax (Other Deduction retired) */ ?>
@@ -2066,6 +2157,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th class="text-center  info-header">No. hr</th>
                                                 <th class="text-center  info-header">Rate</th>
                                                 <th class="text-center  info-header">Amount</th>
+
+                                                <th class="text-center  info-header">ND Hrs</th>
+                                                <th class="text-center  info-header">ND Amount</th>
 
                                                 <th class="text-center  info-header">Min</th>
                                                 <th class="text-center  info-header">Rate</th>
@@ -2149,6 +2243,7 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                             $t_sun_d = 0; $t_sun_amt = 0;
                                             $t_spc_d = 0; $t_spc_amt = 0;
                                             $t_ot_hrs = 0; $t_ot_amt = 0;
+                                            $t_nsd_hrs = 0; $t_nsd_amt = 0;
                                             $t_late_min = 0; $t_late_amt = 0;
                                             $t_sss_fund = 0; $t_jei = 0; $t_jcc = 0; $t_tax = 0;
                                             $t_contrib = []; $t_refund = [];
@@ -2183,6 +2278,10 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $special_holiday = $row['special_holiday'];
                                                 // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
+                                                // Night differential — hours from the DTR, amount priced at calc
+                                                // time (stored on the item), both editable-visible on the sheet.
+                                                $nsd_hours  = (float)($row['nsd_hours'] ?? 0);
+                                                $nsd_amount = (float)($row['nsd_amount'] ?? 0);
 
                                                 // Rate-type-aware Total Basic Rate — matches the authoritative net
                                                 // (admin_class.php) and the client payslips:
@@ -2192,10 +2291,12 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 if ($rate_type === 'monthly' || $rate_type === 'fixed') {
                                                     $total_basic_rate = ($row['basic_pay'] - $absent_amount) / 2;
                                                     $gross_salary = $total_basic_rate + ($total_allowance / 2) + $overtime_amount
-                                                        + $legal_holiday_amount + $sunday_duty_amount + $special_holiday_amount - $late_amount;
+                                                        + $legal_holiday_amount + $sunday_duty_amount + $special_holiday_amount + $nsd_amount - $late_amount;
                                                 } else {
-                                                    $total_basic_rate = $row['present'] * $row['per_day'];
-                                                    $gross_salary = ($total_basic_rate + $overtime_amount + $total_allowance) - $late_amount;
+                                                    // Daily staff are also paid for approved paid-leave days — matches
+                                                    // get_payroll_rows_data: (present + paid_leave) × per_day.
+                                                    $total_basic_rate = ($row['present'] + (float)($row['paid_leave'] ?? 0)) * $row['per_day'];
+                                                    $gross_salary = ($total_basic_rate + $overtime_amount + $total_allowance + $nsd_amount) - $late_amount;
                                                 }
                                                 // Named one-off items for this employee: allowances add to gross,
                                                 // deductions are applied with the other deductions below.
@@ -2236,6 +2337,8 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $t_spc_amt     += $special_holiday_amount;
                                                 $t_ot_hrs      += $row['ot'];
                                                 $t_ot_amt      += $overtime_amount;
+                                                $t_nsd_hrs     += $nsd_hours;
+                                                $t_nsd_amt     += $nsd_amount;
                                                 $t_late_min    += $row['late'];
                                                 $t_late_amt    += $late_amount;
                                                 $t_sss_fund    += $sss_fund;
@@ -2346,6 +2449,23 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     </td>
 
                                                     <!-- /ot -->
+
+                                                    <!-- Night differential: hours carried from the DTR (read-only);
+                                                         the amount was priced per day at calc time, so the amount —
+                                                         not the hours — is the editable figure. -->
+                                                    <td style="min-width: 70px;" class="text-center">
+                                                        <b><?= number_format($nsd_hours, 2) ?></b>
+                                                    </td>
+                                                    <td class="text-right" style="min-width: 90px;">
+                                                        <?php if ($rowShowInputs) { ?>
+                                                            <div class="input-group mb-3">
+                                                                <input type="text" value="<?= $nsd_amount ?>" data-id="<?= $row['id'] ?>" data-type="nsd_amount" class="form-control input-class"<?= $rowRO ?> placeholder="Amount" aria-label="Night Diff Amount">
+                                                            </div>
+                                                        <?php } else { ?>
+                                                            <b><?= number_format($nsd_amount, 2) ?></b>
+                                                        <?php } ?>
+                                                    </td>
+                                                    <!-- /night diff -->
 
                                                     <!-- Late -->
                                                     <td style="min-width: 90px;" class="text-center">
@@ -2514,6 +2634,9 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                         'rate_type' => $rate_type,
                                                         'monthly' => (float)$row['basic_pay'], 'quinsena' => null, 'per_day' => (float)$perDay,
                                                         'present' => (float)$row['present'], 'absent' => (float)$row['absent'], 'absent_amt' => (float)$absent_amount,
+                                                        'pleave' => (float)($row['paid_leave'] ?? 0),
+                                                        'sch' => (string)($schedByEmp[(int)$row['employee_id']] ?? ''),
+                                                        'nsd_hrs' => (float)($row['nsd_hours'] ?? 0), 'nsd_amt' => (float)($row['nsd_amount'] ?? 0),
                                                         'late_min' => (float)$row['late'], 'late_amt' => (float)$late_amount,
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
@@ -2574,6 +2697,8 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 <th class="text-center"><?= number_format($t_ot_hrs, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ot_rate, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ot_amt, 2) ?></th>
+                                                <th class="text-center"><?= number_format($t_nsd_hrs, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_nsd_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_late_min, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_late_amt, 2) ?></th>
@@ -3283,6 +3408,45 @@ function printPayslipPreview() {
 }
 </script>
 
+<!-- One-off allowance / deduction for a single payslip (driven by extraDialog) -->
+<div class="modal fade" id="modal-extra-item" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" style="max-width:470px;">
+        <div class="modal-content" style="border-radius:12px;">
+            <div class="modal-header" style="border-bottom:1px solid #ece9f3;">
+                <h5 class="modal-title mb-0" id="xi-title" style="font-size:15px;font-weight:700;"></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="xi-note">Applies to <b id="xi-who">this employee only</b> and prints as its own line on their payslip.</p>
+
+                <label class="xi-lbl" for="xi-label">Name <span style="color:#c62828;">*</span></label>
+                <div class="xi-ac">
+                    <i class="ri-search-line xi-ac-ic"></i>
+                    <input type="text" id="xi-label" class="form-control" maxlength="120" autocomplete="off"
+                        role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="xi-menu"
+                        placeholder="Search the list, or type a new name">
+                    <div class="xi-ac-menu" id="xi-menu" role="listbox"></div>
+                </div>
+                <div class="xi-err" id="xi-label-err"></div>
+
+                <label class="xi-lbl mt-3" for="xi-amount">Amount <span style="color:#c62828;">*</span></label>
+                <div class="input-group">
+                    <span class="input-group-text">&#8369;</span>
+                    <input type="number" id="xi-amount" class="form-control" step="0.01" min="0.01" placeholder="0.00">
+                </div>
+                <div class="xi-err" id="xi-amount-err"></div>
+
+                <div class="xi-warn" id="xi-dup"><i class="ri-alert-line"></i><span></span></div>
+            </div>
+            <div class="modal-footer" style="border-top:1px solid #ece9f3;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-sm text-white" id="xi-save"
+                    style="background:#6642aa;border:none;font-weight:600;"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Sites modal removed — payroll always covers all active sites. -->
 <script>
     let id = "<?= $id ?>";
@@ -3453,8 +3617,15 @@ function printPayslipPreview() {
 /* ════════════════════════════════════════════════════════════════════
    Payroll document workbench (pcw-*) — layout mirrors dtr-documents.php
    ════════════════════════════════════════════════════════════════════ */
+:root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent; }
 html, body { height:100%; }
 body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, sans-serif; overflow:hidden; }
+/* ── Soft purple scrollbars, everywhere on this page (same as dtr-documents.php) ── */
+* { scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+*::-webkit-scrollbar { width:9px; height:9px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background:transparent; }
+*::-webkit-scrollbar-thumb { background:var(--sb-thumb); border-radius:8px; border:2px solid transparent; background-clip:content-box; }
+*::-webkit-scrollbar-thumb:hover { background:#b7a7d9; background-clip:content-box; }
 .pcw-app { display:flex; flex-direction:column; gap:12px; height:100vh; padding:12px 16px; }
 /* Loading overlay + content-gating CSS lives in the critical <style> in <head>
    so it applies before first paint — see that block. */
@@ -3462,26 +3633,26 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
   padding:10px 14px; background:#fff; border:1px solid #e1dfdd; border-radius:12px; box-shadow:0 1px 6px rgba(0,0,0,.06); }
 .pcw-h-left { display:flex; align-items:center; gap:12px; min-width:0; }
 .pcw-back-btn { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; padding:7px 14px; border-radius:8px;
-  font-size:12.5px; font-weight:700; color:#0e6b37; background:#eef7f0; border:1px solid #cfe9d6; text-decoration:none; }
-.pcw-back-btn:hover { background:#ddeee3; color:#0e6b37; }
-.pcw-title-icon { width:38px; height:38px; border-radius:11px; flex-shrink:0; background:linear-gradient(135deg,#107c41,#2ea867);
-  color:#fff; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 3px 8px rgba(16,124,65,.3); }
+  font-size:12.5px; font-weight:700; color:#4e3483; background:#f2f0f7; border:1px solid #ddd9e7; text-decoration:none; }
+.pcw-back-btn:hover { background:#e5e1ef; color:#4e3483; }
+.pcw-title-icon { width:38px; height:38px; border-radius:11px; flex-shrink:0; background:linear-gradient(135deg,#6642aa,#8f6cd4);
+  color:#fff; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 3px 8px rgba(102,66,170,.3); }
 .pcw-h-title { font-size:15px; font-weight:800; color:#363242; display:flex; align-items:center; gap:8px; }
 .pcw-status-badge { font-size:10.5px; font-weight:800; padding:3px 11px; border-radius:20px; display:inline-flex; align-items:center; gap:4px; }
 .pst-open { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
 .pst-rev  { background:#e3f2fd; color:#1565c0; border:1px solid #a8cff5; }
 .pst-lock { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
 .pcw-meta-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
-.pcw-meta-chip { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600; color:#0e6b37;
-  background:#eef7f0; border:1px solid #cfe9d6; border-radius:20px; padding:2px 9px; }
-.pcw-meta-chip i { color:#107c41; font-size:12px; }
+.pcw-meta-chip { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600; color:#4e3483;
+  background:#f2f0f7; border:1px solid #ddd9e7; border-radius:20px; padding:2px 9px; }
+.pcw-meta-chip i { color:#6642aa; font-size:12px; }
 .pcw-h-actions { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
 .pcw-btn { display:inline-flex; align-items:center; gap:5px; padding:7px 13px; border-radius:8px; font-size:12px; font-weight:700;
-  cursor:pointer; color:#0e6b37; background:#eef7f0; border:1px solid #cfe9d6; transition:background .12s; text-decoration:none; }
-.pcw-btn:hover:not(:disabled) { background:#ddeee3; color:#0e6b37; }
+  cursor:pointer; color:#4e3483; background:#f2f0f7; border:1px solid #ddd9e7; transition:background .12s; text-decoration:none; }
+.pcw-btn:hover:not(:disabled) { background:#e5e1ef; color:#4e3483; }
 .pcw-btn:disabled { opacity:.45; cursor:not-allowed; }
-.pcw-btn.primary { background:#107c41; border-color:#0e6b37; color:#fff; }
-.pcw-btn.primary:hover:not(:disabled) { background:#0e6b37; color:#fff; }
+.pcw-btn.primary { background:#6642aa; border-color:#4e3483; color:#fff; }
+.pcw-btn.primary:hover:not(:disabled) { background:#4e3483; color:#fff; }
 .pcw-btn.good { background:#d9eedd; border-color:#b8d8c2; color:#0b5e31; }
 .pcw-btn.danger { background:#fdecea; border-color:#f5c6cb; color:#c62828; }
 .pcw-btn.danger:hover:not(:disabled) { background:#fadbd8; color:#c62828; }
@@ -3489,19 +3660,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-panel { background:#fff; border:1px solid #e1dfdd; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.05);
   overflow:hidden; display:flex; flex-direction:column; min-height:0; }
 .pcw-panel-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 13px;
-  border-bottom:1px solid #eef2f0; background:#f4faf5; font-size:12px; font-weight:800; color:#0e6b37; }
-.pcw-panel-head i { color:#107c41; }
+  border-bottom:1px solid #eeeaf5; background:#f8f7fb; font-size:12px; font-weight:800; color:#4e3483; }
+.pcw-panel-head i { color:#6642aa; }
 #pcw-total { font-weight:600; color:#827d91; font-size:10.5px; }
-/* ── Collapsible right-column panels ──────────────────────────────────────
-   The head stays put and only the body scrolls; clicking the head folds the
-   panel away so a long batch can be given the whole column. */
-.pcw-panel-head.pcw-ch { cursor:pointer; user-select:none; }
-.pcw-panel-head.pcw-ch:hover { background:#eaf6ee; }
-.pcw-head-right { display:inline-flex; align-items:center; gap:6px; }
-.pcw-collapse-ic { font-size:15px; transition:transform .15s; }
-.pcw-panel.collapsed > :not(.pcw-panel-head) { display:none; }
-.pcw-panel.collapsed { flex:0 0 auto !important; }
-.pcw-panel.collapsed .pcw-collapse-ic { transform:rotate(-90deg); }
 .pcw-head-badge { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:800;
   padding:1px 7px; border-radius:10px; border:1px solid; letter-spacing:.2px; }
 .pcw-head-badge.rev    { background:#e8f1fb; color:#2c62c0; border-color:#bcd3f5; }
@@ -3512,39 +3673,39 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 /* ── Left: employee previews ── */
 .pcw-left { min-height:0; }
 .pcw-search { flex-shrink:0; padding:9px 11px 7px; position:relative; }
-.pcw-search-wrap { display:flex; align-items:center; gap:7px; border:1px solid #cfe9d6; border-radius:8px; background:#fff; padding:6px 10px; }
-.pcw-search-wrap:focus-within { border-color:#107c41; box-shadow:0 0 0 2px rgba(16,124,65,.14); }
-.pcw-search-wrap > i { color:#107c41; font-size:14px; }
+.pcw-search-wrap { display:flex; align-items:center; gap:7px; border:1px solid #ddd9e7; border-radius:8px; background:#fff; padding:6px 10px; }
+.pcw-search-wrap:focus-within { border-color:#6642aa; box-shadow:0 0 0 2px rgba(102,66,170,.14); }
+.pcw-search-wrap > i { color:#6642aa; font-size:14px; }
 .pcw-search-wrap input { border:none; outline:none; flex:1; font-size:12px; min-width:0; background:transparent; }
-.pcw-select { width:100%; border:1px solid #cfe9d6; border-radius:8px; font-size:11.5px; padding:5px 8px; color:#3c3846; background:#fff; outline:none; cursor:pointer; }
+.pcw-select { width:100%; border:1px solid #ddd9e7; border-radius:8px; font-size:11.5px; padding:5px 8px; color:#3c3846; background:#fff; outline:none; cursor:pointer; }
 /* Filter button + popover (mirrors dtr-documents.php's filter UI) */
 .pcw-filter-btn { position:relative; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
-  flex-shrink:0; border-radius:7px; cursor:pointer; color:#0e6b37; background:#eef7f0; border:1px solid #cfe9d6; transition:background .12s; }
-.pcw-filter-btn:hover { background:#ddeee3; }
-.pcw-filter-btn.on { background:#d9eedd; border-color:#b8d8c2; }
+  flex-shrink:0; border-radius:7px; cursor:pointer; color:#4e3483; background:#f2f0f7; border:1px solid #ddd9e7; transition:background .12s; }
+.pcw-filter-btn:hover { background:#e5e1ef; }
+.pcw-filter-btn.on { background:#e1dcec; border-color:#c0b5d5; }
 .pcw-filter-count { position:absolute; top:-5px; right:-5px; min-width:14px; height:14px; padding:0 3px; border-radius:8px;
   background:#c62828; color:#fff; font-size:8.5px; font-weight:800; display:flex; align-items:center; justify-content:center; }
 .pcw-filter-pop { display:none; position:absolute; left:11px; right:11px; top:calc(100% + 2px); z-index:40;
   background:#fff; border:1px solid #e1dfdd; border-radius:12px; padding:11px; box-shadow:0 10px 30px rgba(58,40,93,.18); }
 .pcw-filter-pop.open { display:block; }
-.pcw-fp-head { display:flex; justify-content:space-between; align-items:center; font-size:11.5px; font-weight:800; color:#0e6b37; }
-.pcw-fp-head i { color:#107c41; }
+.pcw-fp-head { display:flex; justify-content:space-between; align-items:center; font-size:11.5px; font-weight:800; color:#4e3483; }
+.pcw-fp-head i { color:#6642aa; }
 .pcw-fp-reset { display:inline-flex; align-items:center; gap:3px; border:none; background:transparent; color:#c62828;
   font-size:10px; font-weight:700; cursor:pointer; padding:2px 5px; border-radius:6px; }
 .pcw-fp-reset:hover { background:#fdf4f3; }
 .pcw-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:10px 0 4px; }
 .pcw-rv-chips { display:flex; flex-wrap:wrap; gap:4px; }
 .pcw-rv-chips button { display:inline-flex; align-items:center; gap:3px; padding:3px 9px; border-radius:20px; font-size:10px;
-  font-weight:700; cursor:pointer; color:#5b6f62; background:#fff; border:1px solid #d5e6da; transition:all .12s; }
+  font-weight:700; cursor:pointer; color:#635f73; background:#fff; border:1px solid #ddd9e7; transition:all .12s; }
 .pcw-rv-chips button i { font-size:11px; }
-.pcw-rv-chips button:hover:not(.on) { background:#f2faf5; }
-.pcw-rv-chips button.on { background:#e6f5ec; border-color:#b8d8c2; color:#0e6b37; box-shadow:0 0 0 1px #b8d8c2 inset; }
+.pcw-rv-chips button:hover:not(.on) { background:#f6f4fa; }
+.pcw-rv-chips button.on { background:#efeaf8; border-color:#c0b5d5; color:#4e3483; box-shadow:0 0 0 1px #c0b5d5 inset; }
 .pcw-list { flex:1; overflow-y:auto; padding:5px 9px 9px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .pcw-item { display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; margin-bottom:5px; text-align:left;
-  background:#fff; border:1px solid #e8eeeb; border-radius:10px; border-left:3px solid transparent; cursor:pointer;
+  background:#fff; border:1px solid #eae7f1; border-radius:10px; border-left:3px solid transparent; cursor:pointer;
   transition:background .12s, border-color .12s, box-shadow .12s; }
-.pcw-item:hover { background:#f4fbf6; border-color:#c9e5d0; }
-.pcw-item.active { background:#eaf6ef; border-color:#107c41; box-shadow:0 0 0 1px #107c41 inset; }
+.pcw-item:hover { background:#f8f6fc; border-color:#d5cbe8; }
+.pcw-item.active { background:#f1edf9; border-color:#6642aa; box-shadow:0 0 0 1px #6642aa inset; }
 /* Left accent + subtle tint by review mark */
 .pcw-item.rv-ok    { border-left-color:#33a466; }
 .pcw-item.rv-issue { border-left-color:#e0653f; }
@@ -3552,9 +3713,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-item.rv-ok:not(.active)    { background:#f4fcf7; }
 .pcw-item.rv-issue:not(.active) { background:#fef6f2; }
 .pcw-item.rv-chk:not(.active)   { background:#f4f8fe; }
-.pcw-item input[type=checkbox] { width:15px; height:15px; accent-color:#107c41; cursor:pointer; flex-shrink:0; }
+.pcw-item input[type=checkbox] { width:15px; height:15px; accent-color:#6642aa; cursor:pointer; flex-shrink:0; }
 .pcw-item-avwrap { position:relative; flex-shrink:0; }
-.pcw-item-av { width:34px; height:34px; border-radius:10px; background:#d9eedd; color:#0b5e31; border:1px solid #c0e0c8;
+.pcw-item-av { width:34px; height:34px; border-radius:10px; background:#e1dcec; color:#4f3288; border:1px solid #cbc0e0;
   display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:800; }
 .pcw-item-av.rv-1 { background:#d9f2e2; border-color:#63c584; }
 .pcw-item-av.rv-2 { background:#fdecd7; border-color:#f4ad60; }
@@ -3602,11 +3763,11 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
   border-radius:50%; background:#3557b7; border:1.5px solid #fff; }
 
 /* ── Bulk action panel (shown while employees are ticked) ── */
-.pcw-bulk { display:none; flex-shrink:0; border-top:1px solid #e1e8e4; background:#f7fbf8; padding:9px 11px 10px; }
+.pcw-bulk { display:none; flex-shrink:0; border-top:1px solid #e5e1ef; background:#f8f7fb; padding:9px 11px 10px; }
 .pcw-bulk.show { display:block; animation:pcw-bulk-in .18s ease; }
 @keyframes pcw-bulk-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 .pcw-bulk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.pcw-bulk-n { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; color:#0e6b37; }
+.pcw-bulk-n { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; color:#4e3483; }
 .pcw-bulk-x { border:none; background:transparent; color:#948ea5; cursor:pointer; font-size:15px; line-height:1; padding:2px 4px; }
 .pcw-bulk-x:hover { color:#c62828; }
 .pcw-bulk-lbl { font-size:8.5px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:8px 0 4px; }
@@ -3625,8 +3786,8 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-bulk-prog { display:none; margin-top:9px; }
 .pcw-bulk-prog.show { display:block; }
 .pcw-bulk-prog-lbl { display:flex; justify-content:space-between; font-size:9.5px; font-weight:700; color:#5b6f62; margin-bottom:3px; }
-.pcw-bulk-bar { height:6px; border-radius:5px; background:#e4ece7; overflow:hidden; }
-.pcw-bulk-bar > div { height:100%; width:0; border-radius:5px; background:linear-gradient(90deg,#107c41,#4fc07d); transition:width .25s ease; }
+.pcw-bulk-bar { height:6px; border-radius:5px; background:#e8e4f0; overflow:hidden; }
+.pcw-bulk-bar > div { height:100%; width:0; border-radius:5px; background:linear-gradient(90deg,#6642aa,#9b7fd4); transition:width .25s ease; }
 .pcw-selall-hint { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#5b6f62; }
 
 .pcw-item-right { text-align:right; flex-shrink:0; }
@@ -3638,10 +3799,10 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-fdot.disp { background:#7c3aed; } .pcw-fdot.ok { background:#63c584; }
 .pcw-list-empty { text-align:center; color:#948ea5; font-size:12px; padding:26px 8px; }
 .pcw-list-foot { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:6px; padding:7px 11px;
-  border-top:1px solid #eef2f0; background:#fafdfb; }
-.pcw-selall { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#5b6f62; margin:0; cursor:pointer; }
-.pcw-selall input { accent-color:#107c41; }
-.pcw-count-pill { background:#c8e6d2; color:#0b5e31; border-radius:10px; padding:0 7px; font-size:10px; font-weight:800; }
+  border-top:1px solid #eeeaf5; background:#fbfafd; }
+.pcw-selall { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#635f73; margin:0; cursor:pointer; }
+.pcw-selall input { accent-color:#6642aa; }
+.pcw-count-pill { background:#e1dcec; color:#4f3288; border-radius:10px; padding:0 7px; font-size:10px; font-weight:800; }
 
 /* ── Center: paper ── */
 .pcw-center { min-width:0; min-height:0; display:flex; flex-direction:column; }
@@ -3649,11 +3810,11 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-doc-nav { display:flex; align-items:center; gap:6px; }
 .pcw-doc-pos { font-size:11px; color:#827d91; font-weight:600; }
 .pcw-doc-zoom { display:flex; align-items:center; gap:5px; }
-.pcw-pg-btn { width:27px; height:27px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #cfe9d6;
-  background:#fff; color:#0e6b37; border-radius:7px; font-size:14px; cursor:pointer; }
-.pcw-pg-btn:hover:not(:disabled) { background:#eef7f0; }
+.pcw-pg-btn { width:27px; height:27px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #ddd9e7;
+  background:#fff; color:#4e3483; border-radius:7px; font-size:14px; cursor:pointer; }
+.pcw-pg-btn:hover:not(:disabled) { background:#f2f0f7; }
 .pcw-pg-btn:disabled { opacity:.35; cursor:not-allowed; }
-.pcw-zoom-val { min-width:48px; height:27px; padding:0 7px; border-radius:7px; cursor:pointer; border:1px solid #cfe9d6; background:#fff; color:#0e6b37; font-size:11px; font-weight:700; }
+.pcw-zoom-val { min-width:48px; height:27px; padding:0 7px; border-radius:7px; cursor:pointer; border:1px solid #ddd9e7; background:#fff; color:#4e3483; font-size:11px; font-weight:700; }
 .pcw-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) transparent; padding-bottom:10px; }
 /* grooveless bar over the paper backdrop — thumb only (see theme.css .sb-ghost) */
 .pcw-paper-scroll::-webkit-scrollbar-track,
@@ -3663,16 +3824,35 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
   box-shadow:0 2px 14px rgba(60,55,40,.14); padding:30px 36px 26px; font-family:'Times New Roman', Times, serif; color:#1a1a1a; zoom:var(--pcw-zoom, 1); }
 .pcw-doc-empty { text-align:center; color:#948ea5; font-size:13px; padding:60px 10px; font-family:'Segoe UI', system-ui, sans-serif; }
 
-/* Paper internals (pp-*) — categorized computation form */
-.pp-head { text-align:center; border-bottom:2.5px solid #1a1a1a; padding-bottom:10px; }
-.pp-head h1 { font-size:19px; margin:0; letter-spacing:2.5px; font-weight:700; }
+/* Paper internals (pp-*) — categorized computation form (purple-accented letterhead) */
+.pp-head { text-align:center; border-bottom:3px double #4f3288; padding-bottom:11px; }
+.pp-head h1 { font-size:19px; margin:0; letter-spacing:2.5px; font-weight:700; color:#2d1e4f; }
 .pp-head .pp-sub { font-size:11.5px; color:#444; margin-top:3px; letter-spacing:.4px; }
+.pp-head-tags { display:flex; justify-content:center; gap:6px; flex-wrap:wrap; margin-top:7px; font-family:'Segoe UI', sans-serif; }
+.pp-head-tag { font-size:9px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:#4f3288;
+  background:#f4f1fa; border:1px solid #ddd3ee; border-radius:9px; padding:1px 9px; }
 .pp-emp-grid { display:grid; grid-template-columns:1fr 1fr; gap:3px 26px; margin:13px 0 4px; font-size:12.5px; }
 .pp-emp-grid .lbl { color:#666; font-size:10px; letter-spacing:.7px; text-transform:uppercase; }
 .pp-emp-grid .val { font-weight:700; border-bottom:1px dotted #999; padding-bottom:1px; min-height:17px; }
+.pp-emp-link { color:inherit; text-decoration:none; }
+.pp-emp-link:hover { color:#4f3288; text-decoration:underline; }
+@media print { .pp-emp-link { color:#1a1a1a !important; text-decoration:none !important; } }
+/* At-a-glance strip — the three figures everyone looks for first */
+.pp-glance { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0 2px; }
+.pp-glance .pg { border:1px solid #ded8ea; border-radius:4px; background:#faf9fd; padding:7px 10px 6px; text-align:center; }
+.pp-glance .pg .l { font-size:9px; letter-spacing:.9px; text-transform:uppercase; color:#666; font-family:'Segoe UI', sans-serif; font-weight:700; }
+.pp-glance .pg .v { font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; margin-top:1px; color:#1a1a1a; }
+.pp-glance .pg.ded .v { color:#a02020; }
+.pp-glance .pg.net { background:#f4f1fa; border-color:#c9bbe2; }
+.pp-glance .pg.net .v { color:#4f3288; }
 .pp-sec { margin-top:15px; }
 .pp-sec-title { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase;
-  border-bottom:1.5px solid #1a1a1a; padding-bottom:3px; margin-bottom:6px; }
+  border-bottom:1.5px solid #4f3288; padding-bottom:3px; margin-bottom:6px; color:#2d1e4f; }
+.pp-sec-title .ltr { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px;
+  background:#4f3288; color:#fff; font-size:10px; font-weight:800; border-radius:3px; letter-spacing:0;
+  font-family:'Segoe UI', sans-serif; }
+.pp-sec-title .sec-amt { margin-left:auto; font-variant-numeric:tabular-nums; letter-spacing:.3px; color:#1a1a1a; }
+.pp-sec-title .sec-amt.neg { color:#a02020; }
 .pp-table { width:100%; border-collapse:collapse; font-size:12.5px; }
 .pp-table td { padding:3px 6px; border-bottom:1px solid #eceae2; }
 .pp-table td.qty { text-align:center; color:#555; width:150px; font-size:11.5px; }
@@ -3686,17 +3866,59 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pp-x-act { margin-left:7px; white-space:nowrap; opacity:0; transition:opacity .12s; }
 .pp-table tr:hover .pp-x-act { opacity:1; }
 .pp-x-btn { border:none; background:transparent; cursor:pointer; color:#948ea5; font-size:12px; padding:0 3px; }
-.pp-x-btn:hover { color:#107c41; }
+.pp-x-btn:hover { color:#6642aa; }
 .pp-x-btn.del:hover { color:#c62828; }
-.pp-x-add { display:inline-flex; align-items:center; gap:4px; border:1px dashed #b8d8c2; background:#f7fbf8;
-  color:#0e6b37; border-radius:7px; padding:3px 10px; font-size:11px; font-weight:700; cursor:pointer;
+.pp-x-add { display:inline-flex; align-items:center; gap:4px; border:1px dashed #c0b5d5; background:#faf9fd;
+  color:#4e3483; border-radius:7px; padding:3px 10px; font-size:11px; font-weight:700; cursor:pointer;
   font-family:system-ui, -apple-system, "Segoe UI", sans-serif; }
-.pp-x-add:hover { background:#eaf6ef; border-style:solid; }
+.pp-x-add:hover { background:#f1edf9; border-style:solid; }
 @media print { .pp-x-act, .pp-x-add { display:none !important; } }
-.pp-net { margin-top:17px; display:flex; align-items:center; justify-content:space-between; border:2px solid #1a1a1a; padding:9px 14px; background:#f7f5ec; }
-.pp-net .lbl { font-size:12px; font-weight:700; letter-spacing:2px; }
-.pp-net .amt { font-size:21px; font-weight:800; font-variant-numeric:tabular-nums; }
+/* One-off item dialog — type-ahead over the allowance / deduction masters */
+/* The theme gives .modal-body overflow:auto, which would clip the suggestion
+   list — this body is short enough to never need its own scroller. */
+#modal-extra-item .modal-body { overflow:visible; }
+#modal-extra-item .xi-note { font-size:12px; color:#6b6878; margin:0 0 13px; line-height:1.45; }
+#modal-extra-item .xi-lbl { display:block; font-size:10.5px; font-weight:800; letter-spacing:.5px;
+  text-transform:uppercase; color:#948ea5; margin-bottom:4px; }
+/* The theme's form-control border is nearly invisible on white — these two
+   fields carry money, so give them a border you can actually see. */
+#modal-extra-item .form-control,
+#modal-extra-item .input-group-text { font-size:13px; border:1px solid #cdc6dd; }
+#modal-extra-item .form-control:focus { border-color:#8b6fd0; box-shadow:0 0 0 .18rem rgba(102,66,170,.12); z-index:3; }
+#modal-extra-item .input-group-text { background:#f4f1fa; color:#4e3483; font-weight:700; }
+#modal-extra-item .form-control.is-bad { border-color:#d98b8b; box-shadow:0 0 0 .18rem rgba(198,40,40,.1); }
+.xi-ac { position:relative; }
+.xi-ac .form-control { padding-left:31px; }
+.xi-ac-ic { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#a49fb2; font-size:14px; pointer-events:none; }
+.xi-ac-menu { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 3px); max-height:224px; overflow-y:auto;
+  background:#fff; border:1px solid #e2ddef; border-radius:9px; box-shadow:0 10px 24px rgba(40,25,80,.15);
+  display:none; scrollbar-width:thin; }
+.xi-ac-menu.open { display:block; }
+.xi-opt { padding:7px 11px; cursor:pointer; font-size:12.5px; color:#3c3846; border-bottom:1px solid #f6f4fa; }
+.xi-opt:last-child { border-bottom:none; }
+.xi-opt.on, .xi-opt:hover { background:#f4f0fc; }
+.xi-opt em { font-style:normal; font-weight:800; color:#4e3483; background:#ece4fb; border-radius:3px; }
+.xi-opt .d { display:block; font-size:10.5px; color:#a09aae; margin-top:1px; }
+.xi-opt .tag { float:right; font-size:8.5px; font-weight:800; letter-spacing:.4px; text-transform:uppercase;
+  padding:2px 7px; border-radius:9px; background:#eef2fd; color:#3557b7; margin-left:8px; }
+.xi-opt.is-new .tag { background:#eafaf0; color:#107c41; }
+.xi-empty { padding:10px 11px; font-size:12px; color:#a09aae; }
+.xi-err { display:none; font-size:11px; font-weight:600; color:#c62828; margin-top:4px; }
+.xi-err.show { display:block; }
+.xi-warn { display:none; align-items:flex-start; gap:6px; font-size:11px; font-weight:600; color:#8a6100;
+  background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:6px 9px; margin-top:9px; line-height:1.4; }
+.xi-warn.show { display:flex; }
+#modal-extra-item #xi-save:hover { background:#563690 !important; }
+/* How the net was arrived at — one compact equation line above the net band */
+.pp-eq { margin-top:15px; font-size:11px; color:#555; text-align:right; letter-spacing:.2px; }
+.pp-eq b { font-variant-numeric:tabular-nums; color:#1a1a1a; font-weight:700; }
+.pp-eq .op { color:#999; padding:0 2px; }
+.pp-net { margin-top:6px; display:flex; align-items:center; justify-content:space-between; border:2px solid #4f3288; padding:9px 14px; background:#f4f1fa; }
+.pp-net .lbl { font-size:12px; font-weight:700; letter-spacing:2px; color:#2d1e4f; }
+.pp-net .amt { font-size:21px; font-weight:800; font-variant-numeric:tabular-nums; color:#2d1e4f; }
 .pp-net .amt.neg { color:#a02020; }
+.pp-words { margin-top:6px; font-size:11px; color:#555; font-style:italic; }
+.pp-words b { font-style:normal; color:#1a1a1a; letter-spacing:.2px; }
 .pp-delta { font-family:'Segoe UI', sans-serif; font-size:10px; font-weight:700; margin-left:10px; padding:1px 8px; border-radius:9px; vertical-align:middle; }
 .pp-delta.up { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
 .pp-delta.down { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
@@ -3711,29 +3933,70 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 /* Editable figures on the sheet: dashed underline inputs that write through
    to the (hidden) payroll table's inputs, so the existing save pipeline and
    server-side recompute stay untouched. */
-.pp-in { font-family:inherit; font-size:12.5px; font-weight:700; color:#0b5e31; background:#fbfff6;
-  border:none; border-bottom:1.5px dashed #9ab8a5; outline:none; padding:0 3px; width:64px; text-align:center; border-radius:2px 2px 0 0; }
-.pp-in:focus { border-bottom-color:#107c41; background:#eef8f1; }
+.pp-in { font-family:inherit; font-size:12.5px; font-weight:700; color:#4f3288; background:#faf8ff;
+  border:none; border-bottom:1.5px dashed #ab9bce; outline:none; padding:0 3px; width:64px; text-align:center; border-radius:2px 2px 0 0; }
+.pp-in:focus { border-bottom-color:#6642aa; background:#f1edf9; }
 .pp-in.amt-in { text-align:right; width:92px; }
 .pp-in.txt-in { text-align:left; width:100%; max-width:340px; font-weight:600; }
-.pp-edit-hint { font-family:'Segoe UI', sans-serif; font-size:10px; font-weight:600; color:#0e6b37;
-  background:#eef7f0; border:1px solid #cfe9d6; border-radius:8px; padding:4px 10px; margin-top:10px; display:inline-flex; align-items:center; gap:5px; }
+.pp-edit-hint { font-family:'Segoe UI', sans-serif; font-size:10px; font-weight:600; color:#4e3483;
+  background:#f2f0f7; border:1px solid #ddd9e7; border-radius:8px; padding:4px 10px; margin-top:10px; display:inline-flex; align-items:center; gap:5px; }
 
 .pp-sign { display:grid; grid-template-columns:1fr 1fr 1fr; gap:26px; margin-top:34px; }
 .pp-sign > div { text-align:center; font-size:10.5px; color:#444; }
 .pp-sign .line { border-top:1px solid #1a1a1a; margin-bottom:3px; padding-top:3px; font-weight:700; font-size:11px; color:#1a1a1a; min-height:18px; }
 
-/* ── Right: summary + batch ── */
+/* ── Right: one tabbed panel — Summary · Insights · Review ── */
 .pcw-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
 .pcw-right .pcw-panel.grow { flex:1; min-height:0; }
-/* Employee Review shares Batch Insights' shell: fixed head, body-only scroll. */
-.pcw-rv-panel { flex:0 1 auto; min-height:0; max-height:42%; }
+.pcw-rtabs { flex-shrink:0; display:flex; gap:2px; padding:6px 8px 0; background:#f8f7fb; border-bottom:2px solid #e5e1ef; }
+.pcw-rtab { display:inline-flex; align-items:center; gap:5px; border:none; background:transparent; cursor:pointer;
+  padding:8px 11px; margin-bottom:-2px; font-size:11.5px; font-weight:800; color:#827d91;
+  border-bottom:2px solid transparent; border-radius:7px 7px 0 0; transition:color .12s, border-color .12s, background .12s; }
+.pcw-rtab i { font-size:13.5px; }
+.pcw-rtab:hover:not(.active) { background:#f0edf8; color:#4e3483; }
+.pcw-rtab.active { color:#4e3483; border-bottom-color:#6642aa; background:#fff; }
+.pcw-rtab-unread { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px;
+  border-radius:9px; background:#3557b7; color:#fff; font-size:9px; font-weight:800; }
+.pcw-rpane { display:none; flex:1; min-height:0; flex-direction:column; }
+.pcw-rpane.active { display:flex; }
+.pcw-rv-status { flex-shrink:0; display:flex; align-items:center; gap:6px; padding:9px 13px 0; }
 .pcw-rv-body { flex:1; min-height:0; overflow-y:auto; padding:10px 13px;
   scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 /* The body is the only scroller — the inner lists must not scroll inside it. */
 .pcw-rv-body .prp-disputes.is-scroll,
 .pcw-rv-body .prp-confirms.is-scroll { max-height:none; overflow:visible; padding-right:0; }
-.pcw-sum-body { padding:11px 13px; max-height:42vh; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+.pcw-sum-body { flex:1; min-height:0; padding:11px 13px; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+
+/* ── Inline charts (Summary + Insights tabs) ──
+   Categorical slots (validated): 1 #2a78d6 blue · 2 #eb6834 orange · 3 #1baf7a aqua · 4 #eda100 yellow.
+   Every colored mark carries a visible label + value (relief for the low-contrast slots). */
+.pcw-chart-card { border:1px solid #eae7f1; border-radius:10px; background:#fff; padding:10px 11px; }
+.pcw-donut-wrap { display:flex; align-items:center; gap:12px; }
+.pcw-donut { flex-shrink:0; }
+.pcw-donut .dc-v { font-size:13px; font-weight:800; fill:#3c3846; font-family:'Segoe UI', system-ui, sans-serif; }
+.pcw-donut .dc-l { font-size:7.5px; font-weight:700; fill:#898791; text-transform:uppercase; letter-spacing:.4px; font-family:'Segoe UI', system-ui, sans-serif; }
+.pcw-cl { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.pcw-cl-row { display:flex; align-items:center; gap:6px; font-size:10.5px; }
+.pcw-cl-row .sw { width:9px; height:9px; border-radius:3px; flex-shrink:0; }
+.pcw-cl-row .lb { flex:1; min-width:0; color:#52514e; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-cl-row .vl { font-weight:800; color:#3c3846; font-variant-numeric:tabular-nums; }
+.pcw-cl-row .pc { color:#898791; font-weight:600; min-width:31px; text-align:right; font-variant-numeric:tabular-nums; }
+/* Horizontal bar rows (single measure → single hue) */
+.pcw-hbar { display:flex; flex-direction:column; gap:7px; }
+.pcw-hbar-row { cursor:pointer; }
+.pcw-hbar-row:hover .bar-fill { filter:brightness(1.15); }
+.pcw-hbar-top { display:flex; justify-content:space-between; gap:8px; font-size:10.5px; margin-bottom:2px; }
+.pcw-hbar-top .lb { color:#52514e; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-hbar-top .vl { font-weight:800; color:#3c3846; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.pcw-hbar-track { height:10px; border-radius:0 4px 4px 0; background:#f2f0f7; overflow:hidden; }
+.pcw-hbar-track .bar-fill { display:block; height:100%; border-radius:0 4px 4px 0; background:#6642aa; }
+.pcw-hbar-row.on .lb { color:#4e3483; font-weight:800; }
+.pcw-hbar-row.on .bar-fill { background:#4e3483; }
+/* Selected employee's gross split — two segments with a 2px surface gap */
+.pcw-split { display:flex; height:14px; border-radius:4px; overflow:hidden; gap:2px; margin:8px 0 6px; }
+.pcw-split span { display:block; height:100%; }
+.pcw-split .sg-net { background:#2a78d6; border-radius:4px 0 0 4px; }
+.pcw-split .sg-ded { background:#eb6834; border-radius:0 4px 4px 0; }
 /* ── Batch Insights panel ── */
 .pcw-ins-body { flex:1; min-height:0; overflow-y:auto; padding:11px 13px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 .pcw-ins-sec { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:2px 0 6px; }
@@ -3757,9 +4020,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 /* Exception chips (clickable → filter the left list) */
 .pcw-exc-chips { display:flex; flex-direction:column; gap:5px; }
 .pcw-exc { display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; border-radius:9px; cursor:pointer;
-  border:1px solid #e8eeeb; background:#fff; text-align:left; transition:background .12s, border-color .12s; }
-.pcw-exc:hover { background:#f6faf8; }
-.pcw-exc.on { border-color:#107c41; box-shadow:0 0 0 1px #107c41 inset; background:#eef7f1; }
+  border:1px solid #eae7f1; background:#fff; text-align:left; transition:background .12s, border-color .12s; }
+.pcw-exc:hover { background:#f8f6fc; }
+.pcw-exc.on { border-color:#6642aa; box-shadow:0 0 0 1px #6642aa inset; background:#f1edf9; }
 .pcw-exc .ic { width:24px; height:24px; flex-shrink:0; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:13px; }
 .pcw-exc .tx { flex:1; min-width:0; font-size:11px; font-weight:700; color:#434050; }
 .pcw-exc .n { font-size:12px; font-weight:800; font-variant-numeric:tabular-nums; }
@@ -3782,6 +4045,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
    never scrolls sideways — the full text stays in the title tooltip. */
 .pcw-sum-emp { font-size:12.5px; font-weight:800; color:#3c3846;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-sum-emp a { color:inherit; text-decoration:none; }
+.pcw-sum-emp a:hover { color:#6642aa; text-decoration:underline; }
+.pcw-sum-emp a i { font-size:11px; color:#6642aa; vertical-align:1px; }
 .pcw-sum-sub { font-size:10.5px; color:#948ea5; margin:1px 0 9px;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .pcw-sum-sent { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; color:#3557b7;
@@ -3851,17 +4117,17 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .al-fs.rv.wait i { color:#a9700a; }
 
 /* ── Tabs inside the Daily Time Record modal (DTR · Logs · Messages · Notes) ── */
-.pcw-tabs { display:flex; gap:4px; border-bottom:2px solid #d5e6da; margin-bottom:12px; flex-wrap:wrap;
+.pcw-tabs { display:flex; gap:4px; border-bottom:2px solid #ddd9e7; margin-bottom:12px; flex-wrap:wrap;
   position:sticky; top:0; z-index:5; background:#f0eff2; padding-top:2px; }
 .pcw-tab { display:inline-flex; align-items:center; gap:5px; border:none; background:transparent; cursor:pointer;
-  padding:8px 14px; margin-bottom:-2px; font-size:12px; font-weight:700; color:#5b6f62;
+  padding:8px 14px; margin-bottom:-2px; font-size:12px; font-weight:700; color:#635f73;
   border-bottom:2px solid transparent; border-radius:6px 6px 0 0; transition:color .12s, border-color .12s, background .12s; }
 .pcw-tab i { font-size:14px; }
-.pcw-tab:hover:not(.active) { background:#eef4f0; color:#0e6b37; }
-.pcw-tab.active { color:#0e6b37; border-bottom-color:#107c41; }
+.pcw-tab:hover:not(.active) { background:#eceaf2; color:#4e3483; }
+.pcw-tab.active { color:#4e3483; border-bottom-color:#6642aa; }
 .pcw-tab-count { font-size:9.5px; font-weight:800; line-height:1; min-width:16px; text-align:center;
-  background:#d9eedd; color:#0b5e31; border-radius:9px; padding:2px 5px; }
-.pcw-tab.active .pcw-tab-count { background:#107c41; color:#fff; }
+  background:#e1dcec; color:#4f3288; border-radius:9px; padding:2px 5px; }
+.pcw-tab.active .pcw-tab-count { background:#6642aa; color:#fff; }
 .pcw-tab-pane { display:none; }
 .pcw-tab-pane.active { display:block; }
 .pcw-tab-empty { text-align:center; color:#948ea5; font-size:12.5px; padding:34px 12px; }
@@ -3890,7 +4156,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
   .pcw-wrap { display:flex; flex-direction:column; }
   .pcw-left { max-height:430px; }
   .pcw-center { min-height:70vh; }
-  .pcw-sum-body { max-height:none; }
+  .pcw-right .pcw-panel.grow { max-height:560px; }
 }
 
 /* The classic table is a read-only PREVIEW now — its inputs stay in the DOM
@@ -3928,6 +4194,8 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 window.PCW_DATA = <?= json_encode($pcwEmployees, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?>;
 // employee_id → their payslip sign-off (decision, message, HR reply)
 window.PCW_REVIEWS = <?= json_encode($pcwReviewConvo, JSON_UNESCAPED_UNICODE) ?>;
+// Suggestion lists for the one-off item picker: {n: name, d: description, u: 1 if used before}
+window.PCW_EXTRA_CATALOG = <?= json_encode($pcwExtraCatalog, JSON_UNESCAPED_UNICODE) ?>;
 window.PCW_META = <?= json_encode([
     'id'         => (int)$id,
     'status'     => (int)$status,
@@ -3945,7 +4213,7 @@ window.PCW_META = <?= json_encode([
     var M = window.PCW_META || {};
     // S.ps holds the payslip selection ({id: true}) — the card list is the only
     // selection UI now that the table preview has no checkbox column.
-    var S = { q: '', dept: '', pos: '', rate: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
+    var S = { q: '', dept: '', pos: '', rate: '', sch: '', has: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
     // Exception predicates — reused by the Insights chips and the left-list filter.
     function excPred(key, e) {
         switch (key) {
@@ -3955,6 +4223,9 @@ window.PCW_META = <?= json_encode([
             case 'disputed': return e.emp_rv === 2;
             case 'absent':   return e.absent > 0;
             case 'late':     return e.late_min > 0;
+            // Worked 10PM–6AM but earned ₱0 ND — the shift's has_nsd flag is off
+            // (or nsd_rate is 0), so the premium was silently never priced.
+            case 'nd0':      return e.nsd_hrs > 0 && !(e.nsd_amt > 0);
         }
         return true;
     }
@@ -3964,7 +4235,8 @@ window.PCW_META = <?= json_encode([
         { k: 'swing',    lbl: 'Net moved ≥30%',  cls: 'info',   ic: 'ri-line-chart-line', needPrev: true },
         { k: 'disputed', lbl: 'Disputed by employee', cls: 'purple', ic: 'ri-chat-off-line' },
         { k: 'absent',   lbl: 'Has absences',         cls: 'warn',   ic: 'ri-user-unfollow-line' },
-        { k: 'late',     lbl: 'Has late',             cls: 'warn',   ic: 'ri-time-line' }
+        { k: 'late',     lbl: 'Has late',             cls: 'warn',   ic: 'ri-time-line' },
+        { k: 'nd0',      lbl: 'Night hours, ₱0 ND',   cls: 'danger', ic: 'ri-moon-clear-line' }
     ];
     var GROUPS = { 1: 'Contributions', 3: 'Loans', 2: 'Other Deductions' };
     // Review-mark meta — colour + icon shown in the left list per employee.
@@ -3981,6 +4253,8 @@ window.PCW_META = <?= json_encode([
         });
     };
     var fmt = function (n) { return (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    // Day counts: whole numbers stay whole ("7"), fractions keep the half ("6.5")
+    var fmt2 = function (n) { n = Number(n) || 0; return n % 1 === 0 ? String(n) : n.toFixed(1); };
     var peso = function (n) { return '₱ ' + fmt(n); };
     var initials = function (e) { return ((e.first || ' ')[0] + (e.last || ' ')[0]).toUpperCase(); };
 
@@ -4007,6 +4281,13 @@ window.PCW_META = <?= json_encode([
             if (S.dept && e.dept !== S.dept) return false;
             if (S.pos && e.pos !== S.pos) return false;
             if (S.rate && e.rate_type !== S.rate) return false;
+            if (S.sch && e.sch !== S.sch) return false;
+            // Pay-component chips: payslip carries the selected line
+            if (S.has === 'leave' && !(e.pleave > 0)) return false;
+            if (S.has === 'ot' && !(e.ot_hrs > 0)) return false;
+            if (S.has === 'nsd' && !(e.nsd_hrs > 0)) return false;
+            if (S.has === 'hol' && !(e.legal > 0 || e.spc > 0)) return false;
+            if (S.has === 'rest' && !(e.rest > 0)) return false;
             if (S.rv !== '' && String(e.rv) !== S.rv) return false;
             // Employee sign-off: '1'/'2'/'0' by decision, 'm' = left a message
             if (S.erv !== '') {
@@ -4147,6 +4428,35 @@ window.PCW_META = <?= json_encode([
             + '<td class="amt' + (neg ? ' neg' : '') + '"' + (idAttr ? ' id="' + idAttr + '"' : '') + '>' + amtHtml + '</td></tr>';
     }
 
+    // ── Amount in words (for the sheet's net-pay line) ───────────────────────
+    var PW_ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+        'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    var PW_TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+    function pwChunk(n) {   // 0–999 → words
+        var s = '';
+        if (n >= 100) { s += PW_ONES[Math.floor(n / 100)] + ' Hundred'; n %= 100; if (n) s += ' '; }
+        if (n >= 20) { s += PW_TENS[Math.floor(n / 10)]; if (n % 10) s += '-' + PW_ONES[n % 10]; }
+        else if (n > 0) s += PW_ONES[n];
+        return s;
+    }
+    function pesoWords(v) {
+        v = Number(v) || 0;
+        var neg = v < 0;
+        v = Math.abs(v);
+        var pesos = Math.floor(v + 1e-6);
+        var cents = Math.round((v - pesos) * 100);
+        if (cents === 100) { pesos++; cents = 0; }
+        var s = '', rem = pesos;
+        [['Billion', 1e9], ['Million', 1e6], ['Thousand', 1e3]].forEach(function (u) {
+            var q = Math.floor(rem / u[1]);
+            if (q) { s += (s ? ' ' : '') + pwChunk(q) + ' ' + u[0]; rem %= u[1]; }
+        });
+        if (rem || !s) s += (s ? ' ' : '') + (pwChunk(rem) || 'Zero');
+        s += ' Peso' + (pesos === 1 ? '' : 's');
+        s += cents ? ' and ' + pwChunk(cents) + ' Centavo' + (cents === 1 ? '' : 's') : ' Only';
+        return (neg ? 'Negative ' : '') + s;
+    }
+
     // ── Named one-off items on a single payslip ───────────────────────────────
     // kind 1 deducts (section C), kind 2 adds (section B). Unlimited per
     // employee, applied without recalculating the batch.
@@ -4177,32 +4487,217 @@ window.PCW_META = <?= json_encode([
         var x = (e && (e.extras || []).find(function (i) { return i.id === xid; })) || null;
         if (x) extraDialog(itemId, x.kind, x);
     };
+    // ── The add / edit dialog ──────────────────────────────────────────────
+    // A Bootstrap modal rather than a Swal prompt, so the name field can carry
+    // a real type-ahead over the allowances / deductions masters. The picker is
+    // a convenience only: payroll_item_extras stores the label as text, so a
+    // name that isn't in either master is saved verbatim as typed — no schema
+    // change, no id to resolve.
+    var XI = { item: 0, kind: 1, existing: null, list: [], hi: -1, wired: false, quietFocus: false };
+    var XI_MAX = 9999999.99;
+
+    function xiEl(id) { return document.getElementById(id); }
+    function xiCatalog(kind) {
+        var c = window.PCW_EXTRA_CATALOG || {};
+        return (kind === 2 ? c.allow : c.deduct) || [];
+    }
+    function xiSetErr(field, msg) {
+        var box = xiEl('xi-' + field + '-err'), inp = xiEl('xi-' + field);
+        if (box) { box.textContent = msg || ''; box.classList.toggle('show', !!msg); }
+        if (inp) inp.classList.toggle('is-bad', !!msg);
+    }
     function extraDialog(itemId, kind, existing) {
         var isAllow = kind === 2;
-        Swal.fire({
-            title: (existing ? 'Edit ' : 'Add ') + (isAllow ? 'allowance' : 'deduction'),
-            html: '<div style="text-align:left;font-size:12.5px;color:#555;margin-bottom:8px;">'
-                + 'Applies to <b>this employee only</b> and shows as its own line on their payslip.</div>'
-                + '<input id="x-label" class="swal2-input" maxlength="120" placeholder="Label — e.g. Uniform, Transport allowance" value="' + (existing ? esc(existing.label) : '') + '">'
-                + '<input id="x-amount" class="swal2-input" type="number" step="0.01" min="0.01" placeholder="Amount" value="' + (existing ? existing.amt : '') + '">',
-            showCancelButton: true,
-            confirmButtonColor: isAllow ? '#107c41' : '#c62828',
-            confirmButtonText: existing ? 'Save changes' : 'Add item',
-            didOpen: function () { document.getElementById('x-label').focus(); },
-            preConfirm: function () {
-                var label = (document.getElementById('x-label').value || '').trim();
-                var amt = parseFloat(document.getElementById('x-amount').value);
-                if (!label) { Swal.showValidationMessage('A label is required.'); return false; }
-                if (!(amt > 0)) { Swal.showValidationMessage('Enter an amount greater than zero.'); return false; }
-                return { label: label, amount: amt };
-            }
-        }).then(function (r) {
-            if (!r.isConfirmed) return;
-            pcwPostExtra('save_payroll_item_extra', {
-                item_id: itemId, id: existing ? existing.id : 0,
-                kind: kind, label: r.value.label, amount: r.value.amount
-            }, itemId);
+        var e = empById(itemId);
+        XI.item = itemId; XI.kind = kind; XI.existing = existing || null; XI.hi = -1;
+
+        xiEl('xi-title').innerHTML = '<i class="ri-' + (isAllow ? 'gift-line' : 'scissors-cut-line')
+            + ' me-1" style="color:' + (isAllow ? '#107c41' : '#c62828') + ';"></i>'
+            + (existing ? 'Edit ' : 'Add ') + (isAllow ? 'allowance' : 'deduction');
+        xiEl('xi-who').textContent = e && e.name ? e.name + ' only' : 'this employee only';
+        xiEl('xi-label').value = existing ? existing.label : '';
+        xiEl('xi-label').placeholder = isAllow
+            ? 'Search allowances, or type a new name' : 'Search deductions, or type a new name';
+        xiEl('xi-amount').value = existing ? existing.amt : '';
+
+        var save = xiEl('xi-save');
+        save.innerHTML = '<i class="ri-' + (existing ? 'save-line' : 'add-line') + ' me-1"></i>'
+            + (existing ? 'Save changes' : 'Add ' + (isAllow ? 'allowance' : 'deduction'));
+
+        xiSetErr('label', ''); xiSetErr('amount', ''); xiCloseMenu(); xiCheckDuplicate();
+        xiWire();
+        bootstrap.Modal.getOrCreateInstance(xiEl('modal-extra-item')).show();
+    }
+
+    // ── Type-ahead ─────────────────────────────────────────────────────────
+    function xiCloseMenu() {
+        xiEl('xi-menu').classList.remove('open');
+        xiEl('xi-label').setAttribute('aria-expanded', 'false');
+        XI.hi = -1;
+    }
+    function xiMark(text, term) {
+        var i = term ? text.toLowerCase().indexOf(term) : -1;
+        if (i < 0) return esc(text);
+        return esc(text.slice(0, i)) + '<em>' + esc(text.slice(i, i + term.length)) + '</em>'
+            + esc(text.slice(i + term.length));
+    }
+    function xiOpenMenu() {
+        var q = (xiEl('xi-label').value || '').trim();
+        var term = q.toLowerCase();
+        var all = xiCatalog(XI.kind);
+        var hits = !term ? all.slice() : all.filter(function (o) {
+            return o.n.toLowerCase().indexOf(term) > -1 || (o.d && o.d.toLowerCase().indexOf(term) > -1);
+        }).sort(function (a, b) {
+            // Names that start with what was typed come first, then the rest A–Z.
+            var ai = a.n.toLowerCase().indexOf(term) === 0 ? 0 : 1;
+            var bi = b.n.toLowerCase().indexOf(term) === 0 ? 0 : 1;
+            return ai - bi || a.n.localeCompare(b.n);
         });
+        XI.list = hits.slice(0, 60);
+        var exact = term && all.some(function (o) { return o.n.toLowerCase() === term; });
+        // Offer what was typed as a brand-new name, last — Enter should land on
+        // a real match when the masters had one.
+        if (q && !exact) XI.list.push({ n: q, d: '', u: 0, isNew: true });
+        XI.hi = -1;
+
+        var h = '';
+        if (!XI.list.length) {
+            h = '<div class="xi-empty">No saved ' + (XI.kind === 2 ? 'allowances' : 'deductions')
+                + ' yet — type a name to create this line.</div>';
+        } else {
+            XI.list.forEach(function (o, i) {
+                h += '<div class="xi-opt' + (o.isNew ? ' is-new' : '') + '" role="option" data-i="' + i + '">'
+                    + (o.isNew ? '<span class="tag">New name</span>' : (o.u ? '<span class="tag">Used before</span>' : ''))
+                    + xiMark(o.n, term)
+                    + (o.d ? '<span class="d">' + esc(o.d) + '</span>' : '')
+                    + '</div>';
+            });
+        }
+        var menu = xiEl('xi-menu');
+        menu.innerHTML = h;
+        menu.classList.add('open');
+        menu.scrollTop = 0;
+        xiEl('xi-label').setAttribute('aria-expanded', 'true');
+    }
+    function xiHighlight(n) {
+        var opts = xiEl('xi-menu').querySelectorAll('.xi-opt');
+        if (!opts.length) return;
+        XI.hi = (n + opts.length) % opts.length;
+        opts.forEach(function (el, i) { el.classList.toggle('on', i === XI.hi); });
+        opts[XI.hi].scrollIntoView({ block: 'nearest' });
+    }
+    function xiPick(i) {
+        var o = XI.list[i];
+        if (!o) return;
+        xiEl('xi-label').value = o.n;
+        xiCloseMenu();
+        xiSetErr('label', '');
+        xiCheckDuplicate();
+        xiEl('xi-amount').focus();
+    }
+    // Same name already on this payslip? Almost always a double entry, but a
+    // second "Cash advance" line is legitimate — warn, don't block.
+    function xiCheckDuplicate() {
+        var box = xiEl('xi-dup');
+        var name = (xiEl('xi-label').value || '').trim().toLowerCase();
+        var e = empById(XI.item);
+        var dup = name && e && (e.extras || []).some(function (x) {
+            return x.kind === XI.kind && String(x.label).trim().toLowerCase() === name
+                && (!XI.existing || x.id !== XI.existing.id);
+        });
+        box.classList.toggle('show', !!dup);
+        if (dup) box.querySelector('span').textContent =
+            'This payslip already has a ' + (XI.kind === 2 ? 'allowance' : 'deduction')
+            + ' named that. Saving adds a second line — both are paid.';
+    }
+
+    // ── Validation ─────────────────────────────────────────────────────────
+    // Mirrors what save_payroll_item_extra() enforces, so a rejection is shown
+    // on the field rather than as a failed round trip.
+    function xiValidate() {
+        var label = (xiEl('xi-label').value || '').replace(/\s+/g, ' ').trim();
+        var raw = String(xiEl('xi-amount').value || '').trim();
+        var amt = parseFloat(raw);
+        var ok = true;
+        xiSetErr('label', ''); xiSetErr('amount', '');
+
+        if (!label) { xiSetErr('label', 'Give the line a name — it prints on the payslip.'); ok = false; }
+        else if (label.length > 120) { xiSetErr('label', 'Keep the name to 120 characters or fewer.'); ok = false; }
+
+        if (!raw) { xiSetErr('amount', 'Enter an amount.'); ok = false; }
+        else if (isNaN(amt)) { xiSetErr('amount', 'Amount must be a number.'); ok = false; }
+        else if (amt <= 0) { xiSetErr('amount', 'Amount must be greater than zero.'); ok = false; }
+        else if (amt > XI_MAX) { xiSetErr('amount', 'That amount looks too large — please check it.'); ok = false; }
+
+        if (!ok) {
+            // Focus the first bad field, but keep the suggestion list shut —
+            // opening it here would cover the error that was just shown.
+            XI.quietFocus = true;
+            xiEl(xiEl('xi-label').classList.contains('is-bad') ? 'xi-label' : 'xi-amount').focus();
+            XI.quietFocus = false;
+            return null;
+        }
+        return { label: label, amount: Math.round(amt * 100) / 100 };
+    }
+    function xiSubmit() {
+        var v = xiValidate();
+        if (!v) return;
+        // The row may have been locked (review sign-off, payroll locked) while
+        // the dialog sat open — the server gate is authoritative, this just
+        // avoids a pointless round trip.
+        var e = empById(XI.item);
+        if (e && !canEditRow(e)) {
+            xiSetErr('label', 'This payslip is no longer editable — close and reopen the payroll.');
+            return;
+        }
+        bootstrap.Modal.getOrCreateInstance(xiEl('modal-extra-item')).hide();
+        pcwPostExtra('save_payroll_item_extra', {
+            item_id: XI.item, id: XI.existing ? XI.existing.id : 0,
+            kind: XI.kind, label: v.label, amount: v.amount
+        }, XI.item);
+    }
+
+    // Listeners are bound once, on first open — the modal markup is static.
+    function xiWire() {
+        if (XI.wired) return;
+        XI.wired = true;
+        var inp = xiEl('xi-label'), menu = xiEl('xi-menu');
+
+        inp.addEventListener('focus', function () { if (!XI.quietFocus) xiOpenMenu(); });
+        // The open list overlays the footer, so it has to get out of the way
+        // before a click can reach Cancel / Save. Option rows cancel their own
+        // mousedown, so picking one still beats this blur.
+        inp.addEventListener('blur', xiCloseMenu);
+        inp.addEventListener('input', function () { xiOpenMenu(); xiSetErr('label', ''); xiCheckDuplicate(); });
+        inp.addEventListener('keydown', function (ev) {
+            var open = menu.classList.contains('open');
+            if (ev.key === 'ArrowDown') { ev.preventDefault(); open ? xiHighlight(XI.hi + 1) : xiOpenMenu(); }
+            else if (ev.key === 'ArrowUp') { ev.preventDefault(); if (open) xiHighlight(XI.hi - 1); }
+            else if (ev.key === 'Escape') { if (open) { ev.stopPropagation(); xiCloseMenu(); } }
+            else if (ev.key === 'Enter') {
+                ev.preventDefault();
+                if (open && XI.hi >= 0) xiPick(XI.hi);
+                else { xiCloseMenu(); xiEl('xi-amount').focus(); }
+            }
+        });
+        // mousedown, not click — blur would tear the menu down first.
+        menu.addEventListener('mousedown', function (ev) {
+            var opt = ev.target.closest('.xi-opt');
+            if (!opt) return;
+            ev.preventDefault();
+            xiPick(parseInt(opt.getAttribute('data-i'), 10));
+        });
+        document.addEventListener('mousedown', function (ev) {
+            if (menu.classList.contains('open') && !ev.target.closest('.xi-ac')) xiCloseMenu();
+        });
+
+        xiEl('xi-amount').addEventListener('input', function () { xiSetErr('amount', ''); });
+        xiEl('xi-amount').addEventListener('keydown', function (ev) {
+            if (ev.key === 'Enter') { ev.preventDefault(); xiSubmit(); }
+        });
+        xiEl('xi-save').addEventListener('click', xiSubmit);
+        xiEl('modal-extra-item').addEventListener('shown.bs.modal', function () { xiEl('xi-label').focus(); });
+        xiEl('modal-extra-item').addEventListener('hidden.bs.modal', xiCloseMenu);
     }
     window.pcwDeleteExtra = function (itemId, xid) {
         Swal.fire({
@@ -4247,10 +4742,17 @@ window.PCW_META = <?= json_encode([
 
         h += '<div class="pp-head"><h1>PAY COMPUTATION SHEET</h1>'
             + '<div class="pp-sub">Payroll Period: ' + esc(M.from) + ' – ' + esc(M.to)
-            + ' &nbsp;·&nbsp; ' + (isMonthlyBatch ? 'Monthly Payroll' : 'Payroll') + ' #' + M.id + '</div></div>';
+            + ' &nbsp;·&nbsp; ' + (isMonthlyBatch ? 'Monthly Payroll' : 'Payroll') + ' #' + M.id + '</div>'
+            + '<div class="pp-head-tags">'
+            + '<span class="pp-head-tag">Ref PR-' + M.id + '-' + e.id + '</span>'
+            + '<span class="pp-head-tag">' + esc(e.rate_type) + ' rate</span>'
+            + (e.dept ? '<span class="pp-head-tag">' + esc(e.dept) + '</span>' : '')
+            + '</div></div>';
 
         h += '<div class="pp-emp-grid">'
-            + '<div><div class="lbl">Employee Name</div><div class="val">' + esc(e.name) + '</div></div>'
+            + '<div><div class="lbl">Employee Name</div><div class="val">'
+            + '<a class="pp-emp-link" href="index.php?page=employee-details&id=' + e.emp + '" target="_blank" title="Open this employee\'s profile">' + esc(e.name) + '</a>'
+            + '</div></div>'
             + '<div><div class="lbl">Employee No.</div><div class="val">' + esc(e.no) + '</div></div>'
             + '<div><div class="lbl">Position</div><div class="val">' + esc(e.pos || '—') + '</div></div>'
             + '<div><div class="lbl">Department</div><div class="val">' + esc(e.dept || '—') + '</div></div>'
@@ -4259,25 +4761,44 @@ window.PCW_META = <?= json_encode([
             + peso(monthlyRate || isMonthlyBatch ? e.monthly : e.per_day) + '</div></div>'
             + '</div>';
 
+        // At-a-glance strip — the three figures everyone looks for first
+        h += '<div class="pp-glance">'
+            + '<div class="pg"><div class="l">Gross Pay</div><div class="v" id="pp-glance-gross">' + fmt(e.gross) + '</div></div>'
+            + '<div class="pg ded"><div class="l">Total Deductions</div><div class="v" id="pp-glance-ded">(' + fmt(e.total_ded) + ')</div></div>'
+            + '<div class="pg net"><div class="l">Net Pay</div><div class="v" id="pp-glance-net">' + fmt(e.net) + '</div></div>'
+            + '</div>';
+
         var ed = canEditRow(e);
         if (ed) {
             h += '<div class="pp-edit-hint"><i class="ri-edit-line"></i> Dashed fields are editable — type a figure, then Save. Totals recompute on Save.</div>';
         }
 
         // A. Attendance
-        h += '<div class="pp-sec"><div class="pp-sec-title">A &nbsp; Attendance</div><table class="pp-table">';
+        h += '<div class="pp-sec"><div class="pp-sec-title"><span class="ltr">A</span> Attendance'
+            + '<span class="sec-amt" id="pp-sect-att">' + e.present + ' day(s) on duty</span></div><table class="pp-table">';
         h += '<tr><td>Days on Duty</td><td class="qty">' + (e.dtr_days ? e.dtr_days + ' approved DTR day(s)' : '') + '</td><td class="amt">' + fld(e, 'present', e.present) + '</td></tr>';
+        if (e.pleave > 0) {
+            h += '<tr><td>Paid Leave</td><td class="qty">approved leave'
+                + (monthlyRate ? ' — not counted as absence' : '') + '</td><td class="amt">' + fmt2(e.pleave) + '</td></tr>';
+        }
         if (ed || e.absent > 0) h += earnRow('Absences', fld(e, 'absent', e.absent) + ' day(s) × ' + fmt(e.per_day), e.absent_amt, true);
         if (ed || e.late_min > 0) h += earnRow('Late', fld(e, 'late', Math.round(e.late_min)) + ' min', e.late_amt, true);
         if (!ed && !(e.absent > 0) && !(e.late_min > 0)) h += '<tr><td colspan="3" style="color:#4a7d4a;font-size:11.5px;">No absences or tardiness this period.</td></tr>';
         h += '</table></div>';
 
         // B. Earnings
-        h += '<div class="pp-sec"><div class="pp-sec-title">B &nbsp; Earnings</div><table class="pp-table">';
+        h += '<div class="pp-sec"><div class="pp-sec-title"><span class="ltr">B</span> Earnings'
+            + '<span class="sec-amt" id="pp-sect-earn">' + fmt(e.gross) + '</span></div><table class="pp-table">';
         if (isMonthlyBatch) {
             h += earnRow('Half-Month Basic (Quinsena)', '(' + fmt(e.monthly) + ' + allowance − absences) ÷ 2', e.basic_earned, false);
         } else if (monthlyRate) {
             h += earnRow('Half-Month Basic', '(' + fmt(e.monthly) + ' − absences) ÷ 2', e.basic_earned, false);
+        } else if (e.pleave > 0) {
+            // Daily rate with approved paid leave: split the basic figure so the
+            // leave credit is a visible line (worked + leave = total basic rate).
+            var pleaveAmt = e.pleave * e.per_day;
+            h += earnRow('Basic Pay (worked)', esc(String(e.present)) + ' day(s) × ' + fld(e, 'per_day', fmt(e.per_day)), e.basic_earned - pleaveAmt, false);
+            h += earnRow('Paid Leave', fmt2(e.pleave) + ' day(s) × ' + fmt(e.per_day), pleaveAmt, false);
         } else {
             h += earnRow('Basic Pay', esc(String(e.present)) + ' day(s) × ' + fld(e, 'per_day', fmt(e.per_day)), e.basic_earned, false);
         }
@@ -4286,6 +4807,9 @@ window.PCW_META = <?= json_encode([
         if (ed || e.rest_amt) h += earnRow('Rest Day Duty', fld(e, 'sunday_duty', e.rest) + ' × ' + fmt(e.per_day), e.rest_amt, false);
         if (ed || e.spc_amt) h += earnRow('Special Holiday Pay', fld(e, 'special_holiday', e.spc) + ' day(s)', e.spc_amt, false);
         if (ed || e.ot_amt) h += earnRow('Overtime', fld(e, 'ot', e.ot_hrs) + ' hr(s) × ' + fmt(e.ot_rate), e.ot_amt, false);
+        // Night differential — always on the sheet (even at 0) so it is never
+        // invisible-because-empty; the amount is the editable figure.
+        h += earnRow('Night Differential', fmt2(e.nsd_hrs) + ' hr(s) 10PM–6AM', edAmt(e, 'nsd_amount', e.nsd_amt), false);
         if (e.late_amt) h += earnRow('Less: Late', Math.round(e.late_min) + ' min', e.late_amt, true);
         // Named one-off allowances for this employee only.
         extrasOfKind(e, 2).forEach(function (x) {
@@ -4296,7 +4820,8 @@ window.PCW_META = <?= json_encode([
         h += '</table></div>';
 
         // C. Deductions — categorized: contributions / loans / other / company & tax
-        h += '<div class="pp-sec"><div class="pp-sec-title">C &nbsp; Deductions</div><table class="pp-table">';
+        h += '<div class="pp-sec"><div class="pp-sec-title"><span class="ltr">C</span> Deductions'
+            + '<span class="sec-amt neg" id="pp-sect-ded">(' + fmt(e.total_ded) + ')</span></div><table class="pp-table">';
         [1, 3, 2].forEach(function (g) {
             var rows = (e.deds || []).filter(function (d) { return d.g === g; });
             if (!rows.length) return;
@@ -4334,7 +4859,8 @@ window.PCW_META = <?= json_encode([
 
         // D. Refunds
         if ((e.refunds || []).length) {
-            h += '<div class="pp-sec"><div class="pp-sec-title">D &nbsp; Refunds</div><table class="pp-table">';
+            h += '<div class="pp-sec"><div class="pp-sec-title"><span class="ltr">D</span> Refunds'
+                + '<span class="sec-amt" id="pp-sect-ref">' + fmt(e.total_ref) + '</span></div><table class="pp-table">';
             e.refunds.forEach(function (r) { h += earnRow(esc(r.label), '', edAmt(e, 'refund', r.amt, r.id), false); });
             h += '<tr class="totalrow"><td>TOTAL REFUNDS</td><td class="qty"></td><td class="amt" id="pp-totref-amt">' + fmt(e.total_ref) + '</td></tr>';
             h += '</table></div>';
@@ -4343,7 +4869,7 @@ window.PCW_META = <?= json_encode([
         // E. Adjustment (signed, non-monthly batches only)
         var adjEditable = !!tIn(e, 'adjustment') && !tIn(e, 'adjustment').readOnly;
         if (!isMonthlyBatch && (adjEditable || e.adj || e.adj_rem)) {
-            h += '<div class="pp-sec"><div class="pp-sec-title">' + ((e.refunds || []).length ? 'E' : 'D') + ' &nbsp; Adjustment</div><table class="pp-table">';
+            h += '<div class="pp-sec"><div class="pp-sec-title"><span class="ltr">' + ((e.refunds || []).length ? 'E' : 'D') + '</span> Adjustment</div><table class="pp-table">';
             h += earnRow('Manual Adjustment (+ adds to net, − deducts)', '', adjEditable ? edAmt(e, 'adjustment', e.adj) : Math.abs(e.adj), !adjEditable && e.adj < 0);
             h += '</table>';
             if (adjEditable) {
@@ -4354,9 +4880,15 @@ window.PCW_META = <?= json_encode([
             h += '</div>';
         }
 
-        // Net pay band
+        // How the net was arrived at — compact equation, then the net band
+        h += '<div class="pp-eq">Gross <b id="pp-eq-g">' + fmt(e.gross) + '</b>'
+            + '<span class="op">−</span>Deductions <b id="pp-eq-d">' + fmt(e.total_ded) + '</b>'
+            + ((e.refunds || []).length ? '<span class="op">+</span>Refunds <b id="pp-eq-r">' + fmt(e.total_ref) + '</b>' : '')
+            + ((!isMonthlyBatch && e.adj) ? '<span class="op">' + (e.adj < 0 ? '−' : '+') + '</span>Adjustment <b id="pp-eq-a">' + fmt(Math.abs(e.adj)) + '</b>' : '')
+            + '<span class="op">=</span><b id="pp-eq-n">' + fmt(e.net) + '</b></div>';
         h += '<div class="pp-net"><span class="lbl">NET PAY</span>'
             + '<span><span class="amt' + (e.net <= 0 ? ' neg' : '') + '" id="pp-net-amt">' + peso(e.net) + '</span>' + deltaBadge(e) + '</span></div>';
+        h += '<div class="pp-words">Amount in words: <b id="pp-words-txt">' + esc(pesoWords(e.net)) + '</b></div>';
 
         // Status chips
         var chips = '';
@@ -4369,6 +4901,7 @@ window.PCW_META = <?= json_encode([
             else chips += '<span class="pp-chip o">Awaiting employee review</span>';
         }
         chips += '<span class="pp-chip ' + (e.dtr_days ? 'g' : 'o') + '">' + e.dtr_days + ' approved DTR day(s)</span>';
+        if (e.pleave > 0) chips += '<span class="pp-chip b">' + fmt2(e.pleave) + ' paid leave day(s)</span>';
         if (chips) h += '<div class="pp-chips">' + chips + '</div>';
 
         // Signatures
@@ -4438,7 +4971,7 @@ window.PCW_META = <?= json_encode([
             inputPlaceholder: 'e.g. Missing OT for Jun 8–9, per their dispute',
             inputAttributes: { maxlength: 255 },
             showCancelButton: true,
-            confirmButtonColor: '#107c41',
+            confirmButtonColor: '#6642aa',
             confirmButtonText: 'Unlock for editing',
             preConfirm: function (v) {
                 if (!v || !v.trim()) { Swal.showValidationMessage('A reason is required.'); return false; }
@@ -4528,7 +5061,8 @@ window.PCW_META = <?= json_encode([
             : '';
         // One-line sub-caption; the untruncated text lives in the tooltip.
         var sub = e.no + (e.pos ? ' · ' + e.pos : '') + (e.dept ? ' · ' + e.dept : '');
-        var h = '<div class="pcw-sum-emp" title="' + esc(e.name) + '">' + esc(e.name) + '</div>'
+        var h = '<div class="pcw-sum-emp" title="' + esc(e.name) + ' — open profile">'
+            + '<a href="index.php?page=employee-details&id=' + e.emp + '" target="_blank">' + esc(e.name) + ' <i class="ri-external-link-line"></i></a></div>'
             + '<div class="pcw-sum-sub" title="' + esc(sub) + '">' + esc(sub) + '</div>'
             + sentLine
             + '<div class="pcw-sum-grid">'
@@ -4538,8 +5072,22 @@ window.PCW_META = <?= json_encode([
             + '<div class="pcw-sum-tile"><div class="v">' + e.present + '</div><div class="l">Days</div></div>'
             + '<div class="pcw-sum-tile abs"><div class="v">' + e.absent + '</div><div class="l">Absent</div></div>'
             + '<div class="pcw-sum-tile lt"><div class="v">' + Math.round(e.late_min) + '</div><div class="l">Late (min)</div></div>'
-            + '</div>'
-            + unlockBanner(e)
+            + '</div>';
+        // Where the gross went — take-home vs deductions, values in the legend
+        var splitBase = Math.max(0, e.net) + Math.max(0, e.total_ded);
+        if (e.net > 0 && splitBase > 0) {
+            var pNet = Math.max(0, e.net) / splitBase * 100;
+            h += '<div class="pcw-chart-card" style="margin-top:8px;">'
+                + '<div class="pcw-ins-sec" style="margin:0;">Where the gross went</div>'
+                + '<div class="pcw-split" title="Take-home ' + peso(e.net) + ' · Deductions ' + peso(e.total_ded) + '">'
+                + '<span class="sg-net" style="width:' + pNet + '%"></span>'
+                + '<span class="sg-ded" style="width:' + (100 - pNet) + '%"></span></div>'
+                + '<div class="pcw-cl">'
+                + '<div class="pcw-cl-row"><span class="sw" style="background:#2a78d6"></span><span class="lb">Take-home</span><span class="vl">' + fmt(e.net) + '</span><span class="pc">' + Math.round(pNet) + '%</span></div>'
+                + '<div class="pcw-cl-row"><span class="sw" style="background:#eb6834"></span><span class="lb">Deductions</span><span class="vl">' + fmt(e.total_ded) + '</span><span class="pc">' + Math.round(100 - pNet) + '%</span></div>'
+                + '</div></div>';
+        }
+        h += unlockBanner(e)
             + '<div class="pcw-sum-actions">'
             + '<button type="button" class="pcw-btn" onclick="openPayslipPreview(' + e.id + ')"><i class="ri-file-pdf-2-line"></i> Payslip PDF</button>'
             + '<button type="button" class="pcw-btn" onclick="pcwOpenDtr(' + e.id + ')"><i class="ri-calendar-check-line"></i> DTR Details (' + e.dtr_days + ')</button>'
@@ -4589,6 +5137,59 @@ window.PCW_META = <?= json_encode([
             + '<span class="pcw-ins-lg"><span class="dot none"></span>Unmarked ' + rv[0] + '</span>'
             + '</div>';
 
+        // Deductions mix — part-of-whole donut, legend carries the values
+        // (visible labels are the relief for the low-contrast aqua/yellow slots)
+        var mix = [
+            { l: 'Contributions',    v: 0, c: '#2a78d6' },
+            { l: 'Loans',            v: 0, c: '#eb6834' },
+            { l: 'Other deductions', v: 0, c: '#1baf7a' },
+            { l: 'Advances & tax',   v: 0, c: '#eda100' }
+        ];
+        D.forEach(function (e) {
+            (e.deds || []).forEach(function (d) {
+                if (d.g === 1) mix[0].v += d.amt; else if (d.g === 3) mix[1].v += d.amt; else mix[2].v += d.amt;
+            });
+            mix[3].v += (e.sss_fund || 0) + (e.jei || 0) + (e.jcc || 0) + (e.tax || 0) + (e.other_ded || 0);
+        });
+        var mixTot = mix.reduce(function (s, m) { return s + Math.max(0, m.v); }, 0);
+        if (mixTot > 0) {
+            h += '<div class="pcw-ins-sec">Deductions mix</div>'
+                + '<div class="pcw-chart-card"><div class="pcw-donut-wrap">'
+                + donutSVG(mix, mixTot) + '<div class="pcw-cl">';
+            mix.forEach(function (m) {
+                if (m.v <= 0) return;
+                h += '<div class="pcw-cl-row"><span class="sw" style="background:' + m.c + '"></span>'
+                    + '<span class="lb" title="' + esc(m.l) + ' — ' + peso(m.v) + '">' + m.l + '</span>'
+                    + '<span class="vl">' + pesoShort(m.v) + '</span>'
+                    + '<span class="pc">' + Math.round(m.v / mixTot * 100) + '%</span></div>';
+            });
+            h += '</div></div></div>';
+        }
+
+        // Net pay by department — one measure, one hue; click a bar to filter
+        var depts = {};
+        D.forEach(function (e) {
+            var k = e.dept || 'No department';
+            depts[k] = (depts[k] || 0) + e.net;
+        });
+        var dl = Object.keys(depts).map(function (k) { return { l: k, v: depts[k] }; })
+            .sort(function (a, b) { return b.v - a.v; });
+        if (dl.length > 1) {
+            var topD = dl.slice(0, 6), restD = dl.slice(6);
+            if (restD.length) topD.push({ l: 'Other (' + restD.length + ' depts)', v: restD.reduce(function (s, d) { return s + d.v; }, 0), other: true });
+            var mxD = topD.reduce(function (s, d) { return Math.max(s, d.v); }, 0) || 1;
+            h += '<div class="pcw-ins-sec">Net pay by department</div><div class="pcw-chart-card"><div class="pcw-hbar">';
+            topD.forEach(function (d) {
+                var on = !d.other && S.dept === d.l;
+                h += '<div class="pcw-hbar-row' + (on ? ' on' : '') + '"' + (d.other ? '' : ' data-dept="' + esc(d.l) + '"')
+                    + ' title="' + esc(d.l) + ' — ' + peso(d.v) + (d.other ? '' : ' (click to filter the list)') + '">'
+                    + '<div class="pcw-hbar-top"><span class="lb">' + esc(d.l) + '</span><span class="vl">' + pesoShort(d.v) + '</span></div>'
+                    + '<div class="pcw-hbar-track"><span class="bar-fill" style="width:' + Math.max(2, d.v / mxD * 100) + '%"></span></div>'
+                    + '</div>';
+            });
+            h += '</div></div>';
+        }
+
         // Exceptions — clickable chips that filter the left list
         var defs = EXC_DEFS.filter(function (d) { return !d.needPrev || hasPrev; });
         var counts = {}, totalExc = 0;
@@ -4596,7 +5197,9 @@ window.PCW_META = <?= json_encode([
             counts[d.k] = D.filter(function (e) { return excPred(d.k, e); }).length;
             totalExc += counts[d.k];
         });
-        h += '<div class="pcw-ins-sec">Exceptions to review</div>';
+        h += '<div class="pcw-ins-sec">Exceptions to review'
+            + (S.exc ? ' <span id="pcw-ins-clear" style="float:right;color:#c62828;cursor:pointer;font-weight:700;"><i class="ri-close-circle-line"></i> clear filter</span>' : '')
+            + '</div>';
         if (totalExc === 0) {
             h += '<div class="pcw-ins-allclear"><i class="ri-checkbox-circle-line"></i> No exceptions — this batch looks clean.</div>';
         } else {
@@ -4633,14 +5236,46 @@ window.PCW_META = <?= json_encode([
         }
 
         box.innerHTML = h;
-        var clr = byId('pcw-ins-clear');
-        if (clr) clr.style.display = S.exc ? '' : 'none';
     }
 
-    // Insights interactions: exception chips filter the list; movers jump to employee
+    // ── Chart helpers (inline SVG / divs — no libraries) ──
+    // Compact peso figure for chart labels; the full amount lives in the tooltip.
+    function pesoShort(n) {
+        n = Number(n) || 0;
+        var a = Math.abs(n);
+        if (a >= 1e6) return '₱' + (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M';
+        if (a >= 1e3) return '₱' + (n / 1e3).toFixed(a >= 1e5 ? 0 : 1) + 'k';
+        return '₱' + Math.round(n);
+    }
+    // Donut with a 2px surface gap between slices and the total in the center.
+    function donutSVG(items, total) {
+        var r = 40, C = 2 * Math.PI * r, gap = 2, acc = 0;
+        var svg = '<svg class="pcw-donut" width="110" height="110" viewBox="0 0 110 110" role="img" aria-label="Deductions mix">';
+        items.forEach(function (m) {
+            if (m.v <= 0) return;
+            var len = m.v / total * C;
+            var vis = Math.max(0.5, len - gap);
+            svg += '<circle r="' + r + '" cx="55" cy="55" fill="none" stroke="' + m.c + '" stroke-width="17"'
+                + ' stroke-dasharray="' + vis + ' ' + (C - vis) + '" stroke-dashoffset="' + (-acc) + '"'
+                + ' transform="rotate(-90 55 55)"><title>' + esc(m.l) + ' — ' + peso(m.v) + '</title></circle>';
+            acc += len;
+        });
+        svg += '<text x="55" y="53" text-anchor="middle" class="dc-v">' + pesoShort(total) + '</text>'
+            + '<text x="55" y="65" text-anchor="middle" class="dc-l">deductions</text></svg>';
+        return svg;
+    }
+
+    // Insights interactions: exception chips + dept bars filter the list;
+    // movers jump to an employee; the inline "clear filter" link resets.
     (function () {
         var box = byId('pcw-insights');
         if (box) box.addEventListener('click', function (ev) {
+            if (ev.target.closest('#pcw-ins-clear')) {
+                S.exc = '';
+                buildList();
+                renderInsights();
+                return;
+            }
             var chip = ev.target.closest('.pcw-exc[data-exc]');
             if (chip && !chip.disabled) {
                 var k = chip.getAttribute('data-exc');
@@ -4649,11 +5284,19 @@ window.PCW_META = <?= json_encode([
                 renderInsights();
                 return;
             }
+            var db = ev.target.closest('.pcw-hbar-row[data-dept]');
+            if (db) {
+                var dept = db.getAttribute('data-dept');
+                S.dept = (S.dept === dept) ? '' : dept;
+                byId('pcw-dept').value = S.dept;
+                buildList();
+                pcwUpdFilterCount();
+                renderInsights();
+                return;
+            }
             var mv = ev.target.closest('.pcw-ins-mover[data-eid]');
             if (mv) select(parseInt(mv.getAttribute('data-eid'), 10));
         });
-        var clr = byId('pcw-ins-clear');
-        if (clr) clr.addEventListener('click', function () { S.exc = ''; buildList(); renderInsights(); });
     })();
 
     // ── Excel export of the Table View ──────────────────────────────────────
@@ -4896,35 +5539,30 @@ window.PCW_META = <?= json_encode([
         }, 60);
     };
 
-    // ── Collapsible right-column panels ──
-    // Which panels are folded is remembered per browser, so an admin who works
-    // with Batch Insights closed does not have to close it every page load.
-    var PCW_FOLD_KEY = 'pcw-folded-panels';
-    window.pcwTogglePanel = function (head) {
-        var panel = head.closest('.pcw-panel');
-        if (!panel) return;
-        panel.classList.toggle('collapsed');
-        try {
-            var folded = [];
-            document.querySelectorAll('.pcw-right .pcw-panel').forEach(function (p, i) {
-                if (p.classList.contains('collapsed')) folded.push(i);
-            });
-            localStorage.setItem(PCW_FOLD_KEY, JSON.stringify(folded));
-        } catch (e) { /* private mode — collapsing still works, just not remembered */ }
-    };
-    (function () {
-        var folded = [];
-        try { folded = JSON.parse(localStorage.getItem(PCW_FOLD_KEY) || '[]'); } catch (e) { folded = []; }
-        if (!folded.length) return;
-        document.querySelectorAll('.pcw-right .pcw-panel').forEach(function (p, i) {
-            if (folded.indexOf(i) !== -1) p.classList.add('collapsed');
+    // ── Right-column tabs (Summary · Insights · Review) ──
+    // The last-open tab is remembered per browser; a remembered tab that no
+    // longer exists (e.g. Review on an Open batch) quietly falls back to Summary.
+    var PCW_RTAB_KEY = 'pcw-right-tab';
+    function pcwSelectRightTab(tab) {
+        var btn = document.querySelector('.pcw-rtab[data-rtab="' + tab + '"]');
+        if (!btn) return;
+        document.querySelectorAll('.pcw-rtab').forEach(function (b) { b.classList.toggle('active', b === btn); });
+        document.querySelectorAll('.pcw-rpane').forEach(function (p) {
+            p.classList.toggle('active', p.getAttribute('data-rpane') === tab);
         });
-    })();
-
-    // The "clear filter" link sits inside the collapsible head — don't fold on it.
+        try { localStorage.setItem(PCW_RTAB_KEY, tab); } catch (e) { /* private mode */ }
+    }
     (function () {
-        var clr = byId('pcw-ins-clear');
-        if (clr) clr.addEventListener('click', function (ev) { ev.stopPropagation(); });
+        var rtabs = byId('pcw-rtabs');
+        if (!rtabs) return;
+        rtabs.addEventListener('click', function (ev) {
+            var b = ev.target.closest('.pcw-rtab');
+            if (b) pcwSelectRightTab(b.getAttribute('data-rtab'));
+        });
+        try {
+            var saved = localStorage.getItem(PCW_RTAB_KEY);
+            if (saved) pcwSelectRightTab(saved);
+        } catch (e) { /* keep the default tab */ }
     })();
 
     // ── Payslip sign-off conversation ──
@@ -5209,7 +5847,7 @@ window.PCW_META = <?= json_encode([
             input: statusVal === 0 ? undefined : 'text',
             inputPlaceholder: 'Optional comment for all selected…',
             icon: 'question', showCancelButton: true,
-            confirmButtonColor: '#107c41', confirmButtonText: 'Apply to ' + ids.length
+            confirmButtonColor: '#6642aa', confirmButtonText: 'Apply to ' + ids.length
         }).then(function (r) {
             if (!r.isConfirmed) return;
             var comment = statusVal === 0 ? '' : (r.value || '').trim();
@@ -5266,7 +5904,7 @@ window.PCW_META = <?= json_encode([
                 + (again ? '<div style="margin-top:8px;font-size:12px;color:#c98a00;"><b>' + again + '</b> of them were already notified before — this sends again.</div>' : '')
                 + '<div style="margin-top:8px;font-size:12px;color:#888;">The payroll status is not changed.</div>',
             icon: 'question', showCancelButton: true,
-            confirmButtonColor: '#107c41', confirmButtonText: 'Send now'
+            confirmButtonColor: '#6642aa', confirmButtonText: 'Send now'
         }).then(function (r) {
             if (!r.isConfirmed) return;
             bulkProgress(0, ids.length, 'Notifying employees…');
@@ -5332,6 +5970,18 @@ window.PCW_META = <?= json_encode([
     byId('pcw-dept').addEventListener('change', function () { S.dept = this.value; buildList(); pcwUpdFilterCount(); });
     byId('pcw-pos-filter').addEventListener('change', function () { S.pos = this.value; buildList(); pcwUpdFilterCount(); });
     byId('pcw-rate-filter').addEventListener('change', function () { S.rate = this.value; buildList(); pcwUpdFilterCount(); });
+    var schSel = byId('pcw-sch-filter');   // only rendered when the payroll has schedule data
+    if (schSel) schSel.addEventListener('change', function () { S.sch = this.value; buildList(); pcwUpdFilterCount(); });
+
+    // Pay-component chips (paid leave / OT / night diff / holiday / rest day)
+    byId('pcw-has-chips').addEventListener('click', function (ev) {
+        var b = ev.target.closest('button');
+        if (!b) return;
+        S.has = b.getAttribute('data-has');
+        this.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+        buildList();
+        pcwUpdFilterCount();
+    });
 
     // Review-mark chips
     byId('pcw-rv-chips').addEventListener('click', function (ev) {
@@ -5371,7 +6021,7 @@ window.PCW_META = <?= json_encode([
         var open = pop.classList.toggle('open');
         btn.classList.toggle('on', open);
     };
-    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rate ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0) + (S.lock !== '' ? 1 : 0); }
+    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rate ? 1 : 0) + (S.sch ? 1 : 0) + (S.has !== '' ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0) + (S.lock !== '' ? 1 : 0); }
     window.pcwUpdFilterCount = function () {
         var n = pcwActiveFilters();
         var badge = byId('pcw-filter-count'), btn = byId('pcw-filter-btn');
@@ -5380,10 +6030,12 @@ window.PCW_META = <?= json_encode([
         btn.classList.toggle('on', n > 0 || byId('pcw-filter-pop').classList.contains('open'));
     };
     window.pcwResetFilters = function () {
-        S.dept = ''; S.pos = ''; S.rate = ''; S.rv = ''; S.erv = ''; S.lock = '';
+        S.dept = ''; S.pos = ''; S.rate = ''; S.sch = ''; S.has = ''; S.rv = ''; S.erv = ''; S.lock = '';
         byId('pcw-dept').value = '';
         byId('pcw-pos-filter').value = '';
         byId('pcw-rate-filter').value = '';
+        if (schSel) schSel.value = '';
+        byId('pcw-has-chips').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-has') === ''); });
         byId('pcw-rv-chips').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-rv') === ''); });
         if (ervChips) ervChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-erv') === ''); });
         if (lockChips) lockChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-lock') === ''); });
@@ -5436,6 +6088,7 @@ window.PCW_META = <?= json_encode([
             e.absent = pick(inp('absent'), e.absent);
             e.late_min = pick(inp('late'), e.late_min);
             e.ot_hrs = pick(inp('ot'), e.ot_hrs);
+            e.nsd_amt = pick(inp('nsd_amount'), e.nsd_amt);
             e.per_day = pick(inp('per_day'), e.per_day);
             e.allow_days = pick(inp('allowance_days'), e.allow_days);
             e.legal = pick(inp('legal_holiday'), e.legal);
@@ -5530,6 +6183,22 @@ window.PCW_META = <?= json_encode([
         set('pp-totref-amt', e.total_ref);
         var net = byId('pp-net-amt');
         if (net) { net.textContent = peso(e.net); net.classList.toggle('neg', e.net <= 0); }
+        // Glance strip, section totals, equation and amount-in-words stay live too
+        set('pp-glance-gross', e.gross);
+        set('pp-glance-ded', e.total_ded, true);
+        set('pp-glance-net', e.net);
+        set('pp-sect-earn', e.gross);
+        set('pp-sect-ded', e.total_ded, true);
+        set('pp-sect-ref', e.total_ref);
+        set('pp-eq-g', e.gross);
+        set('pp-eq-d', e.total_ded);
+        set('pp-eq-r', e.total_ref);
+        set('pp-eq-a', Math.abs(e.adj));
+        set('pp-eq-n', e.net);
+        var att = byId('pp-sect-att');
+        if (att) att.textContent = e.present + ' day(s) on duty';
+        var w = byId('pp-words-txt');
+        if (w) w.textContent = pesoWords(e.net);
     }
 
     byId('pcw-paper').addEventListener('input', function (ev) {

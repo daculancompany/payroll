@@ -2,16 +2,16 @@
 /**
  * Biometric Kiosk API — mobile attendance app.
  *
- * NEW FILE. The desktop scanner keeps using biometric-api.php unchanged; this
- * adds the endpoints the mobile kiosk needs on top of it.
+ * The desktop scanner uses biometric-api.php; this adds the endpoints the
+ * mobile kiosk needs on top of it.
  *
  * POST  /biometric-kiosk-api.php?action=<action>
  * Headers:
- *   Authorization: Bearer <BIOMETRIC_API_KEY>    (all actions except health)
+ *   Authorization: Bearer <BIOMETRIC_API_KEY>    (all actions except login/ping/health)
  *   Content-Type: application/json   (or application/x-www-form-urlencoded)
  *
  * Actions:
- *   health            (no auth, GET or POST)      → reachability probe
+ *   health | ping     (no auth, GET or POST)     → liveness probe
  *   login             (no auth) username, password → access_token + site_id  [delegated]
  *   get-employees     (no body)                   → active employees  [delegated]
  *   save-face         employee_id, embedding[], [model]
@@ -24,49 +24,47 @@
  *   save-attendance   employee_id, scan_time, site_id, [selfie base64 JPEG]
  *   get-selfies       employee_id, [date]         → attendance photos
  *
- * Why a second file rather than more cases in biometric-api.php: the brief was
- * to add without touching existing code, and keeping the kiosk's surface
- * separate means a change here can never regress the desktop scanner.
+ * Why a second file rather than more cases in biometric-api.php: the two
+ * devices expose genuinely different capabilities, and keeping the kiosk's
+ * action table separate means adding one here cannot regress the desktop
+ * scanner. The request envelope, however, is NOT duplicated — body parsing,
+ * action resolution, the bearer check and the status codes all come from
+ * biometric_api_common.php, shared with biometric-api.php, because those had
+ * silently drifted apart and a client could pass one endpoint and fail the
+ * other for reasons unrelated to the action it called.
+ *
+ * Attendance itself is delegated to Action::save_biometric_attendance() via
+ * save_attendance_with_selfie(), so overnight-shift re-dating and night
+ * differential are computed by exactly one implementation.
  */
 
 header('Content-Type: application/json');
 
 require_once __DIR__ . '/db_connect.php';
+require_once __DIR__ . '/biometric_api_common.php';
 require_once __DIR__ . '/biometric_kiosk_class.php';
 
-$api_action = $_GET['action'] ?? $_POST['action'] ?? '';
+/* ── Read the body first, so a JSON-only client can name its action there ─── */
+bio_api_read_body();
 
-/* ── Accept JSON body or form-post (same contract as biometric-api.php) ───── */
-$content_type = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
-if (stripos($content_type, 'application/json') !== false) {
-    $body = json_decode(file_get_contents('php://input'), true) ?? [];
-    if (is_array($body)) {
-        $_POST = array_merge($_POST, $body);
-    }
-}
+// No default action: unlike the scanner, every kiosk client sends one
+// explicitly, and defaulting a malformed request to save-attendance would turn
+// a client bug into a stray punch.
+$api_action = bio_api_resolve_action();
 
-// Body may carry the action too, for clients that cannot set a query string.
-if ($api_action === '') {
-    $api_action = $_POST['action'] ?? '';
-}
-
-/* ── Health is public and read-only ───────────────────────────────────────────
+/* ── Liveness is public and allowed on GET ────────────────────────────────────
  * The kiosk polls it to decide whether it is online. Requiring a token would
  * make an expired session look like a dead network, pushing punches into the
- * offline queue for no reason. It exposes nothing but the server clock.
+ * offline queue for no reason. Both names are accepted so a client pointed at
+ * the wrong endpoint still gets an answer instead of a 404.
  */
-$kiosk = new BiometricKiosk();
-
-if ($api_action === 'health') {
+if ($api_action === 'health' || $api_action === 'ping') {
     http_response_code(200);
-    exit(json_encode($kiosk->health()));
+    exit(json_encode(bio_api_liveness($api_action)));
 }
 
-/* ── Method guard (health above is allowed on GET) ───────────────────────── */
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-    http_response_code(405);
-    exit(json_encode(['result' => false, 'message' => 'Method not allowed']));
-}
+/* ── Method guard (liveness above is allowed on GET) ─────────────────────── */
+bio_api_require_post();
 
 /* ── Login is public: it is what issues the token ─────────────────────────────
  * Delegated to the same admin check the desktop scanner uses, so one account
@@ -76,27 +74,19 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 if ($api_action === 'login') {
     require_once __DIR__ . '/admin_class.php';
     $action = new Action();
-    $result = $action->biometric_login();
-    http_response_code(!empty($result['result']) ? 200 : 401);
-    exit(json_encode($result));
+    bio_api_respond($action->biometric_login(), 'login');
 }
 
 /* ── Bearer token authentication ─────────────────────────────────────────── */
-$auth_header = $_SERVER['HTTP_AUTHORIZATION']
-    ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
-    ?? (function_exists('apache_request_headers') ? (apache_request_headers()['Authorization'] ?? '') : '');
-
-$provided_key = '';
-if (preg_match('/^Bearer\s+(\S+)$/i', $auth_header, $m)) {
-    $provided_key = $m[1];
-}
-
-if (!$provided_key || !hash_equals(BIOMETRIC_API_KEY, $provided_key)) {
-    http_response_code(401);
-    exit(json_encode(['result' => false, 'message' => 'Unauthorized']));
-}
+bio_api_require_bearer();
 
 /* ── Dispatch ────────────────────────────────────────────────────────────── */
+$kiosk = new BiometricKiosk();
+
+// Initialised for static analysis: every default-case path exits inside
+// bio_api_unknown_action(), which PHP 7.4 cannot express as a `never` return.
+$result = null;
+
 switch ($api_action) {
     case 'get-employees':
         // Delegated: the roster the kiosk shows must be the same list the
@@ -144,9 +134,7 @@ switch ($api_action) {
         break;
 
     default:
-        http_response_code(404);
-        exit(json_encode(['result' => false, 'message' => 'Unknown action: ' . $api_action]));
+        bio_api_unknown_action($api_action);
 }
 
-http_response_code(!empty($result['result']) ? 200 : 422);
-echo json_encode($result);
+bio_api_respond($result, $api_action);

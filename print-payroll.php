@@ -247,10 +247,6 @@ LEFT JOIN sites f ON f.id = a.site_id
                     <div class="details"><?= $site_details['site_name'] ?>, <?= $site_details['site_address'] ?></div>
                 </div>
                 <div class="company-wrapper">
-                    <div class="name">Project Code: </div>
-                    <div class="details"><?= $site_details['site_code'] ?></div>
-                </div>
-                <div class="company-wrapper">
                     <div class="name">Payroll Period: </div>
                     <div class="details"><strong>
                             <?php
@@ -281,10 +277,6 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <div class="flip-text">No.</div>
                             <div class="flip-text">of Days</div>
                         </th>
-                        <th rowspan="2" class="text-center   flip-text">
-                            <div class="flip-text">Project</div>
-                            <div class="flip-text">Code</div>
-                        </th>
                         <th rowspan="2" class="text-center  primary-header">Basic Rate</th>
                         <th rowspan="2" class="text-center   flip-text">
                             <div class="flip-text">Total</div>
@@ -292,6 +284,7 @@ LEFT JOIN sites f ON f.id = a.site_id
                         </th>
                         <th colspan="3" class="text-center  info-header">Allowance</th>
                         <th colspan="3" class="text-center info-header">Overtime</th>
+                        <th colspan="2" class="text-center info-header">Night Diff</th>
                         <th colspan="3" class="text-center info-header">Late</th>
                         <th rowspan="2" class="text-center success-header">GROSS SALARY</th>
                         <th colspan="<?= count($contributions_settings) + 5 ?>" class="text-center danger-header">Deduction</th>
@@ -312,6 +305,9 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th class="text-center  info-header">No. hr</th>
                         <th class="text-center  info-header">Rate</th>
                         <th class="text-center  info-header">Amount</th>
+
+                        <th class="text-center  info-header">ND Hrs</th>
+                        <th class="text-center  info-header">ND Amount</th>
 
                         <th class="text-center  info-header">Min</th>
                         <th class="text-center  info-header">Rate</th>
@@ -417,10 +413,16 @@ LEFT JOIN sites f ON f.id = a.site_id
                         $special_holiday = $row['special_holiday'];
                         // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                         $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
+                        // Night differential — hours from the DTR, amount priced at calc
+                        // time; part of gross (mirrors the workbench and view_payslip).
+                        $nsd_hours  = (float)($row['nsd_hours'] ?? 0);
+                        $nsd_amount = (float)($row['nsd_amount'] ?? 0);
+                        $t_nsd_hrs  = ($t_nsd_hrs ?? 0) + $nsd_hours;
+                        $t_nsd_amt  = ($t_nsd_amt ?? 0) + $nsd_amount;
 
                         $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;
                         $t_total_amount += $total_amount;
-                        $gross_salary =  (($total_basic_rate +   $overtime_amount   +  $total_allowance)   - $late_amount);
+                        $gross_salary =  (($total_basic_rate +   $overtime_amount   +  $total_allowance + $nsd_amount)   - $late_amount);
 
                         $contributions = json_decode($row['contributions'], true);
                         $deductions = json_decode($row['deductions'], true);
@@ -447,9 +449,6 @@ LEFT JOIN sites f ON f.id = a.site_id
                             </td>
                             <td class="text-center">
                                 <?= $row['present'] ?>
-                            </td>
-                            <td class="text-center">
-                                <span style="cursor: help;" data-toggle="tooltip" data-html="true" title='<?= $row['site_name'] ?>'><?= $row['site_code'] ?></span>
                             </td>
                             <td class="text-right">
                                 <?= number_format($row['per_day'], 2) ?>
@@ -481,6 +480,15 @@ LEFT JOIN sites f ON f.id = a.site_id
                             </td>
 
                             <!-- /ot -->
+
+                            <!-- Night diff -->
+                            <td class="text-center">
+                                <?= number_format($nsd_hours, 2) ?>
+                            </td>
+                            <td class="text-right">
+                                <?= number_format($nsd_amount, 2) ?>
+                            </td>
+                            <!-- /Night diff -->
 
                             <!-- Late -->
                             <td class="text-center">
@@ -608,7 +616,6 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th></th>
                         <th colspan="2" class="text-center">TOTAL AMOUNT</th>
                         <th class="text-center"><?= $total_number_days ?></th>
-                        <th></th>
                         <th class="text-right"><?= number_format($t_per_day, 2) ?></th>
                         <th class="text-right"><?= number_format($t_basic_rate, 2) ?></th>
                         <th></th>
@@ -617,6 +624,8 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th></th>
                         <th></th>
                         <th></th>
+                        <th class="text-center"><?= number_format($t_nsd_hrs ?? 0, 2) ?></th>
+                        <th class="text-right"><?= number_format($t_nsd_amt ?? 0, 2) ?></th>
                         <th></th>
                         <th></th>
                         <th></th>

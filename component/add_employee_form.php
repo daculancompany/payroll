@@ -80,10 +80,11 @@
                                 Birthdate
                             </label>
                             <div class="input-group">
-                                <span class="input-group-text"><i class="ri-cake-line"></i></span>
+                                <span class="input-group-text bday-toggle" style="cursor:pointer;"><i class="ri-cake-line"></i></span>
                                 <input type="text" class="form-control datetimepicker2emp" name="bday"
-                                    value="<?= isset($bday) ? htmlspecialchars($bday) : '' ?>"
-                                    placeholder="YYYY-MM-DD" autocomplete="off">
+                                    value="<?= (!empty($bday) && $bday !== '0000-00-00') ? htmlspecialchars($bday) : '' ?>"
+                                    placeholder="YYYY-MM-DD" autocomplete="off" readonly
+                                    style="background-color:#fff;cursor:pointer;">
                             </div>
                         </div>
                         <div class="col-md-4">
@@ -352,8 +353,10 @@
                         <div class="col-md-4">
                             <div style="border:1px solid #e8eaf6;border-radius:4px;padding:8px 12px;background:#f9f9ff;">
                                 <div class="form-check form-switch mb-0">
+                                    <?php /* Create has no $status (edit mode extracts it from the row),
+                                             so a new employee starts Active — the normal case. */ ?>
                                     <input class="form-check-input" name="status" type="checkbox" role="switch" id="sw_status"
-                                        <?= isset($status) && $status == 1 ? 'checked' : '' ?>>
+                                        <?= (!isset($status) || $status == 1) ? 'checked' : '' ?>>
                                     <label class="form-check-label fw-semibold" for="sw_status" style="font-size:12px;">
                                         <i class="ri-checkbox-circle-line me-1"></i>Active
                                     </label>

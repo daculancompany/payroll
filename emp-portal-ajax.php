@@ -154,7 +154,8 @@ switch ($action) {
         }
 
         $days = [];
-        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes
+        $stampByDate = [];   // 'Y-m-d' => DTR_details.schedule_id
+        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes, schedule_id
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
         $st->bind_param('ii', $ddtr_id, $emp_id);
         $st->execute();
@@ -213,30 +214,54 @@ switch ($action) {
                 // endpoint already spends on the rejection reason.
                 'dtr_note'   => trim((string)($d['notes'] ?? '')),
             ];
+            // Shift stamped on the row — outranks the roster for this date.
+            if (!empty($d['schedule_id'])) $stampByDate[$rowDate] = (int) $d['schedule_id'];
         }
 
         // Shift per day, in the marker shape the shared Form 48 template expects,
         // so the employee's copy carries the same calendar chip and day-hover
         // detail as the admin sheet instead of a bare grid of times.
         $marks = [];
+        // All windows, not just those overlapping the period — the fallback in
+        // pick_schedule_window() can only choose among rows it was given, and a
+        // period predating the employee's first assignment has none overlapping.
         $sq = $conn->prepare("SELECT es.effective_from, es.effective_to, ws.description AS sched_name,
                                      ws.start_time, ws.end_time, ws.is_graveyard
                               FROM employee_schedules es
                               LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
-                              WHERE es.employee_id = ? AND es.effective_from <= ?
-                                AND (es.effective_to IS NULL OR es.effective_to >= ?)
+                              WHERE es.employee_id = ?
                               ORDER BY es.effective_from ASC");
         $pFrom = date('Y-m-d', strtotime($dtr['date_from']));
         $pTo   = date('Y-m-d', strtotime($dtr['date_to']));
-        $sq->bind_param('iss', $emp_id, $pTo, $pFrom);
+        $sq->bind_param('i', $emp_id);
         $sq->execute();
         $windows = $sq->get_result()->fetch_all(MYSQLI_ASSOC);
         for ($t = strtotime($pFrom); $t <= strtotime($pTo); $t = strtotime('+1 day', $t)) {
             $ymd = date('Y-m-d', $t);
-            // Covering window, else nearest — the same fallback the hours were
-            // computed with, so the chip can't name a different shift than the
-            // one the day's figures came from.
-            $shift = pick_schedule_window($windows, $ymd);
+            $shift = null;
+            $inf   = 0;
+            // 1. The shift stamped on the DTR row is what the day was recorded
+            //    under — it outranks the roster and is never a guess.
+            if (!empty($stampByDate[$ymd])) {
+                $sid = $stampByDate[$ymd];
+                $wsq = $conn->query("SELECT description AS sched_name, start_time, end_time, is_graveyard
+                                     FROM work_schedules WHERE id = " . (int) $sid . " LIMIT 1");
+                $shift = $wsq ? $wsq->fetch_assoc() : null;
+            }
+            // 2. Otherwise fall back to employee_schedules. A covering period is
+            //    a fact; the nearest one is a guess, flagged `inf` so the sheet
+            //    never asserts a shift that was never assigned.
+            if (!$shift) {
+                $cover = null;
+                foreach ($windows as $w) {
+                    if ($w['effective_from'] <= $ymd
+                        && (empty($w['effective_to']) || $w['effective_to'] >= $ymd)) {
+                        $cover = $w;
+                    }
+                }
+                $shift = $cover ?: pick_schedule_window($windows, $ymd);
+                $inf   = $cover ? 0 : 1;
+            }
             if (!$shift || empty($shift['sched_name'])) continue;
             $marks[$ymd][] = [
                 'k'   => 'sched',
@@ -245,6 +270,7 @@ switch ($action) {
                 'et'  => date('g:i A', strtotime($shift['end_time'])),
                 'g'   => (int) $shift['is_graveyard'],
                 'sh'  => (int) date('G', strtotime($shift['start_time'])),
+                'inf' => $inf,
             ];
         }
 

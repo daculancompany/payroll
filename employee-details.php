@@ -55,8 +55,12 @@ if (!function_exists('esc')) {
 
 // Current rest days (day off) for this employee, from the active schedule period.
 $cur_rest_days = '';
+// Covering TODAY, not merely the open row — with a change scheduled in advance
+// the open row is a future period, and prefilling the edit form from it would
+// quietly write next month's rest days onto today's schedule.
 $__rdq = $conn->query("SELECT rest_days FROM employee_schedules
-                       WHERE employee_id = $emp_id AND effective_to IS NULL
+                       WHERE employee_id = $emp_id AND effective_from <= CURDATE()
+                         AND (effective_to IS NULL OR effective_to >= CURDATE())
                        ORDER BY effective_from DESC LIMIT 1");
 if ($__rdq && ($__rdr = $__rdq->fetch_assoc())) $cur_rest_days = $__rdr['rest_days'];
 
@@ -947,11 +951,27 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             if (!$hist) { echo '<!-- query error: ' . esc($conn->error) . ' -->'; }
                                             while ($hist && ($h = $hist->fetch_assoc())):
                                             ?>
-                                            <tr>
+                                            <?php
+                                            // Which period is actually in force. Without this a period
+                                            // dated ahead looks identical to the running one, and the
+                                            // page can no longer answer "what is this person on today".
+                                            $__today = date('Y-m-d');
+                                            $__upcoming = $h['effective_from'] > $__today;
+                                            $__current  = !$__upcoming
+                                                && (empty($h['effective_to']) || $h['effective_to'] >= $__today);
+                                            ?>
+                                            <tr<?= $__upcoming ? ' style="background:#f4f9ff;"' : '' ?>>
                                                 <td>
                                                     <span class="fw-semibold"><?= esc($h['description']) ?></span>
                                                     <?php if ($h['is_graveyard']): ?>
                                                         <span class="badge bg-dark ms-1"><i class="ri-moon-line"></i></span>
+                                                    <?php endif; ?>
+                                                    <?php if ($__current): ?>
+                                                        <span class="badge bg-success ms-1">Current</span>
+                                                    <?php elseif ($__upcoming): ?>
+                                                        <span class="badge bg-primary ms-1"><i class="ri-time-line me-1"></i>Upcoming</span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-secondary ms-1">Ended</span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td class="text-center" style="font-size:12px;white-space:nowrap;">
@@ -961,7 +981,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <td class="text-center"><span class="badge bg-success"><?= $h['total_hours'] ?></span></td>
                                                 <td class="text-center"><?= date('M d, Y', strtotime($h['effective_from'])) ?></td>
                                                 <td class="text-center">
-                                                    <?= $h['effective_to'] ? date('M d, Y', strtotime($h['effective_to'])) : '<span class="badge bg-success">Current</span>' ?>
+                                                    <?php // "no end date" ≠ "in force" once periods can be dated ahead;
+                                                          // the status badge on the left says which one is running. ?>
+                                                    <?= $h['effective_to']
+                                                        ? date('M d, Y', strtotime($h['effective_to']))
+                                                        : '<span class="text-muted" style="font-size:11px;">open-ended</span>' ?>
                                                 </td>
                                                 <td><?= esc($h['changed_by_name'] ?? '—') ?></td>
                                                 <td><small class="text-muted"><?= esc($h['notes'] ?? '') ?></small></td>

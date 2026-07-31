@@ -228,8 +228,13 @@ if (!function_exists('pp_pay')) {
             $sub = ($r['basic_pay'] + $at - $ab) / 2;
             return ['sub' => $sub, 'gross' => $sub + $ot + $lgl + $sun + $spc - $la];
         }
-        $sub = $r['present'] * $r['per_day'];
-        return ['sub' => $sub, 'gross' => $sub + $ot + $at - $la];
+        // Daily: must mirror admin_class.php's authoritative net exactly, or the
+        // portal shows the employee a different gross than the payroll produced.
+        // It previously dropped paid leave, night differential and rest-day pay.
+        $sub = ($r['present'] + (float)($r['paid_leave'] ?? 0)) * $r['per_day'];
+        $sun = rest_day_premium($r['sunday_duty'] ?? 0, $r['per_day']);   // +30%, day already in $sub
+        $nsd = (float) ($r['nsd_amount'] ?? 0);
+        return ['sub' => $sub, 'gross' => $sub + $ot + $at + $sun + $nsd - $la];
     }
 }
 // Same figures with this payslip's one-off items folded in: allowance extras
@@ -457,7 +462,10 @@ if ($latest) {
     $abs_amt  = $latest['absent'] * $latest['per_day'];
     $ot_amt   = $latest['ot'] * $latest['ot_rate'];
     $lgl_amt  = $latest['legal_holiday'] * $latest['per_day'];
-    $sun_amt  = $latest['sunday_duty']   * $latest['per_day'];
+    $__rt_l   = $latest['rate_type'] ?? 'daily';
+    $sun_amt  = ($__rt_l === 'monthly' || $__rt_l === 'fixed')
+        ? $latest['sunday_duty'] * $latest['per_day']
+        : rest_day_premium($latest['sunday_duty'], $latest['per_day']);
     $spc_amt  = ($latest['per_day'] / 8 * 2.4) * $latest['special_holiday'];
     $_pp      = pp_pay_x($latest);
     $sub_tot  = $_pp['sub'];
@@ -2508,7 +2516,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="ps-row"><span class="ps-lbl">Legal Holiday (<?= $latest['legal_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($lgl_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($sun_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Rest Day Duty (<?= $latest['sunday_duty'] ?>)</span><span class="ps-val earn">₱<?= n2($sun_amt) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl">Rest Day Premium (<?= $latest['sunday_duty'] ?> × 30%)</span><span class="ps-val earn">₱<?= n2($sun_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($spc_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Special Holiday (<?= $latest['special_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($spc_amt) ?></span></div>
@@ -2595,7 +2603,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     $la2    = $ps['late'] * $pm2;
                     $ab2    = $ps['absent'] * $ps['per_day'];
                     $lgl2   = $ps['legal_holiday'] * $ps['per_day'];
-                    $sun2   = $ps['sunday_duty']   * $ps['per_day'];
+                    $__rt2  = $ps['rate_type'] ?? 'daily';
+                    $sun2   = ($__rt2 === 'monthly' || $__rt2 === 'fixed')
+                        ? $ps['sunday_duty'] * $ps['per_day']
+                        : rest_day_premium($ps['sunday_duty'], $ps['per_day']);
                     $spc2   = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
                     $ut2    = $ps['under_time'] * $pm2;   // shown as info only; not part of gross
                     $_pp2   = pp_pay_x($ps);
@@ -2612,6 +2623,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'item_id' => (int)$ps['item_id'],
                         'status'  => $psStatus,
                         'present' => $ps['present'], 'absent' => $ps['absent'], 'late' => $ps['late'], 'ot' => $ps['ot'],
+                        'rate_type' => $__rt2,   // drives the rest-day label (premium vs full day)
                         'gross'   => n2($gr2), 'deductions' => n2($ded2), 'net' => n2($ps['net']),
                         // Full earnings breakdown (mirrors the Latest Payslip card)
                         'per_day'    => n2($ps['per_day']),
@@ -4768,7 +4780,7 @@ function buildPayrollReviewBreakdown(d) {
         + '<span class="ps-val earn" style="font-weight:800;">₱' + d.subtotal + '</span></div>'
         + (pos(d.ot_amt) ? eRow('Overtime (' + d.ot_hrs + ' hrs × ₱' + d.ot_rate + ')', d.ot_amt) : '')
         + (pos(d.lgl_amt) ? eRow('Legal Holiday (' + d.lgl_days + ')', d.lgl_amt) : '')
-        + (pos(d.sun_amt) ? eRow('Rest Day Duty (' + d.sun_days + ')', d.sun_amt) : '')
+        + (pos(d.sun_amt) ? eRow((d.rate_type === 'monthly' || d.rate_type === 'fixed' ? 'Rest Day Duty (' + d.sun_days + ')' : 'Rest Day Premium (' + d.sun_days + ' \u00d7 30%)'), d.sun_amt) : '')
         + (pos(d.spc_amt) ? eRow('Special Holiday (' + d.spc_days + ')', d.spc_amt) : '')
         + (pos(d.late_amt) ? eRow('Late (' + d.late_min + ' min)', d.late_amt, true) : '')
         + '<div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#6642aa;">Gross Pay</span>'

@@ -316,25 +316,47 @@ if (!function_exists('payroll_day_hours')) {
     }
 }
 
-// Same choice as resolve_employee_schedule(), but over a window list already
-// fetched for a date range — one query for a whole batch instead of one per
-// employee per day. Covering window wins; otherwise the nearest one, so a day
-// still names the shift it was actually computed against when the assignment
-// was created after the fact. Returns null only for an employee with none.
+// Same choice as resolve_employee_schedule(), in the same order, but over a
+// window list already fetched for a date range — one query for a whole batch
+// instead of one per employee per day. Covering window, else the last one that
+// had already started (even if ended), else the earliest still to come.
+// Returns null only for an employee with no windows at all.
 if (!function_exists('pick_schedule_window')) {
     function pick_schedule_window(array $windows, string $date)
     {
-        $cover = $near = null;
-        $bestGap = null;
+        $cover = $prior = $next = null;
         foreach ($windows as $w) {
-            if ($w['effective_from'] <= $date
-                && (empty($w['effective_to']) || $w['effective_to'] >= $date)) {
-                $cover = $w;   // latest covering window wins, as elsewhere
+            $from = $w['effective_from'];
+            if ($from <= $date && (empty($w['effective_to']) || $w['effective_to'] >= $date)) {
+                $cover = $w;                                            // latest covering wins
             }
-            $gap = abs(strtotime($w['effective_from']) - strtotime($date));
-            if ($bestGap === null || $gap < $bestGap) { $bestGap = $gap; $near = $w; }
+            if ($from <= $date && ($prior === null || $from > $prior['effective_from'])) {
+                $prior = $w;                                            // most recent already started
+            }
+            if ($from > $date && ($next === null || $from < $next['effective_from'])) {
+                $next = $w;                                             // earliest still to come
+            }
         }
-        return $cover ?: $near;
+        return $cover ?: ($prior ?: $next);
+    }
+}
+
+// ── Rest-day premium (GLOBAL) ───────────────────────────────────────────
+// Extra paid for rendering duty on a rest day, as a fraction of the daily rate.
+// 0.30 = the Labor Code's +30%, i.e. 130% for the day in total.
+//
+// It is a PREMIUM, not a second day's pay. For a daily-rate employee the day
+// itself is already inside `present` (the DTR row is there and counted), so
+// adding a whole `sunday_duty × per_day` would pay the base twice — which is
+// why the daily gross formula omitted it entirely and rest-day work silently
+// earned nothing at all. The payslip meanwhile printed the full-day figure as
+// an earning, so the sheet showed money that was never paid.
+if (!defined('REST_DAY_PREMIUM_RATE')) define('REST_DAY_PREMIUM_RATE', 0.30);
+
+if (!function_exists('rest_day_premium')) {
+    function rest_day_premium($rest_days, $per_day): float
+    {
+        return round((float) $rest_days * (float) $per_day * REST_DAY_PREMIUM_RATE, 2);
     }
 }
 
@@ -382,11 +404,18 @@ if (!function_exists('dtr_punch_time')) {
 // "no schedule at all", and that silently disabled BOTH overnight punch pairing
 // and all hour math for the day:
 //   1. The assignment in effect on $date — the normal path.
-//   2. The nearest assignment the employee has. A schedule assigned today with
-//      effective_from = today does not cover punches the employee already made
-//      this week; without this, a night-shift clock-out at 07:01 opened its own
-//      next-day row instead of closing the shift that started the evening before.
-//   3. DEFAULT_WORK_SCHEDULE_ID (Day Shift) when the employee has no assignment
+//   2. The most recent assignment that had already STARTED, even if it has since
+//      ended. Deliberately not "nearest by distance": with a gap in the history
+//      (a period deleted), a date inside it is closer to the NEXT period's start
+//      than to the previous one's, so nearest-by-distance costed a back-dated
+//      entry against a shift that had not begun yet. What the employee was last
+//      on is the only defensible answer.
+//   3. The earliest assignment starting AFTER $date — reached only when nothing
+//      had started yet, i.e. punches predating the employee's first assignment.
+//      A schedule assigned today with effective_from = today does not cover
+//      punches already made this week; without this a night-shift clock-out at
+//      07:01 opened its own next-day row instead of closing the evening's shift.
+//   4. DEFAULT_WORK_SCHEDULE_ID (Day Shift) when the employee has no assignment
 //      at all, so a day still computes against something sane rather than zero.
 // Returns null only if the default schedule row itself is missing.
 if (!defined('DEFAULT_WORK_SCHEDULE_ID')) define('DEFAULT_WORK_SCHEDULE_ID', 1);
@@ -399,7 +428,7 @@ if (!function_exists('resolve_employee_schedule')) {
 
         // 1. Covering assignment.
         $res = $db->query("
-            SELECT ws.* FROM employee_schedules es
+            SELECT ws.*, es.rest_days FROM employee_schedules es
             INNER JOIN work_schedules ws ON ws.id = es.schedule_id
             WHERE es.employee_id = $eid AND es.effective_from <= '$dateEsc'
               AND (es.effective_to IS NULL OR es.effective_to >= '$dateEsc')
@@ -408,21 +437,33 @@ if (!function_exists('resolve_employee_schedule')) {
         $row = $res ? $res->fetch_assoc() : null;
         if ($row) return $row;
 
-        // 2. Nearest assignment by effective_from — covers punches recorded
-        //    before the schedule was ever assigned (new hires, back-entry).
+        // 2. Last assignment that had already started — an ended period is still
+        //    a better answer than one that had not begun on this date.
         $res = $db->query("
-            SELECT ws.* FROM employee_schedules es
+            SELECT ws.*, es.rest_days FROM employee_schedules es
             INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-            WHERE es.employee_id = $eid
-            ORDER BY ABS(DATEDIFF(es.effective_from, '$dateEsc')) ASC, es.effective_from ASC
-            LIMIT 1
+            WHERE es.employee_id = $eid AND es.effective_from <= '$dateEsc'
+            ORDER BY es.effective_from DESC LIMIT 1
         ");
         $row = $res ? $res->fetch_assoc() : null;
         if ($row) return $row;
 
-        // 3. System default.
+        // 3. Nothing had started yet → earliest assignment (new hire back-entry).
+        $res = $db->query("
+            SELECT ws.*, es.rest_days FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = $eid AND es.effective_from > '$dateEsc'
+            ORDER BY es.effective_from ASC LIMIT 1
+        ");
+        $row = $res ? $res->fetch_assoc() : null;
+        if ($row) return $row;
+
+        // 4. System default. No assignment means no rest days either — the key is
+        //    still set so callers can read it without checking which step matched.
         $res = $db->query("SELECT * FROM work_schedules WHERE id = " . (int) DEFAULT_WORK_SCHEDULE_ID . " LIMIT 1");
-        return $res ? $res->fetch_assoc() : null;
+        $row = $res ? $res->fetch_assoc() : null;
+        if ($row) $row['rest_days'] = '';
+        return $row;
     }
 }
 
@@ -447,7 +488,24 @@ if (!function_exists('dtr_compute_day')) {
         $hol = $db->query("SELECT type FROM calendar_events WHERE '$dateEsc' BETWEEN start_date AND COALESCE(end_date,'$dateEsc') AND type IN (1,3) LIMIT 1")->fetch_assoc();
         if ($hol) $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
 
-        $schedule = resolve_employee_schedule($db, $employee_id, $date);
+        // The shift frozen on the row when the punch was recorded wins. Only rows
+        // predating that column (schedule_id NULL) fall back to resolving it now —
+        // otherwise a later roster change would restate days already closed.
+        $schedule = null;
+        $st = $db->query("
+            SELECT ws.*, d.day_hours AS stamped_day_hours
+            FROM DTR_details d INNER JOIN work_schedules ws ON ws.id = d.schedule_id
+            WHERE d.employee_id = $employee_id AND d.date_time = '$dateEsc'
+              AND d.schedule_id IS NOT NULL
+            ORDER BY d.id DESC LIMIT 1
+        ");
+        if ($st && ($srow = $st->fetch_assoc())) {
+            $schedule = $srow;
+            // The stamped day length beats the shift's current total_hours, which
+            // may have been edited on the work_schedules row since.
+            if ($srow['stamped_day_hours'] !== null) $schedule['total_hours'] = $srow['stamped_day_hours'];
+        }
+        if (!$schedule) $schedule = resolve_employee_schedule($db, $employee_id, $date);
 
         $raw_hours  = ($in_ts && $out_ts) ? ($out_ts - $in_ts) / 3600 : 0;
         $break_hrs  = (isset($schedule['break_minutes']) ? $schedule['break_minutes'] : 60) / 60;

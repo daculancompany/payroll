@@ -989,39 +989,15 @@ class Action
 
         $this->db->begin_transaction();
         try {
-            // Find the currently open schedule row (if any)
-            $openStmt = $this->db->prepare(
-                "SELECT id, effective_from FROM employee_schedules WHERE employee_id=? AND effective_to IS NULL LIMIT 1"
-            );
-            $openStmt->bind_param('i', $employee_id);
-            $openStmt->execute();
-            $open = $openStmt->get_result()->fetch_assoc();
-
-            if ($open && $open['effective_from'] >= $effective_from) {
-                $this->db->rollback();
-                return ['result' => false, 'message' => 'Effective date must be after the current schedule\'s start date (' . date('M j, Y', strtotime($open['effective_from'])) . ').'];
-            }
-
-            // Close the currently active schedule (if any)
-            if ($open) {
-                $prev_date = date('Y-m-d', strtotime($effective_from . ' -1 day'));
-                $stmt1 = $this->db->prepare(
-                    "UPDATE employee_schedules SET effective_to=? WHERE id=?"
-                );
-                $stmt1->bind_param('si', $prev_date, $open['id']);
-                $stmt1->execute();
-            }
-
-            // Insert new assignment
-            $stmt2 = $this->db->prepare(
-                "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, rest_days, changed_by)
-                 VALUES (?,?,?,?,?,?)"
-            );
-            $stmt2->bind_param('iisssi', $employee_id, $schedule_id, $effective_from, $notes, $rest_days, $changed_by);
-            $stmt2->execute();
+            // Same period logic the bulk roster uses — this used to carry its
+            // own copy that amended whichever row was open, which refused any
+            // change dated before a schedule already planned for a later date.
+            $r = $this->applyScheduleChange($employee_id, $schedule_id, $effective_from, $notes, $changed_by, $rest_days);
 
             $this->db->commit();
-            return ['result' => true, 'message' => 'Schedule assigned'];
+            return $r === 'unchanged'
+                ? ['result' => true, 'message' => 'No change — already on this schedule.']
+                : ['result' => true, 'message' => 'Schedule assigned'];
         } catch (Exception $e) {
             $this->db->rollback();
             return ['result' => false, 'message' => $e->getMessage()];
@@ -1155,13 +1131,8 @@ class Action
     // return the rest_days CSV in effect on $ymd, or '' if none matches.
     private function restDaysForDate($periods, $ymd)
     {
-        if (empty($periods)) return '';
-        foreach ($periods as $p) {
-            if ($p['effective_from'] <= $ymd && ($p['effective_to'] === null || $p['effective_to'] >= $ymd)) {
-                return (string)$p['rest_days'];
-            }
-        }
-        return '';
+        $p = pick_schedule_window($periods, $ymd);
+        return $p ? (string)$p['rest_days'] : '';
     }
 
     /**
@@ -1169,20 +1140,17 @@ class Action
      * restDaysForDate() reads — i.e. how many worked hours make one full day
      * for this employee on that date.
      *
-     * Falls back to PAYROLL_DEFAULT_DAY_HOURS when the employee has no schedule
-     * covering the date, which is the only case where a fixed 8-hour day is
-     * still assumed.
+     * Falls back to PAYROLL_DEFAULT_DAY_HOURS only when the employee has NO
+     * schedule at all. A date outside every period still resolves through
+     * pick_schedule_window() — assuming a flat 8-hour day for someone on a
+     * 7-hour shift silently restates `present` (91h read as 11.375 days
+     * instead of 13) and understates their basic pay.
      */
     private function dayHoursForDate($periods, $ymd)
     {
-        if (!empty($periods)) {
-            foreach ($periods as $p) {
-                if ($p['effective_from'] <= $ymd && ($p['effective_to'] === null || $p['effective_to'] >= $ymd)) {
-                    return day_hours_or_default($p['total_hours'] ?? null);
-                }
-            }
-        }
-        return (float) PAYROLL_DEFAULT_DAY_HOURS;
+        $p = pick_schedule_window($periods, $ymd);
+        return $p ? day_hours_or_default($p['total_hours'] ?? null)
+                  : (float) PAYROLL_DEFAULT_DAY_HOURS;
     }
 
     // True if $ymd (a Y-m-d date) falls on one of the employee's rest days per $periods.
@@ -1197,16 +1165,13 @@ class Action
     /**
      * The schedule period in effect on $ymd, from the same preloaded periods
      * restDaysForDate() reads (they carry ws.has_nsd / ws.nsd_rate as well).
-     * Returns the matching row, or null when no assignment covers the date.
+     * Covering period, else the nearest — returning null for an uncovered date
+     * priced night differential at rate 0, so hours logged 10PM–6AM were paid
+     * nothing at all. Null now means only "this employee has no schedule".
      */
     private function scheduleOnDate($periods, $ymd)
     {
-        foreach ($periods as $p) {
-            if ($p['effective_from'] <= $ymd && ($p['effective_to'] === null || $p['effective_to'] >= $ymd)) {
-                return $p;
-            }
-        }
-        return null;
+        return pick_schedule_window($periods, $ymd);
     }
 
     // Core shift-assignment for ONE employee. Closes the open period / opens a new one
@@ -1217,50 +1182,68 @@ class Action
         $schedule_id = (int) $schedule_id;
         $rest_days = $this->normalizeRestDays($rest_days);
 
-        $openStmt = $this->db->prepare(
-            "SELECT id, schedule_id, effective_from, rest_days FROM employee_schedules
-             WHERE employee_id=? AND effective_to IS NULL LIMIT 1"
+        // The period COVERING the effective date — deliberately not "the open
+        // row". Once a change is scheduled in advance the open row is a FUTURE
+        // period, and amending that would reject (or mis-date) any change meant
+        // to take effect before it.
+        $cov = $this->db->prepare(
+            "SELECT id, schedule_id, effective_from, effective_to, rest_days
+             FROM employee_schedules
+             WHERE employee_id=? AND effective_from <= ?
+               AND (effective_to IS NULL OR effective_to >= ?)
+             ORDER BY effective_from DESC LIMIT 1"
         );
-        $openStmt->bind_param('i', $emp);
-        $openStmt->execute();
-        $open = $openStmt->get_result()->fetch_assoc();
+        $cov->bind_param('iss', $emp, $effective_from, $effective_from);
+        $cov->execute();
+        $period = $cov->get_result()->fetch_assoc();
 
-        if ($open) {
-            if ((int)$open['schedule_id'] === $schedule_id && (string)$open['rest_days'] === $rest_days) return 'unchanged';
+        if ($period) {
+            if ((int)$period['schedule_id'] === $schedule_id && (string)$period['rest_days'] === $rest_days) return 'unchanged';
 
-            if ($open['effective_from'] === $effective_from) {
-                // Same-day correction: overwrite the open row instead of stacking periods
+            if ($period['effective_from'] === $effective_from) {
+                // Same start date: correct that period in place rather than
+                // stacking a zero-length one on top of it.
                 $u = $this->db->prepare(
                     "UPDATE employee_schedules SET schedule_id=?, notes=?, rest_days=?, changed_by=? WHERE id=?"
                 );
-                $u->bind_param('issii', $schedule_id, $notes, $rest_days, $changed_by, $open['id']);
+                $u->bind_param('issii', $schedule_id, $notes, $rest_days, $changed_by, $period['id']);
                 $u->execute();
                 return 'updated';
             }
-            if ($effective_from > $open['effective_from']) {
-                // Close current period the day before, then open the new one
-                $prev_date = date('Y-m-d', strtotime($effective_from . ' -1 day'));
-                $c = $this->db->prepare("UPDATE employee_schedules SET effective_to=? WHERE id=?");
-                $c->bind_param('si', $prev_date, $open['id']);
-                $c->execute();
-                $ins = $this->db->prepare(
-                    "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, rest_days, changed_by)
-                     VALUES (?,?,?,?,?,?)"
-                );
-                $ins->bind_param('iisssi', $emp, $schedule_id, $effective_from, $notes, $rest_days, $changed_by);
-                $ins->execute();
-                return 'updated';
-            }
-            // Effective date is before the current period's start — can't backdate over it
-            return 'skipped';
+
+            // Split the covering period: close it the day before, and let the
+            // new one INHERIT its end date so a period already scheduled after
+            // it survives instead of being overlapped by an open-ended row.
+            $prev_date = date('Y-m-d', strtotime($effective_from . ' -1 day'));
+            $c = $this->db->prepare("UPDATE employee_schedules SET effective_to=? WHERE id=?");
+            $c->bind_param('si', $prev_date, $period['id']);
+            $c->execute();
+            $newTo = $period['effective_to'];        // null stays null → open-ended
+            $ins = $this->db->prepare(
+                "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, effective_to, notes, rest_days, changed_by)
+                 VALUES (?,?,?,?,?,?,?)"
+            );
+            $ins->bind_param('iissssi', $emp, $schedule_id, $effective_from, $newTo, $notes, $rest_days, $changed_by);
+            $ins->execute();
+            return 'updated';
         }
 
-        // No schedule yet — just insert
-        $ins = $this->db->prepare(
-            "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, notes, rest_days, changed_by)
-             VALUES (?,?,?,?,?,?)"
+        // Nothing covers the date. Any period starting later must still begin
+        // on time, so this one is capped the day before the earliest of them —
+        // without that cap an open-ended row would swallow them.
+        $nx = $this->db->prepare(
+            "SELECT MIN(effective_from) AS nxt FROM employee_schedules WHERE employee_id=? AND effective_from > ?"
         );
-        $ins->bind_param('iisssi', $emp, $schedule_id, $effective_from, $notes, $rest_days, $changed_by);
+        $nx->bind_param('is', $emp, $effective_from);
+        $nx->execute();
+        $nxt   = $nx->get_result()->fetch_assoc()['nxt'] ?? null;
+        $newTo = $nxt ? date('Y-m-d', strtotime($nxt . ' -1 day')) : null;
+
+        $ins = $this->db->prepare(
+            "INSERT INTO employee_schedules (employee_id, schedule_id, effective_from, effective_to, notes, rest_days, changed_by)
+             VALUES (?,?,?,?,?,?,?)"
+        );
+        $ins->bind_param('iissssi', $emp, $schedule_id, $effective_from, $newTo, $notes, $rest_days, $changed_by);
         $ins->execute();
         return 'updated';
     }
@@ -3068,16 +3051,21 @@ class Action
                 // one full day of work means for that employee — used below to turn
                 // worked hours into days present and a daily rate into an hourly
                 // one, in place of a hardcoded 8-hour day.
+                // EVERY period, not just those overlapping the payroll dates. The
+                // helpers above fall back to the nearest period when none covers a
+                // date, and they cannot fall back to rows never fetched: an April
+                // payroll for someone whose first assignment starts in May came
+                // back with no schedule at all, which defaulted the working day to
+                // 8h, priced night differential at 0 and lost rest-day duty.
                 $restMap = [];
+                $wsCache = [];   // work_schedules rows looked up by a row's stamped schedule_id
                 $rq = $this->db->prepare(
                     "SELECT es.employee_id, es.effective_from, es.effective_to, es.rest_days,
                             ws.total_hours, ws.has_nsd, ws.nsd_rate
                      FROM employee_schedules es
                      LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
-                     WHERE es.effective_from <= ? AND (es.effective_to IS NULL OR es.effective_to >= ?)
                      ORDER BY es.effective_from DESC"
                 );
-                $rq->bind_param('ss', $date_to, $date_from);
                 $rq->execute();
                 $rres = $rq->get_result();
                 while ($rrow = $rres->fetch_assoc()) {
@@ -3155,10 +3143,13 @@ class Action
                     }
 
                     $ymd = date('Y-m-d', strtotime($row['date_time']));
-                    // One full day for THIS employee on THIS date, from the shift
-                    // they were on (work_schedules.total_hours). Only an employee
-                    // with no schedule at all falls back to an 8-hour day.
-                    $day_hours = $this->dayHoursForDate($restMap[$employee_id] ?? [], $ymd);
+                    // One full day for THIS employee on THIS date. The value frozen
+                    // on the DTR row when the punch was recorded wins; only rows
+                    // predating that column resolve it from the roster now, and only
+                    // an employee with no schedule at all falls back to 8 hours.
+                    $day_hours = isset($row['day_hours']) && $row['day_hours'] !== null
+                        ? day_hours_or_default($row['day_hours'])
+                        : $this->dayHoursForDate($restMap[$employee_id] ?? [], $ymd);
                     $emp_day_hours[$employee_id] = $day_hours;
 
                     // Cap a single day's worth of hours at one full day
@@ -3206,7 +3197,13 @@ class Action
                     // Rest-day duty: if this DTR day is one of the employee's rest days
                     // (effective on that date), the worked fraction counts toward the
                     // rest-day premium instead of being assumed to be Sunday.
-                    if ($this->isRestDay($restMap[$employee_id] ?? [], $ymd)) {
+                    // Stamped flag wins for the same reason as day_hours above:
+                    // changing the roster must not turn a closed day into (or out
+                    // of) rest-day duty after the fact.
+                    $was_rest = isset($row['schedule_id']) && $row['schedule_id'] !== null
+                        ? ((int) ($row['is_rest_day'] ?? 0) === 1)
+                        : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
+                    if ($was_rest) {
                         $grouped_data[$employee_id]["rest_duty"] += $days;
                     }
 
@@ -3240,7 +3237,18 @@ class Action
                     // Priced here, per day, at this shift's own rate.
                     $nsd_day = (float) ($row['nsd_hours'] ?? 0);
                     if ($nsd_day > 0) {
-                        $sched_nsd = $this->scheduleOnDate($restMap[$employee_id] ?? [], $ymd);
+                        // Priced against the shift stamped on the row, so the
+                        // premium matches the shift the night was worked under.
+                        $sched_nsd = null;
+                        if (isset($row['schedule_id']) && $row['schedule_id'] !== null) {
+                            $sid = (int) $row['schedule_id'];
+                            if (!isset($wsCache[$sid])) {
+                                $wsq = $this->db->query("SELECT has_nsd, nsd_rate FROM work_schedules WHERE id = $sid LIMIT 1");
+                                $wsCache[$sid] = $wsq ? $wsq->fetch_assoc() : null;
+                            }
+                            $sched_nsd = $wsCache[$sid];
+                        }
+                        if (!$sched_nsd) $sched_nsd = $this->scheduleOnDate($restMap[$employee_id] ?? [], $ymd);
                         // has_nsd off => the shift does not earn the premium at all.
                         $nsd_rate  = (empty($sched_nsd) || (int) ($sched_nsd['has_nsd'] ?? 0) !== 1)
                             ? 0.0
@@ -3335,13 +3343,23 @@ class Action
                         foreach ($result2 as $row2) {
                             // Same one-full-day cap as the main loop, on the shift the
                             // employee was working that date.
-                            $dh2 = $this->dayHoursForDate($restMap[$employee_id] ?? [], date('Y-m-d', strtotime($row2["date_time"])));
+                            // Prefer the values frozen on the row, exactly as the main
+                            // loop does — otherwise the same day could count as rest
+                            // duty in one pass and not the other.
+                            $r2ymd = date('Y-m-d', strtotime($row2["date_time"]));
+                            $dh2 = ($row2['day_hours'] ?? null) !== null
+                                ? day_hours_or_default($row2['day_hours'])
+                                : $this->dayHoursForDate($restMap[$employee_id] ?? [], $r2ymd);
+                            $rest2 = ($row2['schedule_id'] ?? null) !== null
+                                ? ((int) ($row2['is_rest_day'] ?? 0) === 1)
+                                : $this->isRestDay($restMap[$employee_id] ?? [], $r2ymd);
                             $work_hours2 = floor($row2["work_hours"]) >= $dh2 ? $dh2 : $row2["work_hours"];
                             $data__details[] = [
                                 "site_id" => $row2["site_id"],
                                 "date_time" => $row2["date_time"],
                                 "work_hours" => $work_hours2,
                                 "day_hours" => $dh2,
+                                "is_rest_day" => $rest2,
                                 "overtime" => $row2["overtime"],
                                 "undertime" => $row2["undertime"],
                                 "present" => $row2["present"],
@@ -3366,7 +3384,7 @@ class Action
                                 // so the paid-leave cap sees cross-cluster days too.
                                 $data['worked_frac'][$d2ymd] = ($data['worked_frac'][$d2ymd] ?? 0)
                                     + $data__detail['work_hours'] / $data__detail['day_hours'];
-                                if ($this->isRestDay($restMap[$employee_id] ?? [], $d2ymd)) {
+                                if (!empty($data__detail['is_rest_day'])) {
                                     $data['rest_duty'] = ($data['rest_duty'] ?? 0) + $data__detail['work_hours'] / $data__detail['day_hours'];
                                 }
                             }
@@ -4988,14 +5006,31 @@ class Action
                 : null;
             $shift_note = $shift_label !== null ? substr($shift_label, 0, 100) : null;
 
+            // ── Freeze the shift onto the row ────────────────────────────────
+            // The schedule was resolved above to decide overnight pairing; keeping
+            // it means every later reader (compute, DTR sheet, payroll) uses the
+            // shift this day was actually recorded under, instead of re-resolving
+            // it and getting whatever the roster says today. Editing or
+            // back-dating an assignment can no longer silently restate closed days.
+            $sched_id  = $schedule ? (int) $schedule['id'] : null;
+            $sched_dh  = $schedule && isset($schedule['total_hours']) ? (float) $schedule['total_hours'] : null;
+            $rest_csv  = (string) ($schedule['rest_days'] ?? '');
+            $is_rest   = ($rest_csv !== '' && in_array(
+                (int) date('w', strtotime($scan_date)),
+                array_map('intval', explode(',', $rest_csv)),
+                true
+            )) ? 1 : 0;
+
             if (!$detail) {
                 // First scan — time-in only, mark incomplete
                 $logs = json_encode([$log_entry]);
                 $stmt6 = $this->db->prepare(
-                    "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, day_type, nsd_hours, is_complete, notes)
-                     VALUES (?, ?, ?, 0, ?, 'biometric', ?, 0, 0, ?)"
+                    "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, day_type, nsd_hours, is_complete, notes,
+                                              schedule_id, day_hours, is_rest_day)
+                     VALUES (?, ?, ?, 0, ?, 'biometric', ?, 0, 0, ?, ?, ?, ?)"
                 );
-                $stmt6->bind_param('iissss', $ddtr_id, $employee_id, $scan_date, $logs, $day_type, $shift_note);
+                $stmt6->bind_param('iissssidi', $ddtr_id, $employee_id, $scan_date, $logs, $day_type, $shift_note,
+                                   $sched_id, $sched_dh, $is_rest);
                 $stmt6->execute();
                 $this->db->commit();
                 // Notify the employee on their portal bell that a clock-in was captured.
@@ -5094,12 +5129,16 @@ class Action
                 $nsd_hours = round($nsd_hours, 2);
 
                 $logs = json_encode($existing_logs);
+                // Re-stamp on the closing punch too: a scan re-dated onto the
+                // previous day resolves its schedule again, so the row must end up
+                // with the shift the completed day was actually computed against.
                 $stmt7 = $this->db->prepare(
                     "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
-                     day_type=?, nsd_hours=?, is_complete=1 WHERE id=?"
+                     day_type=?, nsd_hours=?, is_complete=1,
+                     schedule_id=?, day_hours=?, is_rest_day=? WHERE id=?"
                 );
                 $stmt7->bind_param(
-                    'sddddsdi',
+                    'sddddsdidii',
                     $logs,
                     $work_hours,
                     $overtime,
@@ -5107,6 +5146,9 @@ class Action
                     $undertime,
                     $day_type,
                     $nsd_hours,
+                    $sched_id,
+                    $sched_dh,
+                    $is_rest,
                     $detail['id']
                 );
                 $stmt7->execute();
@@ -6268,7 +6310,14 @@ class Action
             $overtime_amount  = $row['ot'] * $row['ot_rate'];
             $late_amount      = $row['late'] * $perMinute;
             $legal_amount     = $row['legal_holiday'] * $row['per_day'];
-            $sunday_amount    = $row['sunday_duty'] * $row['per_day'];
+            // Rest-day pay differs by basis. A daily-rate employee already has the
+            // worked rest day inside `present`, so only the PREMIUM is due on top;
+            // a monthly employee's salary covers the day either way, which is the
+            // long-standing full-day figure kept here.
+            $rt_pre           = $row['rate_type'] ?? 'daily';
+            $sunday_amount    = ($rt_pre === 'monthly' || $rt_pre === 'fixed')
+                ? $row['sunday_duty'] * $row['per_day']
+                : rest_day_premium($row['sunday_duty'], $row['per_day']);
             // NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30%
             // special holiday premium. Leave the literals alone.
             $special_amount   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
@@ -6292,7 +6341,12 @@ class Action
                 // overtime + allowance − late (matches table-2 in the page).
                 $total_basic_rate = ($row['present'] + ($row['paid_leave'] ?? 0)) * $row['per_day'];
                 $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
-                $gross            = ($total_basic_rate + $overtime_amount + $allowance_total + $nsd_amount) - $late_amount;
+                // $sunday_amount is the +30% premium on this branch (the day's base
+                // is already in $total_basic_rate). It used to be left out of gross
+                // entirely while the payslip still printed a full-day figure for it,
+                // so rest-day duty was shown as an earning and never paid.
+                $gross            = ($total_basic_rate + $overtime_amount + $allowance_total
+                                    + $sunday_amount + $nsd_amount) - $late_amount;
             }
 
             $contributions = json_decode($row['contributions'], true) ?: [];
@@ -6725,12 +6779,13 @@ class Action
         }
 
         // Rest-day schedules overlapping the period → expected working days.
+        // All periods — same reason as the generation prefetch: this check counts
+        // expected work days via isRestDay(), and an employee with no overlapping
+        // period would have every day counted as expected.
         $restMap = [];
         $rq = $this->db->prepare("SELECT employee_id, effective_from, effective_to, rest_days
             FROM employee_schedules
-            WHERE effective_from <= ? AND (effective_to IS NULL OR effective_to >= ?)
             ORDER BY effective_from DESC");
-        $rq->bind_param('ss', $pay['date_to'], $pay['date_from']);
         $rq->execute();
         $rr = $rq->get_result();
         while ($rw = $rr->fetch_assoc()) $restMap[$rw['employee_id']][] = $rw;

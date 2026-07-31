@@ -435,7 +435,7 @@ if ($action === 'docs') {
             $E = &$byEmp[$eid];
             $date = $row['attendance_date'];
             if (!isset($E['days'][$date])) {
-                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => ''];
+                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => '', 'sched_id' => null];
                 $E['_logs'][$date] = [];
             }
             $D = &$E['days'][$date];
@@ -445,6 +445,12 @@ if ($action === 'docs') {
             $rowNote = trim((string)($row['notes'] ?? ''));
             if ($rowNote !== '' && strpos($D['note'], $rowNote) === false) {
                 $D['note'] = $D['note'] === '' ? $rowNote : $D['note'] . ' · ' . $rowNote;
+            }
+            // The shift frozen on the row when the punch was recorded. This is
+            // what the day was actually worked under, so it outranks anything
+            // the roster says now — see the marks loop below.
+            if ($D['sched_id'] === null && !empty($row['schedule_id'])) {
+                $D['sched_id'] = (int) $row['schedule_id'];
             }
             $D['wh']   += (float)$row['work_hours'];
             $D['ot']   += (float)$row['overtime'];
@@ -570,15 +576,24 @@ if ($action === 'docs') {
                 ['t' => $r['request_type'], 's' => (int)$r['status']];
         }
 
-        $schedMap = [];   // eid => schedule windows overlapping the period (effective_from ASC)
+        // EVERY schedule window these employees have, not just the ones overlapping
+        // the period. pick_schedule_window() falls back to the nearest period when
+        // none covers a date, and it cannot fall back to rows that were never
+        // fetched — an April batch for someone whose first assignment starts in May
+        // came back with no shift at all, so no chip, no hover and no summary.
+        // Shift catalogue, keyed by id — for resolving DTR_details.schedule_id
+        // (the shift stamped on the row) without a join per day.
+        $wsById = [];
+        $wsq = $conn->query("SELECT id, description, start_time, end_time, is_graveyard FROM work_schedules");
+        if ($wsq) while ($w = $wsq->fetch_assoc()) $wsById[(int)$w['id']] = $w;
+
+        $schedMap = [];   // eid => all schedule windows (effective_from ASC)
         $sq = $conn->prepare("SELECT es.employee_id, es.rest_days, es.effective_from, es.effective_to,
                                      ws.description AS sched_name, ws.start_time, ws.end_time, ws.is_graveyard
                               FROM employee_schedules es
                               LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
-                              WHERE es.employee_id IN ($idList) AND es.effective_from <= ?
-                                AND (es.effective_to IS NULL OR es.effective_to >= ?)
+                              WHERE es.employee_id IN ($idList)
                               ORDER BY es.effective_from ASC");
-        $sq->bind_param('ss', $dTo, $dFrom);
         $sq->execute();
         $sres = $sq->get_result();
         while ($sr = $sres->fetch_assoc()) $schedMap[(int)$sr['employee_id']][] = $sr;
@@ -680,12 +695,42 @@ if ($action === 'docs') {
                         $rest = (string)$srow['rest_days'];
                     }
                 }
-                // Which shift the day was worked under — a calendar chip on the
-                // sheet, so an admin scanning a month can tell a 6AM–2PM day from
-                // a 6PM–6AM one without opening anything. Falls back to the
-                // nearest assignment (unlike $rest above) so the chip names the
-                // same shift the day's hours were computed against.
-                $shift = pick_schedule_window($sch, $ymd);
+                // Which shift the day was worked under. A period that actually
+                // COVERS the date is a fact; the nearest-period fallback is a
+                // guess, and printing the two identically made a month with no
+                // assignment look like a month of uniform shifts. The guess is
+                // still shown — an admin needs to see which shift the figures
+                // were computed against — but flagged `inf` so the sheet can
+                // render it as inferred rather than asserted.
+                // 1. The shift STAMPED on the DTR row wins outright. It is what
+                //    the day was recorded under, so it survives any later roster
+                //    edit and is never a guess.
+                $stampId = $E['days'][$ymd]['sched_id'] ?? null;
+                $shift = null;
+                $inf   = 0;
+                if ($stampId && isset($wsById[$stampId])) {
+                    $ws    = $wsById[$stampId];
+                    $shift = [
+                        'sched_name'  => $ws['description'],
+                        'start_time'  => $ws['start_time'],
+                        'end_time'    => $ws['end_time'],
+                        'is_graveyard' => $ws['is_graveyard'],
+                    ];
+                } else {
+                    // 2. Unstamped day (no attendance, or a row predating the
+                    //    column) — fall back to employee_schedules. A period that
+                    //    covers the date is a fact; the nearest one is a guess and
+                    //    is flagged `inf` so the sheet renders it as inferred.
+                    $cover = null;
+                    foreach ($sch as $srow) {
+                        if ($srow['effective_from'] <= $ymd
+                            && (empty($srow['effective_to']) || $srow['effective_to'] >= $ymd)) {
+                            $cover = $srow;
+                        }
+                    }
+                    $shift = $cover ?: pick_schedule_window($sch, $ymd);
+                    $inf   = $cover ? 0 : 1;
+                }
                 if ($shift && !empty($shift['sched_name'])) {
                     $m[] = [
                         'k'   => 'sched',
@@ -694,6 +739,7 @@ if ($action === 'docs') {
                         'et'  => date('g:i A', strtotime($shift['end_time'])),
                         'g'   => (int)$shift['is_graveyard'],
                         'sh'  => (int)date('G', strtotime($shift['start_time'])),
+                        'inf' => $inf,
                     ];
                 }
                 if ($rest !== null && $rest !== ''

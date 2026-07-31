@@ -1567,7 +1567,13 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $legal_holiday = $row['legal_holiday'];
                                                 $legal_holiday_amount =  $legal_holiday * $perDay;
                                                 $sunday_duty = $row['sunday_duty'];
-                                                $sunday_duty_amount =  $sunday_duty * $perDay;
+                                                // Daily rate → the +30% premium only; the worked rest day is already
+                                                // inside `present`. Monthly/fixed keep the full-day figure, which is
+                                                // what their gross has always added.
+                                                $rt_row = $row['rate_type'] ?? 'daily';
+                                                $sunday_duty_amount = ($rt_row === 'monthly' || $rt_row === 'fixed')
+                                                    ? $sunday_duty * $perDay
+                                                    : rest_day_premium($sunday_duty, $perDay);
                                                 $special_holiday = $row['special_holiday'];
                                                 // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
@@ -2274,7 +2280,13 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                 $legal_holiday = $row['legal_holiday'];
                                                 $legal_holiday_amount =  $legal_holiday * $perDay;
                                                 $sunday_duty = $row['sunday_duty'];
-                                                $sunday_duty_amount =  $sunday_duty * $perDay;
+                                                // Daily rate → the +30% premium only; the worked rest day is already
+                                                // inside `present`. Monthly/fixed keep the full-day figure, which is
+                                                // what their gross has always added.
+                                                $rt_row = $row['rate_type'] ?? 'daily';
+                                                $sunday_duty_amount = ($rt_row === 'monthly' || $rt_row === 'fixed')
+                                                    ? $sunday_duty * $perDay
+                                                    : rest_day_premium($sunday_duty, $perDay);
                                                 $special_holiday = $row['special_holiday'];
                                                 // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
@@ -2296,7 +2308,12 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
                                                     // Daily staff are also paid for approved paid-leave days — matches
                                                     // get_payroll_rows_data: (present + paid_leave) × per_day.
                                                     $total_basic_rate = ($row['present'] + (float)($row['paid_leave'] ?? 0)) * $row['per_day'];
-                                                    $gross_salary = ($total_basic_rate + $overtime_amount + $total_allowance + $nsd_amount) - $late_amount;
+                                                    // $sunday_duty_amount is the +30% premium here — the rest day's own
+                                                    // pay is already in $total_basic_rate via `present`. Leaving it out
+                                                    // (as this did) meant the payslip listed Rest Day Duty as an earning
+                                                    // that never reached gross.
+                                                    $gross_salary = ($total_basic_rate + $overtime_amount + $total_allowance
+                                                        + $sunday_duty_amount + $nsd_amount) - $late_amount;
                                                 }
                                                 // Named one-off items for this employee: allowances add to gross,
                                                 // deductions are applied with the other deductions below.
@@ -4804,7 +4821,16 @@ window.PCW_META = <?= json_encode([
         }
         if (ed || e.allow_amt) h += earnRow('Allowance' + (monthlyRate && !isMonthlyBatch ? ' (½ applied to gross)' : ''), fld(e, 'allowance_days', e.allow_days) + ' day(s) × ' + fmt(e.allow_rate), e.allow_amt, false);
         if (ed || e.legal_amt) h += earnRow('Legal Holiday Pay', fld(e, 'legal_holiday', e.legal) + ' × ' + fmt(e.per_day), e.legal_amt, false);
-        if (ed || e.rest_amt) h += earnRow('Rest Day Duty', fld(e, 'sunday_duty', e.rest) + ' × ' + fmt(e.per_day), e.rest_amt, false);
+        // Rest-day pay is a PREMIUM for daily staff — the day itself is already
+        // counted in Days on Duty above, so the line has to say "+30%" and show
+        // the premium, not a full day's rate that was never added to gross.
+        if (ed || e.rest_amt) {
+            var restLbl  = monthlyRate ? 'Rest Day Duty' : 'Rest Day Premium';
+            var restCalc = monthlyRate
+                ? fld(e, 'sunday_duty', e.rest) + ' × ' + fmt(e.per_day)
+                : fld(e, 'sunday_duty', e.rest) + ' × ' + fmt(e.per_day) + ' × 30%';
+            h += earnRow(restLbl, restCalc, e.rest_amt, false);
+        }
         if (ed || e.spc_amt) h += earnRow('Special Holiday Pay', fld(e, 'special_holiday', e.spc) + ' day(s)', e.spc_amt, false);
         if (ed || e.ot_amt) h += earnRow('Overtime', fld(e, 'ot', e.ot_hrs) + ' hr(s) × ' + fmt(e.ot_rate), e.ot_amt, false);
         // Night differential — always on the sheet (even at 0) so it is never

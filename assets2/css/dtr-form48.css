@@ -24,20 +24,56 @@
 .dtrf48-table th,
 .dtrf48-table td { border: 1px solid #1a1a1a; text-align: center; padding: 2.5px 3px; }
 .dtrf48-table th { font-weight: 700; }
+/* Every figure on this sheet is read down its column, so the digits have to
+   line up. Proportional numerals make 11.00 and 9.50 different widths and the
+   decimal points wander — tabular-nums pins them to a common grid. */
+.dtrf48-table td.num,
+.dtrf48-table td.ut,
+.dtrf48-table tfoot td,
+.dtrf48-table td:not(.day):not(.dm-note) {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+}
+/* A heavier outer frame and a double rule under the header make the grid read
+   as a form rather than a data table. */
+.dtrf48-table { border: 2px solid #1a1a1a; }
+.dtrf48-table thead th { background: #f3f1ea; }
+.dtrf48-table thead tr:last-child th { border-bottom: 3px double #1a1a1a; }
 .dtrf48-table th.x-col { white-space: nowrap; }
 /* Day column — wide enough that a marker chip never crowds the number.
    The left/right padding is SYMMETRIC and sized to the chip gutter, so the
    number centers on the same x whether or not the day carries a badge. */
 .dtrf48-table td.day {
     font-weight: 700;
-    width: 76px; min-width: 76px;
+    width: 120px; min-width: 150px;
     padding-left: 22px; padding-right: 22px;
     white-space: nowrap; position: relative;
 }
 .dtrf48-table tr.wkend td { background: #f4f1e7; }
 .dtrf48-table tr.absent td:not(.day) { color: #b9b3a2; }
+/* A day with no punches is the one thing an approver scans for, so give the
+   blank its own faint ground instead of leaving it indistinguishable from a
+   worked row whose figures happen to be short. */
+.dtrf48-table tr.absent td { background: #fbfaf7; }
+.dtrf48-table tr.absent.wkend td { background: #f4f1e7; }
+/* Screen-only affordances — a 31-row sheet is read across, and the eye loses
+   the row. Neither survives to print, where the paper form must stay plain. */
+@media screen {
+    .dtrf48-table tbody tr:hover td { background: #eef4ff; }
+    .dtrf48-table tbody tr:hover td.x-col { background: #e6eeff; }
+    /* The row for today, when the period contains it. */
+    .dtrf48-table tbody tr.is-today td { box-shadow: inset 0 1px 0 #4e3483, inset 0 -1px 0 #4e3483; }
+    .dtrf48-table tbody tr.is-today td.day { background: #f0ebfa; }
+    .dtrf48-table tbody tr.is-today td.day .day-no { color: #4e3483; }
+}
 .dtrf48-table td.ut   { width: 40px; }
 .dtrf48-table td.num  { width: 52px; }
+/* Arrival / Departure. Every other column is sized, so without this the time
+   pair absorbed all the leftover width — and unequally, because Departure
+   carries the "+1" marker and the wider text. Equal shares keep the pair
+   symmetric, which is what makes an in/out column readable down the page. */
+.dtrf48-table th.t-col,
+.dtrf48-table td.t-col { width: 16%; min-width: 76px; }
 /* Extra detail columns get a faint tint so they read as "added" info, not the
    official arrival/departure/undertime the paper form prescribes. */
 .dtrf48-table th.x-col,
@@ -46,6 +82,10 @@
 .dtrf48-table td.x-col.late { color: #b02a37; }
 .dtrf48-table tfoot td { font-weight: 800; background: #efeadb; }
 .dtrf48-table tfoot td.x-col { background: #e9f2ee; }
+/* The totals are the line everything else adds up to — a double rule above
+   them says so, the way a ledger does. */
+.dtrf48-table tfoot td { border-top: 3px double #1a1a1a; font-size: 11.5px; }
+.dtrf48-table tfoot td:first-child { letter-spacing: 1.2px; }
 
 /* ── Day markers: holiday / leave / day-off / attendance request ──
    Chips (.dm) sit beside the day number on logged days and in a legend
@@ -102,6 +142,16 @@
    absolutely positioned they are out of flow, so a day with a badge and a day
    without one put their number at exactly the same x. */
 .dtrf48-table td.day .day-no { display: block; text-align: center; }
+/* Weekday under the number — small and muted so the date still reads first.
+   Prints too: on paper it is the only way to tell which day a row is. */
+.dtrf48-table td.day .day-dow {
+    display: block; text-align: center;
+    font-family: Arial, sans-serif; font-size: 7.5px; font-weight: 700;
+    line-height: 1; letter-spacing: .3px; text-transform: uppercase;
+    color: #9a92ad; margin-top: 1px;
+}
+.dtrf48-table tr.wkend td.day .day-dow { color: #c2185b; }
+.dtrf48.is-compact .dtrf48-table td.day .day-dow { font-size: 7px; }
 /* A worked day carries its shift + DTR notes on the day number itself. The
    chips sit in the gutter as siblings, so the two never fire together. */
 .dtrf48-table td.day .day-no.has-tip {
@@ -137,6 +187,11 @@
 .dtrf48 .dm-sch-day, .dtrf48-legend .dm-sch-day { background: #e8f5e9; color: #2e7d32; border: 1px solid #b6dfba; }
 .dtrf48 .dm-sch-eve, .dtrf48-legend .dm-sch-eve { background: #fff8e1; color: #b8860b; border: 1px solid #f0d99b; }
 .dtrf48 .dm-sch-noc, .dtrf48-legend .dm-sch-noc { background: #e8eaf6; color: #37409c; border: 1px solid #b7bdea; }
+/* Inferred: no assignment covered that date, so this shift is the nearest one
+   rather than a fact. Dashed and faded — it must not read like a rostered day. */
+.dtrf48 .dm-sch-inf, .dtrf48-legend .dm-sch-inf {
+    border-style: dashed; opacity: .6; background: #f5f5f5;
+}
 
 /* "+1" on a punch that crossed midnight — same tooltip look as the chips, but
    pointing UP, since the time cells sit mid-table with rows above and below. */
@@ -154,6 +209,42 @@
 .dtrf48-table sup.nextday[data-tip]:focus::before {
     left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%);
     border-top-color: #223330;
+}
+
+/* ── Shift summary strip (under the table) ─────────────────────────────
+   Days actually worked per shift. Prints too — on paper it is the quickest
+   answer to "what pattern did this person work this cutoff?" — but the chips
+   themselves are hidden in print by the .dm rule above, leaving clean text. */
+.dtrf48-shifts {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    margin-top: 8px; padding: 7px 10px;
+    border: 1px solid #e4e0ee; border-radius: 6px; background: #faf9fd;
+    font-family: Arial, sans-serif; font-size: 10.5px; color: #3d3350;
+}
+.dtrf48-shifts .sh-title {
+    font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px;
+    color: #6b5b9a;
+}
+.dtrf48-shifts .sh-item { display: inline-flex; align-items: center; gap: 5px; }
+.dtrf48-shifts .sh-days {
+    font-weight: 800; color: #2f2545;
+    background: #ece7f7; border-radius: 9px; padding: 1px 7px;
+}
+.dtrf48-shifts .sh-span, .dtrf48-shifts .sh-hrs { color: #7d7391; }
+/* Flags a count that rests on inferred shifts rather than real assignments. */
+.dtrf48-shifts .sh-inf {
+    background: #fdf0d5; color: #96601a; border: 1px dashed #e0b877;
+    border-radius: 9px; padding: 0 6px; font-weight: 700; font-size: 9.5px; cursor: help;
+}
+/* Notes half of the day hover, tallied. Wraps onto its own line when the shift
+   chips already fill the row. */
+.dtrf48-shifts .sh-title-notes { margin-left: 2px; }
+.dtrf48-shifts .sh-note { color: #5a5170; }
+.dtrf48-shifts .sh-note i { color: #b08900; font-size: 11px; }
+.dtrf48-shifts .sh-hrs::before { content: '· '; }
+.dtrf48.is-compact .dtrf48-shifts { font-size: 10px; padding: 6px 8px; gap: 5px 10px; }
+@media print {
+    .dtrf48-shifts { background: none; border-color: #999; }
 }
 
 /* ── "+1" outside the Form 48 sheet ────────────────────────────────────
@@ -207,6 +298,22 @@
 @media print {
     .dtrf48 .dm { display: none; }
     .dtrf48-table tr td.dm-note { background: none !important; color: #1a1a1a; }
+    /* A full month runs past one page. Repeat the column headings on each sheet
+       and never let a day be split across the fold — a half-row of times is
+       worse than no row. */
+    .dtrf48-table thead { display: table-header-group; }
+    .dtrf48-table tfoot { display: table-footer-group; }
+    .dtrf48-table tr    { page-break-inside: avoid; break-inside: avoid; }
+    .dtrf48             { page-break-inside: auto; }
+    /* Browsers drop backgrounds when printing, which would erase the weekend
+       and totals tints the form relies on; ask for them back. */
+    .dtrf48-table tr.wkend td,
+    .dtrf48-table tfoot td,
+    .dtrf48-table thead th { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    /* Hairlines print heavier than they render; thin them so the grid stays
+       crisp instead of turning into a black lattice. */
+    .dtrf48-table th, .dtrf48-table td { border-width: .75px; }
+    .dtrf48-table { border-width: 1.5px; }
 }
 
 /* ── Certification / signatures ── */

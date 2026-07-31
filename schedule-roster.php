@@ -9,18 +9,32 @@ while ($sq && $s = $sq->fetch_assoc()) {
     $shift_rows[] = $s;
 }
 
-// Every employee + their currently-active shift (effective_to IS NULL)
+// Every employee + the shift in effect TODAY. This used to join on
+// `effective_to IS NULL`, which is the LAST period, not the current one — so a
+// change scheduled in advance would display as the employee's current shift
+// (and group them under it in the grid) from the moment it was saved, weeks
+// before it takes effect. The upcoming period is selected separately so it can
+// be shown as what it is.
 $emp_q = $conn->query("
     SELECT e.id, e.firstname, e.lastname, e.middlename, e.employee_no, e.status,
            p.name AS pname, d.name AS dept_name, c.clasification,
            es.schedule_id AS cur_schedule_id, es.effective_from AS cur_from, es.rest_days AS cur_rest_days,
-           ws.description AS cur_desc
+           ws.description AS cur_desc,
+           nxt.effective_from AS nxt_from, nws.description AS nxt_desc
     FROM employee e
     INNER JOIN position p ON e.position_id = p.id
     INNER JOIN clasification c ON e.clasification_id = c.id
     LEFT JOIN department d ON e.department_id = d.id
-    LEFT JOIN employee_schedules es ON es.employee_id = e.id AND es.effective_to IS NULL
+    LEFT JOIN employee_schedules es ON es.employee_id = e.id
+         AND es.effective_from <= CURDATE()
+         AND (es.effective_to IS NULL OR es.effective_to >= CURDATE())
     LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
+    LEFT JOIN employee_schedules nxt ON nxt.id = (
+        SELECT id FROM employee_schedules
+        WHERE employee_id = e.id AND effective_from > CURDATE()
+        ORDER BY effective_from ASC LIMIT 1
+    )
+    LEFT JOIN work_schedules nws ON nws.id = nxt.schedule_id
     ORDER BY e.lastname ASC, e.firstname ASC
 ");
 // Fetched once into an array so we can render both the table and the card grid from the same rows.
@@ -385,7 +399,17 @@ if (!function_exists('rest_days_pills')) {
                                         </td>
                                         <td>
                                             <div class="d-flex align-items-center justify-content-between gap-2">
-                                                <span><?= $cur_shift_txt !== 'None' ? htmlspecialchars($cur_shift_txt) : '<span class="text-muted">— None —</span>' ?></span>
+                                                <span>
+                                                    <?= $cur_shift_txt !== 'None' ? htmlspecialchars($cur_shift_txt) : '<span class="text-muted">— None —</span>' ?>
+                                                    <?php if (!empty($r['nxt_desc'])): /* a change already scheduled ahead — shown as pending, never as the current shift */ ?>
+                                                        <div style="font-size:10.5px;color:#1565c0;white-space:nowrap;margin-top:1px;"
+                                                             title="Takes effect <?= date('F j, Y', strtotime($r['nxt_from'])) ?>">
+                                                            <i class="ri-arrow-right-line"></i>
+                                                            <?= htmlspecialchars($r['nxt_desc']) ?>
+                                                            <span style="color:#7a8aa0;">from <?= date('M j', strtotime($r['nxt_from'])) ?></span>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </span>
                                                 <button type="button" class="btn btn-sm btn-outline-primary roster-edit-btn"
                                                         data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['cur_rest_days'] ?? '') ?>"
                                                         title="Change shift"><i class="ri-edit-line"></i></button>

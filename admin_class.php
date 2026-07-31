@@ -6218,7 +6218,7 @@ class Action
                         + (pi.sunday_duty   * pi.per_day)
                         + ((pi.per_day/8*2.4) * pi.special_holiday)
                         + COALESCE(pi.nsd_amount, 0)
-                        - (pi.late * (pi.per_day/480))
+                        - (pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))
                     )                                                                   AS gross,
                     pi.net
                 FROM payroll_items pi
@@ -6305,49 +6305,24 @@ class Action
             // Hours in this employee's working day, frozen on the item at calc time.
             $dayHours         = day_hours_or_default($row['day_hours'] ?? null);
             $perMinute        = $row['per_day'] / ($dayHours * 60);
-            $allowance_total  = $row['allowance_amount'] * $row['allowance_days'];
-            $absent_amount    = $row['absent'] * $row['per_day'];
-            $overtime_amount  = $row['ot'] * $row['ot_rate'];
-            $late_amount      = $row['late'] * $perMinute;
-            $legal_amount     = $row['legal_holiday'] * $row['per_day'];
-            // Rest-day pay differs by basis. A daily-rate employee already has the
-            // worked rest day inside `present`, so only the PREMIUM is due on top;
-            // a monthly employee's salary covers the day either way, which is the
-            // long-standing full-day figure kept here.
-            $rt_pre           = $row['rate_type'] ?? 'daily';
-            $sunday_amount    = ($rt_pre === 'monthly' || $rt_pre === 'fixed')
-                ? $row['sunday_duty'] * $row['per_day']
-                : rest_day_premium($row['sunday_duty'], $row['per_day']);
-            // NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30%
-            // special holiday premium. Leave the literals alone.
-            $special_amount   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
-            // Night differential premium, priced at calc time and stored on the item.
-            $nsd_amount       = floatval($row['nsd_amount'] ?? 0);
-
-            // Pay basis is now per-employee (rate_type), frozen on the payroll item at calc.
-            // 'fixed' shares the salary-based formula but always has absent=0 (full pay,
-            // no attendance). payroll_type == 5 (whole-run monthly) is a legacy override.
-            $rt = $row['rate_type'] ?? 'daily';
-            $is_monthly = $rt === 'monthly' || $rt === 'fixed' || ($payroll_type == 5);
-            if ($is_monthly) {
-                // Monthly/fixed rate: basic is the fixed monthly salary share (semi-monthly ÷2),
-                // and unpaid absences are deducted at the daily rate (0 for fixed). Gross folds in premiums.
-                $total_basic_rate = $row['basic_pay'];
-                $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
-                $gross            = $total_amount + $overtime_amount + $legal_amount + $sunday_amount + $special_amount + $nsd_amount - $late_amount;
-            } else {
-                // Daily rate: Total Basic Rate = (days present + approved paid-leave days) ×
-                // rate per day — daily staff are paid for approved paid leave. gross = basic +
-                // overtime + allowance − late (matches table-2 in the page).
-                $total_basic_rate = ($row['present'] + ($row['paid_leave'] ?? 0)) * $row['per_day'];
-                $total_amount     = ($total_basic_rate + $allowance_total - $absent_amount) / 2;
-                // $sunday_amount is the +30% premium on this branch (the day's base
-                // is already in $total_basic_rate). It used to be left out of gross
-                // entirely while the payslip still printed a full-day figure for it,
-                // so rest-day duty was shown as an earning and never paid.
-                $gross            = ($total_basic_rate + $overtime_amount + $allowance_total
-                                    + $sunday_amount + $nsd_amount) - $late_amount;
-            }
+            // ONE formula for every screen, sheet, export and dashboard —
+            // payroll_earnings() in db_connect.php. This block used to be its own
+            // copy, which is how the register, the portal and this stored net
+            // drifted apart. Names below are kept so the rest of the method and
+            // its callers are untouched.
+            $__e              = payroll_earnings($row);
+            $allowance_total  = $__e['allowance'];
+            $absent_amount    = $__e['absent_amt'];
+            $overtime_amount  = $__e['overtime'];
+            $late_amount      = $__e['late_amt'];
+            $legal_amount     = $__e['legal_amt'];
+            $sunday_amount    = $__e['rest_amt'];
+            $special_amount   = $__e['special_amt'];
+            $nsd_amount       = $__e['nsd_amt'];
+            $is_monthly       = $__e['is_monthly'];
+            $total_basic_rate = $__e['basic'];
+            $total_amount     = $__e['subtotal'];
+            $gross            = $__e['gross'];
 
             $contributions = json_decode($row['contributions'], true) ?: [];
             $deductions    = json_decode($row['deductions'],    true) ?: [];

@@ -63,7 +63,7 @@ if ($iq) while ($r = $iq->fetch_assoc()) {
     if ($r['pt'] > $a['to'])   $a['to'] = $r['pt'];
 
     // Per-cutoff gross — mirrors get_payroll_rows_data().
-    $perMin = $r['per_day'] / 480;
+    $perMin = payroll_per_minute($r);
     $allow = $r['allowance_amount'] * $r['allowance_days'];
     $ot = $r['ot'] * $r['ot_rate'];
     $late = $r['late'] * $perMin;

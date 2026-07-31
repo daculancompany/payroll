@@ -215,26 +215,20 @@ $latest   = $payslips[0] ?? null;
 if (!function_exists('pp_pay')) {
     function pp_pay($r)
     {
-        $pm = $r['per_day'] / 480;
-        $at = $r['allowance_amount'] * $r['allowance_days'];
-        $ot = $r['ot'] * $r['ot_rate'];
-        $la = $r['late'] * $pm;
-        $__rt = $r['rate_type'] ?? 'daily';
-        if ($__rt === 'monthly' || $__rt === 'fixed') {
-            $ab  = $r['absent'] * $r['per_day'];
-            $lgl = $r['legal_holiday'] * $r['per_day'];
-            $sun = $r['sunday_duty'] * $r['per_day'];
-            $spc = ($r['per_day'] / 8 * 2.4) * $r['special_holiday'];
-            $sub = ($r['basic_pay'] + $at - $ab) / 2;
-            return ['sub' => $sub, 'gross' => $sub + $ot + $lgl + $sun + $spc - $la];
-        }
-        // Daily: must mirror admin_class.php's authoritative net exactly, or the
-        // portal shows the employee a different gross than the payroll produced.
-        // It previously dropped paid leave, night differential and rest-day pay.
-        $sub = ($r['present'] + (float)($r['paid_leave'] ?? 0)) * $r['per_day'];
-        $sun = rest_day_premium($r['sunday_duty'] ?? 0, $r['per_day']);   // +30%, day already in $sub
-        $nsd = (float) ($r['nsd_amount'] ?? 0);
-        return ['sub' => $sub, 'gross' => $sub + $ot + $at + $sun + $nsd - $la];
+        // Delegates to the one shared formula (payroll_earnings, db_connect.php)
+        // so the employee can never be shown a gross the payroll did not produce.
+        // This used to be a private copy and had drifted: it dropped paid leave,
+        // night differential and rest-day pay, and priced late on a flat 8-hour
+        // day regardless of the employee's real shift.
+        $e = payroll_earnings($r);
+        // 'sub' is the figure this view labels as basic earnings, and it is NOT
+        // the same quantity on both bases: monthly shows the half-month share,
+        // daily shows the full days-worked total (not halved). Preserved exactly.
+        return [
+            'sub'   => $e['is_monthly'] ? $e['subtotal'] : $e['basic'],
+            'gross' => $e['gross'],
+            'parts' => $e,
+        ];
     }
 }
 // Same figures with this payslip's one-off items folded in: allowance extras
@@ -268,7 +262,7 @@ foreach ($payslips as $ps) {
 
     // Year-to-date (current calendar year)
     if (date('Y', strtotime($ps['date_from'])) == $cur_year) {
-        $_pm   = $ps['per_day'] / 480;
+        $_pm   = payroll_per_minute($ps);
         $_at   = $ps['allowance_amount'] * $ps['allowance_days'];
         $_ot   = $ps['ot'] * $ps['ot_rate'];
         $_la   = $ps['late'] * $_pm;
@@ -299,7 +293,7 @@ $chart = ['labels'=>[], 'net'=>[], 'gross'=>[], 'late'=>[], 'ot'=>[], 'absent'=>
 foreach ($chart_src as $cp) {
     $c_at  = $cp['allowance_amount'] * $cp['allowance_days'];
     $c_ot  = $cp['ot'] * $cp['ot_rate'];
-    $c_la  = $cp['late'] * ($cp['per_day'] / 480);
+    $c_la  = $cp['late'] * payroll_per_minute($cp);
     $c_ab  = $cp['absent'] * $cp['per_day'];
     $c_lgl = $cp['legal_holiday'] * $cp['per_day'];
     $c_sun = $cp['sunday_duty'] * $cp['per_day'];
@@ -319,7 +313,7 @@ foreach ($chart_src as $cp) {
 // ── Per-payslip data for the Comparison tab (computed breakdown) ─
 $cmp_data = [];
 foreach ($payslips as $cp) {
-    $pmn = $cp['per_day'] / 480;
+    $pmn = payroll_per_minute($cp);
     $att = $cp['allowance_amount'] * $cp['allowance_days'];
     $otv = $cp['ot'] * $cp['ot_rate'];
     $lav = $cp['late'] * $pmn;
@@ -455,7 +449,7 @@ $total_loan_balance = array_sum(array_column($loans, 'loan_balance'));
 $pm = $late_amt = $ut_amt = $all_tot = $abs_amt = $ot_amt = 0;
 $lgl_amt = $sun_amt = $spc_amt = $sub_tot = $gross = $tot_ded = 0;
 if ($latest) {
-    $pm       = $latest['per_day'] / 480;
+    $pm       = payroll_per_minute($latest);
     $late_amt = $latest['late'] * $pm;
     $ut_amt   = $latest['under_time'] * $pm;
     $all_tot  = $latest['allowance_amount'] * $latest['allowance_days'];
@@ -2597,7 +2591,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 $t_net=0; $t_gross=0; $t_ded=0;
                 $payrollReviewJs = [];
                 foreach ($payslips as $ps):
-                    $pm2    = $ps['per_day'] / 480;
+                    $pm2    = payroll_per_minute($ps);
                     $at2    = $ps['allowance_amount'] * $ps['allowance_days'];
                     $ot2    = $ps['ot'] * $ps['ot_rate'];
                     $la2    = $ps['late'] * $pm2;

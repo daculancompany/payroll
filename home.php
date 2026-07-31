@@ -285,7 +285,7 @@ $snap_res = $conn->query("
             + (pi.legal_holiday * pi.per_day)
             + (pi.sunday_duty * pi.per_day)
             + ((pi.per_day / 8 * 2.4) * pi.special_holiday)
-            - (pi.late * (pi.per_day / 480))
+            - (pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))
         ), 0) AS total_gross
     FROM payroll p
     LEFT JOIN employers e ON p.employer_id = e.id

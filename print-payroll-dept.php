@@ -21,7 +21,7 @@ $stmt2 = $conn->prepare("
         SUM(pi.legal_holiday * pi.per_day)                            AS total_legal,
         SUM(pi.sunday_duty * pi.per_day)                              AS total_sunday,
         SUM((pi.per_day / 8 * 2.4) * pi.special_holiday)             AS total_special,
-        SUM(pi.late * (pi.per_day / 480))                             AS total_late,
+        SUM(pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))                             AS total_late,
         SUM(COALESCE(pi.nsd_amount, 0))                               AS total_nsd,
         SUM(
             ((pi.basic_pay + (pi.allowance_amount * pi.allowance_days) - (pi.absent * pi.per_day)) / 2)
@@ -30,7 +30,7 @@ $stmt2 = $conn->prepare("
             + (pi.sunday_duty * pi.per_day)
             + ((pi.per_day / 8 * 2.4) * pi.special_holiday)
             + COALESCE(pi.nsd_amount, 0)
-            - (pi.late * (pi.per_day / 480))
+            - (pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))
         )                                                             AS total_gross,
         SUM(COALESCE(pi.deduction_amount, 0))                         AS total_contributions,
         SUM(COALESCE(pi.other_deduction, 0))                          AS total_other_ded,

@@ -341,6 +341,43 @@ if (!function_exists('pick_schedule_window')) {
     }
 }
 
+// ── Per-minute rate (GLOBAL) ────────────────────────────────────────────
+// What one minute of late / undertime costs. This is DAY-LENGTH DEPENDENT, so
+// it must divide by the employee's own working day, not a flat 8 hours: on a
+// 7-hour shift a flat /480 prices every late minute ~14% under, and the portal
+// then shows the employee a different deduction than payroll actually took.
+// Reads the day_hours frozen on the payroll item, so recomputing an old payroll
+// cannot restate it.
+if (!function_exists('payroll_per_minute')) {
+    function payroll_per_minute($row): float
+    {
+        $perDay = (float) ($row['per_day'] ?? 0);
+        $hours  = day_hours_or_default($row['day_hours'] ?? null);
+        return $hours > 0 ? $perDay / ($hours * 60) : 0.0;
+    }
+}
+
+// SQL twin of the above, for the dashboard/report queries that recompute in the
+// database. $a is the payroll_items alias.
+if (!function_exists('sql_per_minute')) {
+    function sql_per_minute(string $a = 'pi'): string
+    {
+        return "($a.per_day / (COALESCE(NULLIF($a.day_hours, 0), " . (int) PAYROLL_DEFAULT_DAY_HOURS . ") * 60))";
+    }
+}
+
+// Special-holiday premium: 30% of the daily rate. Written throughout as
+// `per_day / 8 * 2.4`, which collapses to exactly per_day * 0.3 — the 8 there is
+// arithmetic, NOT a day length, and changing it to the real shift length would
+// silently alter pay. Kept as one function so it stops looking like a bug.
+if (!defined('SPECIAL_HOLIDAY_PREMIUM_RATE')) define('SPECIAL_HOLIDAY_PREMIUM_RATE', 0.30);
+if (!function_exists('special_holiday_premium')) {
+    function special_holiday_premium($days, $per_day): float
+    {
+        return (float) $days * (float) $per_day * SPECIAL_HOLIDAY_PREMIUM_RATE;
+    }
+}
+
 // ── Rest-day premium (GLOBAL) ───────────────────────────────────────────
 // Extra paid for rendering duty on a rest day, as a fraction of the daily rate.
 // 0.30 = the Labor Code's +30%, i.e. 130% for the day in total.
@@ -357,6 +394,78 @@ if (!function_exists('rest_day_premium')) {
     function rest_day_premium($rest_days, $per_day): float
     {
         return round((float) $rest_days * (float) $per_day * REST_DAY_PREMIUM_RATE, 2);
+    }
+}
+
+// ── Earnings for ONE payroll item (GLOBAL) ──────────────────────────────
+// THE formula. Every screen, print sheet, export and dashboard must call this
+// instead of keeping its own copy — the copies are how the payroll register,
+// the calculation sheet, the portal and the stored net drifted apart (one
+// dropped night differential, another priced late on a flat 8-hour day, two
+// still paid rest days as a whole extra day).
+//
+// Takes a payroll_items row (plus optional payroll_type) and returns every
+// component named, so callers render the breakdown instead of recomputing it.
+//
+// Pay basis comes from the item's frozen rate_type:
+//   monthly / fixed → half-month salary share, minus absences; premiums added
+//   daily           → (days present + paid leave) × daily rate
+//
+// KNOWN GAP, deliberately preserved: on the daily basis legal- and special-
+// holiday pay are computed and returned but NOT added to gross, exactly as the
+// existing code does. Adding them is a pay decision, not a refactor, so it is
+// left visible here rather than changed silently.
+if (!function_exists('payroll_earnings')) {
+    function payroll_earnings($row): array
+    {
+        $perDay     = (float) ($row['per_day'] ?? 0);
+        $dayHours   = day_hours_or_default($row['day_hours'] ?? null);
+        $perMinute  = payroll_per_minute($row);
+        $rt         = $row['rate_type'] ?? 'daily';
+        $is_monthly = $rt === 'monthly' || $rt === 'fixed'
+                   || ((int) ($row['payroll_type'] ?? 0) === 5);   // legacy whole-run override
+
+        $allowance   = (float) ($row['allowance_amount'] ?? 0) * (float) ($row['allowance_days'] ?? 0);
+        $absent_amt  = (float) ($row['absent'] ?? 0) * $perDay;
+        $overtime    = (float) ($row['ot'] ?? 0) * (float) ($row['ot_rate'] ?? 0);
+        $late_amt    = (float) ($row['late'] ?? 0) * $perMinute;
+        $under_amt   = (float) ($row['under_time'] ?? 0) * $perMinute;
+        $legal_amt   = (float) ($row['legal_holiday'] ?? 0) * $perDay;
+        $special_amt = special_holiday_premium($row['special_holiday'] ?? 0, $perDay);
+        $nsd_amt     = (float) ($row['nsd_amount'] ?? 0);
+        // Rest day: a premium on the daily basis (the day is already inside
+        // `present`), a whole extra day on the monthly basis as it always was.
+        $rest_amt    = $is_monthly
+            ? (float) ($row['sunday_duty'] ?? 0) * $perDay
+            : rest_day_premium($row['sunday_duty'] ?? 0, $perDay);
+
+        if ($is_monthly) {
+            $basic    = (float) ($row['basic_pay'] ?? 0);
+            $subtotal = ($basic + $allowance - $absent_amt) / 2;
+            $gross    = $subtotal + $overtime + $legal_amt + $rest_amt + $special_amt + $nsd_amt - $late_amt;
+        } else {
+            $basic    = ((float) ($row['present'] ?? 0) + (float) ($row['paid_leave'] ?? 0)) * $perDay;
+            $subtotal = ($basic + $allowance - $absent_amt) / 2;
+            $gross    = ($basic + $overtime + $allowance + $rest_amt + $nsd_amt) - $late_amt;
+        }
+
+        return [
+            'is_monthly' => $is_monthly,
+            'day_hours'  => $dayHours,
+            'per_minute' => $perMinute,
+            'basic'      => $basic,
+            'subtotal'   => $subtotal,
+            'allowance'  => $allowance,
+            'absent_amt' => $absent_amt,
+            'overtime'   => $overtime,
+            'late_amt'   => $late_amt,
+            'under_amt'  => $under_amt,
+            'legal_amt'  => $legal_amt,
+            'rest_amt'   => $rest_amt,
+            'special_amt' => $special_amt,
+            'nsd_amt'    => $nsd_amt,
+            'gross'      => $gross,
+        ];
     }
 }
 

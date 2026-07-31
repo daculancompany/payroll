@@ -23,14 +23,14 @@ function dashboard_deptpay(mysqli $conn, int $payroll_id): array
                    + (pi.legal_holiday * pi.per_day)
                    + (pi.sunday_duty * pi.per_day)
                    + ((pi.per_day / 8 * 2.4) * pi.special_holiday)
-                   - (pi.late * (pi.per_day / 480))
+                   - (pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))
                ),0) AS gross,
                COALESCE(SUM(
                    pi.deduction_amount + pi.other_deduction + pi.tax
                    + pi.jei_advances + pi.jcc_advances + pi.sss_fund
                ),0) AS ded,
                COALESCE(SUM(pi.ot * pi.ot_rate),0) AS ot_amt,
-               COALESCE(SUM(pi.late * (pi.per_day / 480)),0) AS late_amt
+               COALESCE(SUM(pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60))),0) AS late_amt
         FROM payroll_items pi
         INNER JOIN employee e ON pi.employee_id = e.id
         LEFT JOIN department d ON e.department_id = d.id

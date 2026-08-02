@@ -97,14 +97,14 @@
     .tab-btn i { font-size: 22px; transition: none; transform: none; }
     .tab-btn span.tab-label { font-size: 9.5px; }
     /* Active: static pill behind the icon instead of a filled block */
-    .tab-btn.active { background: transparent; color: #176358; box-shadow: none; }
+    .tab-btn.active { background: transparent; color: #4e3483; box-shadow: none; }
     .tab-btn.active::before {
         content: '';
         position: absolute;
         top: 4px; left: 50%;
         width: 48px; height: 30px;
         border-radius: 15px;
-        background: #d8efe9;
+        background: #f0ecf6;
         transform: translateX(-50%);
         z-index: -1;
         transition: none;

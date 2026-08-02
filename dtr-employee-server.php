@@ -26,6 +26,7 @@ if (empty($_SESSION['is_login'])) {
 }
 
 include 'db_connect.php';
+require_page_access('dtr-details', 'json');   // same boundary as the DTR screens
 include_once 'component/dtr_employee_card.php';
 
 $login_role = (int)($_SESSION['login_role'] ?? 0);

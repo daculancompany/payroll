@@ -22,6 +22,9 @@ if (empty($_SESSION['is_login'])) {
     exit;
 }
 include 'db_connect.php';
+// Standalone workbench — index.php's router never sees it, so it enforces the
+// admin-only DTR boundary itself.
+require_page_access('dtr-documents');
 $login_role = (int)($_SESSION['login_role'] ?? 0);
 $loginId    = (int)($_SESSION['login_id'] ?? 0);
 $loginName  = '';

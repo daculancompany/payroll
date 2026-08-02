@@ -19,6 +19,17 @@ $emp_q = $conn->query("
     SELECT e.id, e.firstname, e.lastname, e.middlename, e.employee_no, e.status,
            p.name AS pname, d.name AS dept_name, c.clasification,
            es.schedule_id AS cur_schedule_id, es.effective_from AS cur_from, es.rest_days AS cur_rest_days,
+           -- What the edit modal pre-fills. Same fallback the server uses when a
+           -- caller omits rest_days, so a gap in the periods can't make the modal
+           -- open blank and quietly clear rest days that are still on file.
+           COALESCE(es.rest_days,
+                    (SELECT x.rest_days FROM employee_schedules x
+                      WHERE x.employee_id = e.id AND x.effective_from <= CURDATE()
+                      ORDER BY x.effective_from DESC LIMIT 1),
+                    (SELECT x2.rest_days FROM employee_schedules x2
+                      WHERE x2.employee_id = e.id
+                      ORDER BY x2.effective_from ASC LIMIT 1),
+                    '') AS pref_rest_days,
            ws.description AS cur_desc,
            nxt.effective_from AS nxt_from, nws.description AS nxt_desc
     FROM employee e
@@ -277,7 +288,7 @@ if (!function_exists('rest_days_pills')) {
                                         <i class="ri-check-double-line me-1"></i>Apply now
                                     </button>
                                 </div>
-                                <div class="rab-hint">Apply now updates immediately and notifies employees. Add to Plan stages it, hidden until you apply.</div>
+                                <div class="rab-hint">Shift only — rest days are left as they are (change those in the Rest days tab). Apply now updates immediately and notifies employees. Add to Plan stages it, hidden until you apply.</div>
                             </div>
 
                             <!-- Rest days -->
@@ -411,7 +422,7 @@ if (!function_exists('rest_days_pills')) {
                                                     <?php endif; ?>
                                                 </span>
                                                 <button type="button" class="btn btn-sm btn-outline-primary roster-edit-btn"
-                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['cur_rest_days'] ?? '') ?>"
+                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['pref_rest_days'] ?? '') ?>"
                                                         title="Change shift"><i class="ri-edit-line"></i></button>
                                             </div>
                                         </td>
@@ -471,7 +482,7 @@ if (!function_exists('rest_days_pills')) {
                                             <div class="roster-card-select">
                                                 <span class="roster-card-shift-text"><?= $cur_shift_txt !== 'None' ? htmlspecialchars($cur_shift_txt) : '—' ?></span>
                                                 <button type="button" class="btn btn-sm btn-outline-primary roster-edit-btn"
-                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['cur_rest_days'] ?? '') ?>"
+                                                        data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['pref_rest_days'] ?? '') ?>"
                                                         title="Change shift"><i class="ri-edit-line"></i></button>
                                             </div>
                                             <div class="roster-card-rest mt-1"><?= rest_days_pills($r['cur_rest_days'] ?? '', $RD_LABELS) ?></div>

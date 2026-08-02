@@ -92,7 +92,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 							<i class="ri-team-line me-2 text-success"></i>Employee List
 						</h4>
 						<div class="flex-shrink-0 d-flex gap-2">
-							<?php if (in_array($login_role, $allowed_values_2)) { ?>
+							<?php if (in_array($login_role, $allowed_values_2) && can_edit('employee')) { ?>
 								<a href="export-employee-template.php" class="btn btn-outline-info add-btn"
 									title="Download the .xlsx template used for importing employees">
 									<i class="ri-download-2-line align-bottom me-1"></i> Template

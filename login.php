@@ -73,6 +73,13 @@
             background-size: cover;
         } */
 
+        .app-version {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: .5px;
+            color: #a7a0b7;
+        }
+
         .auth-one-bg .bg-overlay {
             background: -webkit-gradient(linear, left top, right top, from(#4e3483), to(#6642aacc));
             background: linear-gradient(to right, #4e3483e0, #6642aacc);
@@ -120,16 +127,16 @@
                                     <p class="text-muted">Sign in to continue to Payroll System.</p>
                                     <?php if (app_is_local()): ?>
                                         <span class="badge bg-danger-subtle text-danger"><i class="ri-shield-keyhole-line me-1"></i>Payroll Workstation &mdash; administrator access only</span>
-                                    <?php else: ?>
-                                        <p class="text-muted small mb-0"><i class="ri-information-line me-1"></i>Employees: use your <strong>Employee No.</strong> as username.</p>
                                     <?php endif; ?>
                                 </div>
                                 <div class="p-2 mt-4">
                                     <form novalidate id="form-login" method="post">
                                         <div id="message-show"></div>
                                         <div class="mb-3">
-                                            <label for="username" class="form-label">Username</label>
-                                            <input type="text" class="form-control" name="username" id="username" placeholder="Enter username" autocomplete="username" data-parsley-required-message="Username is required." required>
+                                            <label for="username" class="form-label">Email</label>
+                                            <!-- Still posted as `username` — the server matches it against the
+                                                 users table and the employee account email. -->
+                                            <input type="text" class="form-control" name="username" id="username" placeholder="Enter email" autocomplete="username" data-parsley-required-message="Email is required." required>
                                         </div>
 
                                         <div class="mb-3">
@@ -160,6 +167,11 @@
                                             <button class="btn btn-outline-light w-100" type="button">
                                                 <i class="ri-download-2-line align-middle me-1"></i>Install App
                                             </button>
+                                        </div>
+
+                                        <!-- Build number, mobile-app style — bump APP_VERSION in db_connect.php -->
+                                        <div class="text-center mt-3">
+                                            <span class="app-version">v<?= htmlspecialchars(APP_VERSION) ?></span>
                                         </div>
                                     </form>
                                 </div>

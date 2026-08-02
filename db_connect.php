@@ -1,4 +1,10 @@
 <?php
+/* App release shown on the login screen (mobile-app style: v<major>.<minor>.<build>).
+ * Bump this on every deploy so users can report which build they are on. */
+if (!defined('APP_VERSION')) {
+    define('APP_VERSION', '2.0.01');
+}
+
 /* ──────────────────────────────────────────────────────────────
  * Central error-reporting switch.
  *   dev  → show every error on screen (for debugging)
@@ -95,6 +101,7 @@ if (!defined('TIMEKEEPER_ALLOWED_PAGES')) {
         'attendance-summary',   // Employee Attendance Report (landing page)
         'employee',             // Employee list
         'employee-details',     // → fingerprints-only view (see index.php routing)
+        'employee-fingerprints',// the one thing they may WRITE: enrolled prints
         'profile',              // own account
     ]);
 }
@@ -109,8 +116,10 @@ if (!defined('TIMEKEEPER_ALLOWED_PAGES')) {
 // redirects to the dashboard, so a stray link or a hand-typed ?page= cannot
 // open a screen with pay data on it.
 //
-// HR (role 9) is a leave approver too but is deliberately NOT listed here —
-// HR keeps full app access. Edit these two constants to adjust app-wide.
+// HR (role 9) is a leave approver too but is NOT listed here — HR is not
+// restricted to the leave-only slice; they have their own, wider slice
+// defined in the HR block further down. Edit these two constants to adjust
+// the Supervisor / Department Head slice app-wide.
 if (!defined('LEAVE_APPROVER_ROLES')) {
     define('LEAVE_APPROVER_ROLES', [8, 10]);   // 8 = Department Head, 10 = Supervisor
 }
@@ -165,6 +174,292 @@ if (!function_exists('is_timekeeper')) {
     function timekeeper_page_allowed($page)
     {
         return in_array($page, TIMEKEEPER_ALLOWED_PAGES, true);
+    }
+}
+
+// ── Payroll & DTR: administrators only ──────────────────────────────────
+// The money screens and the raw time record behind them. Anyone who can open
+// these can see (and rewrite) what every employee is paid, so they are pinned
+// to a single role list instead of being scattered across per-page checks.
+//
+// Widening access = add the role id here, nowhere else.
+if (!defined('PAYROLL_DTR_ROLES')) {
+    define('PAYROLL_DTR_ROLES', [1]);   // 1 = Administrator
+}
+
+if (!defined('ADMIN_ONLY_PAGES')) {
+    define('ADMIN_ONLY_PAGES', [
+        'payroll',                // payroll batches
+        'payroll_items',
+        'payroll_calculations',   // the pay computation sheet (standalone page)
+        'dtr',                    // DTR Review
+        'dtr-details',
+        'dtr-documents',          // standalone DTR workbench (not an index.php route)
+        'compare-dtr',
+        'biometric-dtr',
+    ]);
+}
+
+// ── HR (role 9) ─────────────────────────────────────────────────────────
+// HR runs people operations, not pay. Theirs: the dashboard, the employee and
+// org screens, the whole leave workflow, and a LOOK at attendance. Not theirs:
+// shift scheduling, DTR, payroll, pay settings, 13th month, every report, and
+// user management. Everything outside this list lands on the dashboard, so a
+// hidden menu item and a hand-typed ?page= give the same answer.
+if (!defined('ROLE_HR')) {
+    define('ROLE_HR', 9);
+}
+
+if (!defined('HR_ALLOWED_PAGES')) {
+    define('HR_ALLOWED_PAGES', [
+        'home', 'daily-board',
+        'employee', 'employee-details',          // people records
+        'department', 'position',
+        'attendance', 'attendance-requests',     // READ-ONLY (see HR_READONLY_PAGES)
+        'leave-dashboard', 'leaves', 'leave_types',
+        'leave_balances', 'leave-balances-report', 'calendar',
+        'sites',                                 // biometric sites
+        'profile',                               // own account
+    ]);
+}
+
+// Pages HR may open but must not act on. The pages themselves hide their
+// action buttons for HR; the endpoints below are the actual boundary.
+if (!defined('HR_READONLY_PAGES')) {
+    define('HR_READONLY_PAGES', [
+        'attendance', 'attendance-requests',
+        'employee', 'employee-details',   // people records: look, don't touch
+    ]);
+}
+
+if (!function_exists('is_hr')) {
+    /**
+     * True when $role (default: the signed-in web session role) is HR.
+     * Reads the session defensively so it is safe to call from AJAX endpoints
+     * that may not have a session at all.
+     */
+    function is_hr($role = null): bool
+    {
+        if ($role === null) {
+            if (session_status() === PHP_SESSION_NONE) return false;
+            $role = $_SESSION['login_role'] ?? 0;
+        }
+        return (int) $role === ROLE_HR;
+    }
+
+    /** Is $page reachable for HR? */
+    function hr_page_allowed($page): bool
+    {
+        return in_array($page, HR_ALLOWED_PAGES, true);
+    }
+
+    /** True when HR may look at $page but not change anything on it. */
+    function hr_readonly_page($page): bool
+    {
+        return in_array($page, HR_READONLY_PAGES, true);
+    }
+}
+
+// ── Per-page role lists ─────────────────────────────────────────────────
+// Screens that were gated by an inline role check in the sidebar. The menu
+// used to hold these lists on its own, which meant the link was hidden but the
+// URL still worked. They live here now so page_allowed() answers for both.
+// A page not listed here is open to every role its slice allows.
+if (!defined('PAGE_ROLE_RESTRICTIONS')) {
+    define('PAGE_ROLE_RESTRICTIONS', [
+        'attendance-requests' => [1, 8, 9],   // HR sees it READ-ONLY
+        'pay-settings'        => [1, 8],
+        'thirteenth-month'    => [1, 8],
+        'users'               => [1, 2, 3, 8],
+    ]);
+}
+
+// ── One gate for every screen ───────────────────────────────────────────
+// Every restriction above, composed. index.php routes through it, the sidebar
+// hides links with it, and standalone pages/exports enforce it — so the menu
+// and the URL bar can never disagree about who may open what.
+if (!function_exists('page_allowed')) {
+    /** Current web session role (0 when signed out). */
+    function current_role(): int
+    {
+        if (session_status() === PHP_SESSION_NONE) return 0;
+        return (int) ($_SESSION['login_role'] ?? 0);
+    }
+
+    /** May $role open $page? The single answer the whole app asks. */
+    function page_allowed($page, $role = null): bool
+    {
+        if ($role === null) $role = current_role();
+        $role = (int) $role;
+
+        if (!app_page_allowed($page))                      return false;  // offline payroll box
+        if (in_array($page, ADMIN_ONLY_PAGES, true)
+            && !in_array($role, PAYROLL_DTR_ROLES, true))  return false;  // payroll + DTR
+
+        $only = PAGE_ROLE_RESTRICTIONS;
+        if (isset($only[$page]) && !in_array($role, $only[$page], true)) return false;
+
+        if (is_timekeeper($role))                          return timekeeper_page_allowed($page);
+        if (is_leave_approver($role))                      return leave_approver_page_allowed($page);
+        if (is_hr($role))                                  return hr_page_allowed($page);
+
+        return true;
+    }
+
+    /** Where a blocked request lands — each role's own home screen. */
+    function role_landing_page($role = null): string
+    {
+        if ($role === null) $role = current_role();
+        if (app_is_local())            return 'dtr';
+        if (is_timekeeper($role))      return 'attendance-summary';
+        if (is_leave_approver($role))  return 'leave-dashboard';
+        return 'home';
+    }
+
+    /**
+     * Enforce page_allowed() from a standalone page, export or data feed that
+     * index.php's ?page= router never sees. $mode picks how to say no:
+     * 'page' redirects to the caller's landing screen, 'json' / 'text' answer 403.
+     */
+    function require_page_access($page, $mode = 'page'): void
+    {
+        if (page_allowed($page)) return;
+
+        if ($mode === 'json') {
+            header('HTTP/1.0 403 Forbidden');
+            header('Content-Type: application/json');
+            echo json_encode(['result' => false, 'message' => 'Your role does not have access to this screen.']);
+        } elseif ($mode === 'text') {
+            header('HTTP/1.0 403 Forbidden');
+            echo 'Forbidden — your role does not have access to this screen.';
+        } else {
+            header('Location: index.php?page=' . role_landing_page());
+        }
+        exit;
+    }
+}
+
+// ── Endpoints behind a restricted screen ────────────────────────────────
+// A hidden menu item is not a permission: whoever cannot open a screen must
+// not be able to POST to what that screen talks to either. So instead of a
+// per-role list of banned endpoints — one that goes stale the moment a screen
+// moves — every action names the SCREEN THAT OWNS IT, and its permission is
+// derived: you may call it if you may open that screen (and, for writes, if
+// your role is not read-only there).
+//
+// Adding an endpoint? Name its page here. An unlisted action stays reachable
+// by any signed-in user, exactly as before.
+if (!defined('ACTION_PAGE_MAP')) {
+    define('ACTION_PAGE_MAP', [
+        // payroll batches & computation
+        'calculate_payroll' => 'payroll', 'save_payroll' => 'payroll',
+        'delete_payroll' => 'payroll', 'save_payroll_amount' => 'payroll',
+        'update_payroll_item' => 'payroll', 'update_payroll_item_new' => 'payroll',
+        'update_payroll_print' => 'payroll', 'update_payroll_status' => 'payroll',
+        'save_payroll_item_etra' => 'payroll', 'delete_payroll_item_etra' => 'payroll',
+        'get_payroll_rows_data' => 'payroll', 'payroll_history_details' => 'payroll',
+        'payroll_sanity_check' => 'payroll', 'compare_payrolls' => 'payroll',
+        'remittance_breakdown' => 'payroll', 'isLock' => 'payroll',
+        'relock_payroll_item' => 'payroll', 'unlock_payroll_item' => 'payroll',
+        'set_payroll_item_review' => 'payroll', 'send_payroll_for_review' => 'payroll',
+        'bulk_send_payroll_for_review' => 'payroll', 'notify_payroll_review_selected' => 'payroll',
+        'remind_payroll_review' => 'payroll', 'eport_payroll_reviews' => 'payroll',
+        // DTR review
+        'decide_dtr_details' => 'dtr', 'delete_dtr' => 'dtr', 'delete_dtr_logs' => 'dtr',
+        'delete_dtr_note' => 'dtr', 'delete_dtr_record' => 'dtr', 'edit_dtr_time' => 'dtr',
+        'finalize_dtr' => 'dtr', 'finalize_dtr_bulk' => 'dtr', 'message_dtr_record' => 'dtr',
+        'recompute_dtr' => 'dtr', 'save_dtr_note' => 'dtr', 'update_dtr_logs' => 'dtr',
+        'update_status_dtr' => 'dtr', 'send_dtr_for_review' => 'dtr',
+        'bulk_send_dtr_for_review' => 'dtr', 'remind_dtr_review' => 'dtr',
+        'dtr_review_progress' => 'dtr', 'eport_dtr_reviews' => 'dtr',
+        'mark_review_seen' => 'dtr', 'resolve_review_dispute' => 'dtr',
+        // shift roster & work schedules
+        'roster_assign_schedule' => 'schedule-roster', 'roster_update_rest_days' => 'schedule-roster',
+        'roster_update_rate_type' => 'schedule-roster', 'plan_add_schedule' => 'schedule-roster',
+        'plan_apply_all' => 'schedule-roster', 'plan_clear' => 'schedule-roster',
+        'plan_remove' => 'schedule-roster', 'plan_list' => 'schedule-roster',
+        'save_work_schedule' => 'work-schedules', 'delete_work_schedule' => 'work-schedules',
+        // employee records (incl. their pay rows, which live on the detail page)
+        'save_employee' => 'employee', 'delete_employee' => 'employee',
+        'import_employee' => 'employee',
+        'assign_employee_schedule' => 'employee-details', 'delete_employee_schedule' => 'employee-details',
+        'get_employee_schedule_history' => 'employee-details',
+        'save_employee_loan' => 'employee-details', 'active_employee_loan' => 'employee-details',
+        'loan_history_details' => 'employee-details',
+        'save_employee_allowance' => 'employee-details', 'delete_employee_allowance' => 'employee-details',
+        'save_employee_deduction' => 'employee-details', 'delete_employee_deduction' => 'employee-details',
+        'save_employee_contribution' => 'employee-details', 'delete_employee_contribution' => 'employee-details',
+        // fingerprints are their own permission: the Timekeeper's whole job is
+        // enrolling them, while the rest of the detail page stays read-only
+        'delete_employee_fingerprint' => 'employee-fingerprints',
+        'delete_employee_timelogs' => 'employee-details',
+        // attendance
+        'save_employee_attendance' => 'attendance', 'delete_employee_attendance' => 'attendance',
+        'delete_employee_attendance_single' => 'attendance', 'save_time_logs' => 'attendance',
+        'decide_attendance_request' => 'attendance-requests',
+        'delete_attendance_request' => 'attendance-requests',
+        'save_attendance_request' => 'attendance-requests',
+        // pay settings, 13th month, user management
+        'save_pay_settings' => 'pay-settings',
+        'th13_generate' => 'thirteenth-month', 'th13_save_row' => 'thirteenth-month',
+        'th13_set_final' => 'thirteenth-month',
+        'save_user' => 'users', 'update_status_user' => 'users',
+    ]);
+}
+
+// Mapped actions that only READ. A read-only role (HR on attendance and the
+// employee records) may still call these; everything else mapped is a write.
+if (!defined('READ_ONLY_ACTIONS')) {
+    define('READ_ONLY_ACTIONS', [
+        'get_employee_schedule_history', 'loan_history_details', 'plan_list',
+        'get_payroll_rows_data', 'payroll_history_details', 'remittance_breakdown',
+        'isLock', 'dtr_review_progress', 'eport_payroll_reviews', 'eport_dtr_reviews',
+    ]);
+}
+
+// Look-but-don't-touch screens, per role. A role listed here can open the page
+// and read it, but every write endpoint the page owns is refused and its action
+// buttons are not rendered.
+if (!defined('READONLY_PAGES_BY_ROLE')) {
+    define('READONLY_PAGES_BY_ROLE', [
+        ROLE_HR          => HR_READONLY_PAGES,
+        ROLE_TIMEKEEPER  => ['employee', 'employee-details'],  // enrols prints, edits nothing else
+        7                => ['employee', 'employee-details', 'attendance'],  // Auditor reviews, never edits
+    ]);
+}
+
+if (!function_exists('can_edit')) {
+    /**
+     * May $role CHANGE things on $page? False when the page is closed to them,
+     * and false when their role has it as a look-but-don't-touch screen.
+     * Pages call this to decide whether to render action buttons at all;
+     * ajax.php calls it for every write endpoint. One answer, both places.
+     */
+    function can_edit($page, $role = null): bool
+    {
+        if ($role === null) $role = current_role();
+        $role = (int) $role;
+        if (!page_allowed($page, $role)) return false;
+
+        $ro = READONLY_PAGES_BY_ROLE;
+        if (isset($ro[$role]) && in_array($page, $ro[$role], true)) return false;
+
+        return true;
+    }
+
+    /** May the signed-in role call this ajax action? */
+    function action_allowed($action, $role = null): bool
+    {
+        if ($role === null) $role = current_role();
+
+        $map = ACTION_PAGE_MAP;
+        if (!isset($map[$action])) return true;      // unmapped: session gate only
+
+        $page = $map[$action];
+        if (!page_allowed($page, $role)) return false;
+        if (in_array($action, READ_ONLY_ACTIONS, true)) return true;
+
+        return can_edit($page, $role);
     }
 }
 
@@ -411,10 +706,18 @@ if (!function_exists('rest_day_premium')) {
 //   monthly / fixed → half-month salary share, minus absences; premiums added
 //   daily           → (days present + paid leave) × daily rate
 //
-// KNOWN GAP, deliberately preserved: on the daily basis legal- and special-
-// holiday pay are computed and returned but NOT added to gross, exactly as the
-// existing code does. Adding them is a pay decision, not a refactor, so it is
-// left visible here rather than changed silently.
+// Holiday duty is paid on BOTH bases. The day worked is already paid once —
+// inside the half-month salary for monthly/fixed, inside `present` for daily —
+// so the holiday line is the SECOND payment: a legal holiday lands at 200% of
+// the daily rate and a special holiday at 130%, whichever basis the employee is
+// on. Only days actually worked carry a count (calculate_payroll fills them from
+// the holiday calendar), so an unworked holiday adds nothing here: monthly staff
+// keep their salary, daily staff are paid nothing for it.
+//
+// This used to be a documented gap — the daily branch computed both amounts and
+// then dropped them from gross, so a daily employee who worked a holiday was
+// paid a plain day. resync_item_net() meanwhile did add them, which is how the
+// stored net and the displayed gross could disagree on the same row.
 if (!function_exists('payroll_earnings')) {
     function payroll_earnings($row): array
     {
@@ -446,7 +749,7 @@ if (!function_exists('payroll_earnings')) {
         } else {
             $basic    = ((float) ($row['present'] ?? 0) + (float) ($row['paid_leave'] ?? 0)) * $perDay;
             $subtotal = ($basic + $allowance - $absent_amt) / 2;
-            $gross    = ($basic + $overtime + $allowance + $rest_amt + $nsd_amt) - $late_amt;
+            $gross    = ($basic + $overtime + $allowance + $legal_amt + $rest_amt + $special_amt + $nsd_amt) - $late_amt;
         }
 
         return [

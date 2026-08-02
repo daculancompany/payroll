@@ -311,25 +311,29 @@ $(document).ready(function () {
         if (!ids.length) { warn("Select at least one employee (tick the checkboxes)."); return null; }
         if (!shift) { warn("Choose a shift first."); return null; }
         if (!eff) { warn("Set an 'Effective from' date."); return null; }
-        return { ids: ids, shift: shift, eff: eff, notes: $("#bulk-notes").val(), rest: readRest($("#bulk-rest")) };
+        // Deliberately no rest days: this panel only changes the shift. It used to
+        // send #bulk-rest — a picker that lives in the OTHER tab and defaults to
+        // Sunday — so assigning a shift wiped every other rest day. Omitting the
+        // field tells the server to keep each employee's current rest days.
+        return { ids: ids, shift: shift, eff: eff, notes: $("#bulk-notes").val() };
     }
 
     $("#btn-bulk-apply").on("click", function () {
         const v = bulkValidate(); if (!v) return;
         const shiftLabel = $("#bulk-shift option:selected").text();
         const btn = $(this);
-        const doIt = () => postAssign({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes, rest_days: v.rest }, btn);
+        const doIt = () => postAssign({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes }, btn);
         Swal.fire({
             icon: "question", title: "Apply now?",
             html: "Assign <b>" + esc(shiftLabel) + "</b> to <b>" + v.ids.length +
-                  "</b> employee(s), effective <b>" + v.eff + "</b>. Employees will be notified.",
+                  "</b> employee(s), effective <b>" + v.eff + "</b>. Rest days stay as they are. Employees will be notified.",
             showCancelButton: true, confirmButtonText: "Yes, apply", confirmButtonColor: "#009688",
         }).then((r) => { if (r.isConfirmed) doIt(); });
     });
 
     $("#btn-bulk-plan").on("click", function () {
         const v = bulkValidate(); if (!v) return;
-        addToPlan({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes, rest_days: v.rest }, $(this), false);
+        addToPlan({ employee_ids: v.ids, schedule_id: v.shift, effective_from: v.eff, notes: v.notes }, $(this), false);
     });
 
     // Rest days only — update just the rest days of selected employees (no shift/date needed).

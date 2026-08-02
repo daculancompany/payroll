@@ -935,31 +935,27 @@ function getRole($login_role)
                 $page = 'home';
             }
 
-            // APP_ROLE=local: only DTR review + Payroll exist on this machine.
-            // Anything else (including the default dashboard) lands on DTR.
-            if (app_is_local() && !app_page_allowed($page)) {
-                $page = 'dtr';
-            }
-
-            // Timekeeper (role 5): attendance report + employee list only.
-            // Everything else — including the default 'home' dashboard — is
-            // bounced to the attendance report. Employee details is served by
-            // a stripped page carrying nothing but the enrolled fingerprints.
+            // ── The gate ────────────────────────────────────────────────
+            // Every per-role rule lives in page_allowed() (db_connect.php):
+            // the offline payroll box, the admin-only payroll/DTR screens, the
+            // Timekeeper's two pages, the leave-only slice for Supervisor /
+            // Department Head, and HR's people-operations slice. A blocked
+            // request lands on that role's own home screen. This is the
+            // server-side boundary — hiding a menu item never stopped a typed
+            // URL, and the sidebar now asks this same function.
             $tk = is_timekeeper($login_role);
-            if ($tk && !timekeeper_page_allowed($page)) {
-                $page = 'attendance-summary';
+
+            if (!page_allowed($page, $login_role)) {
+                $page = role_landing_page($login_role);
             }
 
-            // Supervisor (10) / Department Head (8): leave-only slice. Anything
-            // outside LEAVE_APPROVER_ALLOWED_PAGES — DTR, payroll, employee
-            // details, reports, settings, and the default 'home' dashboard —
-            // lands on the leave dashboard instead. This is the server-side
-            // gate; hiding the menu items alone would not stop a typed URL.
-            if (is_leave_approver($login_role) && !leave_approver_page_allowed($page)) {
-                $page = 'leave-dashboard';
-            }
-
-            if ($tk && $page === 'employee-details') {
+            if (!page_allowed($page, $login_role)) {
+                // Even the landing screen is closed to this role — say so
+                // rather than including a page they may not see.
+                echo '<div class="container-fluid mt-4"><div class="alert alert-warning">'
+                   . '<i class="ri-lock-line me-1"></i>Your role does not have access to this screen.'
+                   . '</div></div>';
+            } elseif ($tk && $page === 'employee-details') {
                 include 'employee-details-timekeeper.php';
             } else {
                 include $routes[$page] . '.php';

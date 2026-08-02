@@ -60,7 +60,7 @@ class Action
         $LOCK = 15; // attempts / minutes
 
         if ($username === '' || $password === '') {
-            return ['result' => false, 'message' => 'Please enter your username and password.'];
+            return ['result' => false, 'message' => 'Please enter your email and password.'];
         }
 
         // Optional tables — if they don't exist (e.g. fresh deploy) we just skip
@@ -980,7 +980,8 @@ class Action
         $schedule_id    = intval($_POST['schedule_id'] ?? 0);
         $effective_from = trim($_POST['effective_from'] ?? date('Y-m-d'));
         $notes          = trim($_POST['notes'] ?? '');
-        $rest_days      = $this->normalizeRestDays($_POST['rest_days'] ?? '0');
+        // Absent = keep the employee's current rest days (see applyScheduleChange).
+        $rest_days      = array_key_exists('rest_days', $_POST) ? $this->normalizeRestDays($_POST['rest_days']) : null;
         $changed_by     = $_SESSION['login_id'] ?? null;
 
         if (!$employee_id || !$schedule_id) {
@@ -1174,13 +1175,42 @@ class Action
         return pick_schedule_window($periods, $ymd);
     }
 
+    /**
+     * The rest days an employee already has around $ymd — the period starting
+     * on/before that date, else their earliest period. Used when a caller
+     * changes ONLY the shift and sends no rest_days at all.
+     */
+    private function inheritedRestDays($emp, $ymd)
+    {
+        $emp = (int) $emp;
+        $q = $this->db->prepare(
+            "SELECT rest_days FROM employee_schedules
+             WHERE employee_id=? AND effective_from <= ?
+             ORDER BY effective_from DESC LIMIT 1"
+        );
+        $q->bind_param('is', $emp, $ymd);
+        $q->execute();
+        $row = $q->get_result()->fetch_assoc();
+        if (!$row) {
+            $q2 = $this->db->prepare(
+                "SELECT rest_days FROM employee_schedules
+                 WHERE employee_id=? ORDER BY effective_from ASC LIMIT 1"
+            );
+            $q2->bind_param('i', $emp);
+            $q2->execute();
+            $row = $q2->get_result()->fetch_assoc();
+        }
+        return $row ? (string)$row['rest_days'] : '';
+    }
+
     // Core shift-assignment for ONE employee. Closes the open period / opens a new one
     // (with same-day correction). Caller owns the transaction. Returns 'updated' | 'unchanged' | 'skipped'.
-    private function applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by, $rest_days = '0')
+    // $rest_days === null means "keep whatever this employee already has" — a shift-only
+    // change must never silently rewrite rest days (a defaulted '0' wiped Saturdays off).
+    private function applyScheduleChange($emp, $schedule_id, $effective_from, $notes, $changed_by, $rest_days = null)
     {
         $emp = (int) $emp;
         $schedule_id = (int) $schedule_id;
-        $rest_days = $this->normalizeRestDays($rest_days);
 
         // The period COVERING the effective date — deliberately not "the open
         // row". Once a change is scheduled in advance the open row is a FUTURE
@@ -1196,6 +1226,12 @@ class Action
         $cov->bind_param('iss', $emp, $effective_from, $effective_from);
         $cov->execute();
         $period = $cov->get_result()->fetch_assoc();
+
+        $rest_days = $this->normalizeRestDays(
+            $rest_days === null
+                ? ($period ? $period['rest_days'] : $this->inheritedRestDays($emp, $effective_from))
+                : $rest_days
+        );
 
         if ($period) {
             if ((int)$period['schedule_id'] === $schedule_id && (string)$period['rest_days'] === $rest_days) return 'unchanged';
@@ -1269,8 +1305,10 @@ class Action
         $schedule_id    = intval($_POST['schedule_id'] ?? 0);
         $effective_from = trim($_POST['effective_from'] ?? date('Y-m-d'));
         $notes          = trim($_POST['notes'] ?? '');
-        // Default '0' (Sunday) keeps prior behavior if a caller omits rest_days.
-        $rest_days      = $_POST['rest_days'] ?? '0';
+        // No rest_days in the request = shift-only change → keep each employee's
+        // existing rest days. This used to default to '0' (Sunday), so a bulk
+        // shift assignment silently erased everyone's other rest day.
+        $rest_days      = array_key_exists('rest_days', $_POST) ? $_POST['rest_days'] : null;
         $changed_by     = $_SESSION['login_id'] ?? null;
 
         // Normalize to a list of employee ids
@@ -1469,7 +1507,9 @@ class Action
         $schedule_id    = intval($_POST['schedule_id'] ?? 0);
         $effective_from = trim($_POST['effective_from'] ?? '');
         $notes          = trim($_POST['notes'] ?? '');
-        $rest_days      = $this->normalizeRestDays($_POST['rest_days'] ?? '0');
+        // Absent = keep each employee's current rest days. schedule_plan.rest_days is
+        // NOT NULL, so "keep" is resolved per employee here and shown in the plan table.
+        $rest_days      = array_key_exists('rest_days', $_POST) ? $this->normalizeRestDays($_POST['rest_days']) : null;
         $created_by     = $_SESSION['login_id'] ?? null;
 
         $ids = [];
@@ -1502,11 +1542,15 @@ class Action
                 $del->bind_param('i', $emp);
                 $del->execute();
 
+                $emp_rest = $rest_days === null
+                    ? $this->normalizeRestDays($this->inheritedRestDays($emp, $effective_from))
+                    : $rest_days;
+
                 $ins = $this->db->prepare(
                     "INSERT INTO schedule_plan (employee_id, schedule_id, effective_from, notes, rest_days, status, created_by)
                      VALUES (?,?,?,?,?,0,?)"
                 );
-                $ins->bind_param('iisssi', $emp, $schedule_id, $effective_from, $notes, $rest_days, $created_by);
+                $ins->bind_param('iisssi', $emp, $schedule_id, $effective_from, $notes, $emp_rest, $created_by);
                 $ins->execute();
                 $added++;
             }
@@ -1580,7 +1624,7 @@ class Action
         $this->db->begin_transaction();
         try {
             foreach ($drafts as $d) {
-                $r = $this->applyScheduleChange($d['employee_id'], $d['schedule_id'], $d['effective_from'], $d['notes'], $changed_by, $d['rest_days'] ?? '0');
+                $r = $this->applyScheduleChange($d['employee_id'], $d['schedule_id'], $d['effective_from'], $d['notes'], $changed_by, $d['rest_days'] ?? null);
                 if ($r === 'updated') {
                     $applied++;
                     $notify[] = $d;
@@ -1704,8 +1748,10 @@ class Action
         $uid     = $_SESSION['login_id'] ?? null;
         $role    = (int) ($_SESSION['login_role'] ?? 0);
 
-        if (!in_array($role, [1, 8, 9], true)) {
-            return ['result' => false, 'message' => 'Only Admin, Department Head or HR Head can decide.'];
+        // Approver role AND write access: can_edit() keeps read-only roles out
+        // (HR can open this screen but not act on it — HR_READONLY_PAGES).
+        if (!in_array($role, [1, 8, 9], true) || !can_edit('attendance-requests', $role)) {
+            return ['result' => false, 'message' => 'Your role cannot decide this request.'];
         }
         if (!$id || !in_array($status, [1, 2], true)) {
             return ['result' => false, 'message' => 'Invalid request'];
@@ -3002,7 +3048,35 @@ class Action
         $settings = json_decode($pay['settings'], true);
         if (!is_array($settings)) $settings = [];
 
+        // Columns no part of the calculation writes — they exist only because an
+        // admin typed them into the payroll table. The rebuild below DELETEs every
+        // item row, so each recalculate used to reset them to the column defaults:
+        // allowances back to zero days, adjustments and hand-entered deductions
+        // gone, with nothing on screen to say it had happened. Snapshot by
+        // employee (item ids don't survive the rebuild) and restore after.
+        // Holiday days are deliberately NOT carried over: they are computed from
+        // the holiday calendar now, so the fresh count must win.
+        $manualKeep = [];
+
         if ($recalculate) {
+            $mq = $this->db->query(
+                "SELECT employee_id, allowance_days, jei_advances, jcc_advances, tax,
+                        other_deduction, adjustment, adjustment_remarks
+                 FROM payroll_items WHERE payroll_id = " . $id
+            );
+            if ($mq) {
+                while ($m = $mq->fetch_assoc()) {
+                    // Nothing typed on this row → nothing worth restoring.
+                    if (!(float)$m['allowance_days'] && !(float)$m['jei_advances']
+                        && !(float)$m['jcc_advances'] && !(float)$m['tax']
+                        && !(float)$m['other_deduction'] && !(float)$m['adjustment']
+                        && trim((string)$m['adjustment_remarks']) === '') {
+                        continue;
+                    }
+                    $manualKeep[(int)$m['employee_id']] = $m;
+                }
+            }
+
             $this->db->query("DELETE FROM payroll_items where payroll_id = " . $id);
             $this->db->query("DELETE FROM loan_history where payroll_id = " . $id);
             $this->save_payroll_history($id, 3);
@@ -3109,12 +3183,23 @@ class Action
                     }
                 }
 
-                // Preload declared-holiday dates (legal + special) in this period.
-                // A holiday is a paid non-working day, so a MONTHLY employee who
-                // didn't work it must NOT be counted absent for it. Keyed Y-m-d.
+                // Preload declared-holiday dates (legal + special) in this period,
+                // keyed Y-m-d => calendar type (1 = legal, 3 = special).
+                //
+                // This calendar — NOT DTR_details.day_type — is the source of truth
+                // for holiday pay. day_type is stamped when the DTR row is written,
+                // so it goes stale when a holiday is declared afterwards and cannot
+                // be re-stamped once the batch is final-approved (recompute_dtr
+                // refuses status 2, which is exactly the status payroll reads). The
+                // calendar is re-read on every calculation, so adding a missed
+                // holiday and hitting Recalculate corrects the run retroactively.
+                //
+                // Two uses below: a holiday is a paid non-working day, so a MONTHLY
+                // employee who didn't work it must NOT be counted absent for it; and
+                // a day actually WORKED on a holiday earns its premium.
                 $holidayDates = [];
                 $hq = $this->db->prepare(
-                    "SELECT start_date, end_date FROM calendar_events
+                    "SELECT type, start_date, end_date FROM calendar_events
                      WHERE type IN (1, 3) AND start_date <= ? AND COALESCE(end_date, start_date) >= ?"
                 );
                 $hq->bind_param('ss', $date_to, $date_from);
@@ -3123,7 +3208,11 @@ class Action
                 while ($h = $hres->fetch_assoc()) {
                     $hEnd = $h['end_date'] ?: $h['start_date'];
                     for ($d = strtotime($h['start_date']); $d <= strtotime($hEnd); $d = strtotime('+1 day', $d)) {
-                        $holidayDates[date('Y-m-d', $d)] = true;
+                        $hymd = date('Y-m-d', $d);
+                        // A date carrying both kinds is paid as the legal holiday.
+                        if (!isset($holidayDates[$hymd]) || (int) $h['type'] === 1) {
+                            $holidayDates[$hymd] = (int) $h['type'];
+                        }
                     }
                 }
 
@@ -3190,6 +3279,12 @@ class Action
                             // goes into "present", so approved paid leave on a day that was
                             // partly worked can be capped below (worked + leave <= 1 day).
                             "worked_frac" => [],
+                            // Holiday duty actually rendered, counted from the holiday
+                            // calendar as the DTR days are read (see $holidayDates).
+                            // Only worked dates land here, so "worked = paid, not
+                            // worked = not paid" needs no separate rule.
+                            "legal_duty" => 0,
+                            "special_duty" => 0,
                         ];
                         $ipresent++;
                     }
@@ -3205,6 +3300,16 @@ class Action
                         : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
                     if ($was_rest) {
                         $grouped_data[$employee_id]["rest_duty"] += $days;
+                    }
+
+                    // Holiday duty: this DTR date falls on a declared holiday, so the
+                    // fraction worked earns the premium. Same shape as rest-day duty
+                    // above — fractional here, rounded to whole days at insert.
+                    $hol_type = (int) ($holidayDates[$ymd] ?? 0);
+                    if ($hol_type === 1) {
+                        $grouped_data[$employee_id]["legal_duty"] += $days;
+                    } elseif ($hol_type === 3) {
+                        $grouped_data[$employee_id]["special_duty"] += $days;
                     }
 
                     $under_time = 0; // 8 - $work_hours
@@ -3517,6 +3622,11 @@ class Action
                     // sunday_duty column (int) — rounded to whole days, matching the prior
                     // manual whole-day entry. Admin can still adjust it afterward.
                     $rest_duty = (int) round($data['rest_duty'] ?? 0);
+                    // Holiday duty days worked, auto-counted from the holiday calendar
+                    // above. Same int columns and same rounding as rest-day duty; the
+                    // admin can still override either afterwards.
+                    $legal_duty   = (int) round($data['legal_duty'] ?? 0);
+                    $special_duty = (int) round($data['special_duty'] ?? 0);
                     // Night differential accumulated per day above: total 10PM–6AM hours
                     // and their peso premium, each day priced at that day's own hourly
                     // rate x the shift's nsd_rate. Frozen here like everything else.
@@ -3571,8 +3681,8 @@ class Action
                     $sql2 = "INSERT INTO payroll_items
                     (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
                      deduction_amount, deductions, contributions, total_hours,
-                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours,nsd_hours,nsd_amount)
-                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours,nsd_hours,nsd_amount,legal_holiday,special_holiday)
+                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     $stmt2 = $this->db->prepare($sql2);
                     if (!$stmt2) {
@@ -3580,7 +3690,7 @@ class Action
                     }
 
                     $stmt2->bind_param(
-                        'ssssssssssssssssssssssssssss',
+                        'ssssssssssssssssssssssssssssss',
                         $payroll_id,
                         $employee_id,
                         $salary,
@@ -3608,7 +3718,9 @@ class Action
                         $rate_type,
                         $day_hours,
                         $nsd_hours_total,
-                        $nsd_amount_total
+                        $nsd_amount_total,
+                        $legal_duty,
+                        $special_duty
                     );
 
                     try {
@@ -3649,10 +3761,17 @@ class Action
                 $upd = $this->db->prepare("UPDATE payroll SET status = 1 WHERE id = ?");
                 $upd->bind_param("i", $id);
                 $upd->execute();
+                // Put back the hand-typed columns snapshotted before the DELETE.
+                // An employee who dropped out of this run simply has no row to
+                // restore onto, which is the correct outcome.
+                $this->restore_manual_payroll_fields($id, $manualKeep);
                 // Recalculating DELETEs and re-INSERTs payroll_items, so every
                 // named one-off item is now pointing at a row id that no longer
                 // exists. Re-attach them by employee before committing.
                 $this->relink_payroll_extras($id);
+                // Last, once every figure the net depends on is in place: store
+                // a net that matches the gross this run just produced.
+                $this->resync_payroll_nets($id);
                 $this->db->commit();
                 return ['result' => true, 'message' => 'save'];
             }
@@ -3663,6 +3782,113 @@ class Action
             return ['result' => false, 'message' => $e->getMessage()];
         }
         return ['result' => false, 'message' => 'save'];
+    }
+
+    /**
+     * Recompute and store `net` for every item in a payroll, in one pass.
+     *
+     * The INSERTs above never set `net` (the column defaults to 0) and nothing
+     * else refreshed it, so after a calculation the stored net was either zero
+     * or — worse — a leftover from the PREVIOUS run, until someone happened to
+     * open the payroll screen and let it save. Everything that reads the column
+     * straight (the employee portal, the payslip, exports) was therefore quoting
+     * a figure from a different moment than the gross beside it.
+     *
+     * Uses the shared payroll_earnings() formula, so the stored net is by
+     * construction the same number the sheet renders.
+     */
+    private function resync_payroll_nets($payrollId)
+    {
+        $payrollId = (int) $payrollId;
+
+        // One-off items per row, folded in the same way resync_item_net() does:
+        // kind 2 adds to gross, kind 1 adds to deductions.
+        $xAdd = $xLess = [];
+        if (($h = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'")) && $h->num_rows) {
+            $xq = $this->db->query(
+                "SELECT payroll_item_id, kind, amount FROM payroll_item_extras
+                  WHERE payroll_id = $payrollId"
+            );
+            if ($xq) while ($x = $xq->fetch_assoc()) {
+                $k = (int) $x['payroll_item_id'];
+                if ((int) $x['kind'] === 2) $xAdd[$k]  = ($xAdd[$k]  ?? 0) + (float) $x['amount'];
+                else                        $xLess[$k] = ($xLess[$k] ?? 0) + (float) $x['amount'];
+            }
+        }
+
+        $rows = $this->db->query(
+            "SELECT pi.*, pay.type AS payroll_type
+               FROM payroll_items pi
+               INNER JOIN payroll pay ON pay.id = pi.payroll_id
+              WHERE pi.payroll_id = $payrollId"
+        );
+        if (!$rows) return;
+
+        $upd = $this->db->prepare("UPDATE payroll_items SET net = ? WHERE id = ?");
+        if (!$upd) return;
+
+        while ($row = $rows->fetch_assoc()) {
+            $itemId = (int) $row['id'];
+            $gross  = payroll_earnings($row)['gross'] + ($xAdd[$itemId] ?? 0);
+
+            $ded = 0.0;
+            foreach (['contributions', 'deductions', 'loans'] as $col) {
+                foreach ((json_decode($row[$col] ?? '', true) ?: []) as $c) $ded += (float) ($c['amount'] ?? 0);
+            }
+            $ded += (float) $row['sss_fund'] + (float) $row['jei_advances']
+                  + (float) $row['jcc_advances'] + (float) $row['tax'] + (float) $row['other_deduction']
+                  + ($xLess[$itemId] ?? 0);
+
+            $ref = 0.0;
+            foreach ((json_decode($row['refunds'] ?? '', true) ?: []) as $r) $ref += (float) ($r['amount'] ?? 0);
+
+            $net = $gross - $ded + $ref + (float) ($row['adjustment'] ?? 0);
+            $upd->bind_param('di', $net, $itemId);
+            $upd->execute();
+        }
+    }
+
+    /**
+     * Write back the columns a recalculation cannot regenerate, captured by
+     * employee_id before the rebuild DELETEd their rows. Each restored row has
+     * its stored net resynced, since adjustments and hand-entered deductions
+     * are part of it. Silently does nothing when nothing was captured.
+     */
+    private function restore_manual_payroll_fields($payrollId, array $keep)
+    {
+        if (!$keep) return;
+        $payrollId = (int) $payrollId;
+
+        $upd = $this->db->prepare(
+            "UPDATE payroll_items
+                SET allowance_days = ?, jei_advances = ?, jcc_advances = ?, tax = ?,
+                    other_deduction = ?, adjustment = ?, adjustment_remarks = ?
+              WHERE payroll_id = ? AND employee_id = ?"
+        );
+        if (!$upd) return;
+
+        foreach ($keep as $employeeId => $m) {
+            $ad  = (int) $m['allowance_days'];
+            $jei = (float) $m['jei_advances'];
+            $jcc = (float) $m['jcc_advances'];
+            $tax = (float) $m['tax'];
+            $od  = (float) $m['other_deduction'];
+            $adj = (float) $m['adjustment'];
+            $rem = (string) $m['adjustment_remarks'];
+            $eid = (int) $employeeId;
+            $upd->bind_param('idddddsii', $ad, $jei, $jcc, $tax, $od, $adj, $rem, $payrollId, $eid);
+            $upd->execute();
+
+            if ($upd->affected_rows > 0) {
+                $find = $this->db->query(
+                    "SELECT id FROM payroll_items
+                      WHERE payroll_id = $payrollId AND employee_id = $eid LIMIT 1"
+                );
+                if ($find && ($r = $find->fetch_assoc())) {
+                    $this->resync_item_net((int) $r['id']);
+                }
+            }
+        }
     }
 
     /**
@@ -5691,32 +5917,14 @@ class Action
                 WHERE pi.id = $itemId")->fetch_assoc();
         if (!$row) return;
 
-        // Hours in this employee's working day, frozen on the item at calc time.
-        $dayHours  = day_hours_or_default($row['day_hours'] ?? null);
-        $perMinute = $row['per_day'] / ($dayHours * 60);
-        $allowance = $row['allowance_amount'] * $row['allowance_days'];
-        $ot        = $row['ot'] * $row['ot_rate'];
-        $late      = $row['late'] * $perMinute;
-        $legal     = $row['legal_holiday'] * $row['per_day'];
-        $sunday    = $row['sunday_duty'] * $row['per_day'];
-        // NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30% special
-        // holiday premium. Leave the literals alone — swapping in the shift hours
-        // would silently change the premium rate.
-        $special   = (($row['per_day'] / 8) * 2.4) * $row['special_holiday'];
-
-        // Same pay-basis split as get_payroll_rows_data().
-        // Night differential premium, priced at calculation time (per-day hourly
-        // rate x shift nsd_rate) and frozen on the item like every other figure.
-        $nsd = (float) ($row['nsd_amount'] ?? 0);
-
-        $rt = $row['rate_type'] ?? 'daily';
-        $isMonthly = $rt === 'monthly' || $rt === 'fixed' || ((int)$row['payroll_type'] === 5);
-        if ($isMonthly) {
-            $absent = $row['absent'] * $row['per_day'];
-            $gross  = (($row['basic_pay'] + $allowance - $absent) / 2) + $ot + $legal + $sunday + $special + $nsd - $late;
-        } else {
-            $gross  = ($row['present'] * $row['per_day']) + $ot + $allowance + $legal + $sunday + $special + $nsd - $late;
-        }
+        // ONE formula for every screen, sheet, export and stored figure —
+        // payroll_earnings() in db_connect.php. This method used to keep its own
+        // copy, and the copy had drifted: it paid rest-day duty as a whole extra
+        // day for DAILY staff (the shared formula pays the 30% premium, since the
+        // day itself is already inside `present`) and it ignored paid_leave. So
+        // the net written here could disagree with the gross rendered on the very
+        // same row.
+        $gross = payroll_earnings($row)['gross'];
 
         $ded = 0.0;
         foreach (['contributions', 'deductions', 'loans'] as $col) {
@@ -8433,6 +8641,71 @@ class Action
             return ['result' => true, 'message' => 'Event deleted.'];
         }
         return ['result' => false, 'message' => $this->db->error];
+    }
+
+    /**
+     * What a calendar event's dates touch in payroll, so the delete confirmation
+     * can name the runs at risk instead of warning in the abstract.
+     *
+     * Holiday dates are read straight from this table by calculate_payroll: they
+     * set each employee's legal/special holiday day count and they keep a monthly
+     * employee from being marked absent for a paid non-working day. Removing one
+     * therefore CHANGES PAY the next time an overlapping run is recalculated, and
+     * any overlapping run already locked was paid with it.
+     *
+     * Read-only. Activities (type 2) never reach the calculation, so they report
+     * no impact at all.
+     */
+    function calendar_event_impact()
+    {
+        $id  = (int) ($_POST['id'] ?? 0);
+        $res = $this->db->query(
+            "SELECT id, title, type, start_date, end_date FROM calendar_events WHERE id = $id"
+        );
+        $ev = $res ? $res->fetch_assoc() : null;
+        if (!$ev) return ['result' => false, 'message' => 'Event not found.'];
+
+        $isHoliday = in_array((int) $ev['type'], [1, 3], true);
+        $out = [
+            'result'     => true,
+            'title'      => $ev['title'],
+            'is_holiday' => $isHoliday,
+            'payrolls'   => [],
+            'locked'     => 0,
+        ];
+        if (!$isHoliday) return $out;
+
+        $from = $ev['start_date'];
+        $to   = $ev['end_date'] ?: $ev['start_date'];
+
+        // Any payroll period overlapping the event's dates. with_holiday counts
+        // the employees in that run currently carrying holiday days — the pay
+        // that would disappear on the next recalculate.
+        $q = $this->db->prepare(
+            "SELECT p.id, p.ref_no, p.date_from, p.date_to, p.status,
+                    COALESCE(SUM((pi.legal_holiday + pi.special_holiday) > 0), 0) AS with_holiday
+               FROM payroll p
+               LEFT JOIN payroll_items pi ON pi.payroll_id = p.id
+              WHERE p.date_from <= ? AND p.date_to >= ?
+           GROUP BY p.id, p.ref_no, p.date_from, p.date_to, p.status
+           ORDER BY p.date_from DESC"
+        );
+        if ($q) {
+            $q->bind_param('ss', $to, $from);
+            $q->execute();
+            $r = $q->get_result();
+            while ($p = $r->fetch_assoc()) {
+                $locked = (int) $p['status'] === 2;
+                if ($locked) $out['locked']++;
+                $out['payrolls'][] = [
+                    'ref_no' => $p['ref_no'],
+                    'period' => date('M d', strtotime($p['date_from'])) . ' – ' . date('M d, Y', strtotime($p['date_to'])),
+                    'locked' => $locked,
+                    'paid'   => (int) $p['with_holiday'],
+                ];
+            }
+        }
+        return $out;
     }
 
     // Events as a FullCalendar-friendly array (optionally bounded by ?start/?end).

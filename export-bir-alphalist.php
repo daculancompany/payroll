@@ -8,6 +8,7 @@ if (empty($_SESSION['is_login']) && empty($_SESSION['login_id'])) {
     exit('Not authorized.');
 }
 $conn = include 'db_connect.php';
+require_page_access('bir-alphalist', 'text');
 
 $al_year = isset($_GET['year']) ? (int) $_GET['year'] : (int) date('Y');
 const BIR_13TH_CAP = 90000.0;

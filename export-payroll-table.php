@@ -18,6 +18,7 @@ if (empty($_SESSION['is_login'])) {
     exit('Not authorised.');
 }
 if (!isset($conn)) include 'db_connect.php';
+require_page_access('payroll', 'text');   // admin-only, same as the payroll screen
 require 'vendor/autoload.php';
 
 use PhpOffice\PhpSpreadsheet\Reader\Html as HtmlReader;

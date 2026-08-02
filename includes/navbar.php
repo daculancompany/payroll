@@ -100,22 +100,36 @@
                     </a>
                 </li>
 
-                <!-- ===== SCHEDULING & TIME ===== -->
+                <!-- ===== SCHEDULING & TIME =====
+                     Every link below asks page_allowed() — the same function
+                     index.php routes through — so a visible menu item and an
+                     openable URL are guaranteed to be the same set. -->
+                <?php
+                $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests'];
+                $att_shown  = array_filter($att_pages, 'page_allowed');
+                $sched_shown = array_filter(['work-schedules','schedule-roster'], 'page_allowed');
+                ?>
+                <?php if ($sched_shown || $att_shown): ?>
                 <li class="menu-title"><span>Scheduling &amp; Time</span></li>
+                <?php endif; ?>
 
+                <?php if (page_allowed('work-schedules')): ?>
                 <li class="nav-item">
                     <a href="work-schedules" class="nav-link menu-link <?= $page === 'work-schedules' ? 'active' : '' ?>">
                         <i class="ri-time-line"></i> <span>Work Schedules</span>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if (page_allowed('schedule-roster')): ?>
                 <li class="nav-item">
                     <a href="schedule-roster" class="nav-link menu-link <?= $page === 'schedule-roster' ? 'active' : '' ?>">
                         <i class="ri-calendar-todo-line"></i> <span>Shift Roster</span>
                     </a>
                 </li>
+                <?php endif; ?>
 
                 <!-- Attendance sub-menu -->
-                <?php $att_pages = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests']; ?>
+                <?php if ($att_shown): ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= in_array($page, $att_pages) ? 'active' : '' ?>"
                         href="#sidebarAtt" data-bs-toggle="collapse" role="button"
@@ -124,26 +138,37 @@
                     </a>
                     <div class="menu-dropdown collapse <?= in_array($page, $att_pages) ? 'show' : '' ?>" id="sidebarAtt">
                         <ul class="nav nav-sm flex-column">
+                            <?php if (page_allowed('attendance')): ?>
                             <li class="nav-item">
                                 <a href="attendance" class="nav-link <?= $page === 'attendance' ? 'active' : '' ?>">
                                     <i class="ri-list-check me-1"></i>Attendance Records
+                                    <?php if (hr_readonly_page('attendance') && is_hr($login_role)): ?>
+                                        <span class="badge bg-light text-muted border ms-1" style="font-size:9px;">View</span>
+                                    <?php endif; ?>
                                 </a>
                             </li>
-                            <?php if (in_array($login_role, [1, 8, 9], true)): ?>
+                            <?php endif; ?>
+                            <?php if (page_allowed('dtr')): ?>
                             <li class="nav-item">
                                 <a href="dtr" class="nav-link <?= in_array($page, ['dtr','dtr-details']) ? 'active' : '' ?>">
                                     <i class="ri-fingerprint-line me-1"></i>DTR Review
                                 </a>
                             </li>
+                            <?php endif; ?>
+                            <?php if (page_allowed('attendance-requests')): ?>
                             <li class="nav-item">
                                 <a href="attendance-requests" class="nav-link <?= $page === 'attendance-requests' ? 'active' : '' ?>">
                                     <i class="ri-error-warning-line me-1"></i>Attendance Requests
+                                    <?php if (is_hr($login_role)): ?>
+                                        <span class="badge bg-light text-muted border ms-1" style="font-size:9px;">View</span>
+                                    <?php endif; ?>
                                 </a>
                             </li>
                             <?php endif; ?>
                         </ul>
                     </div>
                 </li>
+                <?php endif; ?>
 
                 <!-- Leave sub-menu -->
                 <?php $lv_pages = ['leave-dashboard','leaves','leave_types','leave_balances','leave-balances-report','calendar']; ?>
@@ -189,21 +214,36 @@
                     </div>
                 </li>
 
-                <!-- ===== PAYROLL ===== -->
+                <!-- ===== PAYROLL =====
+                     Hidden whole for anyone outside the pay slice (HR included):
+                     no batches, no pay settings, no 13th month, no loans, no
+                     benefits. -->
+                <?php
+                $pay_pages  = ['payroll','pay-settings','thirteenth-month','loans','contributions','deductions','refunds'];
+                $pay_shown  = array_filter($pay_pages, 'page_allowed');
+                $ben_pages  = ['contributions','deductions','refunds'];
+                $ben_shown  = array_filter($ben_pages, 'page_allowed');
+                ?>
+                <?php if ($pay_shown): ?>
                 <li class="menu-title"><span>Payroll</span></li>
+                <?php endif; ?>
 
+                <?php if (page_allowed('payroll')): ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= (in_array($page, ['payroll','payroll_items','payroll_calculations']) && (!isset($_GET['p2']) || $_GET['p2'] === 'false')) ? 'active' : '' ?>"
                         href="payroll?p2=false">
                         <i class="ri-calculator-line"></i> <span>Payroll</span>
                     </a>
                 </li>
-                <?php if (in_array($login_role, [1, 8, 9], true)): ?>
+                <?php endif; ?>
+                <?php if (page_allowed('pay-settings')): ?>
                 <li class="nav-item">
                     <a href="pay-settings" class="nav-link menu-link <?= $page === 'pay-settings' ? 'active' : '' ?>">
                         <i class="ri-money-dollar-circle-line"></i> <span>Pay Settings</span>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if (page_allowed('thirteenth-month')): ?>
                 <li class="nav-item">
                     <a href="index.php?page=thirteenth-month" class="nav-link menu-link <?= $page === 'thirteenth-month' ? 'active' : '' ?>">
                         <i class="ri-hand-coin-line"></i> <span>13th Month Pay</span>
@@ -212,51 +252,67 @@
                 <?php endif; ?>
 
                 <!-- Loan management (Payroll Comparison & Remittance now live under Reports) -->
+                <?php if (page_allowed('loans')): ?>
                 <li class="nav-item">
                     <a href="loans" class="nav-link menu-link <?= $page === 'loans' ? 'active' : '' ?>">
                         <i class="ri-bank-line"></i> <span>Active Loans</span>
                     </a>
                 </li>
+                <?php endif; ?>
 
                 <!-- Benefits & Compensation sub-menu -->
+                <?php if ($ben_shown): ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link" href="#sidebarBenefits" data-bs-toggle="collapse" role="button"
-                        aria-expanded="<?= in_array($page, ['deductions','contributions','refunds']) ? 'true' : 'false' ?>">
+                        aria-expanded="<?= in_array($page, $ben_pages) ? 'true' : 'false' ?>">
                         <i class="ri-gift-line"></i> <span>Benefits &amp; Compensation</span>
                     </a>
-                    <div class="menu-dropdown collapse <?= in_array($page, ['deductions','contributions','refunds']) ? 'show' : '' ?>" id="sidebarBenefits">
+                    <div class="menu-dropdown collapse <?= in_array($page, $ben_pages) ? 'show' : '' ?>" id="sidebarBenefits">
                         <ul class="nav nav-sm flex-column">
+                            <?php if (page_allowed('contributions')): ?>
                             <li class="nav-item">
                                 <a href="contributions" class="nav-link <?= $page === 'contributions' ? 'active' : '' ?>">
                                     <i class="ri-hand-coin-line me-1"></i>Contributions
                                 </a>
                             </li>
+                            <?php endif; ?>
+                            <?php if (page_allowed('deductions')): ?>
                             <li class="nav-item">
                                 <a href="deductions" class="nav-link <?= $page === 'deductions' ? 'active' : '' ?>">
                                     <i class="ri-subtract-line me-1"></i>Deductions
                                 </a>
                             </li>
+                            <?php endif; ?>
+                            <?php if (page_allowed('refunds')): ?>
                             <li class="nav-item">
                                 <a href="refunds" class="nav-link <?= $page === 'refunds' ? 'active' : '' ?>">
                                     <i class="ri-refund-2-line me-1"></i>Refunds
                                 </a>
                             </li>
+                            <?php endif; ?>
                         </ul>
                     </div>
                 </li>
+                <?php endif; ?>
 
                 <!-- ===== REPORTS ===== -->
                 <?php
                 $rep_acct = ['payroll-register','loan-deduction-ledger','remittance-report','payroll-comparison','payroll-report','bank-payout','bir-alphalist'];
                 $rep_hris = ['employee-masterlist','attendance-summary'];
                 $rep_all  = array_merge(['reports'], $rep_acct, $rep_hris);
+                $rep_shown = array_filter($rep_all, 'page_allowed');
                 ?>
+                <?php if ($rep_shown): ?>
                 <li class="menu-title"><span>Reports</span></li>
+                <?php endif; ?>
+                <?php if (page_allowed('reports')): ?>
                 <li class="nav-item">
                     <a href="index.php?page=reports" class="nav-link menu-link <?= $page === 'reports' ? 'active' : '' ?>">
                         <i class="ri-bar-chart-box-line"></i> <span>All Reports</span>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if (array_filter($rep_acct, 'page_allowed')): ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= in_array($page, $rep_acct) ? 'active' : '' ?>"
                         href="#sidebarAcctReports" data-bs-toggle="collapse" role="button"
@@ -275,6 +331,8 @@
                         </ul>
                     </div>
                 </li>
+                <?php endif; ?>
+                <?php if (array_filter($rep_hris, 'page_allowed')): ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= in_array($page, $rep_hris) ? 'active' : '' ?>"
                         href="#sidebarHrisReports" data-bs-toggle="collapse" role="button"
@@ -288,17 +346,22 @@
                         </ul>
                     </div>
                 </li>
+                <?php endif; ?>
 
                 <!-- ===== SYSTEM ===== -->
+                <?php if (page_allowed('sites') || page_allowed('users')): ?>
                 <li class="menu-title"><span>System</span></li>
+                <?php endif; ?>
 
+                <?php if (page_allowed('sites')): ?>
                 <li class="nav-item">
                     <a href="sites" class="nav-link menu-link <?= $page === 'sites' ? 'active' : '' ?>">
                         <i class="ri-fingerprint-line"></i> <span>Biometric Sites</span>
                     </a>
                 </li>
+                <?php endif; ?>
 
-                <?php if ($login_role !== 4): ?>
+                <?php if (page_allowed('users')): ?>
                 <?php /* Visitors Logs — hidden
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= $page === 'visitors-logs' ? 'active' : '' ?>" href="visitors-logs">
@@ -333,7 +396,7 @@
                 <?php endif; ?>
 
                 <!-- Role 6 (PIC) -->
-                <?php if ($login_role === 6): ?>
+                <?php if ($login_role === 6 && page_allowed('dtr')): ?>
                 <li class="menu-title"><span>Menu</span></li>
                 <li class="nav-item">
                     <a class="nav-link menu-link" href="#sidebarAttendance6" data-bs-toggle="collapse" role="button"
@@ -367,11 +430,13 @@
                     </a>
                     <div class="menu-dropdown collapse <?= in_array($page, ['attendance','dtr','dtr-details']) ? 'show' : '' ?>" id="sidebarAttendance7">
                         <ul class="nav nav-sm flex-column">
+                            <?php if (page_allowed('dtr')): ?>
                             <li class="nav-item">
                                 <a href="dtr" class="nav-link <?= in_array($page, ['dtr','dtr-details']) ? 'active' : '' ?>">
                                     <i class="ri-time-line me-1"></i>Daily Time Record
                                 </a>
                             </li>
+                            <?php endif; ?>
                             <li class="nav-item">
                                 <a href="attendance" class="nav-link <?= $page === 'attendance' ? 'active' : '' ?>">
                                     <i class="ri-calendar-check-line me-1"></i>Attendance Record

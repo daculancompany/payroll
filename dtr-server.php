@@ -1,5 +1,17 @@
 <?php
+require_once __DIR__ . '/includes/session_bootstrap.php';
 include 'db_connect.php';
+
+// This feed had NO check at all: an anonymous POST returned the DTR table.
+// It now needs a session and the same admin-only DTR access as the screen it
+// serves.
+if (empty($_SESSION['is_login'])) {
+    http_response_code(403);
+    header('Content-Type: application/json');
+    echo json_encode(['result' => false, 'message' => 'Not authenticated']);
+    exit;
+}
+require_page_access('dtr', 'json');
 
 // DataTable request parameters
 $draw = $_POST['draw'];

@@ -7,6 +7,7 @@ if (empty($_SESSION['is_login']) && empty($_SESSION['login_id'])) {
     exit('Not authorized.');
 }
 $conn = include 'db_connect.php';
+require_page_access('bank-payout', 'text');
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if (!$id) { http_response_code(400); exit('Missing payroll id'); }

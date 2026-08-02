@@ -16,6 +16,8 @@ require_once 'home-dashboard-data.php';
 $action = $_GET['action'] ?? '';
 
 if ($action === 'deptpay') {
+    // Per-department PAY figures — same admin-only boundary as the payroll screen.
+    require_page_access('payroll', 'json');
     // Per-department breakdown for one LOCKED payroll (validated server-side).
     $pid = (int)($_GET['payroll_id'] ?? 0);
     $chk = $conn->query("SELECT id FROM payroll WHERE id = $pid AND status = 2 LIMIT 1");

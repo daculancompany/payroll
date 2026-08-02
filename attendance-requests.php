@@ -1,6 +1,9 @@
 <?php
 $my_role = (int) ($_SESSION['login_role'] ?? 0);
-$can_decide = in_array($my_role, [1, 8, 9], true); // Admin, Department Head, HR Head
+// Deciding is an approver's job AND a write: can_edit() is the same global
+// check ajax.php applies to decide_attendance_request, so HR — who may open
+// this screen read-only — never gets a button that would come back 403.
+$can_decide = in_array($my_role, [1, 8, 9], true) && can_edit('attendance-requests');
 
 // Department Heads only see their own department's requests.
 require_once 'dept-scope.php';

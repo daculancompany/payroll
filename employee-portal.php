@@ -1380,7 +1380,7 @@ body{
 .drev-msg-empty .dme-hint i { color:#6642aa; margin-right:5px; }
 
 /* Composer: one pill holding the field and the send button, like a chat app */
-.drev-thread-in { display:flex; align-items:center; gap:6px;
+.drev-thread-in { display:flex; align-items:center; gap:6px; margin-top:10px;
     border:1px solid #ddd9e7; border-radius:999px; background:#fff;
     padding:4px 4px 4px 6px; transition:border-color .15s, box-shadow .15s; }
 .drev-thread-in:focus-within { border-color:#6642aa; box-shadow:0 0 0 3px rgba(102,66,170,.12); }
@@ -2495,16 +2495,16 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <div class="ps-col">
                     <div class="ps-col-title earn">Earnings</div>
                     <div class="ps-row"><span class="ps-lbl">Basic Pay</span><span class="ps-val earn">₱<?= n2($latest['basic_pay']) ?></span></div>
-                    <div class="ps-row"><span class="ps-lbl">Days Present</span><span class="ps-val"><?= $latest['present'] ?> days</span></div>
+                    <div class="ps-row"><span class="ps-lbl">Days Present</span><span class="ps-val"><?= n2($latest['present']) ?> days</span></div>
                     <?php if ($all_tot > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Allowance</span><span class="ps-val earn">₱<?= n2($all_tot) ?></span></div>
                     <?php endif; ?>
                     <?php if ($abs_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Absent (<?= $latest['absent'] ?> day<?= $latest['absent']>1?'s':'' ?>)</span><span class="ps-val ded">−₱<?= n2($abs_amt) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl">Absent (<?= n2($latest['absent']) ?> day<?= $latest['absent']>1?'s':'' ?>)</span><span class="ps-val ded">−₱<?= n2($abs_amt) ?></span></div>
                     <?php endif; ?>
                     <div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span><span class="ps-val earn" style="font-weight:800;">₱<?= n2($sub_tot) ?></span></div>
                     <?php if ($ot_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Overtime (<?= $latest['ot'] ?> hrs)</span><span class="ps-val earn">₱<?= n2($ot_amt) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl">Overtime (<?= n2($latest['ot']) ?> hrs)</span><span class="ps-val earn">₱<?= n2($ot_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($lgl_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Legal Holiday (<?= $latest['legal_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($lgl_amt) ?></span></div>
@@ -2616,7 +2616,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'ref_no'  => $ps['ref_no'],
                         'item_id' => (int)$ps['item_id'],
                         'status'  => $psStatus,
-                        'present' => $ps['present'], 'absent' => $ps['absent'], 'late' => $ps['late'], 'ot' => $ps['ot'],
+                        // 2 decimals like the admin payroll table — these are doubles and
+                        // printed straight into the review sheet's stats strip.
+                        'present' => n2($ps['present']), 'absent' => n2($ps['absent']), 'late' => $ps['late'], 'ot' => $ps['ot'],
                         'rate_type' => $__rt2,   // drives the rest-day label (premium vs full day)
                         'gross'   => n2($gr2), 'deductions' => n2($ded2), 'net' => n2($ps['net']),
                         // Full earnings breakdown (mirrors the Latest Payslip card)
@@ -4863,12 +4865,12 @@ function openPayslipDetails(payrollId) {
     footer.querySelectorAll('.prv-review-only').forEach(function (el) {
         el.classList.toggle('prv-hide', !canReview);
     });
-    var ro = document.getElementById('prv-readonly');
-    if (ro) {
-        ro.classList.toggle('prv-hide', canReview);
-        var dl = document.getElementById('prv-pdf');
-        if (dl) dl.setAttribute('onclick', 'openPayslipPreview(' + parseInt(d.item_id, 10) + ')');
-    }
+    // The View Payslip button stays available in both states; only the
+    // "this payroll is closed" note is review-dependent.
+    var note = document.getElementById('prv-closed-note');
+    if (note) note.classList.toggle('prv-hide', canReview);
+    var dl = document.getElementById('prv-pdf');
+    if (dl) dl.setAttribute('onclick', 'openPayslipPreview(' + parseInt(d.item_id, 10) + ')');
 }
 
 // ── Payslip preview: the payslip's own HTML page inside the modal ────────────
@@ -5836,9 +5838,12 @@ jQuery(function ($) {
                     <button type="button" class="btn" style="background:linear-gradient(135deg,#107c41,#0e6b37);color:#fff;font-weight:700;border-radius:10px;"
                         onclick="submitPayrollReview(1)"><i class="ri-checkbox-circle-line me-1"></i>Confirm<span class="prv-btn-long"> — Looks Correct</span></button>
                 </div>
-                <!-- Read-only view (locked payroll): no decision, just the payslip -->
-                <div id="prv-readonly" class="d-flex gap-2 justify-content-between align-items-center prv-hide">
-                    <span style="font-size:11.5px;color:#908c9c;"><i class="ri-lock-2-line me-1"></i>This payroll is closed — view only.</span>
+                <!-- Always available: the payslip document itself. Only the
+                     "closed" note is conditional — while a payroll is out for
+                     review the employee still needs to open the payslip to
+                     decide whether to confirm or dispute it. -->
+                <div id="prv-readonly" class="d-flex gap-2 justify-content-between align-items-center">
+                    <span id="prv-closed-note" style="font-size:11.5px;color:#908c9c;"><i class="ri-lock-2-line me-1"></i>This payroll is closed — view only.</span>
                     <button type="button" id="prv-pdf" class="btn btn-sm"
                         style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;border-radius:10px;">
                         <i class="ri-file-text-line me-1"></i>View Payslip

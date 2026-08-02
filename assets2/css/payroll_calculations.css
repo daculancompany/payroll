@@ -1,0 +1,1064 @@
+/* ==========================================================================
+   Payroll Details / Pay Computation Sheet — page styles
+   Extracted verbatim from payroll_calculations.php, which carried 1,053
+   lines of CSS across four inline <style> blocks: nothing here was
+   cacheable, reusable or editable without opening a 6,300-line PHP file.
+   Rule order is preserved exactly, so the cascade is unchanged.
+   ========================================================================== */
+
+/* ── extracted block 1 of 4 ───────────────────────────────────── */
+/* ════════════════════════════════════════════
+   Payroll Details — Excel-style enhancements
+   ════════════════════════════════════════════ */
+
+/* ── Employee name cell (avatar + name + ID + status) — soft Excel look ── */
+.emp-cell { display: flex; align-items: center; gap: 10px; padding: 1px 0; }
+.emp-avatar {
+    width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px;
+    background: #d9eedd; color: #0b5e31; border: 1px solid #c0e0c8;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; letter-spacing: .5px; text-decoration: none;
+    transition: background .15s, border-color .15s, transform .15s;
+}
+.emp-avatar:hover { background: #c6e4cd; border-color: #8fc7a6; color: #0b5e31; transform: translateY(-1px); }
+.emp-cell-info { min-width: 0; display: flex; flex-direction: column; gap: 3px; line-height: 1.2; }
+.emp-name-link { display: inline-flex; align-items: center; gap: 5px; color: #1f2937; font-size: 12.5px; text-decoration: none; transition: color .15s; }
+.emp-name-link:hover { color: #107c41; }
+.emp-name-link b { font-weight: 700; }
+.emp-name-link i { display: none; }   /* the avatar already signals "person" */
+.emp-meta-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.emp-no {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10px; font-family: ui-monospace, 'Segoe UI', monospace; font-weight: 700;
+    color: #5b6470; background: #f2f4f6; border: 1px solid #e5e8ec;
+    border-radius: 5px; padding: 1px 7px; white-space: nowrap;
+}
+.emp-no i { font-size: 11px; color: #9aa3ae; }
+
+/* ── Summary strip ── */
+.pay-stats-strip {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 10px; padding: 10px 14px;
+    background: #fff; border: 1px solid #e1dfdd;
+    border-radius: 6px; border-left: 4px solid #107c41;
+    box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+.pay-stat {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 14px; border-radius: 5px;
+    background: #f8f9fa; border: 1px solid #eee;
+    min-width: 140px; flex: 1;
+}
+.pay-stat-icon {
+    width: 34px; height: 34px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+}
+.pay-stat-body { line-height: 1.2; }
+.pay-stat-val { font-size: 14px; font-weight: 800; color: #323130; }
+.pay-stat-lbl { font-size: 10px; color: #a19f9d; text-transform: uppercase; letter-spacing: .4px; }
+.pay-stat.employees .pay-stat-icon { background:#eeeaf5; color:#6642aa; }
+.pay-stat.gross     .pay-stat-icon { background:#e8f5e9; color:#2e7d32; }
+.pay-stat.deduct    .pay-stat-icon { background:#fce4ec; color:#c62828; }
+.pay-stat.net       .pay-stat-icon { background:#e3f2fd; color:#1565c0; }
+.pay-stat.absent    .pay-stat-icon { background:#fff8e1; color:#c98a00; }
+.pay-stat.late      .pay-stat-icon { background:#fbe9e7; color:#bf360c; }
+
+/* ── Excel table overrides ── */
+/* keep border-collapse:separate — sticky columns require it */
+/* Look: light pastel header bands + dark colored text + thin gray gridlines,
+   like an Excel sheet — not saturated banner fills. */
+
+/* Header row 1: section banners (pastel tint per group) */
+#table-1 thead tr:first-child th {
+    background: #e1dcec !important;           /* mint — general/attendance group */
+    color: #4f3288 !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .4px !important;
+    border: 1px solid #cfc8de !important;
+    padding: 7px 8px !important;
+}
+#table-1 thead tr:first-child th.info-header    { background: #dde9f8 !important; color: #1e50a0 !important; border-color: #c5d8f0 !important; }
+#table-1 thead tr:first-child th.success-header { background: #d9eedd !important; color: #107c41 !important; border-color: #c0e0c8 !important; }
+#table-1 thead tr:first-child th.danger-header  { background: #fbe3e6 !important; color: #b02a37 !important; border-color: #f3cdd2 !important; }
+
+/* Header row 2: column labels (lighter tint of the same family) */
+#table-1 thead tr:nth-child(2) th {
+    background: #f0edf5 !important;
+    color: #4f3288 !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    border: 1px solid #ddd9e7 !important;
+    white-space: nowrap !important;
+    padding: 5px 8px !important;
+}
+#table-1 thead tr:nth-child(2) th.info-header    { background: #eef4fc !important; color: #1e50a0 !important; border-color: #d8e5f5 !important; }
+#table-1 thead tr:nth-child(2) th.success-header { background: #ebf7ee !important; color: #107c41 !important; border-color: #d3ead9 !important; }
+#table-1 thead tr:nth-child(2) th.danger-header  { background: #fdf0f1 !important; color: #b02a37 !important; border-color: #f6dade !important; }
+
+/* Body rows — white sheet, thin Excel gridlines, whisper striping */
+#table-1 tbody tr td {
+    font-size: 11px !important;
+    border: 1px solid #e4e7e5 !important;
+    padding: 4px 8px !important;
+    vertical-align: middle !important;
+}
+#table-1 tbody tr:nth-child(even) td { background: #fafcfa !important; }
+#table-1 tbody tr:nth-child(odd) td  { background: #ffffff !important; }
+#table-1 tbody tr:hover td { background: #eaf6ef !important; }
+
+/* Frozen col 1 (No.) — light gray-green like Excel's row headers.
+   The checkbox column was removed, so No. is col 1 and Name is col 2. */
+#table-1 tbody td:nth-child(1) {
+    background: #f1f6f2 !important;
+    border-right: 1px solid #dbe6dd !important;
+    font-weight: 600 !important;
+    color: #444 !important;
+    box-shadow: none !important;
+}
+#table-1 tbody tr:hover td:nth-child(1) { background: #ddeee3 !important; }
+
+/* ── Frozen Name column (col 2) — left offset set by JS ── */
+#table-1 tbody td:nth-child(2),
+#table-1 thead tr:first-child th:nth-child(2) {
+    position: sticky !important;
+    z-index: 12;
+    border-right: 2px solid #b8d8c2 !important;
+    box-shadow: 3px 0 6px -3px rgba(0,0,0,.08);
+    transform: translateZ(0);
+    text-align: left !important;
+}
+#table-1 tbody td:nth-child(2) { background: #f5faf6 !important; }
+#table-1 thead tr:first-child th:nth-child(2) { z-index: 14 !important; }
+#table-1 tbody tr:nth-child(even) td:nth-child(2) { background: #eff6f0 !important; }
+#table-1 tbody tr:hover td:nth-child(2) { background: #eaf6ef !important; }
+
+/* Tfoot totals row — Excel-green band, dark green bold figures */
+#table-1 tfoot tr th {
+    background: #d9eedd !important;
+    color: #0b5e31 !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    border: 1px solid #c0e0c8 !important;
+    border-top: 2px solid #b8d8c2 !important;
+    padding: 6px 8px !important;
+    position: sticky; bottom: 0; z-index: 10;
+}
+
+/* Merged TOTAL label — spans the No. + Name frozen columns (colspan="2" on the
+   tfoot row; nth-child no longer applies to it, so it gets its own
+   class-based sticky rule instead). */
+#table-1 tfoot th.tfoot-total-cell {
+    position: sticky !important;
+    left: 0 !important;
+    z-index: 12 !important;
+    border-right: 2px solid #b8d8c2 !important;
+    box-shadow: 3px 0 6px -3px rgba(0,0,0,.08);
+    text-align: center !important;
+    font-size: 12px !important;
+    letter-spacing: .5px;
+}
+
+/* Net pay column — tinted like the screenshot's highlighted score column */
+td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font-weight: 800 !important; border-left: 2px solid #9dbdea !important; }
+#table-1 tbody tr:hover td.net-content { background: #dce9f9 !important; }
+
+/* Absent/late badge chips */
+.pay-badge { display:inline-flex; align-items:center; gap:3px; font-size:9px; font-weight:700; border-radius:8px; padding:1px 7px; vertical-align:middle; white-space:nowrap; line-height:1.5; }
+.pay-badge::before { content:''; width:5px; height:5px; border-radius:50%; background:currentColor; opacity:.65; }
+.pay-badge.absent { background:#fdf3d7; color:#8a6d1a; border:1px solid #f0e2b0; }
+.pay-badge.late   { background:#fdf0f1; color:#b02a37; border:1px solid #f6dade; }
+.pay-badge.clear  { background:#ebf7ee; color:#107c41; border:1px solid #d3ead9; }
+.pay-badge.clear::before { content:'\2713'; width:auto; height:auto; border-radius:0; background:none; opacity:1; font-size:8px; font-weight:900; }
+
+/* Input cells */
+#table-1 .input-group { margin-bottom:0 !important; }
+#table-1 .input-class { font-size:11px !important; padding:2px 6px !important; height:26px !important; }
+
+/* Payslip selection lives in the workbench's employee list (card view) — the
+   table preview is read-only and has no checkbox column. */
+
+/* Approved Attendance Logs modal (mirrors attendance.php's Time Log Details modal) */
+.att-log-dir { font-size:10px; font-weight:700; padding:1px 0; border-radius:3px; min-width:34px; text-align:center; display:inline-block; }
+.att-log-in  { background:#d4edda; color:#155724; }
+.att-log-out { background:#f8d7da; color:#721c24; }
+.att-log-bio    { background:#673bb6; color:#fff; font-size:10px; }
+.att-log-manual { background:#dc3545; color:#fff; font-size:10px; }
+#modal-att-logs .al-meta-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.3px; }
+#modal-att-logs .al-meta-value { font-size:13px; font-weight:700; color:#673bb6; }
+.al-day { margin-bottom:14px; }
+.al-day:last-child { margin-bottom:0; }
+.al-day-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+.al-day-date { font-size:12px; font-weight:700; color:#323130; }
+.al-day-hrs { font-size:11px; font-weight:700; color:#107c41; background:#eafaf0; border:1px solid #b7e4c7; padding:1px 8px; border-radius:10px; }
+.al-table th, .al-table td { font-size:12px; }
+
+/* ── Search / dept filter / anomaly-flags toolbar ── */
+.pay-toolbar { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.pay-search-box { display:flex; align-items:center; gap:6px; background:#fff; border:1px solid #d9d3e4; border-radius:6px; padding:5px 10px; min-width:240px; }
+.pay-search-box i { color:#6642aa; font-size:14px; }
+.pay-search-box input { border:none; outline:none; font-size:12px; flex:1; background:transparent; min-width:160px; }
+.pay-search-box button { border:none; background:none; color:#999; cursor:pointer; padding:0 2px; font-size:14px; line-height:1; }
+#pay-dept-filter,
+#pay-pos-filter,
+#pay-rate-filter { border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; max-width:230px; }
+.pay-anomaly-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pay-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; border:1px solid; cursor:pointer; user-select:none; background:#fff; transition:box-shadow .1s; }
+.pay-chip:hover { box-shadow:0 1px 4px rgba(0,0,0,.12); }
+.pay-chip.zero     { color:#856404; border-color:#ffe082; background:#fff8e1; }
+.pay-chip.negative { color:#c62828; border-color:#f5c6cb; background:#fdecea; }
+.pay-chip.noatt    { color:#b02a37; border-color:#f3cdd2; background:#fbe3e6; }
+.pay-chip.bigmove  { color:#7c3aed; border-color:#ddd0f7; background:#f3eefe; }
+.pay-chip.active { outline:2px solid currentColor; outline-offset:1px; }
+.pay-chip.all-clear { color:#107c41; border-color:#b7e4c7; background:#eafaf0; cursor:default; }
+.pay-filter-count { font-size:11px; color:#888; font-weight:600; margin-left:auto; }
+#table-1 tbody tr.pay-row-hit td { background:#fffbe6 !important; }
+
+/* ── Net delta vs previous payroll ── */
+.nd-badge { display:inline-block; font-size:10px; font-weight:700; padding:0 6px; border-radius:8px; margin-top:2px; line-height:16px; }
+.nd-up   { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
+.nd-down { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+.nd-flat { background:#f1f3f4; color:#777; border:1px solid #ddd; }
+.nd-new  { background:#e3f2fd; color:#1565c0; border:1px solid #b7d5f5; }
+.nd-badge.nd-warn { outline:2px solid #ffb300; outline-offset:1px; }
+
+/* ── Remittance breakdown modal ── */
+#modal-remit .rm-section-title { font-size:12px; font-weight:700; color:#107c41; display:flex; align-items:center; gap:6px; margin:12px 0 6px; }
+#modal-remit .rm-section-title:first-child { margin-top:0; }
+#modal-remit table th, #modal-remit table td { font-size:12px; }
+#modal-remit .rm-grand { background:#f4faf5; font-weight:800; }
+
+/* Employee review progress panel (mirrors DTR's, recolored to this page's Excel-green theme) */
+.pr-review-panel { border:1px solid #cdeacb; background:#f4faf5; border-radius:10px; padding:10px 14px; margin-bottom:10px; }
+.prp-head { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.prp-title { font-size:13px; font-weight:700; color:#0e6b37; display:flex; align-items:center; gap:6px; }
+.prp-counts { display:flex; gap:6px; flex-wrap:wrap; }
+.prp-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; }
+.prp-chip.appr { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
+.prp-chip.disp { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+.prp-chip.pend { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
+.prp-chip.unread { background:#eef2fd; color:#3557b7; border:1px solid #ccd9f7; }
+.prp-disputes { margin-top:8px; display:flex; flex-direction:column; gap:3px; }
+.prp-confirmed-lbl { font-weight:700; color:#107c41; margin-right:4px; }
+/* ── Large batches ──────────────────────────────────────────────────────────
+   A 500-employee payroll used to dump every confirmed name into one runaway
+   line and stack disputes unbounded, pushing the payroll table off-screen.
+   Names now collapse behind a count; disputes scroll once there are a few. */
+.prp-names { margin-top:8px; }
+.prp-names > summary { list-style:none; cursor:pointer; display:inline-flex; align-items:center; gap:6px;
+    font-size:11px; font-weight:700; color:#107c41; user-select:none; }
+.prp-names > summary::-webkit-details-marker { display:none; }
+.prp-names > summary:hover .prp-names-hint { text-decoration:underline; }
+.prp-count-pill { background:#eef7f0; border:1px solid #cfe9d6; color:#107c41;
+    border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.prp-names-hint { font-weight:500; color:#8a8a8a; }
+.prp-names .lbl-hide, .prp-names[open] .lbl-show { display:none; }
+.prp-names[open] .lbl-hide { display:inline; }
+/* ── Name-only sign-off rows ───────────────────────────────────────────────
+   Both lists (disputed + confirmed) are one line per employee: icon, name,
+   and a chat button when they left a message. The message itself opens in
+   #modal-emp-review, so a long comment can never stretch this panel. */
+.prp-note-pill { display:inline-flex; align-items:center; gap:3px; background:#fff6e2; border:1px solid #f2dfae;
+    color:#a9700a; border-radius:10px; padding:0 6px; font-size:10px; font-weight:700; }
+.prp-confirms { margin-top:6px; display:flex; flex-direction:column; gap:3px; }
+.prp-confirms.is-scroll { max-height:190px; overflow-y:auto; padding-right:4px; }
+.prp-row { display:flex; align-items:center; gap:6px; min-width:0; padding:4px 8px; border-radius:7px;
+    border:1px solid transparent; font-size:11.5px; }
+.prp-row.ok   { background:#f2faf4; border-color:#dceee2; }
+.prp-row.disp { background:#fff5f5; border-color:#f3d3d3; }
+.prp-row-ic { font-size:13px; flex-shrink:0; }
+.prp-row.ok   .prp-row-ic { color:#33a466; }
+.prp-row.disp .prp-row-ic { color:#c62828; }
+.prp-row-name { flex:1; min-width:0; font-weight:700; color:#3c3846;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.prp-row-done { color:#107c41; font-size:12px; flex-shrink:0; }
+/* Unread = nobody has opened this message yet (seen_at IS NULL) */
+.prp-row-new { flex-shrink:0; font-size:8.5px; font-weight:800; letter-spacing:.4px; color:#fff;
+    background:#3557b7; border-radius:8px; padding:1px 5px; }
+.prp-row.unread { border-color:#ccd9f7; box-shadow:0 0 0 1px #ccd9f7 inset; }
+.prp-row.unread .prp-row-name { color:#1f3a80; }
+.prp-row.unread .prp-row-msg { background:#eef2fd; border-color:#ccd9f7; color:#3557b7; }
+.prp-row-msg { display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    width:20px; height:20px; border-radius:6px; background:#fff6e2; border:1px solid #f2dfae; color:#a9700a; font-size:11px; }
+.prp-row.has-msg { cursor:pointer; }
+.prp-row.has-msg:hover { filter:brightness(.97); }
+.prp-row.has-msg:hover .prp-row-msg,
+.prp-row.has-msg:focus-visible .prp-row-msg { background:#a9700a; border-color:#a9700a; color:#fff; }
+.prp-row.has-msg:focus-visible { outline:2px solid #107c41; outline-offset:1px; }
+
+/* ── The sign-off conversation popup ── */
+#modal-emp-review .mer-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+#modal-emp-review .mer-name { font-size:14px; font-weight:800; color:#3c3846; }
+.mer-badge { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:800;
+    padding:2px 9px; border-radius:12px; border:1px solid; }
+.mer-badge.ok   { background:#eafaf0; color:#107c41; border-color:#b7e4c7; }
+.mer-badge.disp { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
+.mer-when { font-size:10.5px; color:#948ea5; margin-left:auto; }
+.mer-empty { text-align:center; color:#948ea5; font-size:12.5px; padding:22px 12px; }
+.prp-disputes.is-scroll { max-height:340px; overflow-y:auto; padding-right:4px; }
+.prp-act-btn { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:2px 9px; border-radius:12px; border:1px solid; cursor:pointer; text-decoration:none; }
+.prp-act-btn.remind { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
+.prp-act-btn.export { background:#eef7f0; color:#107c41; border-color:#cfe9d6; }
+.prp-act-btn.resolve { margin-top:5px; background:#e9f7ef; color:#107c41; border-color:#b7e4c7; }
+.prp-act-btn:hover { filter:brightness(0.97); }
+.prp-resolved { margin-top:5px; font-size:11.5px; color:#107c41; font-weight:600; background:#f0faf3; border:1px solid #cdeeda; border-radius:6px; padding:4px 8px; }
+
+/* ── Reviewer color marks: whole-row soft tint (1=ok, 2=issue, 3=reviewing) ── */
+#table-1 tbody tr.review-ok > td       { background:#e9f7ee !important; }
+#table-1 tbody tr.review-issue > td    { background:#fff4e2 !important; }
+#table-1 tbody tr.review-checking > td { background:#e8f1fb !important; }
+#table-1 tbody tr.review-ok:hover > td       { background:#dcf1e4 !important; }
+#table-1 tbody tr.review-issue:hover > td    { background:#ffedd1 !important; }
+#table-1 tbody tr.review-checking:hover > td { background:#dbe9f8 !important; }
+
+/* Green = verified: inputs freeze into display text — no accidental edits */
+tr.review-ok .input-class { pointer-events:none; background:transparent !important; border-color:transparent !important; box-shadow:none !important; font-weight:700; }
+
+/* The dot button in the Actions column */
+.review-mark-btn { margin-left:4px; }
+.rv-dot { display:inline-block; width:11px; height:11px; border-radius:50%; background:#e1e5e3; border:1px solid #aab5b0; vertical-align:-1px; }
+.rv-dot.rv-1 { background:#63c584; border-color:#3f9c63; }
+.rv-dot.rv-2 { background:#f4ad60; border-color:#d68830; }
+.rv-dot.rv-3 { background:#74ace6; border-color:#457fbd; }
+.rv-comment-flag { color:#c98a00; font-size:12px; margin-left:2px; vertical-align:-1px; }
+
+/* Swatch choices inside the review modal */
+.rv-choice { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:2px solid #e3e7e5; border-radius:10px; background:#fff; padding:9px 12px; margin-bottom:7px; cursor:pointer; font-size:13px; font-weight:600; color:#333; }
+.rv-choice .rv-dot { width:16px; height:16px; }
+.rv-choice small { display:block; font-weight:400; color:#888; font-size:11px; }
+.rv-choice:hover { border-color:#b8c4be; }
+.rv-choice.selected { border-color:#107c41; background:#f2faf5; }
+.rv-choice.selected.rv-c2 { border-color:#d68830; background:#fff8ee; }
+.rv-choice.selected.rv-c3 { border-color:#457fbd; background:#f0f6fd; }
+
+/* ── extracted block 2 of 4 ───────────────────────────────────── */
+#offcanvas-history { width: 460px; max-width: 100vw; }
+.vh-header {
+    background: #d9eedd;
+    padding: 16px 18px 0;
+    color: #412b6d;
+    position: relative; overflow: hidden;
+}
+
+.vh-header-top { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:12px; position:relative; }
+.vh-title { font-size:15px; font-weight:800; letter-spacing:.2px; display:flex; align-items:center; gap:8px; }
+.vh-title-icon {
+    width:26px; height:26px; border-radius:8px;
+    background:rgba(65,43,109,.10); border:1px solid rgba(65,43,109,.16);
+    display:flex; align-items:center; justify-content:center; font-size:14px;
+}
+.vh-subtitle { font-size:11px; color:rgba(65,43,109,.8); margin-top:3px; }
+.vh-count-badge {
+    background:rgba(65,43,109,.12); color:#412b6d;
+    font-size:11px; font-weight:700;
+    border-radius:20px; padding:3px 10px;
+    backdrop-filter:blur(4px); white-space:nowrap;
+}
+.vh-tabs {
+    display:flex; gap:0; border-bottom: none; margin-top:4px; position:relative;
+}
+.vh-tab {
+    padding:8px 13px; font-size:11px; font-weight:600;
+    color:rgba(65,43,109,.75); cursor:pointer;
+    border-bottom:2px solid transparent;
+    transition:all .15s; white-space:nowrap;
+    display:flex; align-items:center; gap:5px;
+}
+.vh-tab.active { color:#412b6d; border-bottom-color:#6642aa; }
+.vh-tab:hover:not(.active) { color:rgba(65,43,109,.95); }
+.vh-tab-count {
+    font-size:9px; font-weight:800; line-height:1;
+    background:rgba(65,43,109,.12); border-radius:20px; padding:2px 5px;
+}
+.vh-tab.active .vh-tab-count { background:rgba(65,43,109,.2); }
+.vh-search-bar {
+    padding:10px 14px; background:#fcfbfe;
+    border-bottom:1px solid #e1dfdd;
+    display:flex; align-items:center; gap:8px;
+}
+.vh-search-wrap { position:relative; flex:1; }
+.vh-search-input {
+    width:100%; border:1px solid #d7d0e6; border-radius:6px;
+    padding:6px 28px 6px 32px; font-size:12px; color:#323130;
+    background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23a19f9d' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
+    outline:none; transition:border-color .15s, box-shadow .15s;
+}
+.vh-search-input:focus { border-color:#6642aa; box-shadow:0 0 0 3px rgba(102,66,170,.12); }
+.vh-search-clear {
+    position:absolute; right:6px; top:50%; transform:translateY(-50%);
+    border:none; background:none; color:#a19f9d; font-size:14px;
+    line-height:1; cursor:pointer; padding:2px; display:none;
+}
+.vh-search-clear:hover { color:#605e5c; }
+.vh-date-group-label {
+    padding:7px 16px;
+    font-size:10px; font-weight:800;
+    color:#4e3483; text-transform:uppercase; letter-spacing:.6px;
+    background:#f8f6fb; border-top:1px solid #eeeaf5; border-bottom:1px solid #eeeaf5;
+    position:sticky; top:0; z-index:2;
+    display:flex; align-items:center; gap:6px;
+}
+.vh-date-group-label .vh-group-count { margin-left:auto; color:#9890ab; font-weight:700; }
+.vh-entry {
+    display:flex; gap:12px; padding:13px 16px 13px 14px;
+    border-bottom:1px solid #f4f4f4;
+    transition:background .12s; position:relative;
+}
+.vh-entry:hover { background:#fcfcfe; }
+.vh-entry.is-latest { background:#f7f6fc; }
+.vh-entry.is-latest::before {
+    content:''; position:absolute; left:0; top:0; bottom:0;
+    width:3px; border-radius:0 2px 2px 0;
+    background:#6642aa;
+}
+.vh-timeline {
+    display:flex; flex-direction:column; align-items:center;
+    flex-shrink:0; width:30px;
+}
+.vh-node {
+    width:30px; height:30px; border-radius:9px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; transition:transform .15s;
+}
+.vh-entry:hover .vh-node { transform:scale(1.08); }
+.vh-line { width:2px; flex:1; min-height:14px; background:#eae9ec; margin-top:6px; border-radius:2px; }
+.vh-content { flex:1; min-width:0; padding-top:2px; }
+.vh-event-row { display:flex; align-items:flex-start; gap:8px; margin-bottom:6px; }
+.vh-event-text {
+    font-size:12.5px; font-weight:600; color:#323130;
+    flex:1; min-width:0; line-height:1.45;
+}
+.vh-event-sub { font-size:11px; font-weight:500; color:#8a8886; margin-top:1px; }
+.vh-latest-badge {
+    font-size:9px; font-weight:800; letter-spacing:.3px;
+    background:#6642aa; color:#fff;
+    border-radius:20px; padding:2px 7px;
+    flex-shrink:0; margin-top:1px;
+}
+.vh-chips { display:flex; flex-wrap:wrap; gap:5px; margin-bottom:7px; }
+.vh-chip {
+    display:inline-flex; align-items:center; gap:4px;
+    font-size:10.5px; font-weight:600; line-height:1.6;
+    border-radius:5px; padding:1px 7px;
+    background:#f3f4f6; color:#4b5563; border:1px solid #e5e7eb;
+    max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.vh-chip i { font-size:11px; opacity:.75; }
+.vh-chip-emp { background:#eef4ff; color:#3557b7; border-color:#dbe4fb; }
+.vh-chip-val { background:#ecfdf5; color:#5b3699; border-color:#e0dcef; font-variant-numeric:tabular-nums; }
+.vh-meta { display:flex; align-items:center; gap:7px; }
+.vh-avatar {
+    width:22px; height:22px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:8.5px; font-weight:800; flex-shrink:0;
+}
+.vh-user { font-size:11px; color:#605e5c; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vh-time-block { margin-left:auto; text-align:right; flex-shrink:0; }
+.vh-rel-time { font-size:11px; font-weight:600; color:#323130; }
+.vh-abs-time { font-size:9.5px; color:#a19f9d; }
+.vh-empty { padding:48px 24px; text-align:center; color:#a19f9d; }
+.vh-empty i { font-size:40px; display:block; margin-bottom:10px; opacity:.4; }
+.vh-empty-title { font-size:13px; font-weight:600; color:#605e5c; margin-bottom:4px; }
+.vh-empty div:last-child { font-size:11.5px; }
+.vh-skeleton { padding:14px 16px; display:flex; gap:12px; border-bottom:1px solid #f4f4f4; }
+.vh-sk-node { width:30px; height:30px; border-radius:9px; flex-shrink:0; }
+.vh-sk-lines { flex:1; }
+.vh-sk-bar { height:9px; border-radius:4px; margin-bottom:7px; }
+.vh-skeleton .vh-sk-node, .vh-skeleton .vh-sk-bar {
+    background:linear-gradient(90deg,#f0eef1 25%,#f8f7f9 50%,#f0eef1 75%);
+    background-size:200% 100%; animation:vh-shimmer 1.2s infinite;
+}
+@keyframes vh-shimmer { 0% { background-position:200% 0; } 100% { background-position:-200% 0; } }
+
+/* ── extracted block 3 of 4 ───────────────────────────────────── */
+/* Critical, render-blocking: hides the workbench and styles the spinner from the
+   very first paint, before the bulk pcw-* stylesheet lower in the page loads. */
+body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
+.pcw-app { transition:opacity .35s ease; }
+#pcw-boot { position:fixed; inset:0; z-index:4000; display:flex; align-items:center; justify-content:center;
+    background:#f0eff2; transition:opacity .35s ease; }
+#pcw-boot.hide { opacity:0; pointer-events:none; }
+.pcw-boot-inner { display:flex; flex-direction:column; align-items:center; gap:14px; }
+.pcw-boot-ring { width:46px; height:46px; border-radius:50%;
+    border:4px solid #e1dcec; border-top-color:#6642aa; animation:pcw-spin .8s linear infinite; }
+.pcw-boot-txt { font-size:13px; font-weight:700; color:#4e3483; letter-spacing:.3px;
+    font-family:'Segoe UI', system-ui, Arial, sans-serif; }
+@keyframes pcw-spin { to { transform:rotate(360deg); } }
+
+/* ── extracted block 4 of 4 ───────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════
+   Payroll document workbench (pcw-*) — layout mirrors dtr-documents.php
+   ════════════════════════════════════════════════════════════════════ */
+:root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent; }
+html, body { height:100%; }
+body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, sans-serif; overflow:hidden; }
+/* ── Soft purple scrollbars, everywhere on this page (same as dtr-documents.php) ── */
+* { scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+*::-webkit-scrollbar { width:9px; height:9px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background:transparent; }
+*::-webkit-scrollbar-thumb { background:var(--sb-thumb); border-radius:8px; border:2px solid transparent; background-clip:content-box; }
+*::-webkit-scrollbar-thumb:hover { background:#b7a7d9; background-clip:content-box; }
+.pcw-app { display:flex; flex-direction:column; gap:12px; height:100vh; padding:12px 16px; }
+/* Loading overlay + content-gating CSS lives in the critical <style> in <head>
+   so it applies before first paint — see that block. */
+.pcw-header { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  padding:10px 14px; background:#fff; border:1px solid #e1dfdd; border-radius:12px; box-shadow:0 1px 6px rgba(0,0,0,.06); }
+.pcw-h-left { display:flex; align-items:center; gap:12px; min-width:0; }
+.pcw-back-btn { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; padding:7px 14px; border-radius:8px;
+  font-size:12.5px; font-weight:700; color:#4e3483; background:#f2f0f7; border:1px solid #ddd9e7; text-decoration:none; }
+.pcw-back-btn:hover { background:#e5e1ef; color:#4e3483; }
+.pcw-title-icon { width:38px; height:38px; border-radius:11px; flex-shrink:0; background:linear-gradient(135deg,#6642aa,#8f6cd4);
+  color:#fff; display:flex; align-items:center; justify-content:center; font-size:18px; box-shadow:0 3px 8px rgba(102,66,170,.3); }
+.pcw-h-title { font-size:15px; font-weight:800; color:#363242; display:flex; align-items:center; gap:8px; }
+.pcw-status-badge { font-size:10.5px; font-weight:800; padding:3px 11px; border-radius:20px; display:inline-flex; align-items:center; gap:4px; }
+.pst-open { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
+.pst-rev  { background:#e3f2fd; color:#1565c0; border:1px solid #a8cff5; }
+.pst-lock { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+.pcw-meta-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+.pcw-meta-chip { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600; color:#4e3483;
+  background:#f2f0f7; border:1px solid #ddd9e7; border-radius:20px; padding:2px 9px; }
+.pcw-meta-chip i { color:#6642aa; font-size:12px; }
+.pcw-h-actions { display:flex; align-items:center; gap:7px; flex-wrap:wrap; }
+.pcw-btn { display:inline-flex; align-items:center; gap:5px; padding:7px 13px; border-radius:8px; font-size:12px; font-weight:700;
+  cursor:pointer; color:#4e3483; background:#f2f0f7; border:1px solid #ddd9e7; transition:background .12s; text-decoration:none; }
+.pcw-btn:hover:not(:disabled) { background:#e5e1ef; color:#4e3483; }
+.pcw-btn:disabled { opacity:.45; cursor:not-allowed; }
+.pcw-btn.primary { background:#6642aa; border-color:#4e3483; color:#fff; }
+.pcw-btn.primary:hover:not(:disabled) { background:#4e3483; color:#fff; }
+.pcw-btn.good { background:#d9eedd; border-color:#b8d8c2; color:#0b5e31; }
+.pcw-btn.danger { background:#fdecea; border-color:#f5c6cb; color:#c62828; }
+.pcw-btn.danger:hover:not(:disabled) { background:#fadbd8; color:#c62828; }
+.pcw-wrap { flex:1; min-height:0; display:grid; grid-template-columns:345px minmax(0,1fr) 335px; gap:13px; }
+.pcw-panel { background:#fff; border:1px solid #e1dfdd; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.05);
+  overflow:hidden; display:flex; flex-direction:column; min-height:0; }
+.pcw-panel-head { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 13px;
+  border-bottom:1px solid #eeeaf5; background:#f8f7fb; font-size:12px; font-weight:800; color:#4e3483; }
+.pcw-panel-head i { color:#6642aa; }
+#pcw-total { font-weight:600; color:#827d91; font-size:10.5px; }
+.pcw-head-badge { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:800;
+  padding:1px 7px; border-radius:10px; border:1px solid; letter-spacing:.2px; }
+.pcw-head-badge.rev    { background:#e8f1fb; color:#2c62c0; border-color:#bcd3f5; }
+.pcw-head-badge.lock   { background:#e6f7ee; color:#178a4e; border-color:#b7e4c7; }
+.pcw-head-badge.unread { background:#eef2fd; color:#3557b7; border-color:#ccd9f7; }
+.pcw-head-badge.unread i { color:#3557b7; font-size:11px; }
+
+/* ── Left: employee previews ── */
+.pcw-left { min-height:0; }
+.pcw-search { flex-shrink:0; padding:9px 11px 7px; position:relative; }
+.pcw-search-wrap { display:flex; align-items:center; gap:7px; border:1px solid #ddd9e7; border-radius:8px; background:#fff; padding:6px 10px; }
+.pcw-search-wrap:focus-within { border-color:#6642aa; box-shadow:0 0 0 2px rgba(102,66,170,.14); }
+.pcw-search-wrap > i { color:#6642aa; font-size:14px; }
+.pcw-search-wrap input { border:none; outline:none; flex:1; font-size:12px; min-width:0; background:transparent; }
+.pcw-select { width:100%; border:1px solid #ddd9e7; border-radius:8px; font-size:11.5px; padding:5px 8px; color:#3c3846; background:#fff; outline:none; cursor:pointer; }
+/* Filter button + popover (mirrors dtr-documents.php's filter UI) */
+.pcw-filter-btn { position:relative; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px;
+  flex-shrink:0; border-radius:7px; cursor:pointer; color:#4e3483; background:#f2f0f7; border:1px solid #ddd9e7; transition:background .12s; }
+.pcw-filter-btn:hover { background:#e5e1ef; }
+.pcw-filter-btn.on { background:#e1dcec; border-color:#c0b5d5; }
+.pcw-filter-count { position:absolute; top:-5px; right:-5px; min-width:14px; height:14px; padding:0 3px; border-radius:8px;
+  background:#c62828; color:#fff; font-size:8.5px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+.pcw-filter-pop { display:none; position:absolute; left:11px; right:11px; top:calc(100% + 2px); z-index:40;
+  background:#fff; border:1px solid #e1dfdd; border-radius:12px; padding:11px; box-shadow:0 10px 30px rgba(58,40,93,.18); }
+.pcw-filter-pop.open { display:block; }
+.pcw-fp-head { display:flex; justify-content:space-between; align-items:center; font-size:11.5px; font-weight:800; color:#4e3483; }
+.pcw-fp-head i { color:#6642aa; }
+.pcw-fp-reset { display:inline-flex; align-items:center; gap:3px; border:none; background:transparent; color:#c62828;
+  font-size:10px; font-weight:700; cursor:pointer; padding:2px 5px; border-radius:6px; }
+.pcw-fp-reset:hover { background:#fdf4f3; }
+.pcw-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:10px 0 4px; }
+.pcw-rv-chips { display:flex; flex-wrap:wrap; gap:4px; }
+.pcw-rv-chips button { display:inline-flex; align-items:center; gap:3px; padding:3px 9px; border-radius:20px; font-size:10px;
+  font-weight:700; cursor:pointer; color:#635f73; background:#fff; border:1px solid #ddd9e7; transition:all .12s; }
+.pcw-rv-chips button i { font-size:11px; }
+.pcw-rv-chips button:hover:not(.on) { background:#f6f4fa; }
+.pcw-rv-chips button.on { background:#efeaf8; border-color:#c0b5d5; color:#4e3483; box-shadow:0 0 0 1px #c0b5d5 inset; }
+.pcw-list { flex:1; overflow-y:auto; padding:5px 9px 9px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+.pcw-item { display:flex; align-items:center; gap:10px; width:100%; padding:8px 10px; margin-bottom:5px; text-align:left;
+  background:#fff; border:1px solid #eae7f1; border-radius:10px; border-left:3px solid transparent; cursor:pointer;
+  transition:background .12s, border-color .12s, box-shadow .12s; }
+.pcw-item:hover { background:#f8f6fc; border-color:#d5cbe8; }
+.pcw-item.active { background:#f1edf9; border-color:#6642aa; box-shadow:0 0 0 1px #6642aa inset; }
+/* Left accent + subtle tint by review mark */
+.pcw-item.rv-ok    { border-left-color:#33a466; }
+.pcw-item.rv-issue { border-left-color:#e0653f; }
+.pcw-item.rv-chk   { border-left-color:#3f7fe0; }
+.pcw-item.rv-ok:not(.active)    { background:#f4fcf7; }
+.pcw-item.rv-issue:not(.active) { background:#fef6f2; }
+.pcw-item.rv-chk:not(.active)   { background:#f4f8fe; }
+.pcw-item input[type=checkbox] { width:15px; height:15px; accent-color:#6642aa; cursor:pointer; flex-shrink:0; }
+.pcw-item-avwrap { position:relative; flex-shrink:0; }
+.pcw-item-av { width:34px; height:34px; border-radius:10px; background:#e1dcec; color:#4f3288; border:1px solid #cbc0e0;
+  display:flex; align-items:center; justify-content:center; font-size:11.5px; font-weight:800; }
+.pcw-item-av.rv-1 { background:#d9f2e2; border-color:#63c584; }
+.pcw-item-av.rv-2 { background:#fdecd7; border-color:#f4ad60; }
+.pcw-item-av.rv-3 { background:#ddebfa; border-color:#74ace6; }
+/* Corner status badge on the avatar (lock / warning / spinner) */
+.pcw-rv-ic { position:absolute; right:-5px; bottom:-5px; width:18px; height:18px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center; color:#fff; border:2px solid #fff; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+.pcw-rv-ic i { font-size:9.5px; line-height:1; }
+.pcw-rv-ic.rv-ok    { background:#33a466; }
+.pcw-rv-ic.rv-issue { background:#e0653f; }
+.pcw-rv-ic.rv-chk   { background:#3f7fe0; }
+.pcw-rv-ic.rv-chk i { animation:pcw-spin 1.4s linear infinite; }
+.pcw-item-main { flex:1; min-width:0; }
+.pcw-item-name { font-size:12px; font-weight:700; color:#3c3846; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-item-sub { font-size:10px; color:#948ea5; margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-item-tags { margin-top:3px; }
+.pcw-rv-tag { display:inline-flex; align-items:center; gap:3px; font-size:9px; font-weight:800; letter-spacing:.2px;
+  padding:1px 7px; border-radius:20px; border:1px solid; }
+.pcw-rv-tag i { font-size:10px; }
+.pcw-rv-tag.rv-ok    { background:#e6f7ee; color:#178a4e; border-color:#b7e4c7; }
+.pcw-rv-tag.rv-issue { background:#fdece5; color:#c0491f; border-color:#f5c6b3; }
+.pcw-rv-tag.rv-chk   { background:#e8f0fd; color:#2c62c0; border-color:#bcd3f5; }
+/* Activity badges on a card: review requests sent, messages, notes */
+.pcw-tag-sent { display:inline-flex; align-items:center; gap:3px; margin-left:4px; font-size:9px; font-weight:800;
+  padding:1px 7px; border-radius:20px; background:#eef2fd; color:#3557b7; border:1px solid #ccd9f7; }
+.pcw-tag-sent i { font-size:9.5px; }
+.pcw-tag-cnt { display:inline-flex; align-items:center; gap:3px; margin-left:4px; font-size:9px; font-weight:800;
+  padding:1px 6px; border-radius:20px; border:1px solid; }
+.pcw-tag-cnt i { font-size:9.5px; }
+.pcw-tag-cnt.msg  { background:#fff6e2; color:#a9700a; border-color:#f2dfae; }
+.pcw-tag-cnt.note { background:#f2f0fb; color:#6b4fc4; border-color:#ded7f5; }
+/* Row reopened for correction while the batch is out for review */
+.pcw-tag-open { display:inline-flex; align-items:center; gap:3px; margin-left:4px; font-size:9px; font-weight:800;
+  padding:1px 7px; border-radius:20px; background:#fff8e1; color:#8a6100; border:1px solid #ffe082; }
+.pcw-tag-open i { font-size:9.5px; }
+/* Chat button on a card — the employee left a message with their sign-off */
+.pcw-item-msg { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; padding:0;
+  border-radius:6px; cursor:pointer; font-size:11px; background:#eafaf0; border:1px solid #b7e4c7; color:#107c41; }
+.pcw-item-msg.disp { background:#fdecea; border-color:#f5c6cb; color:#c62828; }
+.pcw-item-msg:hover { background:#107c41; border-color:#107c41; color:#fff; }
+.pcw-item-msg.disp:hover { background:#c62828; border-color:#c62828; color:#fff; }
+/* Unread sign-off message — blue dot in the corner until someone opens it */
+.pcw-item-msg.new { position:relative; }
+.pcw-item-msg.new::after { content:''; position:absolute; top:-3px; right:-3px; width:7px; height:7px;
+  border-radius:50%; background:#3557b7; border:1.5px solid #fff; }
+
+/* ── Bulk action panel (shown while employees are ticked) ── */
+.pcw-bulk { display:none; flex-shrink:0; border-top:1px solid #e5e1ef; background:#f8f7fb; padding:9px 11px 10px; }
+.pcw-bulk.show { display:block; animation:pcw-bulk-in .18s ease; }
+@keyframes pcw-bulk-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+.pcw-bulk-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.pcw-bulk-n { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; color:#4e3483; }
+.pcw-bulk-x { border:none; background:transparent; color:#948ea5; cursor:pointer; font-size:15px; line-height:1; padding:2px 4px; }
+.pcw-bulk-x:hover { color:#c62828; }
+.pcw-bulk-lbl { font-size:8.5px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:8px 0 4px; }
+.pcw-bulk-rv { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+.pcw-bulk-rv button { display:inline-flex; align-items:center; justify-content:center; gap:4px; padding:5px 6px; border-radius:7px;
+  font-size:10px; font-weight:800; cursor:pointer; border:1px solid; background:#fff; transition:filter .12s; }
+.pcw-bulk-rv button:hover { filter:brightness(.96); }
+.pcw-bulk-rv button i { font-size:11px; }
+.pcw-bulk-rv .rv-ok    { color:#178a4e; border-color:#b7e4c7; background:#f0fbf4; }
+.pcw-bulk-rv .rv-issue { color:#c0491f; border-color:#f5c6b3; background:#fdf4ef; }
+.pcw-bulk-rv .rv-chk   { color:#2c62c0; border-color:#bcd3f5; background:#f1f6fe; }
+.pcw-bulk-rv .rv-none  { color:#6b7a74; border-color:#dbe3de; background:#f7f9f8; }
+.pcw-bulk-act { display:flex; gap:5px; flex-wrap:wrap; }
+.pcw-bulk-act .pcw-btn { flex:1 1 0; justify-content:center; padding:6px 8px; font-size:10.5px; white-space:nowrap; }
+/* Progress while a bulk action runs */
+.pcw-bulk-prog { display:none; margin-top:9px; }
+.pcw-bulk-prog.show { display:block; }
+.pcw-bulk-prog-lbl { display:flex; justify-content:space-between; font-size:9.5px; font-weight:700; color:#5b6f62; margin-bottom:3px; }
+.pcw-bulk-bar { height:6px; border-radius:5px; background:#e8e4f0; overflow:hidden; }
+.pcw-bulk-bar > div { height:100%; width:0; border-radius:5px; background:linear-gradient(90deg,#6642aa,#9b7fd4); transition:width .25s ease; }
+.pcw-selall-hint { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#5b6f62; }
+
+.pcw-item-right { text-align:right; flex-shrink:0; }
+.pcw-item-net { font-size:11.5px; font-weight:800; color:#1e50a0; font-variant-numeric:tabular-nums; }
+.pcw-item-net.neg { color:#c62828; }
+.pcw-item-flags { display:flex; gap:3px; justify-content:flex-end; margin-top:2px; min-height:7px; }
+.pcw-fdot { width:7px; height:7px; border-radius:50%; }
+.pcw-fdot.abs { background:#c98a00; } .pcw-fdot.lt { background:#e2574c; } .pcw-fdot.neg { background:#c62828; }
+.pcw-fdot.disp { background:#7c3aed; } .pcw-fdot.ok { background:#63c584; }
+.pcw-list-empty { text-align:center; color:#948ea5; font-size:12px; padding:26px 8px; }
+.pcw-list-foot { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:6px; padding:7px 11px;
+  border-top:1px solid #eeeaf5; background:#fbfafd; }
+.pcw-selall { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; color:#635f73; margin:0; cursor:pointer; }
+.pcw-selall input { accent-color:#6642aa; }
+.pcw-count-pill { background:#e1dcec; color:#4f3288; border-radius:10px; padding:0 7px; font-size:10px; font-weight:800; }
+
+/* ── Center: paper ── */
+.pcw-center { min-width:0; min-height:0; display:flex; flex-direction:column; }
+.pcw-doc-toolbar { flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; max-width:820px; margin:0 auto 9px; width:100%; }
+.pcw-doc-nav { display:flex; align-items:center; gap:6px; }
+.pcw-doc-pos { font-size:11px; color:#827d91; font-weight:600; }
+.pcw-doc-zoom { display:flex; align-items:center; gap:5px; }
+.pcw-pg-btn { width:27px; height:27px; display:inline-flex; align-items:center; justify-content:center; border:1px solid #ddd9e7;
+  background:#fff; color:#4e3483; border-radius:7px; font-size:14px; cursor:pointer; }
+.pcw-pg-btn:hover:not(:disabled) { background:#f2f0f7; }
+.pcw-pg-btn:disabled { opacity:.35; cursor:not-allowed; }
+.pcw-zoom-val { min-width:48px; height:27px; padding:0 7px; border-radius:7px; cursor:pointer; border:1px solid #ddd9e7; background:#fff; color:#4e3483; font-size:11px; font-weight:700; }
+.pcw-paper-scroll { flex:1; overflow:auto; min-height:0; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) transparent; padding-bottom:10px; }
+/* grooveless bar over the paper backdrop — thumb only (see theme.css .sb-ghost) */
+.pcw-paper-scroll::-webkit-scrollbar-track,
+.pcw-paper-scroll::-webkit-scrollbar-corner { background:transparent; }
+.pcw-paper-scroll::-webkit-scrollbar-thumb { border-color:transparent; }
+.pcw-paper { background:#fffefb; width:100%; max-width:820px; margin:0 auto; border:1px solid #dcd8cc; border-radius:2px;
+  box-shadow:0 2px 14px rgba(60,55,40,.14); padding:30px 36px 26px; font-family:'Times New Roman', Times, serif; color:#1a1a1a; zoom:var(--pcw-zoom, 1); }
+.pcw-doc-empty { text-align:center; color:#948ea5; font-size:13px; padding:60px 10px; font-family:'Segoe UI', system-ui, sans-serif; }
+
+/* Paper internals (pp-*) — categorized computation form (purple-accented letterhead) */
+.pp-head { text-align:center; border-bottom:3px double #4f3288; padding-bottom:11px; }
+.pp-head h1 { font-size:19px; margin:0; letter-spacing:2.5px; font-weight:700; color:#2d1e4f; }
+.pp-head .pp-sub { font-size:11.5px; color:#444; margin-top:3px; letter-spacing:.4px; }
+.pp-head-tags { display:flex; justify-content:center; gap:6px; flex-wrap:wrap; margin-top:7px; font-family:'Segoe UI', sans-serif; }
+.pp-head-tag { font-size:9px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:#4f3288;
+  background:#f4f1fa; border:1px solid #ddd3ee; border-radius:9px; padding:1px 9px; }
+.pp-emp-grid { display:grid; grid-template-columns:1fr 1fr; gap:3px 26px; margin:13px 0 4px; font-size:12.5px; }
+.pp-emp-grid .lbl { color:#666; font-size:10px; letter-spacing:.7px; text-transform:uppercase; }
+.pp-emp-grid .val { font-weight:700; border-bottom:1px dotted #999; padding-bottom:1px; min-height:17px; }
+.pp-emp-link { color:inherit; text-decoration:none; }
+.pp-emp-link:hover { color:#4f3288; text-decoration:underline; }
+@media print { .pp-emp-link { color:#1a1a1a !important; text-decoration:none !important; } }
+/* At-a-glance strip — the three figures everyone looks for first */
+.pp-glance { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:12px 0 2px; }
+.pp-glance .pg { border:1px solid #ded8ea; border-radius:4px; background:#faf9fd; padding:7px 10px 6px; text-align:center; }
+.pp-glance .pg .l { font-size:9px; letter-spacing:.9px; text-transform:uppercase; color:#666; font-family:'Segoe UI', sans-serif; font-weight:700; }
+.pp-glance .pg .v { font-size:15px; font-weight:800; font-variant-numeric:tabular-nums; margin-top:1px; color:#1a1a1a; }
+.pp-glance .pg.ded .v { color:#a02020; }
+.pp-glance .pg.net { background:#f4f1fa; border-color:#c9bbe2; }
+.pp-glance .pg.net .v { color:#4f3288; }
+.pp-sec { margin-top:15px; }
+.pp-sec-title { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase;
+  border-bottom:1.5px solid #4f3288; padding-bottom:3px; margin-bottom:6px; color:#2d1e4f; }
+.pp-sec-title .ltr { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px;
+  background:#4f3288; color:#fff; font-size:10px; font-weight:800; border-radius:3px; letter-spacing:0;
+  font-family:'Segoe UI', sans-serif; }
+.pp-sec-title .sec-amt { margin-left:auto; font-variant-numeric:tabular-nums; letter-spacing:.3px; color:#1a1a1a; }
+.pp-sec-title .sec-amt.neg { color:#a02020; }
+.pp-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.pp-table td { padding:3px 6px; border-bottom:1px solid #eceae2; }
+.pp-table td.qty { text-align:center; color:#555; width:150px; font-size:11.5px; }
+.pp-table td.amt { text-align:right; width:120px; font-variant-numeric:tabular-nums; font-weight:600; }
+.pp-table td.amt.neg { color:#a02020; }
+.pp-table tr.subgroup td { border-bottom:none; padding-top:8px; font-size:10px; letter-spacing:1.2px; text-transform:uppercase; color:#666; font-weight:700; }
+.pp-table tr.subtotal td { border-top:1px solid #c9c5b8; font-weight:700; }
+.pp-table tr.totalrow td { border-top:2px solid #1a1a1a; border-bottom:3px double #1a1a1a; font-weight:800; font-size:13px; }
+.pp-note { font-size:11px; color:#666; font-style:italic; margin-top:3px; }
+/* One-off items: inline edit / remove, and the add button */
+.pp-x-act { margin-left:7px; white-space:nowrap; opacity:0; transition:opacity .12s; }
+.pp-table tr:hover .pp-x-act { opacity:1; }
+.pp-x-btn { border:none; background:transparent; cursor:pointer; color:#948ea5; font-size:12px; padding:0 3px; }
+.pp-x-btn:hover { color:#6642aa; }
+.pp-x-btn.del:hover { color:#c62828; }
+.pp-x-add { display:inline-flex; align-items:center; gap:4px; border:1px dashed #c0b5d5; background:#faf9fd;
+  color:#4e3483; border-radius:7px; padding:3px 10px; font-size:11px; font-weight:700; cursor:pointer;
+  font-family:system-ui, -apple-system, "Segoe UI", sans-serif; }
+.pp-x-add:hover { background:#f1edf9; border-style:solid; }
+@media print { .pp-x-act, .pp-x-add { display:none !important; } }
+/* One-off item dialog — type-ahead over the allowance / deduction masters */
+/* The theme gives .modal-body overflow:auto, which would clip the suggestion
+   list — this body is short enough to never need its own scroller. */
+#modal-extra-item .modal-body { overflow:visible; }
+#modal-extra-item .xi-note { font-size:12px; color:#6b6878; margin:0 0 13px; line-height:1.45; }
+#modal-extra-item .xi-lbl { display:block; font-size:10.5px; font-weight:800; letter-spacing:.5px;
+  text-transform:uppercase; color:#948ea5; margin-bottom:4px; }
+/* The theme's form-control border is nearly invisible on white — these two
+   fields carry money, so give them a border you can actually see. */
+#modal-extra-item .form-control,
+#modal-extra-item .input-group-text { font-size:13px; border:1px solid #cdc6dd; }
+#modal-extra-item .form-control:focus { border-color:#8b6fd0; box-shadow:0 0 0 .18rem rgba(102,66,170,.12); z-index:3; }
+#modal-extra-item .input-group-text { background:#f4f1fa; color:#4e3483; font-weight:700; }
+#modal-extra-item .form-control.is-bad { border-color:#d98b8b; box-shadow:0 0 0 .18rem rgba(198,40,40,.1); }
+.xi-ac { position:relative; }
+.xi-ac .form-control { padding-left:31px; }
+.xi-ac-ic { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#a49fb2; font-size:14px; pointer-events:none; }
+.xi-ac-menu { position:absolute; z-index:30; left:0; right:0; top:calc(100% + 3px); max-height:224px; overflow-y:auto;
+  background:#fff; border:1px solid #e2ddef; border-radius:9px; box-shadow:0 10px 24px rgba(40,25,80,.15);
+  display:none; scrollbar-width:thin; }
+.xi-ac-menu.open { display:block; }
+.xi-opt { padding:7px 11px; cursor:pointer; font-size:12.5px; color:#3c3846; border-bottom:1px solid #f6f4fa; }
+.xi-opt:last-child { border-bottom:none; }
+.xi-opt.on, .xi-opt:hover { background:#f4f0fc; }
+.xi-opt em { font-style:normal; font-weight:800; color:#4e3483; background:#ece4fb; border-radius:3px; }
+.xi-opt .d { display:block; font-size:10.5px; color:#a09aae; margin-top:1px; }
+.xi-opt .tag { float:right; font-size:8.5px; font-weight:800; letter-spacing:.4px; text-transform:uppercase;
+  padding:2px 7px; border-radius:9px; background:#eef2fd; color:#3557b7; margin-left:8px; }
+.xi-opt.is-new .tag { background:#eafaf0; color:#107c41; }
+.xi-empty { padding:10px 11px; font-size:12px; color:#a09aae; }
+.xi-err { display:none; font-size:11px; font-weight:600; color:#c62828; margin-top:4px; }
+.xi-err.show { display:block; }
+.xi-warn { display:none; align-items:flex-start; gap:6px; font-size:11px; font-weight:600; color:#8a6100;
+  background:#fff8e1; border:1px solid #ffe082; border-radius:8px; padding:6px 9px; margin-top:9px; line-height:1.4; }
+.xi-warn.show { display:flex; }
+#modal-extra-item #xi-save:hover { background:#563690 !important; }
+/* How the net was arrived at — one compact equation line above the net band */
+.pp-eq { margin-top:15px; font-size:11px; color:#555; text-align:right; letter-spacing:.2px; }
+.pp-eq b { font-variant-numeric:tabular-nums; color:#1a1a1a; font-weight:700; }
+.pp-eq .op { color:#999; padding:0 2px; }
+.pp-net { margin-top:6px; display:flex; align-items:center; justify-content:space-between; border:2px solid #4f3288; padding:9px 14px; background:#f4f1fa; }
+.pp-net .lbl { font-size:12px; font-weight:700; letter-spacing:2px; color:#2d1e4f; }
+.pp-net .amt { font-size:21px; font-weight:800; font-variant-numeric:tabular-nums; color:#2d1e4f; }
+.pp-net .amt.neg { color:#a02020; }
+.pp-words { margin-top:6px; font-size:11px; color:#555; font-style:italic; }
+.pp-words b { font-style:normal; color:#1a1a1a; letter-spacing:.2px; }
+.pp-delta { font-family:'Segoe UI', sans-serif; font-size:10px; font-weight:700; margin-left:10px; padding:1px 8px; border-radius:9px; vertical-align:middle; }
+.pp-delta.up { background:#eafaf0; color:#107c41; border:1px solid #b7e4c7; }
+.pp-delta.down { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+.pp-delta.flat { background:#f1f3f4; color:#777; border:1px solid #ddd; }
+.pp-delta.new { background:#e3f2fd; color:#1565c0; border:1px solid #b7d5f5; }
+.pp-chips { display:flex; gap:5px; flex-wrap:wrap; margin-top:10px; font-family:'Segoe UI', sans-serif; }
+.pp-chip { font-size:9.5px; font-weight:700; padding:2px 9px; border-radius:10px; border:1px solid; }
+.pp-chip.g { background:#eafaf0; color:#107c41; border-color:#b7e4c7; }
+.pp-chip.o { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
+.pp-chip.r { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
+.pp-chip.b { background:#e3f2fd; color:#1565c0; border-color:#b7d5f5; }
+/* Editable figures on the sheet: dashed underline inputs that write through
+   to the (hidden) payroll table's inputs, so the existing save pipeline and
+   server-side recompute stay untouched. */
+.pp-in { font-family:inherit; font-size:12.5px; font-weight:700; color:#4f3288; background:#faf8ff;
+  border:none; border-bottom:1.5px dashed #ab9bce; outline:none; padding:0 3px; width:64px; text-align:center; border-radius:2px 2px 0 0; }
+.pp-in:focus { border-bottom-color:#6642aa; background:#f1edf9; }
+.pp-in.amt-in { text-align:right; width:92px; }
+.pp-in.txt-in { text-align:left; width:100%; max-width:340px; font-weight:600; }
+.pp-edit-hint { font-family:'Segoe UI', sans-serif; font-size:10px; font-weight:600; color:#4e3483;
+  background:#f2f0f7; border:1px solid #ddd9e7; border-radius:8px; padding:4px 10px; margin-top:10px; display:inline-flex; align-items:center; gap:5px; }
+
+.pp-sign { display:grid; grid-template-columns:1fr 1fr 1fr; gap:26px; margin-top:34px; }
+.pp-sign > div { text-align:center; font-size:10.5px; color:#444; }
+.pp-sign .line { border-top:1px solid #1a1a1a; margin-bottom:3px; padding-top:3px; font-weight:700; font-size:11px; color:#1a1a1a; min-height:18px; }
+
+/* ── Right: one tabbed panel — Summary · Insights · Review ── */
+.pcw-right { min-height:0; display:flex; flex-direction:column; gap:12px; }
+.pcw-right .pcw-panel.grow { flex:1; min-height:0; }
+.pcw-rtabs { flex-shrink:0; display:flex; gap:2px; padding:6px 8px 0; background:#f8f7fb; border-bottom:2px solid #e5e1ef; }
+.pcw-rtab { display:inline-flex; align-items:center; gap:5px; border:none; background:transparent; cursor:pointer;
+  padding:8px 11px; margin-bottom:-2px; font-size:11.5px; font-weight:800; color:#827d91;
+  border-bottom:2px solid transparent; border-radius:7px 7px 0 0; transition:color .12s, border-color .12s, background .12s; }
+.pcw-rtab i { font-size:13.5px; }
+.pcw-rtab:hover:not(.active) { background:#f0edf8; color:#4e3483; }
+.pcw-rtab.active { color:#4e3483; border-bottom-color:#6642aa; background:#fff; }
+.pcw-rtab-unread { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px;
+  border-radius:9px; background:#3557b7; color:#fff; font-size:9px; font-weight:800; }
+.pcw-rpane { display:none; flex:1; min-height:0; flex-direction:column; }
+.pcw-rpane.active { display:flex; }
+.pcw-rv-status { flex-shrink:0; display:flex; align-items:center; gap:6px; padding:9px 13px 0; }
+.pcw-rv-body { flex:1; min-height:0; overflow-y:auto; padding:10px 13px;
+  scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+/* The body is the only scroller — the inner lists must not scroll inside it. */
+.pcw-rv-body .prp-disputes.is-scroll,
+.pcw-rv-body .prp-confirms.is-scroll { max-height:none; overflow:visible; padding-right:0; }
+.pcw-sum-body { flex:1; min-height:0; padding:11px 13px; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+
+/* ── Inline charts (Summary + Insights tabs) ──
+   Categorical slots (validated): 1 #2a78d6 blue · 2 #eb6834 orange · 3 #1baf7a aqua · 4 #eda100 yellow.
+   Every colored mark carries a visible label + value (relief for the low-contrast slots). */
+.pcw-chart-card { border:1px solid #eae7f1; border-radius:10px; background:#fff; padding:10px 11px; }
+.pcw-donut-wrap { display:flex; align-items:center; gap:12px; }
+.pcw-donut { flex-shrink:0; }
+.pcw-donut .dc-v { font-size:13px; font-weight:800; fill:#3c3846; font-family:'Segoe UI', system-ui, sans-serif; }
+.pcw-donut .dc-l { font-size:7.5px; font-weight:700; fill:#898791; text-transform:uppercase; letter-spacing:.4px; font-family:'Segoe UI', system-ui, sans-serif; }
+.pcw-cl { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.pcw-cl-row { display:flex; align-items:center; gap:6px; font-size:10.5px; }
+.pcw-cl-row .sw { width:9px; height:9px; border-radius:3px; flex-shrink:0; }
+.pcw-cl-row .lb { flex:1; min-width:0; color:#52514e; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-cl-row .vl { font-weight:800; color:#3c3846; font-variant-numeric:tabular-nums; }
+.pcw-cl-row .pc { color:#898791; font-weight:600; min-width:31px; text-align:right; font-variant-numeric:tabular-nums; }
+/* Horizontal bar rows (single measure → single hue) */
+.pcw-hbar { display:flex; flex-direction:column; gap:7px; }
+.pcw-hbar-row { cursor:pointer; }
+.pcw-hbar-row:hover .bar-fill { filter:brightness(1.15); }
+.pcw-hbar-top { display:flex; justify-content:space-between; gap:8px; font-size:10.5px; margin-bottom:2px; }
+.pcw-hbar-top .lb { color:#52514e; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-hbar-top .vl { font-weight:800; color:#3c3846; font-variant-numeric:tabular-nums; flex-shrink:0; }
+.pcw-hbar-track { height:10px; border-radius:0 4px 4px 0; background:#f2f0f7; overflow:hidden; }
+.pcw-hbar-track .bar-fill { display:block; height:100%; border-radius:0 4px 4px 0; background:#6642aa; }
+.pcw-hbar-row.on .lb { color:#4e3483; font-weight:800; }
+.pcw-hbar-row.on .bar-fill { background:#4e3483; }
+/* Selected employee's gross split — two segments with a 2px surface gap */
+.pcw-split { display:flex; height:14px; border-radius:4px; overflow:hidden; gap:2px; margin:8px 0 6px; }
+.pcw-split span { display:block; height:100%; }
+.pcw-split .sg-net { background:#2a78d6; border-radius:4px 0 0 4px; }
+.pcw-split .sg-ded { background:#eb6834; border-radius:0 4px 4px 0; }
+/* ── Batch Insights panel ── */
+.pcw-ins-body { flex:1; min-height:0; overflow-y:auto; padding:11px 13px; scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
+.pcw-ins-sec { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:2px 0 6px; }
+.pcw-ins-sec:not(:first-child) { margin-top:15px; }
+.pcw-ins-stats { display:grid; grid-template-columns:repeat(2,1fr); gap:6px; }
+.pcw-ins-tile { border:1px solid #e8eeeb; border-radius:8px; padding:7px 9px; background:#fafdfb; }
+.pcw-ins-tile .v { font-size:14px; font-weight:800; line-height:1.1; font-variant-numeric:tabular-nums; color:#3c3846; }
+.pcw-ins-tile .l { font-size:8.5px; color:#948ea5; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
+.pcw-ins-tile.net .v { color:#1e50a0; } .pcw-ins-tile.ded .v { color:#c62828; } .pcw-ins-tile.gross .v { color:#107c41; }
+/* Review progress bar */
+.pcw-ins-bar { display:flex; height:10px; border-radius:6px; overflow:hidden; background:#eef2f0; border:1px solid #e1e6e3; }
+.pcw-ins-bar > span { display:block; height:100%; }
+.pcw-ins-bar .b-ok { background:#33a466; } .pcw-ins-bar .b-issue { background:#e0653f; }
+.pcw-ins-bar .b-chk { background:#3f7fe0; } .pcw-ins-bar .b-none { background:#d3ddd7; }
+.pcw-ins-legend { display:flex; flex-wrap:wrap; gap:4px 10px; margin-top:7px; }
+.pcw-ins-lg { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:600; color:#5b6f62; }
+.pcw-ins-lg .dot { width:8px; height:8px; border-radius:50%; }
+.pcw-ins-lg .dot.ok { background:#33a466; } .pcw-ins-lg .dot.issue { background:#e0653f; }
+.pcw-ins-lg .dot.chk { background:#3f7fe0; } .pcw-ins-lg .dot.none { background:#c3cec8; }
+.pcw-ins-pct { float:right; font-size:10px; font-weight:800; color:#178a4e; }
+/* Exception chips (clickable → filter the left list) */
+.pcw-exc-chips { display:flex; flex-direction:column; gap:5px; }
+.pcw-exc { display:flex; align-items:center; gap:8px; width:100%; padding:7px 10px; border-radius:9px; cursor:pointer;
+  border:1px solid #eae7f1; background:#fff; text-align:left; transition:background .12s, border-color .12s; }
+.pcw-exc:hover { background:#f8f6fc; }
+.pcw-exc.on { border-color:#6642aa; box-shadow:0 0 0 1px #6642aa inset; background:#f1edf9; }
+.pcw-exc .ic { width:24px; height:24px; flex-shrink:0; border-radius:7px; display:flex; align-items:center; justify-content:center; font-size:13px; }
+.pcw-exc .tx { flex:1; min-width:0; font-size:11px; font-weight:700; color:#434050; }
+.pcw-exc .n { font-size:12px; font-weight:800; font-variant-numeric:tabular-nums; }
+.pcw-exc.danger .ic { background:#fdecea; color:#c62828; } .pcw-exc.danger .n { color:#c62828; }
+.pcw-exc.warn .ic { background:#fff4e0; color:#c98a00; } .pcw-exc.warn .n { color:#c98a00; }
+.pcw-exc.info .ic { background:#e8f0fd; color:#2c62c0; } .pcw-exc.info .n { color:#2c62c0; }
+.pcw-exc.purple .ic { background:#f1ebfb; color:#7c3aed; } .pcw-exc.purple .n { color:#7c3aed; }
+.pcw-exc.muted { opacity:.55; cursor:default; }
+.pcw-exc.muted:hover { background:#fff; }
+.pcw-ins-allclear { display:flex; align-items:center; gap:8px; padding:9px 11px; border-radius:9px; background:#eefaf2;
+  border:1px solid #bfe6cd; color:#178a4e; font-size:11.5px; font-weight:700; }
+.pcw-ins-allclear i { font-size:16px; }
+.pcw-ins-mover { display:flex; align-items:center; gap:8px; padding:5px 2px; border-bottom:1px dashed #eef2f0; }
+.pcw-ins-mover:last-child { border-bottom:none; }
+.pcw-ins-mover .nm { flex:1; min-width:0; font-size:10.5px; font-weight:700; color:#3c3846; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-ins-mover .pct { font-size:10.5px; font-weight:800; font-variant-numeric:tabular-nums; }
+.pcw-ins-mover .pct.up { color:#178a4e; } .pcw-ins-mover .pct.down { color:#c62828; }
+/* Name + "no. · position · department". Long department strings
+   (ADMINISTRATION/FINANCE/HR/BILLING/…) are clipped to one line so the panel
+   never scrolls sideways — the full text stays in the title tooltip. */
+.pcw-sum-emp { font-size:12.5px; font-weight:800; color:#3c3846;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-sum-emp a { color:inherit; text-decoration:none; }
+.pcw-sum-emp a:hover { color:#6642aa; text-decoration:underline; }
+.pcw-sum-emp a i { font-size:11px; color:#6642aa; vertical-align:1px; }
+.pcw-sum-sub { font-size:10.5px; color:#948ea5; margin:1px 0 9px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcw-sum-sent { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; color:#3557b7;
+  background:#eef2fd; border:1px solid #ccd9f7; border-radius:8px; padding:5px 9px; margin:-4px 0 9px; }
+.pcw-sum-sent b { font-weight:800; }
+.pcw-sum-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+.pcw-sum-tile { border:1px solid #e8eeeb; border-radius:8px; padding:6px 4px; background:#fafdfb; text-align:center; }
+.pcw-sum-tile .v { font-size:12.5px; font-weight:800; color:#107c41; line-height:1.1; font-variant-numeric:tabular-nums; }
+.pcw-sum-tile .l { font-size:8.5px; color:#948ea5; text-transform:uppercase; letter-spacing:.3px; margin-top:2px; }
+.pcw-sum-tile.ded .v { color:#c62828; } .pcw-sum-tile.net .v { color:#1e50a0; }
+.pcw-sum-tile.abs .v { color:#c98a00; } .pcw-sum-tile.lt .v { color:#e2574c; }
+/* ── Per-employee unlock (mid-review editing) ── */
+.pcw-unlock-note { display:flex; gap:7px; align-items:flex-start; margin:9px 0 0; padding:7px 9px;
+  background:#fff8e1; border:1px solid #ffe082; border-radius:8px; font-size:11px; color:#8a6100; line-height:1.4; }
+.pcw-unlock-note i { font-size:14px; color:#c98a00; flex-shrink:0; margin-top:1px; }
+.pcw-unlock-note .why { font-style:italic; opacity:.85; }
+.pcw-btn.warn { background:#fff8e1; border-color:#ffe082; color:#8a6100; }
+.pcw-btn.warn:hover { background:#ffefc2; }
+.pcw-unlock-flag { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700;
+  padding:3px 10px; border-radius:20px; background:#fff8e1; border:1px solid #ffe082; color:#8a6100; }
+.pcw-sum-actions { display:flex; flex-wrap:wrap; gap:5px; margin-top:10px; }
+.pcw-sum-actions .pcw-btn { padding:5px 10px; font-size:11px; flex:1 1 45%; justify-content:center; white-space:nowrap; }
+/* Internal admin notes — read-only list, same content and style as
+   dtr-documents.php's notes panel (no add form here). */
+.ddv-notes { margin-top:11px; border-top:1px dashed #e7e6ed; padding-top:9px; }
+.ddv-notes-hd { display:flex; align-items:center; gap:5px; font-size:10.5px; font-weight:800; color:#635f73; margin-bottom:6px; }
+.ddv-notes-hd .lock { font-size:9px; font-weight:800; color:#948ea5; background:#eef2f0; border-radius:10px; padding:1px 6px; }
+.ddv-note { display:flex; gap:7px; align-items:flex-start; padding:6px 8px; border-radius:8px; margin-bottom:5px; border:1px solid; }
+.ddv-note .nt { flex:1; min-width:0; font-size:11px; font-weight:600; color:#434050; line-height:1.35; word-break:break-word; }
+.ddv-note .nm { display:block; font-size:8.5px; color:#9d9baa; margin-top:2px; font-weight:600; }
+.ddv-note.info     { background:#eef4fd; border-color:#c9def7; }
+.ddv-note.good     { background:#eefaf2; border-color:#bfe6cd; }
+.ddv-note.watch    { background:#fff8e6; border-color:#f2e0a6; }
+.ddv-note.critical { background:#fdecec; border-color:#f3c9c9; }
+.ddv-note .lv { font-size:14px; flex-shrink:0; line-height:1.2; }
+.ddv-note-empty { font-size:10px; color:#a9a6b4; padding:2px 2px 6px; }
+
+/* The per-day punch tables in the DTR modal reuse the original .al-day /
+   .att-log-* styles defined at the top of this page. Logs cards sit on the
+   modal's grey background, so give the day blocks a white card. */
+#al-logs .al-day { background:#fff; border:1px solid #e1dfdd; border-radius:8px; padding:9px 11px; }
+
+/* Fixed modal height so switching tabs never resizes the dialog — the active
+   pane scrolls inside a constant-height body instead. */
+#modal-att-logs .modal-dialog { max-width:840px; }
+#modal-att-logs .modal-content { height:min(86vh, 900px); min-height:520px; }
+
+/* ── DTR modal footer — period totals beside the Close button ── */
+#modal-att-logs .al-foot { justify-content:flex-start; gap:8px; padding-left:14px; padding-right:14px;
+  border-top:1px solid #e1dfdd; background:#f7faf8; }
+.al-foot-stats { display:flex; flex-wrap:wrap; align-items:center; gap:5px; min-width:0; }
+.al-fs { display:inline-flex; align-items:center; gap:4px; padding:3px 9px; border-radius:20px; line-height:1.35;
+  font-size:10.5px; font-weight:700; color:#5b6f62; background:#fff; border:1px solid #e1e8e4; }
+.al-fs i { font-size:12px; color:#107c41; }
+.al-fs b { font-weight:800; color:#3c3846; font-variant-numeric:tabular-nums; }
+.al-fs em { font-style:normal; font-weight:700; font-size:9px; letter-spacing:.3px; text-transform:uppercase; color:#948ea5; }
+.al-fs.days i, .al-fs.days b { color:#673bb6; }
+.al-fs.ot   i, .al-fs.ot   b { color:#c98a00; }
+.al-fs.ut   i, .al-fs.ut   b { color:#1565c0; }
+.al-fs.late i, .al-fs.late b { color:#c62828; }
+.al-fs.zero { opacity:.55; }
+.al-fs.rv.ok   { background:#e6f7ee; border-color:#b7e4c7; color:#178a4e; }
+.al-fs.rv.ok i { color:#178a4e; }
+.al-fs.rv.bad   { background:#fdece5; border-color:#f5c6b3; color:#c0491f; }
+.al-fs.rv.bad i { color:#c0491f; }
+.al-fs.rv.wait   { background:#fff6e2; border-color:#f2dfae; color:#a9700a; }
+.al-fs.rv.wait i { color:#a9700a; }
+
+/* ── Tabs inside the Daily Time Record modal (DTR · Logs · Messages · Notes) ── */
+.pcw-tabs { display:flex; gap:4px; border-bottom:2px solid #ddd9e7; margin-bottom:12px; flex-wrap:wrap;
+  position:sticky; top:0; z-index:5; background:#f0eff2; padding-top:2px; }
+.pcw-tab { display:inline-flex; align-items:center; gap:5px; border:none; background:transparent; cursor:pointer;
+  padding:8px 14px; margin-bottom:-2px; font-size:12px; font-weight:700; color:#635f73;
+  border-bottom:2px solid transparent; border-radius:6px 6px 0 0; transition:color .12s, border-color .12s, background .12s; }
+.pcw-tab i { font-size:14px; }
+.pcw-tab:hover:not(.active) { background:#eceaf2; color:#4e3483; }
+.pcw-tab.active { color:#4e3483; border-bottom-color:#6642aa; }
+.pcw-tab-count { font-size:9.5px; font-weight:800; line-height:1; min-width:16px; text-align:center;
+  background:#e1dcec; color:#4f3288; border-radius:9px; padding:2px 5px; }
+.pcw-tab.active .pcw-tab-count { background:#6642aa; color:#fff; }
+.pcw-tab-pane { display:none; }
+.pcw-tab-pane.active { display:block; }
+.pcw-tab-empty { text-align:center; color:#948ea5; font-size:12.5px; padding:34px 12px; }
+.pcw-tab-empty i { font-size:26px; display:block; margin-bottom:8px; opacity:.5; }
+
+/* Admin ↔ employee record messages — read-only chat bubbles in the DTR modal
+   (same look as dtr-documents.php's per-record conversation) */
+.pcw-chat { display:flex; flex-direction:column; gap:6px; padding:2px; }
+.pcw-bub { max-width:82%; padding:6px 10px; border-radius:11px; font-size:11.5px; line-height:1.4;
+  word-break:break-word; position:relative; }
+.pcw-bub.me   { align-self:flex-end; background:#e1dcec; color:#4f3288; border-bottom-right-radius:3px; }
+.pcw-bub.them { align-self:flex-start; background:#f1f3f2; color:#3c3846; border-bottom-left-radius:3px; }
+.pcw-bub .m { display:block; font-size:8.5px; opacity:.7; margin-top:3px; }
+.pcw-bub-day { display:inline-block; font-size:8px; font-weight:800; letter-spacing:.4px; text-transform:uppercase;
+  background:rgba(0,0,0,.06); border-radius:8px; padding:0 6px; margin-right:5px; vertical-align:1px; }
+
+/* Paper frame for the Daily Time Record modal (Form 48 styles come from
+   assets2/css/dtr-form48.css, shared with dtr-documents.php) */
+.pcw-dtr-paper { background:#fffefb; border:1px solid #dcd8cc; border-radius:2px;
+  box-shadow:0 2px 10px rgba(60,55,40,.12); padding:20px 24px 16px;
+  font-family:'Times New Roman', Times, serif; color:#1a1a1a; }
+
+@media (max-width:1199.98px) {
+  body { overflow:auto; }
+  .pcw-app { height:auto; min-height:100vh; }
+  .pcw-wrap { display:flex; flex-direction:column; }
+  .pcw-left { max-height:430px; }
+  .pcw-center { min-height:70vh; }
+  .pcw-right .pcw-panel.grow { max-height:560px; }
+}
+
+/* The classic table is a read-only PREVIEW now — its inputs stay in the DOM
+   as the data store for the save pipeline, but can't be edited directly. */
+#modal-table-editor .input-class,
+#modal-table-editor #table-1 input.input-class {
+  pointer-events:none;
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+  font-weight:700;
+  text-align:right;
+}
+
+/* Full-height chain inside the fullscreen preview modal: modal body → panel →
+   form → scroll container, so the table always fills the viewport. */
+#modal-table-editor .modal-body { height:100vh; max-height:none; display:flex; flex-direction:column; overflow:hidden; }
+#modal-table-editor .xl-panel { flex:1; min-height:0; }
+#modal-table-editor .xl-panel-body { display:flex; flex-direction:column; }
+#modal-table-editor .xl-panel-body > .pay-stats-strip,
+#modal-table-editor .xl-panel-body > .pay-toolbar { flex-shrink:0; }
+#modal-table-editor #form-payroll { flex:1; min-height:0; display:flex; flex-direction:column; }
+#modal-table-editor .table-responsive2 { flex:1; min-height:0; height:auto !important; }
+
+/* Print: only the computation sheet */
+@media print {
+  body { overflow:visible; }
+  body * { visibility:hidden; }
+  #pcw-paper, #pcw-paper * { visibility:visible; }
+  #pcw-paper { position:absolute; left:0; top:0; width:100%; max-width:none; border:none; box-shadow:none; zoom:1 !important; }
+}

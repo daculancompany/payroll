@@ -15,7 +15,7 @@ if (!isset($_GET['id'])) { return; }
 $id = (int)$_GET['id'];
 
 $query = "SELECT a.*,
-    l.date_from, l.date_to, l.settings, l.ref_no,
+    l.date_from, l.date_to, l.settings, l.ref_no, l.type AS payroll_type,
     f.site_code, f.site_name, f.site_address,
     e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay,
     d.name as department, p.name as position
@@ -48,42 +48,41 @@ $contributions_settings = json_decode($payroll['settings'], true) ?: [];
 // which is per_day/1440.)
 $dayHours         = day_hours_or_default($payroll['day_hours'] ?? null);
 $perMinute        = $payroll['per_day'] / ($dayHours * 60);
-$overtime_amount  = $payroll['ot'] * $payroll['ot_rate'];
-$undertime_amount = $payroll['under_time'] * $perMinute;   // informational only — not deducted in semi-monthly payroll
-$late_amount      = $payroll['late'] * $perMinute;
-$absent_amount    = $payroll['absent'] * $payroll['per_day'];
-$allowance_amount = $payroll['allowance_amount'] * $payroll['allowance_days'];
+// Every earnings figure on this document comes from payroll_earnings()
+// (db_connect.php) — the same function the payroll table, the register, the
+// exports and the employee portal use. This file used to keep its own copy of
+// the arithmetic, and the copy had drifted twice over: it priced rest-day duty
+// as a whole extra day for DAILY staff (it is a 30% premium there, the day
+// itself already being inside `present`), and its daily gross left out rest-day
+// AND holiday pay entirely. Both made the payslip disagree with the payroll
+// sheet it is printed from.
+$__e = payroll_earnings($payroll);
+
+$overtime_amount  = $__e['overtime'];
+$undertime_amount = $__e['under_amt'];   // informational only — not deducted in semi-monthly payroll
+$late_amount      = $__e['late_amt'];
+$absent_amount    = $__e['absent_amt'];
+$allowance_amount = $__e['allowance'];
 $monthly_basic    = $payroll['basic_pay'];
 
-$legal_holiday_amt   = $payroll['legal_holiday']   * $payroll['per_day'];
-$sunday_duty_amt     = $payroll['sunday_duty']      * $payroll['per_day'];
-// NOT a day-length divisor: /8 * 2.4 collapses to * 0.3, the 30% special
-// holiday premium. Leave the literals alone.
-$special_holiday_amt = (($payroll['per_day'] / 8) * 2.4) * $payroll['special_holiday'];
+$legal_holiday_amt   = $__e['legal_amt'];
+$sunday_duty_amt     = $__e['rest_amt'];
+$special_holiday_amt = $__e['special_amt'];
 // Night differential: hours worked 10PM–6AM, premium priced at calc time and
 // stored on the item (payroll_items.nsd_hours / nsd_amount).
-$nsd_amount = (float)($payroll['nsd_amount'] ?? 0);
+$nsd_amount = $__e['nsd_amt'];
 
-// Gross per the employee's pay basis — MUST mirror get_payroll_rows_data() /
-// the payroll details table, or the payslip's Gross − Deductions ≠ Net.
+// Pay basis, for the labels and the two basic lines below.
 //   monthly/fixed: (monthly basic + allowance − absent) / 2, + OT + holiday
 //                  premiums, − late. Undertime is NOT deducted.
-//   daily:         (days present + paid leave) × daily rate, + OT + allowance,
-//                  − late. (No absent line: daily staff are paid per day worked.)
+//   daily:         (days present + paid leave) × daily rate, + OT + allowance
+//                  + holiday/rest-day premiums, − late. (No absent line: daily
+//                  staff are paid per day worked.)
 $rate_type  = $payroll['rate_type'] ?? 'daily';
-$is_monthly = in_array($rate_type, ['monthly', 'fixed'], true);
-$semi_monthly_amount = ($monthly_basic + $allowance_amount - $absent_amount) / 2;
-$daily_basic_amount  = ($payroll['present'] + (float)($payroll['paid_leave'] ?? 0)) * $payroll['per_day'];
-if ($is_monthly) {
-    $gross_salary = $semi_monthly_amount
-                  + $overtime_amount + $legal_holiday_amt + $sunday_duty_amt + $special_holiday_amt
-                  + $nsd_amount
-                  - $late_amount;
-} else {
-    $gross_salary = $daily_basic_amount + $overtime_amount + $allowance_amount
-                  + $nsd_amount
-                  - $late_amount;
-}
+$is_monthly = $__e['is_monthly'];
+$semi_monthly_amount = $__e['subtotal'];
+$daily_basic_amount  = $__e['basic'];
+$gross_salary        = $__e['gross'];
 
 // Build deductions breakdown
 $contributions_list = [];
@@ -148,7 +147,20 @@ $gross_salary += $ps_extra_add;
 $total_all_deductions = $total_contributions + $total_deductions + $total_loans
                       + $other_deduction + $tax + $jei_advances + $jcc_advances + $sss_fund
                       + $ps_extra_less;
-$net_pay = $payroll['net'];
+
+// Refunds are an addition, listed with the deduction block on the sheet.
+$ps_refunds = 0.0;
+foreach ((json_decode($payroll['refunds'] ?? '', true) ?: []) as $__r) {
+    $ps_refunds += (float) ($__r['amount'] ?? 0);
+}
+
+// Net is DERIVED from the figures printed above it, never read back from
+// payroll_items.net. That column is written by the payroll screen when it saves
+// and is NOT refreshed by a recalculation, so a payslip that mixed a live gross
+// with the stored net printed two numbers from different moments: after a
+// recalculate changed gross, Gross − Deductions no longer equalled the Net on
+// the same page. Same arithmetic as resync_item_net().
+$net_pay = $gross_salary - $total_all_deductions + $ps_refunds + $adjustment;
 
 // ── Employee Rate box ──
 $hourly_rate = $payroll['per_day'] / $dayHours;
@@ -738,15 +750,20 @@ body.has-toolbar { padding-top: 50px; }
     <?php endif; ?>
     <?php endif; ?>
 
-    <?php // Holiday premiums are part of gross only on the monthly/fixed formula.
-    if ($is_monthly && ($payroll['legal_holiday'] > 0 || $payroll['sunday_duty'] > 0 || $payroll['special_holiday'] > 0)): ?>
+    <?php // Holiday and rest-day premiums are part of gross on BOTH pay bases, so
+    // both must be itemised — this block used to be gated on $is_monthly, which
+    // left a daily employee's payslip showing a gross larger than the lines above it.
+    if ($payroll['legal_holiday'] > 0 || $payroll['sunday_duty'] > 0 || $payroll['special_holiday'] > 0): ?>
     <div class="grp-lbl">Holidays &amp; Extra</div>
     <?php if ($payroll['legal_holiday'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $payroll['legal_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($legal_holiday_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['sunday_duty'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Rest Day Duty (<?= $payroll['sunday_duty'] ?> day)</td><td class="sub-amt">₱ <?= number_format($sunday_duty_amt, 2) ?></td></tr></table>
+    <?php // Daily staff already have the rest day inside Days Present, so what is
+    // added here is the +30% premium — the label has to say so or the figure
+    // reads as a short-paid whole day. ?>
+    <table class="item"><tr><td class="sub-lbl"><?= $is_monthly ? 'Rest Day Duty' : 'Rest Day Premium' ?> (<?= $payroll['sunday_duty'] ?> day<?= $payroll['sunday_duty'] > 1 ? 's' : '' ?><?= $is_monthly ? '' : ' × 30%' ?>)</td><td class="sub-amt">₱ <?= number_format($sunday_duty_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['special_holiday'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $payroll['special_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($special_holiday_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $payroll['special_holiday'] ?> day<?= $payroll['special_holiday'] > 1 ? 's' : '' ?> × 30%)</td><td class="sub-amt">₱ <?= number_format($special_holiday_amt, 2) ?></td></tr></table>
     <?php endif; endif; ?>
 
     <?php if ($payroll['ot'] > 0): ?>

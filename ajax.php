@@ -88,6 +88,15 @@ if (in_array($action, $DEVICE_ACTIONS, true)) {
 	if (function_exists('csrf_require')) {
 		csrf_require();
 	}
+
+	// Role gate. Being signed in is not the same as being allowed: the screens
+	// behind these actions are closed to some roles (payroll/DTR are admin-only,
+	// HR has a people-operations slice), so the endpoints must be closed too —
+	// otherwise a hidden menu item is the only thing standing in the way.
+	// The lists live in db_connect.php next to the page allowlists.
+	if (function_exists('action_allowed') && !action_allowed($action)) {
+		ajax_deny('Your role does not have access to this action.');
+	}
 }
 
 
@@ -552,6 +561,9 @@ if ($action == "save_calendar_event") {
 }
 if ($action == "delete_calendar_event") {
 	echo json_encode($crud->delete_calendar_event());
+}
+if ($action == "calendar_event_impact") {
+	echo json_encode($crud->calendar_event_impact());
 }
 if ($action == "get_calendar_events") {
 	echo json_encode($crud->get_calendar_events());

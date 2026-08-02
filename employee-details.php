@@ -7,6 +7,13 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 
 $emp_id = (int) $_GET['id']; // Cast to integer for security
 
+// One global answer for "may this role change anything here?" — the same
+// can_edit() that ajax.php enforces on every write endpoint (db_connect.php).
+// HR reads people records but does not change them, so their buttons are not
+// rendered at all rather than rendered and refused.
+// Leave credits/overrides stay editable: leave IS HR's own workflow.
+$emp_readonly = !can_edit('employee-details');
+
 // Prepare the SQL statement to prevent SQL injection
 $stmt = $conn->prepare("
     SELECT e.*, p.name AS pname, c.clasification, d.name AS dept_name
@@ -296,10 +303,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <span class="emp-side-stat-lbl"><i class="ri-moon-line me-1"></i>Day Off</span>
                                         <span class="emp-side-stat-val d-flex align-items-center gap-2">
                                             <?= ed_rest_pills($cur_rest_days) ?>
+                                            <?php if (!$emp_readonly): ?>
                                             <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:11px;"
                                                     data-bs-toggle="modal" data-bs-target="#modal-day-off" title="Update day off">
                                                 <i class="ri-edit-line"></i>
                                             </button>
+                                            <?php endif; ?>
                                         </span>
                                     </div>
                                     <?php if ($loan_agg['bal'] > 0): ?>
@@ -606,6 +615,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     </td>
                                                     <td class="text-center">
                                                         <div style="display:flex;gap:4px;justify-content:center;">
+                                                            <?php if (!$emp_readonly): ?>
                                                             <button class="btn btn-sm btn-outline-primary" type="button"
                                                                 loan_id="<?= $row['loan_id'] ?>" employee_id="<?= $row['employee_id'] ?>"
                                                                 loan_balance="<?= $row['loan_balance'] ?>" damount="<?= $row['damount'] ?>"
@@ -616,6 +626,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                                 data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Loan">
                                                                 <i class="ri-edit-line"></i>
                                                             </button>
+                                                            <?php endif; ?>
                                                             <button class="btn btn-sm btn-outline-secondary" type="button"
                                                                 onclick="loanHistory(<?= $row['loan_id'] ?>)"
                                                                 data-bs-toggle="tooltip" data-bs-placement="top" title="View History">
@@ -659,6 +670,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     <td><span style="font-weight:600;"><?= esc($row['contribution']) ?></span></td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['amount'], 2) ?></span></td>
                                                     <td class="text-center">
+                                                        <?php if (!$emp_readonly): ?>
                                                         <button type="button"
                                                             data-id="<?= $row['id'] ?>" data-name="<?= esc($row['contribution']) ?>" data-amount="<?= $row['amount'] ?>"
                                                             class="btn btn-sm btn-outline-primary"
@@ -666,6 +678,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Amount">
                                                             <i class="ri-edit-line"></i>
                                                         </button>
+                                                        <?php endif; ?>
                                                     </td>
                                                 </tr>
                                             <?php endwhile; ?>
@@ -779,11 +792,13 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                         <?php endif; ?>
                                                     </td>
                                                     <td class="text-center">
+                                                        <?php if (!$emp_readonly): ?>
                                                         <button type="button" data-id="<?= $row['id'] ?>"
                                                             class="btn btn-sm btn-outline-danger remove_deduction"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Delete Deduction">
                                                             <i class="ri-delete-bin-line"></i>
                                                         </button>
+                                                        <?php endif; ?>
                                                     </td>
                                                 </tr>
                                             <?php endwhile; ?>
@@ -886,9 +901,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 <!-- Current Schedule Card -->
                                 <div class="d-flex align-items-center justify-content-between mb-3 mt-2">
                                     <h6 class="mb-0 fw-semibold"><i class="ri-time-line me-1 text-success"></i>Current Schedule</h6>
+                                    <?php if (!$emp_readonly): ?>
                                     <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#modal-assign-schedule">
                                         <i class="ri-edit-line me-1"></i>Change Schedule
                                     </button>
+                                    <?php endif; ?>
                                 </div>
 
                                 <?php if ($cur_sched): ?>
@@ -991,6 +1008,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <td><small class="text-muted"><?= esc($h['notes'] ?? '') ?></small></td>
                                                 <?php if ($ed_can_delete): ?>
                                                 <td class="text-center">
+                                                    <?php if (!$emp_readonly): ?>
                                                     <button type="button" class="btn btn-sm btn-outline-danger js-sched-del"
                                                             data-id="<?= (int) $h['id'] ?>"
                                                             data-label="<?= esc($h['description']) ?> (from <?= date('M d, Y', strtotime($h['effective_from'])) ?>)"
@@ -999,6 +1017,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                             style="padding:2px 7px;">
                                                         <i class="ri-delete-bin-line"></i>
                                                     </button>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <?php endif; ?>
                                             </tr>
@@ -1432,6 +1451,9 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                             $__rd_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
                             $__rd_lbl   = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
                             ?>
+                            <!-- Always post the key, so unticking every day means "no rest days"
+                                 and not "keep the current ones" (see applyScheduleChange). -->
+                            <input type="hidden" name="rest_days[]" value="">
                             <div class="d-flex gap-2 flex-wrap">
                                 <?php foreach ($__rd_lbl as $i => $lb): ?>
                                     <div class="form-check">

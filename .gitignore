@@ -1,2 +1,7 @@
 # Firebase service-account credentials — never commit
 firebase-service-account.json
+
+# Runtime logs, generated PDF cache, DB dumps — keep the folder, not the contents
+logs/*
+!logs/.gitkeep
+!logs/.htaccess

@@ -1,5 +1,13 @@
 <?php
+require_once __DIR__ . '/includes/session_bootstrap.php';
 include 'db_connect.php';
+// This export had no auth check at all — a plain GET dumped a whole payroll.
+// It now requires a session and the same admin-only payroll access as the page.
+if (empty($_SESSION['is_login'])) {
+    header('Location: login.php');
+    exit;
+}
+require_page_access('payroll', 'text');
 if (!isset($_GET['id'])) {
     return;
 }

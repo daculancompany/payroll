@@ -37,10 +37,13 @@ $loan_res      = $conn->query("SELECT COUNT(DISTINCT employee_id) AS borrowers, 
 $loan_data     = $loan_res ? $loan_res->fetch_assoc() : ['borrowers'=>0,'total'=>0];
 
 // ── Role-based sections ─────────────────────────────────────────
-// Role 7 (Auditor) is attendance-only in the navbar, so its dashboard hides
-// payroll finance & leave management. Approval cards go to HR / Dept Head / Admin.
+// The dashboard is the one screen everybody lands on, so its sections follow
+// the same gate as the pages they link to — otherwise a role locked out of
+// Payroll would still read the net-pay totals off a card here.
+// Role 7 (Auditor) additionally has no leave management.
 $can_approve  = in_array($login_role, [1, 8, 9], true);
-$show_finance = $login_role !== 7;
+$show_finance = page_allowed('payroll') && $login_role !== 7;   // payroll figures
+$show_dtr     = page_allowed('dtr');                            // DTR cards & links
 $show_leave   = $login_role !== 7;
 
 // ── Leave overview stats ────────────────────────────────────────
@@ -298,7 +301,11 @@ $snap = $snap_res ? $snap_res->fetch_assoc() : null;
 // ── Payroll by department — reusable so the AJAX endpoint shares it ──
 // (home-dashboard-ajax.php includes this same helper via home-dashboard-data.php)
 require_once 'home-dashboard-data.php';
-$deptpay = dashboard_deptpay($conn, $snap ? (int)$snap['id'] : 0);
+// Passing 0 returns empty series. A role without payroll access must not
+// receive these figures at all — hiding the cards is not enough while the
+// numbers still ship to the browser as chart JSON in the page source.
+$deptpay = dashboard_deptpay($conn, ($show_finance && $snap) ? (int)$snap['id'] : 0);
+if (!$show_finance) { $netpay_labels = []; $netpay_data = []; }
 $deptpay_labels = $deptpay['labels'];
 $deptpay_emp    = $deptpay['emp'];
 $deptpay_net    = $deptpay['net'];
@@ -481,7 +488,7 @@ $recent_dtr = $conn->query("
 
             <!-- ── ROW 1b: Action needed — pending approvals (approver roles only) ── -->
             <?php
-            $has_approver_items = $can_approve && ($pending_leaves || $pending_att_req || $pending_dtr);
+            $has_approver_items = $can_approve && ($pending_leaves || $pending_att_req || ($show_dtr && $pending_dtr));
             $has_finance_items  = $show_finance && ($pay_review || $open_payroll_disputes);
             ?>
             <?php if ($has_approver_items || $has_finance_items || ($can_approve && $open_dtr_disputes)): ?>
@@ -518,6 +525,7 @@ $recent_dtr = $conn->query("
                         <i class="ri-arrow-right-line ac-go"></i>
                     </a>
                 </div>
+                <?php if ($show_dtr): ?>
                 <div class="col-md-4">
                     <a href="dtr" class="action-card" style="--ac:#fd7e14;">
                         <div class="ac-ic"><i class="ri-time-line"></i></div>
@@ -528,6 +536,7 @@ $recent_dtr = $conn->query("
                         <i class="ri-arrow-right-line ac-go"></i>
                     </a>
                 </div>
+                <?php endif; ?>
                 <?php endif; ?>
                 <?php if ($show_finance && $pay_review): ?>
                 <div class="col-md-4">
@@ -553,7 +562,7 @@ $recent_dtr = $conn->query("
                     </a>
                 </div>
                 <?php endif; ?>
-                <?php if ($can_approve && $open_dtr_disputes): ?>
+                <?php if ($can_approve && $show_dtr && $open_dtr_disputes): ?>
                 <div class="col-md-4">
                     <a href="dtr" class="action-card" style="--ac:#dc3545;">
                         <div class="ac-ic"><i class="ri-error-warning-line"></i></div>

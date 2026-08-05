@@ -120,11 +120,50 @@ $filteredRecordsQuery = "SELECT COUNT(*) AS total FROM payroll";
 $filteredRecordsResult = $conn->query($filteredRecordsQuery);
 $filteredRecords = $filteredRecordsResult->fetch_assoc()['total'];
 
+// ── Summary figures for the stat cards above the list (same p2 scope as the table).
+//    Only computed when the client asks (first load / after create-delete-lock) so
+//    search keystrokes and pagination stay as light as before. ──
+$summary = null;
+if (!empty($_POST['with_summary'])) {
+$p2esc = mysqli_real_escape_string($conn, $p2);
+
+$counts = $conn->query("SELECT COUNT(*) AS total,
+        COALESCE(SUM(status = 0), 0) AS s_new,
+        COALESCE(SUM(status = 1), 0) AS s_calculated,
+        COALESCE(SUM(status = 3), 0) AS s_review,
+        COALESCE(SUM(status = 2), 0) AS s_locked,
+        COALESCE(SUM(YEAR(date_from) = YEAR(CURDATE())), 0) AS this_year
+    FROM payroll WHERE p2 = '$p2esc'")->fetch_assoc();
+
+$latest = $conn->query("SELECT p.ref_no, p.date_from, p.date_to, p.status,
+        (SELECT COUNT(*) FROM payroll_items pi WHERE pi.payroll_id = p.id) AS emp_count,
+        (SELECT COALESCE(SUM(pi.net), 0) FROM payroll_items pi WHERE pi.payroll_id = p.id) AS net_total
+    FROM payroll p WHERE p.p2 = '$p2esc'
+    ORDER BY p.date_from DESC, p.id DESC LIMIT 1")->fetch_assoc();
+
+$summary = array(
+    "total"        => (int) $counts['total'],
+    "this_year"    => (int) $counts['this_year'],
+    "in_progress"  => (int) $counts['s_new'] + (int) $counts['s_calculated'] + (int) $counts['s_review'],
+    "s_new"        => (int) $counts['s_new'],
+    "s_calculated" => (int) $counts['s_calculated'],
+    "s_review"     => (int) $counts['s_review'],
+    "s_locked"     => (int) $counts['s_locked'],
+    "latest"       => $latest ? array(
+        "ref_no"    => htmlspecialchars($latest['ref_no']),
+        "period"    => date("M d", strtotime($latest['date_from'])) . " – " . date("M d, Y", strtotime($latest['date_to'])),
+        "emp_count" => (int) $latest['emp_count'],
+        "net_total" => round((float) $latest['net_total'], 2),
+    ) : null,
+);
+}
+
 // Prepare response
 $response = array(
     "draw" => intval($_POST['draw']),
     "recordsTotal" => $totalRecords,
     "recordsFiltered" => $filteredRecords,
+    "summary" => $summary,
     "data" => $data
 );
 

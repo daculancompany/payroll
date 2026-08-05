@@ -1674,6 +1674,90 @@ class Action
         return ['result' => true, 'data' => $rows];
     }
 
+    /**
+     * Compact employee summary for the quick-view drawer
+     * (component/employee_quick_view.php — daily board, payroll sheet, DTR
+     * screens). Replaces the old employee-view-server.php and keeps its
+     * visibility rules: government IDs and the bank account ship MASKED
+     * (last 4) for everyone, and compensation is omitted for Timekeepers
+     * (role 5) and the view-only DTR role (6). Mapped read-only onto
+     * 'employee-details' in db_connect.php, so every role that may LOOK at
+     * an employee record can call it — and nobody else.
+     */
+    function employee_quick_view()
+    {
+        $id = intval($_REQUEST['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing employee id'];
+
+        $stmt = $this->db->prepare(
+            "SELECT e.id, e.employee_no, e.employee_code, e.firstname, e.middlename,
+                    e.lastname, e.ext, e.bday, e.rate_type, e.status,
+                    e.salary, e.basic_pay, e.allowance_rate,
+                    e.sss_no, e.ph_no, e.hdmf_no, e.tin_no, e.bank_account_no,
+                    p.name AS position, d.name AS department,
+                    c.clasification AS classification, b.bank_name
+             FROM employee e
+             LEFT JOIN position p ON p.id = e.position_id
+             LEFT JOIN department d ON d.id = e.department_id
+             LEFT JOIN clasification c ON c.id = e.clasification_id
+             LEFT JOIN banks b ON b.id = e.bank_id
+             WHERE e.id = ?"
+        );
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $emp = $stmt->get_result()->fetch_assoc();
+        if (!$emp) return ['result' => false, 'message' => 'Employee not found'];
+
+        // The shift in effect today, same date-window rule the daily board uses.
+        $s = $this->db->prepare(
+            "SELECT ws.description, ws.start_time, ws.end_time, es.rest_days
+             FROM employee_schedules es
+             INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+             WHERE es.employee_id = ? AND es.effective_from <= CURDATE()
+               AND (es.effective_to IS NULL OR es.effective_to >= CURDATE())
+             ORDER BY es.effective_from DESC LIMIT 1"
+        );
+        $s->bind_param('i', $id);
+        $s->execute();
+        $shift = $s->get_result()->fetch_assoc();
+        if ($shift) {
+            $shift['time'] = date('h:i A', strtotime($shift['start_time']))
+                . ' – ' . date('h:i A', strtotime($shift['end_time']));
+            $DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+            $shift['rest'] = implode(', ', array_map(
+                fn($d) => $DAYS[(int) $d] ?? $d,
+                array_filter(array_map('trim', explode(',', (string) $shift['rest_days'])), fn($v) => $v !== '')
+            ));
+            unset($shift['rest_days']);
+        }
+
+        // Everything but the last 4 characters becomes dots; the full numbers
+        // live only on the employee-details page.
+        $mask = function ($v) {
+            $v = trim((string) $v);
+            if ($v === '') return null;
+            return strlen($v) <= 4 ? $v : '•••• ' . substr($v, -4);
+        };
+        foreach (['sss_no', 'ph_no', 'hdmf_no', 'tin_no', 'bank_account_no'] as $k) {
+            $emp[$k] = $mask($emp[$k]);
+        }
+
+        // Compensation is a glance for roles that may see pay elsewhere; the
+        // same roles employee-view-server.php used to blank it for.
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        $pay = null;
+        if (!(function_exists('is_timekeeper') && is_timekeeper($role)) && $role !== 6) {
+            $pay = [
+                'rate_type' => $emp['rate_type'],
+                'rate'      => (float) ($emp['rate_type'] === 'monthly' ? $emp['salary'] : $emp['basic_pay']),
+                'allowance' => (float) $emp['allowance_rate'],
+            ];
+        }
+        unset($emp['salary'], $emp['basic_pay'], $emp['allowance_rate']);
+
+        return ['result' => true, 'employee' => $emp, 'shift' => $shift, 'pay' => $pay];
+    }
+
     function save_attendance_request()
     {
         $employee_id  = intval($_POST['employee_id'] ?? 0);
@@ -3061,6 +3145,7 @@ class Action
         if ($recalculate) {
             $mq = $this->db->query(
                 "SELECT employee_id, allowance_days, jei_advances, jcc_advances, tax,
+                        COALESCE(tax_override, 0) AS tax_override,
                         other_deduction, adjustment, adjustment_remarks
                  FROM payroll_items WHERE payroll_id = " . $id
             );
@@ -3103,6 +3188,50 @@ class Action
             // Bind the date parameters only
             $date_from = date("Y-m-d", strtotime($pay['date_from']));
             $date_to = date("Y-m-d", strtotime($pay['date_to']));
+
+            // contribution_id → name, so the per-employee loop can tell which
+            // rows are SSS / PhilHealth / Pag-IBIG and compute them from the
+            // statutory schedule instead of using the stored flat amount.
+            // Fetched once rather than per employee per contribution.
+            $contribution_names = [];
+            $cnq = $this->db->query("SELECT id, contribution FROM contributions");
+            if ($cnq) while ($cn = $cnq->fetch_assoc()) {
+                $contribution_names[(int) $cn['id']] = $cn['contribution'];
+            }
+
+            // ── Configured allowances per employee ──────────────────────────
+            // employee_allowances + allowances have existed (with a management
+            // screen) since before this branch, but only the dead legacy
+            // calculate_payrollOld() ever read them — the live calculation used
+            // the single flat employee.allowance_rate. Prefetched once here and
+            // resolved per run below, so a recurring allowance is defined once
+            // per employee instead of being retyped into `adjustment` every
+            // cutoff. Guarded on the table existing so an un-migrated install
+            // simply gets no configured allowances.
+            $employee_allowances = [];
+            if (($eah = $this->db->query("SHOW TABLES LIKE 'employee_allowances'")) && $eah->num_rows) {
+                $has_eff_to = ($c2 = $this->db->query("SHOW COLUMNS FROM employee_allowances LIKE 'effective_to'")) && $c2->num_rows;
+                $eff_to_col = $has_eff_to ? 'ea.effective_to' : 'NULL AS effective_to';
+                // Taxability travels with the allowance so the withholding base
+                // can be derived from the frozen item alone — a de minimis meal
+                // allowance and a taxable job allowance are indistinguishable
+                // once blended into a single figure.
+                $has_tax_col = ($c3 = $this->db->query("SHOW COLUMNS FROM allowances LIKE 'is_taxable'")) && $c3->num_rows;
+                $tax_cols = $has_tax_col
+                    ? 'a.is_taxable, a.de_minimis_monthly_cap'
+                    : '1 AS is_taxable, NULL AS de_minimis_monthly_cap';
+                $eaq = $this->db->query(
+                    "SELECT ea.employee_id, ea.allowance_id, ea.type, ea.amount,
+                            ea.effective_date, $eff_to_col,
+                            a.allowance AS label, $tax_cols
+                       FROM employee_allowances ea
+                       LEFT JOIN allowances a ON a.id = ea.allowance_id"
+                );
+                if ($eaq) while ($ea = $eaq->fetch_assoc()) {
+                    $employee_allowances[(int) $ea['employee_id']][] = $ea;
+                }
+            }
+
             $stmt->bind_param("ss", $date_from, $date_to);
             $stmt->execute();
             $result = $stmt->get_result();
@@ -3312,8 +3441,29 @@ class Action
                         $grouped_data[$employee_id]["special_duty"] += $days;
                     }
 
-                    $under_time = 0; // 8 - $work_hours
-                    $grouped_data[$employee_id]["under_time"] += $under_time;
+                    // ── Undertime: leaving BEFORE the shift ends ────────────────
+                    // dtr_compute_day() already measures this per day, in hours, as
+                    // max(0, sched_end − time_out) — strictly early departure, so it
+                    // never overlaps the late minutes charged separately below and
+                    // the two cannot double-charge the same shortfall.
+                    //
+                    // It was hardcoded to 0 here, so the column existed, the payslip
+                    // printed it, and nothing was ever deducted.
+                    //
+                    // ×60 because payroll_items.under_time is MINUTES: payroll_earnings()
+                    // prices it at per_minute (= per_day ÷ (day_hours × 60)).
+                    //
+                    // Not charged on a rest day — no shift was scheduled to leave early
+                    // from — and capped by any approved paid leave covering the day, so
+                    // a half-day leave is not also billed as half a day of undertime.
+                    $ut_hours = (float) ($row['undertime'] ?? 0);
+                    if ($was_rest) {
+                        $ut_hours = 0.0;
+                    } elseif (!empty($leaveMap[$employee_id][$ymd])) {
+                        $leave_hours = min(1.0, (float) $leaveMap[$employee_id][$ymd]) * $day_hours;
+                        $ut_hours = max(0.0, $ut_hours - $leave_hours);
+                    }
+                    $grouped_data[$employee_id]["under_time"] += $ut_hours * 60;
 
                     $per_day = $row['salary'];
                     $basic_pay = $row['basic_pay'];
@@ -3363,7 +3513,14 @@ class Action
                     }
 
                     $grouped_data[$employee_id]["overtime"] +=  $row['overtime'];
-                    $grouped_data[$employee_id]["late_in_minutes"]  += $row['late'];
+                    // ×60: dtr_compute_day() returns late in HOURS ((time_in − sched_start)
+                    // ÷ 3600) but payroll_items.late is MINUTES — payroll_earnings() prices
+                    // it at per_minute, and the sheet labels the column "Min". Copied
+                    // straight across, an employee 9.75 hours late was charged 9.75
+                    // MINUTES: ₱20.31 instead of ₱1,218.75 on a ₱1,000 / 8-hour day.
+                    // The accumulator has always been named late_in_minutes; only the
+                    // value feeding it was wrong.
+                    $grouped_data[$employee_id]["late_in_minutes"]  += $row['late'] * 60;
                     $grouped_data[$employee_id]["undertime"]  +=  $row['undertime'];
                     $grouped_data[$employee_id]["isAutoDeduct"]  =  $isAutoDeduct;
                     $grouped_data[$employee_id]["site_id"]  = $site_id;
@@ -3480,8 +3637,13 @@ class Action
                             foreach ($data__details as $data__detail) {
                                 $data['total_hours'] += $data__detail['work_hours'];
                                 $data['overtime'] += $data__detail['overtime'];
+                                // Same hours→minutes conversion as the main loop above:
+                                // the DTR measures both in hours, payroll_items stores
+                                // minutes. Cross-cluster days were losing the same 60×.
                                 $data['undertime'] += $data__detail['undertime'];
-                                $data['late_in_minutes'] += $data__detail['late'];
+                                $data['under_time'] = ($data['under_time'] ?? 0)
+                                    + (empty($data__detail['is_rest_day']) ? (float) $data__detail['undertime'] * 60 : 0);
+                                $data['late_in_minutes'] += $data__detail['late'] * 60;
                                 $data['present'] += $data__detail['work_hours'] / $data__detail['day_hours'];
                                 // Count rest-day duty from cross-cluster attendance too.
                                 $d2ymd = date('Y-m-d', strtotime($data__detail['date_time']));
@@ -3517,21 +3679,44 @@ class Action
                             $stmt->execute();
                             $result = $stmt->get_result();
                             while ($row = $result->fetch_assoc()) {
-                                //check if auto deduct and sss
-                                // if ($row['contribution_id'] === 1 &&  $data['isAutoDeduct']) {
-                                //     if ($weekly_payroll === 1) {
-                                //         $sss_amount = $this->getSSSWeeklyDeduction($data['basic_pay']);
-                                //     } else {
-                                //         $sss_amount = $this->getSSSMonthlyDeduction($data['basic_pay']);
-                                //     }
-                                //     $contribute_amount += $sss_amount;
-                                //     $contributions[] = ["amount" => $sss_amount, "contribution_id" => 1];
-                                // } else {
-                                //     $contribute_amount += $row['amount'];
-                                //     $contributions[] = ["amount" => $row['amount'], "contribution_id" => $row['contribution_id']];
-                                // }
-                                $contribute_amount += $row['amount'];
-                                $contributions[] = ["amount" => $row['amount'], "contribution_id" => (int)  $row['contribution_id']];
+                                // ── Auto-computed statutory contributions ──────────────
+                                // The SSS / PhilHealth calculators existed but their call
+                                // site was commented out, so every contribution was the
+                                // flat amount typed on employee_contributions — which goes
+                                // stale the moment a salary or a statutory rate changes,
+                                // silently and invisibly.
+                                //
+                                // Now: when the employee is flagged isAutoDeduct AND the
+                                // contribution names a schedule we know (SSS/PHIC/HDMF)
+                                // AND a rate is in force on this run's date, the share is
+                                // computed from the effectivity-dated table. Anything else
+                                // falls back to the stored amount, so an installation that
+                                // has not run the migration behaves exactly as before.
+                                $amount = (float) $row['amount'];
+                                $auto   = false;
+                                if (!empty($data['isAutoDeduct'])) {
+                                    $cname = $contribution_names[(int) $row['contribution_id']] ?? '';
+                                    $kind  = $cname !== '' ? contribution_kind($cname) : null;
+                                    if ($kind !== null) {
+                                        // Assessed on monthly compensation: basic_pay for
+                                        // monthly/fixed staff, else the daily rate annualised
+                                        // over the standard 26-day month.
+                                        $rt_c    = $data['rate_type'] ?? 'daily';
+                                        $monthly = ($rt_c === 'monthly' || $rt_c === 'fixed')
+                                            ? (float) $data['basic_pay']
+                                            : (float) $data['per_day'] * 26;
+                                        $calc = statutory_employee_share($this->db, $kind, $monthly, $date_from, $date_to);
+                                        if ($calc !== null) { $amount = $calc; $auto = true; }
+                                    }
+                                }
+                                $contribute_amount += $amount;
+                                $contributions[] = [
+                                    "amount" => $amount,
+                                    "contribution_id" => (int) $row['contribution_id'],
+                                    // Recorded so the payslip and the remittance report can
+                                    // show whether a figure was computed or hand-entered.
+                                    "auto" => $auto ? 1 : 0,
+                                ];
                             }
                         }
                         if ($setting['type'] == 2) {
@@ -3599,6 +3784,32 @@ class Action
                             $refunds[] = ["amount" => 0, "refund_id" => (int)  $setting['id']];
                         }
                     }
+                    // ── Resolve this employee's configured allowances for THIS run ──
+                    // Each row contributes per its type (Monthly / Semi-Monthly /
+                    // Once) and its effectivity window; see
+                    // employee_allowance_amount_for_run(). Frozen onto the item as
+                    // JSON, with a denormalised total for the SQL aggregates.
+                    $item_allowances = [];
+                    $allowance_total = 0.0;
+                    foreach (($employee_allowances[$employee_id] ?? []) as $ea) {
+                        $amt = employee_allowance_amount_for_run($ea, $date_from, $date_to);
+                        if ($amt <= 0) continue;
+                        $item_allowances[] = [
+                            'allowance_id' => (int) $ea['allowance_id'],
+                            'label'        => $ea['label'] ?? 'Allowance',
+                            'type'         => (int) $ea['type'],
+                            'amount'       => round($amt, 2),
+                            // Frozen so the withholding base stays auditable even
+                            // if the allowance is reclassified later.
+                            'taxable'      => (int) ($ea['is_taxable'] ?? 1),
+                            'cap'          => $ea['de_minimis_monthly_cap'] !== null
+                                ? (float) $ea['de_minimis_monthly_cap'] : null,
+                        ];
+                        $allowance_total += $amt;
+                    }
+                    $allowance_total = round($allowance_total, 2);
+                    $allowances_json = json_encode($item_allowances);
+
                     $contributions = json_encode($contributions);
                     $deductions = json_encode($deductions);
                     $loans = json_encode($loans);
@@ -3681,8 +3892,8 @@ class Action
                     $sql2 = "INSERT INTO payroll_items
                     (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
                      deduction_amount, deductions, contributions, total_hours,
-                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours,nsd_hours,nsd_amount,legal_holiday,special_holiday)
-                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours,nsd_hours,nsd_amount,legal_holiday,special_holiday,allowances,allowance_total)
+                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     $stmt2 = $this->db->prepare($sql2);
                     if (!$stmt2) {
@@ -3690,7 +3901,7 @@ class Action
                     }
 
                     $stmt2->bind_param(
-                        'ssssssssssssssssssssssssssssss',
+                        'ssssssssssssssssssssssssssssssss',
                         $payroll_id,
                         $employee_id,
                         $salary,
@@ -3720,7 +3931,9 @@ class Action
                         $nsd_hours_total,
                         $nsd_amount_total,
                         $legal_duty,
-                        $special_duty
+                        $special_duty,
+                        $allowances_json,
+                        $allowance_total
                     );
 
                     try {
@@ -3769,6 +3982,11 @@ class Action
                 // named one-off item is now pointing at a row id that no longer
                 // exists. Re-attach them by employee before committing.
                 $this->relink_payroll_extras($id);
+                // Withholding tax needs the finished rows — gross, allowances and
+                // statutory contributions all have to exist before a taxable base
+                // can be derived. Runs before the net resync below so an
+                // auto-posted tax lands inside the net rather than after it.
+                $this->compute_payroll_tax($id);
                 // Last, once every figure the net depends on is in place: store
                 // a net that matches the gross this run just produced.
                 $this->resync_payroll_nets($id);
@@ -3782,6 +4000,244 @@ class Action
             return ['result' => false, 'message' => $e->getMessage()];
         }
         return ['result' => false, 'message' => 'save'];
+    }
+
+    /**
+     * Compute withholding tax for every item in a run.
+     *
+     * Runs AFTER the items are inserted, so it can see each row's final gross,
+     * allowances and statutory contributions — the taxable base cannot be known
+     * before those exist.
+     *
+     * Always writes `tax_computed` and `taxable_income` (what the schedule says).
+     * Only writes `tax` when pay_settings.tax_auto_post is on AND the row is not
+     * flagged tax_override — so enabling the engine cannot silently restate a
+     * figure an admin deliberately typed, and deploying it changes nothing until
+     * someone turns it on.
+     *
+     * Method 2 (cumulative/annualised, RR 11-2018) prices against the employee's
+     * year to date; method 1 applies the per-cutoff table. Both come from the
+     * effectivity-dated tax_brackets table.
+     */
+    private function compute_payroll_tax($payrollId)
+    {
+        $payrollId = (int) $payrollId;
+        if (!tax_bracket_config($this->db, 'semi_monthly', date('Y-m-d'))) return;   // unmigrated
+
+        $pay = $this->db->query("SELECT date_from, date_to FROM payroll WHERE id = $payrollId")->fetch_assoc();
+        if (!$pay) return;
+        $date_from = date('Y-m-d', strtotime($pay['date_from']));
+        $date_to   = date('Y-m-d', strtotime($pay['date_to']));
+        $year      = (int) date('Y', strtotime($date_from));
+
+        $auto   = $this->th13_setting('tax_auto_post', 0) >= 1;
+        $method = (int) $this->th13_setting('tax_method', 1);
+        $factor = statutory_period_factor($date_from, $date_to);
+
+        // Statutory contribution ids — only these are deductible from the base.
+        $gov = [];
+        $cq = $this->db->query("SELECT id, contribution FROM contributions");
+        if ($cq) while ($c = $cq->fetch_assoc()) {
+            if (contribution_kind($c['contribution']) !== null) $gov[(int) $c['id']] = true;
+        }
+
+        // Year-to-date per employee, EXCLUDING this run, for the cumulative method.
+        $ytd = [];
+        if ($method === 2) {
+            $yq = $this->db->query(
+                "SELECT pi.employee_id,
+                        COALESCE(SUM(pi.taxable_income), 0) AS taxable,
+                        COALESCE(SUM(pi.tax), 0)            AS withheld
+                   FROM payroll_items pi
+                   INNER JOIN payroll p ON p.id = pi.payroll_id
+                  WHERE YEAR(p.date_from) = $year AND p.id <> $payrollId
+                    AND p.date_from < '" . $this->db->real_escape_string($date_from) . "'
+                  GROUP BY pi.employee_id"
+            );
+            if ($yq) while ($y = $yq->fetch_assoc()) {
+                $ytd[(int) $y['employee_id']] = ['taxable' => (float) $y['taxable'], 'withheld' => (float) $y['withheld']];
+            }
+        }
+
+        // 13th month posted onto this run. Non-taxable up to ₱90,000 for the year
+        // [Sec 32(B)(7)(e) NIRC]; the excess is taxable compensation and must be
+        // withheld on. The cap was previously applied only in the alphalist
+        // REPORT, long after the money had gone out untaxed.
+        $th13_excess = [];
+        if (($h = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'")) && $h->num_rows) {
+            $xq = $this->db->query(
+                "SELECT x.payroll_item_id, SUM(x.amount) AS amt
+                   FROM payroll_item_extras x
+                  WHERE x.payroll_id = $payrollId AND x.kind = 2 AND x.label = '13th Month Pay'
+                  GROUP BY x.payroll_item_id"
+            );
+            if ($xq) while ($x = $xq->fetch_assoc()) {
+                $th13_excess[(int) $x['payroll_item_id']] = max(0.0, (float) $x['amt'] - BIR_13TH_CAP);
+            }
+        }
+
+        $rows = $this->db->query("SELECT * FROM payroll_items WHERE payroll_id = $payrollId");
+        if (!$rows) return;
+
+        $upd = $this->db->prepare(
+            "UPDATE payroll_items SET taxable_income = ?, tax_computed = ?, tax = ? WHERE id = ?"
+        );
+        $updNoPost = $this->db->prepare(
+            "UPDATE payroll_items SET taxable_income = ?, tax_computed = ? WHERE id = ?"
+        );
+        if (!$upd || !$updNoPost) return;
+
+        while ($row = $rows->fetch_assoc()) {
+            $itemId  = (int) $row['id'];
+            $eid     = (int) $row['employee_id'];
+            $taxable = payroll_taxable_income($row, $gov, $factor)
+                     + ($th13_excess[$itemId] ?? 0.0);
+
+            $tax = $method === 2
+                ? withholding_tax_cumulative(
+                    $this->db, $taxable,
+                    $ytd[$eid]['taxable'] ?? 0.0, $ytd[$eid]['withheld'] ?? 0.0,
+                    $date_from, $date_to)
+                : withholding_tax_per_cutoff($this->db, $taxable, $date_from, $date_to);
+            if ($tax === null) continue;
+
+            if ($auto && (int) ($row['tax_override'] ?? 0) === 0) {
+                $upd->bind_param('dddi', $taxable, $tax, $tax, $itemId);
+                $upd->execute();
+            } else {
+                $updNoPost->bind_param('ddi', $taxable, $tax, $itemId);
+                $updNoPost->execute();
+            }
+        }
+    }
+
+    /**
+     * READ-ONLY reconciliation for one payroll run — the non-destructive twin of
+     * resync_payroll_nets() below.
+     *
+     * For every item it recomputes gross from its components and net from that
+     * gross, then compares the result to the `net` actually stored on the row.
+     * Nothing is written. A run that reconciles is proof the sheet, the payslip,
+     * the exports and the stored figure are all quoting the same arithmetic;
+     * a mismatch is the only early warning that they have drifted apart —
+     * previously nothing checked this at all, and a stale net could survive
+     * until an employee noticed their payslip disagreed with their bank credit.
+     *
+     * Returns:
+     *   ok         → true when every row balances
+     *   checked    → number of items examined
+     *   mismatches → [employee_no, name, stored_net, expected_net, diff, ...]
+     *   totals     → run-level gross / deductions / refunds / net
+     */
+    function payroll_reconcile($payrollId = null)
+    {
+        $payrollId = (int) ($payrollId ?? $_POST['id'] ?? 0);
+        if ($payrollId <= 0) return ['result' => false, 'message' => 'Invalid payroll id.'];
+
+        // Same one-off item folding as resync_payroll_nets(): kind 2 adds to
+        // gross, kind 1 adds to deductions.
+        $xAdd = $xLess = [];
+        if (($h = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'")) && $h->num_rows) {
+            $xq = $this->db->query(
+                "SELECT payroll_item_id, kind, amount FROM payroll_item_extras
+                  WHERE payroll_id = $payrollId"
+            );
+            if ($xq) while ($x = $xq->fetch_assoc()) {
+                $k = (int) $x['payroll_item_id'];
+                if ((int) $x['kind'] === 2) $xAdd[$k]  = ($xAdd[$k]  ?? 0) + (float) $x['amount'];
+                else                        $xLess[$k] = ($xLess[$k] ?? 0) + (float) $x['amount'];
+            }
+        }
+
+        $rows = $this->db->query(
+            "SELECT pi.*, pay.type AS payroll_type,
+                    e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS name
+               FROM payroll_items pi
+               INNER JOIN payroll pay ON pay.id = pi.payroll_id
+               INNER JOIN employee e  ON e.id   = pi.employee_id
+              WHERE pi.payroll_id = $payrollId
+              ORDER BY e.lastname, e.firstname"
+        );
+        if (!$rows) return ['result' => false, 'message' => $this->db->error];
+
+        $mismatches = [];
+        $checked = 0;
+        $T = ['gross' => 0.0, 'ded' => 0.0, 'ref' => 0.0, 'net' => 0.0, 'stored' => 0.0];
+
+        while ($row = $rows->fetch_assoc()) {
+            $checked++;
+            $itemId = (int) $row['id'];
+
+            $earn  = payroll_earnings($row);
+            $gross = $earn['gross'] + ($xAdd[$itemId] ?? 0);
+
+            $ded = 0.0;
+            foreach (['contributions', 'deductions', 'loans'] as $col) {
+                foreach ((json_decode($row[$col] ?? '', true) ?: []) as $c) {
+                    $ded += (float) ($c['amount'] ?? 0);
+                }
+            }
+            $ded += (float) $row['sss_fund'] + (float) $row['jei_advances']
+                  + (float) $row['jcc_advances'] + (float) $row['tax']
+                  + (float) $row['other_deduction'] + ($xLess[$itemId] ?? 0);
+
+            $ref = 0.0;
+            foreach ((json_decode($row['refunds'] ?? '', true) ?: []) as $r) {
+                $ref += (float) ($r['amount'] ?? 0);
+            }
+
+            $expected = $gross - $ded + $ref + (float) ($row['adjustment'] ?? 0);
+            $stored   = (float) $row['net'];
+
+            $T['gross']  += $gross;
+            $T['ded']    += $ded;
+            $T['ref']    += $ref;
+            $T['net']    += $expected;
+            $T['stored'] += $stored;
+
+            // The allowances JSON is the breakdown; allowance_total is its
+            // denormalised mirror, read by the SQL aggregates. They are written
+            // together, so a difference means one of them was edited behind the
+            // other's back — report it as its own finding rather than letting the
+            // sheet and the dashboard quietly disagree.
+            $json_sum = 0.0;
+            foreach (payroll_allowance_list($row) as $al) $json_sum += (float) ($al['amount'] ?? 0);
+            if (abs($json_sum - (float) ($row['allowance_total'] ?? 0)) > 0.01) {
+                $mismatches[] = [
+                    'item_id'     => $itemId,
+                    'employee_no' => $row['employee_no'],
+                    'name'        => $row['name'],
+                    'gross'       => round($gross, 2),
+                    'deductions'  => round($ded, 2),
+                    'stored_net'  => round((float) $row['allowance_total'], 2),
+                    'expected_net' => round($json_sum, 2),
+                    'diff'        => round($json_sum - (float) ($row['allowance_total'] ?? 0), 2),
+                    'note'        => 'allowance_total does not match the allowances breakdown',
+                ];
+            }
+
+            // A centavo of float noise is not a drift; anything above it is.
+            if (abs($expected - $stored) > 0.01) {
+                $mismatches[] = [
+                    'item_id'     => $itemId,
+                    'employee_no' => $row['employee_no'],
+                    'name'        => $row['name'],
+                    'gross'       => round($gross, 2),
+                    'deductions'  => round($ded, 2),
+                    'stored_net'  => round($stored, 2),
+                    'expected_net' => round($expected, 2),
+                    'diff'        => round($expected - $stored, 2),
+                ];
+            }
+        }
+
+        return [
+            'result'     => true,
+            'ok'         => count($mismatches) === 0,
+            'checked'    => $checked,
+            'mismatches' => $mismatches,
+            'totals'     => array_map(function ($v) { return round($v, 2); }, $T),
+        ];
     }
 
     /**
@@ -3862,6 +4318,7 @@ class Action
         $upd = $this->db->prepare(
             "UPDATE payroll_items
                 SET allowance_days = ?, jei_advances = ?, jcc_advances = ?, tax = ?,
+                    tax_override = ?,
                     other_deduction = ?, adjustment = ?, adjustment_remarks = ?
               WHERE payroll_id = ? AND employee_id = ?"
         );
@@ -3872,11 +4329,16 @@ class Action
             $jei = (float) $m['jei_advances'];
             $jcc = (float) $m['jcc_advances'];
             $tax = (float) $m['tax'];
+            // Carried across the rebuild with the value it protects — restoring
+            // a hand-typed tax while dropping its flag would let the next
+            // auto-post pass overwrite the very figure just restored.
+            $tov = (int) ($m['tax_override'] ?? 0);
             $od  = (float) $m['other_deduction'];
             $adj = (float) $m['adjustment'];
             $rem = (string) $m['adjustment_remarks'];
             $eid = (int) $employeeId;
-            $upd->bind_param('idddddsii', $ad, $jei, $jcc, $tax, $od, $adj, $rem, $payrollId, $eid);
+            // i d d d i d d s i i  — ad, jei, jcc, tax, tax_override, od, adj, rem, payroll, employee
+            $upd->bind_param('idddiddsii', $ad, $jei, $jcc, $tax, $tov, $od, $adj, $rem, $payrollId, $eid);
             $upd->execute();
 
             if ($upd->affected_rows > 0) {
@@ -6419,15 +6881,7 @@ class Action
                     CONCAT(e.lastname,', ',e.firstname) AS name,
                     e.employee_no,
                     pi.basic_pay                                                        AS basic,
-                    (
-                        ((pi.basic_pay + (pi.allowance_amount*pi.allowance_days) - (pi.absent*pi.per_day))/2)
-                        + (pi.ot * pi.ot_rate)
-                        + (pi.legal_holiday * pi.per_day)
-                        + (pi.sunday_duty   * pi.per_day)
-                        + ((pi.per_day/8*2.4) * pi.special_holiday)
-                        + COALESCE(pi.nsd_amount, 0)
-                        - (pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))
-                    )                                                                   AS gross,
+                    " . sql_gross('pi') . "                                             AS gross,
                     pi.net
                 FROM payroll_items pi
                 INNER JOIN employee e ON pi.employee_id = e.id
@@ -6618,6 +7072,15 @@ class Action
         ];
         if (!in_array($field, $allowed_fields, true)) {
             throw new Exception('Unknown payroll item field: ' . $field);
+        }
+        // A hand-typed tax is a deliberate override and must survive both a
+        // recalculation and the auto-post pass. Flagged here, at the one place
+        // an admin can actually type it, so the flag can never disagree with
+        // what is in the column. Clearing the field releases the override.
+        if ($field === 'tax') {
+            $ov = ((float) $value) != 0.0 ? 1 : 0;
+            $st = $this->db->prepare("UPDATE payroll_items SET tax_override = ? WHERE id = ?");
+            if ($st) { $st->bind_param('ii', $ov, $id); $st->execute(); }
         }
         $this->db->begin_transaction();
         $query = "SELECT loan_history.*, payroll.ref_no, payroll.date_from, payroll.date_to, payroll_items.employee_id FROM loan_history 
@@ -7028,6 +7491,13 @@ class Action
         }
         usort($swings, fn($a, $b) => abs($b['pct']) <=> abs($a['pct']));
 
+        // Arithmetic reconciliation. Every check above asks whether a figure looks
+        // PLAUSIBLE; this one asks whether it ADDS UP — that the stored net is the
+        // net its own components produce. Nothing verified that before, so a stale
+        // or drifted net could reach the bank file unchallenged.
+        $rec = $this->payroll_reconcile($id);
+        $unbalanced = ($rec['result'] ?? false) ? $rec['mismatches'] : [];
+
         return [
             'result' => true,
             'total' => count($data['rows']),
@@ -7038,6 +7508,9 @@ class Action
             'swings' => $swings,
             'missing' => $missing,
             'nd_zero' => $nd_zero,
+            'unbalanced' => $unbalanced,
+            'reconciled' => ($rec['result'] ?? false) ? (bool) $rec['ok'] : null,
+            'recon_totals' => ($rec['result'] ?? false) ? $rec['totals'] : null,
         ];
     }
 
@@ -8074,8 +8547,11 @@ class Action
     {
         $uid  = $_SESSION['login_id'] ?? null;
         $keys = ['legal_holiday_rate', 'special_holiday_rate', 'ot_regular_rate', 'ot_holiday_multiplier', 'nsd_rate', 'rest_day_rate', 'sanity_net_swing_pct'];
-        // 13th month checkboxes: absent from POST = unchecked = 0.
-        $flag_keys = ['th13_include_paid_leave', 'th13_include_allowance', 'th13_round_to_peso'];
+        // Withholding method is a radio (1 = per-cutoff, 2 = cumulative), so it
+        // always posts a value and needs no unchecked-means-zero handling.
+        $keys[] = 'tax_method';
+        // Checkboxes: absent from POST = unchecked = 0.
+        $flag_keys = ['th13_include_paid_leave', 'th13_include_allowance', 'th13_round_to_peso', 'tax_auto_post'];
         foreach ($flag_keys as $fk) {
             $_POST[$fk] = isset($_POST[$fk]) && $_POST[$fk] ? 1 : 0;
         }
@@ -8118,7 +8594,8 @@ class Action
     // ══════════════════ 13th Month Pay (PD 851) ══════════════════
 
     /** Numeric flag/value from pay_settings, with a default when unset. */
-    private function th13_setting($key, $default)
+    /** One numeric row out of pay_settings, or $default when unset. */
+    private function pay_setting($key, $default)
     {
         $key = $this->db->real_escape_string($key);
         $r = $this->db->query("SELECT setting_value FROM pay_settings WHERE setting_key = '$key'");
@@ -8126,11 +8603,17 @@ class Action
         return $row !== null ? (float) $row['setting_value'] : $default;
     }
 
+    /** Kept as the 13th-month-flavoured name its callers already use. */
+    private function th13_setting($key, $default)
+    {
+        return $this->pay_setting($key, $default);
+    }
+
     /**
      * Scan every payroll of the given year and (re)build the draft rows:
      * per employee, BASIC salary actually paid per cutoff, summed, ÷ 12.
      *   daily        → (present [+ paid_leave]) × per_day  [+ allowance]
-     *   monthly/fixed→ (basic_pay [+ allowance] − absent × per_day) / 2
+     *   monthly/fixed→ basic_pay / 2 − absent × per_day [+ allowance]
      * All payrolls with items count (any status); unlocked ones are tallied
      * separately so the UI can warn the figures may still move.
      * Refuses to run once the year is finalized.
@@ -8160,7 +8643,7 @@ class Action
                    COUNT(*) AS cutoffs,
                    SUM(p.status <> 2) AS unlocked_cutoffs,
                    SUM(CASE WHEN pi.rate_type IN ('monthly','fixed')
-                        THEN (pi.basic_pay $allow_term - (pi.absent * pi.per_day)) / 2
+                        THEN pi.basic_pay / 2 - (pi.absent * pi.per_day) $allow_term
                         ELSE ((pi.present $leave_term) * pi.per_day) $allow_term
                    END) AS basic_earned
             FROM payroll_items pi
@@ -8204,6 +8687,97 @@ class Action
             }
             $this->db->commit();
             return ['result' => true, 'message' => "Computed 13th month pay for $n employee(s)."];
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+    }
+
+    /**
+     * Post a finalized year's 13th month pay into a payroll run.
+     *
+     * The module computed and printed 13th month but nothing ever PAID it: no
+     * payroll_items row, no payslip line, no bank payout entry — and so no tax
+     * was ever withheld on the portion above the ₱90,000 exemption, even though
+     * the BIR alphalist dutifully reported that excess as taxable.
+     *
+     * Each employee's amount is posted as a payroll_item_extras row (kind 2 =
+     * adds to gross), the same mechanism named one-off allowances already use,
+     * so it flows into gross, net, the payslip and the bank file with no new
+     * plumbing. compute_payroll_tax() picks up the taxable excess from there.
+     *
+     * Idempotent: re-posting replaces this run's 13th-month extras rather than
+     * stacking a second copy on top.
+     */
+    function th13_post_to_payroll()
+    {
+        $year      = (int) ($_POST['year'] ?? 0);
+        $payrollId = (int) ($_POST['payroll_id'] ?? 0);
+        if ($year < 2000 || $payrollId <= 0) return ['result' => false, 'message' => 'Invalid year or payroll.'];
+
+        $pay = $this->db->query("SELECT id, status FROM payroll WHERE id = $payrollId")->fetch_assoc();
+        if (!$pay) return ['result' => false, 'message' => 'Payroll not found.'];
+        if ((int) $pay['status'] === 2) {
+            return ['result' => false, 'message' => 'That payroll is locked. Unlock it first.'];
+        }
+        if (!($h = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'")) || !$h->num_rows) {
+            return ['result' => false, 'message' => 'payroll_item_extras is missing — run the migrations first.'];
+        }
+
+        // Finalized rows only: a draft can still be regenerated, and paying out
+        // a figure that may still move is exactly the mistake worth preventing.
+        $rows = $this->db->query(
+            "SELECT employee_id, amount, override_amount, status
+               FROM thirteenth_month WHERE year = $year AND status = 1"
+        );
+        if (!$rows || !$rows->num_rows) {
+            return ['result' => false, 'message' => "No finalized 13th month rows for $year. Finalize the year first."];
+        }
+
+        $this->db->begin_transaction();
+        try {
+            $this->db->query(
+                "DELETE FROM payroll_item_extras
+                  WHERE payroll_id = $payrollId AND label = '13th Month Pay'"
+            );
+
+            $uid = (int) ($_SESSION['login_id'] ?? 0);
+            $ins = $this->db->prepare(
+                "INSERT INTO payroll_item_extras
+                    (payroll_id, payroll_item_id, employee_id, kind, label, amount, created_by)
+                 VALUES (?, ?, ?, 2, '13th Month Pay', ?, ?)"
+            );
+            if (!$ins) throw new Exception($this->db->error);
+
+            $posted = 0; $total = 0.0; $skipped = 0;
+            while ($t = $rows->fetch_assoc()) {
+                $eid = (int) $t['employee_id'];
+                $amt = $t['override_amount'] !== null ? (float) $t['override_amount'] : (float) $t['amount'];
+                if ($amt <= 0) continue;
+
+                $it = $this->db->query(
+                    "SELECT id FROM payroll_items
+                      WHERE payroll_id = $payrollId AND employee_id = $eid LIMIT 1"
+                )->fetch_assoc();
+                // Not in this run (resigned, or a different site) — nothing to
+                // attach to. Counted and reported rather than silently dropped.
+                if (!$it) { $skipped++; continue; }
+
+                $iid = (int) $it['id'];
+                $ins->bind_param('iiidi', $payrollId, $iid, $eid, $amt, $uid);
+                $ins->execute();
+                $posted++; $total += $amt;
+            }
+
+            // Tax first (the ₱90k excess is taxable compensation), then nets.
+            $this->compute_payroll_tax($payrollId);
+            $this->resync_payroll_nets($payrollId);
+            $this->db->commit();
+
+            $msg = "Posted 13th month pay for $posted employee(s), total "
+                 . number_format($total, 2) . '.';
+            if ($skipped) $msg .= " $skipped had no row in this payroll and were skipped.";
+            return ['result' => true, 'message' => $msg, 'posted' => $posted, 'skipped' => $skipped, 'total' => round($total, 2)];
         } catch (Exception $e) {
             $this->db->rollback();
             return ['result' => false, 'message' => $e->getMessage()];

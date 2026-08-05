@@ -1,5 +1,12 @@
 <?php
 include 'db_connect.php';
+require_once __DIR__ . "/includes/session_bootstrap.php";
+// Reachable directly as well as through pdf-payroll.php, and it had no
+// access control: a plain GET rendered a whole payroll. Guarded here too so
+// the URL and the PDF entry point can never disagree about who may read it.
+if (empty($_SESSION["is_login"])) { http_response_code(403); exit("Not authorized."); }
+require_page_access("payroll", "text");
+
 if (!isset($_GET['id'])) { return; }
 $id = (int)$_GET['id'];
 
@@ -15,23 +22,20 @@ $stmt2 = $conn->prepare("
         SUM(pi.basic_pay)                                             AS total_basic,
         SUM(pi.allowance_amount * pi.allowance_days)                  AS total_allowance,
         SUM(pi.absent * pi.per_day)                                   AS total_absent,
-        SUM((pi.basic_pay + (pi.allowance_amount * pi.allowance_days) - (pi.absent * pi.per_day)) / 2)
-                                                                      AS total_amount,
+        SUM(CASE WHEN pi.rate_type IN ('monthly','fixed')
+                 THEN pi.basic_pay / 2 - (pi.absent * pi.per_day)
+                 ELSE (pi.present + COALESCE(pi.paid_leave,0)) * pi.per_day
+            END)                                                      AS total_amount,
         SUM(pi.ot * pi.ot_rate)                                       AS total_ot,
         SUM(pi.legal_holiday * pi.per_day)                            AS total_legal,
-        SUM(pi.sunday_duty * pi.per_day)                              AS total_sunday,
+        SUM(CASE WHEN pi.rate_type IN ('monthly','fixed')
+                 THEN pi.sunday_duty * pi.per_day
+                 ELSE pi.sunday_duty * pi.per_day * 0.30
+            END)                                                      AS total_sunday,
         SUM((pi.per_day / 8 * 2.4) * pi.special_holiday)             AS total_special,
         SUM(pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))                             AS total_late,
         SUM(COALESCE(pi.nsd_amount, 0))                               AS total_nsd,
-        SUM(
-            ((pi.basic_pay + (pi.allowance_amount * pi.allowance_days) - (pi.absent * pi.per_day)) / 2)
-            + (pi.ot * pi.ot_rate)
-            + (pi.legal_holiday * pi.per_day)
-            + (pi.sunday_duty * pi.per_day)
-            + ((pi.per_day / 8 * 2.4) * pi.special_holiday)
-            + COALESCE(pi.nsd_amount, 0)
-            - (pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))
-        )                                                             AS total_gross,
+        SUM(" . sql_gross('pi') . ")                                  AS total_gross,
         SUM(COALESCE(pi.deduction_amount, 0))                         AS total_contributions,
         SUM(COALESCE(pi.other_deduction, 0))                          AS total_other_ded,
         SUM(COALESCE(pi.tax, 0))                                      AS total_tax,

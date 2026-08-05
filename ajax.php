@@ -624,6 +624,9 @@ if ($action == 'plan_apply_all') {
 if ($action == 'get_employee_schedule_history') {
     echo json_encode($crud->get_employee_schedule_history());
 }
+if ($action == 'employee_quick_view') {
+    echo json_encode($crud->employee_quick_view());
+}
 
 // ── Attendance Requests (incident reports / OT filing) ──
 if ($action == 'save_attendance_request') {
@@ -645,12 +648,23 @@ if ($action == 'payroll_sanity_check') {
     echo json_encode($crud->payroll_sanity_check());
 }
 
+// Arithmetic reconciliation on its own — the pre-lock check folds this in, but
+// it is also callable directly to audit a run at any time. Read-only.
+if ($action == 'payroll_reconcile') {
+    echo json_encode($crud->payroll_reconcile());
+}
+
 // ── 13th Month Pay ──
 if ($action == 'th13_generate') {
     echo json_encode($crud->th13_generate());
 }
 if ($action == 'th13_save_row') {
     echo json_encode($crud->th13_save_row());
+}
+// Pay a finalized year's 13th month through a payroll run, so it reaches the
+// payslip, the bank file and the withholding base instead of only a report.
+if ($action == 'th13_post_to_payroll') {
+    echo json_encode($crud->th13_post_to_payroll());
 }
 if ($action == 'th13_set_final') {
     echo json_encode($crud->th13_set_final());

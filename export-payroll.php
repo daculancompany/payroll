@@ -11,15 +11,17 @@ require_page_access('payroll', 'text');
 if (!isset($_GET['id'])) {
     return;
 }
-$id = $_GET['id'];
-$site_id = $_GET['site_id'];
+// Both ids come straight off the query string and were interpolated raw into
+// the item query below — any signed-in user with payroll access could append
+// SQL through ?site_id=. Cast to int so the value can only ever be a number.
+$id = (int) $_GET['id'];
+$site_id = $_GET['site_id'] ?? 'all';
 
 $filter_query = "";
-$sid = '';
-if( isset($_GET['site_id'])  && $_GET['site_id'] !== 'all' ){
-    $sid = $_GET['site_id'];
-    $filter_query = " AND a.site_id = $sid  ";
- 
+$sid = 0;
+if ($site_id !== 'all' && $site_id !== '') {
+    $sid = (int) $site_id;
+    $filter_query = " AND a.site_id = $sid ";
 }
 // LEFT JOIN payroll g ON g.id = a.payroll_id 
 // LEFT JOIN employers  h ON g.employer_id = h.id
@@ -92,14 +94,17 @@ $t_deduction = 0;
 $t_net = 0;
 while ($row = $query->fetch_assoc()) {
     $i++;
-    $perMinute = $row['per_minute'];
-    $total_basic_rate = $row['present'] * $row['per_day'];
-    $overtime_amount = $row['ot'] * $row['ot_rate'];
-    $late_amount = $row['late'] * $perMinute;
-    $undertime_amount = $row['under_time'] * $perMinute;
-    $allowance_amount = $row['allowance_amount'];
-
-    $gross_salary =  $total_basic_rate +   $overtime_amount - $late_amount - $undertime_amount + $allowance_amount;
+    // The ONE shared formula (payroll_earnings, db_connect.php). The copy here
+    // ignored rate_type entirely and left out holiday, rest-day and night
+    // differential pay, so this export's gross never matched the payroll sheet.
+    $__e = payroll_earnings($row);
+    $perMinute        = $__e['per_minute'];
+    $total_basic_rate = $__e['basic'];
+    $overtime_amount  = $__e['overtime'];
+    $late_amount      = $__e['late_amt'];
+    $undertime_amount = $__e['under_amt'];
+    $allowance_amount = $__e['allowance'];
+    $gross_salary     = $__e['gross'];
     $contributions = json_decode($row['contributions'], true);
     $deductions = json_decode($row['deductions'], true);
     $total_deductions =  0;
@@ -112,26 +117,34 @@ while ($row = $query->fetch_assoc()) {
     $t_allowance += $allowance_amount;
     $t_gross += $gross_salary;
 
-    if (count($contributions_settings) > 0) {
-        foreach ($contributions_settings as $i2 =>  $k) {
-            $deduction_amount = 0;
-            if ($k['type'] == 1) {
-                foreach ($contributions as $kd) {
-                    if ($kd["contribution_id"] == $k["id"]) {
-                        $deduction_amount = $kd["amount"];
-                    }
+    // `$total_deductions +=` used to sit OUTSIDE this loop, so only the LAST
+    // configured contribution/deduction was ever counted and every earlier one
+    // was silently dropped from both Total Deduction and Net Pay.
+    foreach ($contributions_settings as $k) {
+        $deduction_amount = 0;
+        if ($k['type'] == 1) {
+            foreach ($contributions as $kd) {
+                if ($kd["contribution_id"] == $k["id"]) {
+                    $deduction_amount = $kd["amount"];
                 }
-            } else {
-                foreach ($deductions as $kd) {
-                    if ($kd["deduction_id"] == $k["id"]) {
-                        $deduction_amount = $kd["amount"];
-                    }
+            }
+        } else {
+            foreach ($deductions as $kd) {
+                if ($kd["deduction_id"] == $k["id"]) {
+                    $deduction_amount = $kd["amount"];
                 }
             }
         }
         $total_deductions += $deduction_amount;
-            
     }
+
+    // Loans, the hand-entered company advances and tax are part of what the
+    // employee actually loses; leaving them out overstated every Net Pay here.
+    foreach ((json_decode($row['loans'] ?? '', true) ?: []) as $ln) {
+        $total_deductions += (float) ($ln['amount'] ?? 0);
+    }
+    $total_deductions += (float) $row['sss_fund'] + (float) $row['jei_advances']
+                       + (float) $row['jcc_advances'] + (float) $row['tax'];
 
     $total_deductions = $total_deductions  + $other_deduction;
     $t_deduction+=$total_deductions;
@@ -147,11 +160,11 @@ while ($row = $query->fetch_assoc()) {
             number_format($row['per_day'], 2),
             number_format($total_basic_rate, 2),
             number_format($allowance_amount, 2),
-            number_format($overtime_amount),
+            number_format($overtime_amount, 2),
             number_format($gross_salary, 2),
             number_format($other_deduction, 2) ,
             number_format($total_deductions, 2),
-            number_format($net),
+            number_format($net, 2),
         ];
         array_push($data, $newItem);
     }

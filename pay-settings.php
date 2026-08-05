@@ -212,6 +212,82 @@ $payroll_period = isset($period_codes[$pp_code]) ? $period_codes[$pp_code] : 'se
                                         </div>
                                     </div>
 
+                                    <!-- Withholding Tax -->
+                                    <div class="col-12">
+                                        <hr class="my-1">
+                                        <h6 class="fw-bold text-uppercase text-muted mb-3" style="font-size:11px;letter-spacing:1px;">
+                                            <i class="ri-government-line me-1"></i>Withholding Tax (BIR / TRAIN)
+                                        </h6>
+
+                                        <?php
+                                        // Show what turning this on would actually do. An admin deciding
+                                        // whether to post computed tax should be able to see the size of the
+                                        // change first — the figures are already stored on every payroll row
+                                        // (tax_computed vs tax), so this costs one query, not a recalculation.
+                                        $tx = $conn->query("
+                                            SELECT ROUND(SUM(tax), 2)          AS typed,
+                                                   ROUND(SUM(tax_computed), 2) AS computed,
+                                                   SUM(tax > 0)                AS n_typed,
+                                                   SUM(tax_computed > 0)       AS n_computed
+                                              FROM payroll_items");
+                                        $tx = $tx ? $tx->fetch_assoc() : null;
+                                        $tax_on = ps('tax_auto_post', $settings) >= 1;
+                                        ?>
+                                        <?php if ($tx && ($tx['computed'] > 0 || $tx['typed'] > 0)): ?>
+                                        <div class="alert <?= $tax_on ? 'alert-success' : 'alert-warning' ?> py-2 mb-3" style="font-size:12.5px;">
+                                            <div class="d-flex align-items-start gap-2">
+                                                <i class="ri-scales-3-line fs-18"></i>
+                                                <div>
+                                                    <b>Across all payrolls:</b>
+                                                    currently withholding <b>&#8369;<?= number_format((float) $tx['typed'], 2) ?></b>
+                                                    (<?= (int) $tx['n_typed'] ?> rows);
+                                                    the BIR schedule computes <b>&#8369;<?= number_format((float) $tx['computed'], 2) ?></b>
+                                                    (<?= (int) $tx['n_computed'] ?> rows).
+                                                    <?php if (!$tax_on): ?>
+                                                        <br><span class="text-muted">Switch on below only once you can explain that difference — it becomes real money off payslips.</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+
+                                        <div class="row g-3">
+                                            <div class="col-md-5">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" name="tax_auto_post" id="tax-auto" value="1"
+                                                        <?= $tax_on ? 'checked' : '' ?>>
+                                                    <label class="form-check-label fw-semibold" for="tax-auto">Deduct the computed tax</label>
+                                                </div>
+                                                <small class="text-muted">
+                                                    Off = the system computes tax and shows it beside your typed figure, but deducts nothing.<br>
+                                                    On = the computed tax comes off net pay. A tax typed by an admin always wins and survives recalculation.
+                                                </small>
+                                            </div>
+                                            <div class="col-md-7">
+                                                <label class="form-label fw-semibold">How tax is computed each cutoff</label>
+                                                <?php $tm = (int) ps('tax_method', $settings) === 2 ? 2 : 1; ?>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="tax_method" id="tm-1" value="1" <?= $tm === 1 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label" for="tm-1">
+                                                        <b>Per cutoff</b> — each payroll taxed on its own.
+                                                        <small class="text-muted d-block">Simple and easy to audit. A period with heavy overtime over-deducts and needs a year-end adjustment.</small>
+                                                    </label>
+                                                </div>
+                                                <div class="form-check mt-2">
+                                                    <input class="form-check-input" type="radio" name="tax_method" id="tm-2" value="2" <?= $tm === 2 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label" for="tm-2">
+                                                        <b>Cumulative (annualised)</b> — prices against the year to date.
+                                                        <small class="text-muted d-block">Self-correcting, so no December true-up. Can produce a refund line when too much was withheld earlier (RR 11-2018).</small>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <small class="text-muted d-block mt-2">
+                                            Rates come from the BIR TRAIN tables, versioned by effectivity date, so changing them later cannot restate a payroll already computed.
+                                            Taxable pay = gross &minus; non-taxable allowances &minus; SSS/PhilHealth/Pag-IBIG employee share.
+                                        </small>
+                                    </div>
+
                                     <!-- Pre-lock payroll checks -->
                                     <div class="col-12">
                                         <hr class="my-1">

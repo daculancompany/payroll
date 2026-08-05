@@ -17,14 +17,7 @@ function dashboard_deptpay(mysqli $conn, int $payroll_id): array
         SELECT COALESCE(d.name,'No Dept') AS dept,
                COUNT(pi.id) AS emp,
                COALESCE(SUM(pi.net),0) AS net,
-               COALESCE(SUM(
-                   ((pi.basic_pay + (pi.allowance_amount * pi.allowance_days) - (pi.absent * pi.per_day)) / 2)
-                   + (pi.ot * pi.ot_rate)
-                   + (pi.legal_holiday * pi.per_day)
-                   + (pi.sunday_duty * pi.per_day)
-                   + ((pi.per_day / 8 * 2.4) * pi.special_holiday)
-                   - (pi.late * (pi.per_day / (COALESCE(NULLIF(pi.day_hours,0),8) * 60)))
-               ),0) AS gross,
+               COALESCE(SUM(" . sql_gross('pi') . "),0) AS gross,
                COALESCE(SUM(
                    pi.deduction_amount + pi.other_deduction + pi.tax
                    + pi.jei_advances + pi.jcc_advances + pi.sss_fund

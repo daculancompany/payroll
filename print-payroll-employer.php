@@ -1,11 +1,18 @@
 <?php
 include 'db_connect.php';
+require_once __DIR__ . "/includes/session_bootstrap.php";
+// Reachable directly as well as through pdf-payroll.php, and it had no
+// access control: a plain GET rendered a whole payroll. Guarded here too so
+// the URL and the PDF entry point can never disagree about who may read it.
+if (empty($_SESSION["is_login"])) { http_response_code(403); exit("Not authorized."); }
+require_page_access("payroll", "text");
+
 if (!isset($_GET['id'])) {
     return;
 }
-$id = $_GET['id'];
-$type = $_GET['type'];
-$site_id = isset($_GET['site_id']) ? $_GET['site_id'] : '';
+$id = (int) $_GET['id'];
+$type = $_GET['type'] ?? '';
+$site_id = isset($_GET['site_id']) && $_GET['site_id'] !== '' ? (int) $_GET['site_id'] : 0;
 
 $site_query = "SELECT * FROM sites WHERE id = ?";
 $stmt_site = $conn->prepare($site_query);
@@ -368,11 +375,16 @@ $site_details = $result_site->fetch_assoc();
                         // var_dump($row['per_day']);
                         $total_basic_rate = $row['present'] * $row['per_day'];
 
-                        $overtime_amount =  $row['overtime_amount'];
-                        $late_amount = $row['late'] * $perMinute;
-                        $undertime_amount = $row['under_time'] * $perMinute;
-                       // $allowance_amount = $row['allowance_amount'];
-                        $gross_salary =  $total_basic_rate +   $overtime_amount - $late_amount - $undertime_amount ;
+                        // The ONE shared formula (payroll_earnings, db_connect.php). The
+                        // copy here ignored rate_type, allowance, holiday and rest-day pay
+                        // and night differential, so the employer's own summary showed a
+                        // smaller gross than the payroll it summarises.
+                        $__e              = payroll_earnings($row);
+                        $total_basic_rate = $__e['basic'];
+                        $overtime_amount  = $__e['overtime'];
+                        $late_amount      = $__e['late_amt'];
+                        $undertime_amount = $__e['under_amt'];
+                        $gross_salary     = $__e['gross'];
 
                         $t_gross += $gross_salary;
 

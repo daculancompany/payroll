@@ -9,17 +9,25 @@
 
 <?php
 include 'db_connect.php';
+require_once __DIR__ . "/includes/session_bootstrap.php";
+// Reachable directly as well as through pdf-payroll.php, and it had no
+// access control: a plain GET rendered a whole payroll. Guarded here too so
+// the URL and the PDF entry point can never disagree about who may read it.
+if (empty($_SESSION["is_login"])) { http_response_code(403); exit("Not authorized."); }
+require_page_access("payroll", "text");
+
 if (!isset($_GET['id'])) {
     return;
 }
-$id = $_GET['id'];
+// Cast: both were interpolated raw into the item query below.
+$id = (int) $_GET['id'];
 
 
 $filter_query = "";
-$sid = '';
-if (isset($_GET['site_id'])  && $_GET['site_id'] !== 'all') {
-    $sid = $_GET['site_id'];
-    $filter_query = " AND a.site_id = $sid  ";
+$sid = 0;
+if (isset($_GET['site_id'])  && $_GET['site_id'] !== 'all' && $_GET['site_id'] !== '') {
+    $sid = (int) $_GET['site_id'];
+    $filter_query = " AND a.site_id = $sid ";
 }
 // LEFT JOIN payroll g ON g.id = a.payroll_id 
 // LEFT JOIN employers  h ON g.employer_id = h.id
@@ -386,9 +394,13 @@ $payroll_type = $payroll['type'];
                                 $t_nsd_hrs  = ($t_nsd_hrs ?? 0) + $nsd_hours;
                                 $t_nsd_amt  = ($t_nsd_amt ?? 0) + $nsd_amount;
 
-                                $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;
+                                // The ONE shared formula (payroll_earnings, db_connect.php).
+                                // Was: basic, allowance and absences all halved regardless of
+                                // rate_type, and undertime never deducted.
+                                $__e = payroll_earnings($row);
+                                $total_amount =  $__e['subtotal'];
                                 $t_total_amount += $total_amount;
-                                $gross_salary =  ($total_amount +   $overtime_amount   +  $legal_holiday_amount + $sunday_duty_amount +  $special_holiday_amount + $nsd_amount - $late_amount);
+                                $gross_salary =  $__e['gross'];
 
                                 $contributions = json_decode($row['contributions'], true);
                                 $deductions = json_decode($row['deductions'], true);

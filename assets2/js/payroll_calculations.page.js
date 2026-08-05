@@ -554,7 +554,7 @@
 
         h += '<div class="pp-emp-grid">'
             + '<div><div class="lbl">Employee Name</div><div class="val">'
-            + '<a class="pp-emp-link" href="index.php?page=employee-details&id=' + e.emp + '" target="_blank" title="Open this employee\'s profile">' + esc(e.name) + '</a>'
+            + '<a class="pp-emp-link" href="javascript:void(0);" data-emp-quickview="' + e.emp + '" title="Employee quick view">' + esc(e.name) + '</a>'
             + '</div></div>'
             + '<div><div class="lbl">Employee No.</div><div class="val">' + esc(e.no) + '</div></div>'
             + '<div><div class="lbl">Position</div><div class="val">' + esc(e.pos || '—') + '</div></div>'
@@ -880,8 +880,8 @@
             : '';
         // One-line sub-caption; the untruncated text lives in the tooltip.
         var sub = e.no + (e.pos ? ' · ' + e.pos : '') + (e.dept ? ' · ' + e.dept : '');
-        var h = '<div class="pcw-sum-emp" title="' + esc(e.name) + ' — open profile">'
-            + '<a href="index.php?page=employee-details&id=' + e.emp + '" target="_blank">' + esc(e.name) + ' <i class="ri-external-link-line"></i></a></div>'
+        var h = '<div class="pcw-sum-emp" title="' + esc(e.name) + ' — employee quick view">'
+            + '<a href="javascript:void(0);" data-emp-quickview="' + e.emp + '">' + esc(e.name) + ' <i class="ri-user-3-line"></i></a></div>'
             + '<div class="pcw-sum-sub" title="' + esc(sub) + '">' + esc(sub) + '</div>'
             + sentLine
             + '<div class="pcw-sum-grid">'
@@ -912,7 +912,7 @@
             + '<button type="button" class="pcw-btn" onclick="pcwOpenDtr(' + e.id + ')"><i class="ri-calendar-check-line"></i> DTR Details (' + e.dtr_days + ')</button>'
             + '<button type="button" class="pcw-btn" onclick="openReviewMark(' + e.id + ')"><i class="ri-checkbox-multiple-line"></i> Review Mark</button>'
             + unlockButton(e)
-            + '<a class="pcw-btn" href="index.php?page=employee-details&id=' + e.emp + '" target="_blank"><i class="ri-user-3-line"></i> Profile</a>'
+            + '<a class="pcw-btn" href="javascript:void(0);" data-emp-quickview="' + e.emp + '" title="Employee quick view — Full details opens from the drawer"><i class="ri-user-3-line"></i> Profile</a>'
             + '</div>';
         byId('pcw-sum').innerHTML = h;
     }

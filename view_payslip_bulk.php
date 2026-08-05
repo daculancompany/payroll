@@ -1,8 +1,33 @@
 <?php
+require_once __DIR__ . '/includes/session_bootstrap.php';
 include 'db_connect.php';
+
+// Bulk payslips had no access control at all: ?ids=1,2,3 printed anyone's pay.
+// Staff sessions may print any payslip; an employee-portal session is narrowed
+// to its OWN items below, so a guessed id cannot leak a colleague's pay.
+$is_staff_session    = !empty($_SESSION['is_login']);
+$is_employee_session = !empty($_SESSION['emp_is_login']);
+if (!$is_staff_session && !$is_employee_session) {
+    http_response_code(403);
+    exit('Not authorized.');
+}
+
 if (!isset($_GET['ids'])) { return; }
 $raw_ids = array_filter(array_map('intval', explode(',', $_GET['ids'])));
 if (empty($raw_ids)) { return; }
+
+if (!$is_staff_session) {
+    $__eid = (int) ($_SESSION['emp_id'] ?? 0);
+    $__in  = implode(',', array_map('intval', $raw_ids));
+    $__own = [];
+    $__q = $conn->query("SELECT id FROM payroll_items WHERE id IN ($__in) AND employee_id = $__eid");
+    if ($__q) while ($__r = $__q->fetch_assoc()) $__own[] = (int) $__r['id'];
+    $raw_ids = $__own;
+    if (empty($raw_ids)) {
+        http_response_code(403);
+        exit('Not authorized.');
+    }
+}
 
 // Build payslip data for each ID
 function buildPayslip($conn, $id) {
@@ -30,28 +55,24 @@ function buildPayslip($conn, $id) {
     // view_payslip.php (NOT the stored per_minute column, which is /1440).
     $dayHours         = day_hours_or_default($p['day_hours'] ?? null);
     $perMinute        = $p['per_day'] / ($dayHours * 60);
-    $overtime_amount  = $p['ot'] * $p['ot_rate'];
-    $undertime_amount = $p['under_time'] * $perMinute;   // informational only
-    $late_amount      = $p['late'] * $perMinute;
-    $absent_amount    = $p['absent'] * $p['per_day'];
-    $allowance_amount = $p['allowance_amount'] * $p['allowance_days'];
-    $legal_amt   = $p['legal_holiday'] * $p['per_day'];
-    $sunday_amt  = $p['sunday_duty'] * $p['per_day'];
-    // /8 * 2.4 is the 30% special-holiday premium, not a day-length divisor.
-    $special_amt = (($p['per_day'] / 8) * 2.4) * $p['special_holiday'];
-    // Gross per pay basis — mirrors get_payroll_rows_data() / the details page.
-    $rate_type  = $p['rate_type'] ?? 'daily';
-    $is_monthly = in_array($rate_type, ['monthly', 'fixed'], true);
-    if ($is_monthly) {
-        $total_basic_rate = $p['basic_pay'];
-        $gross = (($total_basic_rate + $allowance_amount - $absent_amount) / 2)
-               + $overtime_amount + $legal_amt + $sunday_amt + $special_amt
-               - $late_amount;
-    } else {
-        $total_basic_rate = ($p['present'] + (float)($p['paid_leave'] ?? 0)) * $p['per_day'];
-        $gross = $total_basic_rate + $overtime_amount + $allowance_amount
-               - $late_amount;
-    }
+    // The ONE shared formula (payroll_earnings, db_connect.php). The copy that
+    // lived here halved absences and the allowance on the monthly basis, and its
+    // daily branch dropped holiday, rest-day and night-differential pay — so a
+    // bulk-printed payslip could show a different gross than the same employee's
+    // individually printed one.
+    $__e = payroll_earnings($p);
+    $overtime_amount  = $__e['overtime'];
+    $undertime_amount = $__e['under_amt'];
+    $late_amount      = $__e['late_amt'];
+    $absent_amount    = $__e['absent_amt'];
+    $allowance_amount = $__e['allowance'];
+    $legal_amt        = $__e['legal_amt'];
+    $sunday_amt       = $__e['rest_amt'];
+    $special_amt      = $__e['special_amt'];
+    $rate_type        = $p['rate_type'] ?? 'daily';
+    $is_monthly       = $__e['is_monthly'];
+    $total_basic_rate = $__e['is_monthly'] ? $p['basic_pay'] : $__e['basic'];
+    $gross            = $__e['gross'];
 
     $contributions_list = []; $deductions_list = []; $loans_list = [];
     $total_cont = 0; $total_ded = 0; $total_loan = 0;

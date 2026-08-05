@@ -209,8 +209,8 @@ $latest   = $payslips[0] ?? null;
 
 // Rate-aware pay math for a payslip row — mirrors admin get_payroll_rows_data so the
 // portal's gross matches the payroll view for BOTH pay bases:
-//   monthly → (basic_pay + allowance − absent×per_day)/2 + OT + holiday/rest premiums − late
-//   daily   → days present × daily rate + OT + allowance − late
+//   monthly → basic_pay/2 − absent×per_day + allowance + OT + holiday/rest premiums − late − undertime
+//   daily   → days present × daily rate + allowance + OT + premiums − late − undertime
 // Returns ['sub' => basic earnings, 'gross' => full gross].
 if (!function_exists('pp_pay')) {
     function pp_pay($r)
@@ -2519,7 +2519,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="ps-row"><span class="ps-lbl">Late (<?= number_format($latest['late']) ?> min)</span><span class="ps-val ded">−₱<?= n2($late_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($latest['under_time'] > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl dim">Undertime (<?= number_format($latest['under_time']) ?> min)</span><span class="ps-val dim">not deducted</span></div>
+                    <div class="ps-row"><span class="ps-lbl">Undertime (<?= number_format($latest['under_time']) ?> min)</span><span class="ps-val ded">−₱<?= n2($ut_amt) ?></span></div>
                     <?php endif; ?>
                     <?php /* One-off allowances added for this employee alone */ ?>
                     <?php foreach (($latest['extras'] ?? []) as $__x): if ($__x['kind'] !== 2) continue; ?>
@@ -2602,7 +2602,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         ? $ps['sunday_duty'] * $ps['per_day']
                         : rest_day_premium($ps['sunday_duty'], $ps['per_day']);
                     $spc2   = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
-                    $ut2    = $ps['under_time'] * $pm2;   // shown as info only; not part of gross
+                    $ut2    = $ps['under_time'] * $pm2;   // deducted from gross, like late
                     $_pp2   = pp_pay_x($ps);
                     $sub2   = $_pp2['sub'];
                     // Gross mirrors the admin payroll view, honoring the employee's rate basis.

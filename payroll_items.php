@@ -103,7 +103,7 @@ $pt = array(1 => "Monhtly", 2 => "Semi-Monthly");
 								?>
 									<tr>
 										<td class="pd-id"><?php echo $row['employee_no'] ?></td>
-										<td class="pd-name"><a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>" class="pd-name-link" data-emp-view="<?= (int)$row['employee_id'] ?>" title="Quick view — click for important details"><?php echo ucwords($row['ename']) ?></a></td>
+										<td class="pd-name"><a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>" class="pd-name-link" data-emp-quickview="<?= (int)$row['employee_id'] ?>" title="Quick view — click for important details"><?php echo ucwords($row['ename']) ?></a></td>
 										<td class="text-right"><?= number_format($row['time_log_amount'], 2) ?></td>
 										<td class="text-right"><?= number_format($row['late'], 2) ?></td>
 										<td class="text-right"><?= number_format($row['allowance_amount'], 2) ?></td>

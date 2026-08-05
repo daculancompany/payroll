@@ -4,12 +4,15 @@
    remittance-report, loan-deduction-ledger, payroll-report, employee-masterlist.
    Apply .rpt-card to the table card, .rpt-scroll to the scroll wrapper and
    .rpt-table to the <table>.
+
+   Colours come from the --rpt-* tokens in assets2/css/theme.css — recolour
+   there, not here.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .rpt-card {
-    border: 1px solid #d5e6e2;
+    border: 1px solid var(--rpt-card-border);
     border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(17, 98, 87, .06);
+    box-shadow: 0 1px 3px rgba(103, 59, 182, .07);
 }
 
 /* ── Soft scroll container ── */
@@ -42,41 +45,41 @@
     position: sticky;
     top: 0;
     z-index: 5;
-    background: #d7ece9;
-    color: #116257;
+    background: var(--rpt-head-bg);
+    color: var(--rpt-head-fg);
     font-size: 11px;
     font-weight: 800;
     letter-spacing: .4px;
     text-transform: uppercase;
     padding: 9px 10px;
     white-space: nowrap;
-    border-right: 1px solid #c2ddd8;
-    border-bottom: 1px solid #c2ddd8;
+    border-right: 1px solid var(--rpt-head-border);
+    border-bottom: 1px solid var(--rpt-head-border);
 }
 .rpt-table > tbody > tr > td {
     font-size: 12px;
     padding: 7px 10px;
     color: #1a1a1a;
-    border-right: 1px solid #e4ece8;
-    border-bottom: 1px solid #e9efec;
+    border-right: 1px solid var(--rpt-cell-border);
+    border-bottom: 1px solid var(--rpt-cell-border);
     vertical-align: middle;
 }
-.rpt-table > tbody > tr:nth-child(even) > td { background: #f3f9f1; }
+.rpt-table > tbody > tr:nth-child(even) > td { background: var(--rpt-row-alt); }
 .rpt-table > tbody > tr:nth-child(odd) > td { background: #ffffff; }
-.rpt-table > tbody > tr:hover > td { background: #d8ecd3; transition: background-color .08s ease; }
+.rpt-table > tbody > tr:hover > td { background: var(--rpt-row-hover); transition: background-color .08s ease; }
 
-/* Footer totals — soft green band, pinned to the bottom of the scroll area */
+/* Footer totals — soft purple band, pinned to the bottom of the scroll area */
 .rpt-table > tfoot > tr > td {
     position: sticky;
     bottom: 0;
     z-index: 6;
-    background: #d9eedd;
-    color: #0b5e31;
+    background: var(--rpt-foot-bg);
+    color: var(--rpt-foot-fg);
     font-weight: 800;
     font-size: 11px;
     padding: 9px 10px;
-    border-top: 2px solid #b8d8c2;
-    border-right: 1px solid #c0e0c8;
+    border-top: 2px solid var(--rpt-foot-border);
+    border-right: 1px solid var(--rpt-foot-border);
     white-space: nowrap;
 }
 
@@ -97,5 +100,5 @@
 .rpt-gov { font-family: monospace; font-size: 11px; color: #666; }
 
 /* Clickable employee name → employee details */
-.rpt-emp-link { font-weight: 600; color: #116257; text-decoration: none; }
-.rpt-emp-link:hover { color: #0b5e31; text-decoration: underline; }
+.rpt-emp-link { font-weight: 600; color: var(--app-primary); text-decoration: none; }
+.rpt-emp-link:hover { color: var(--app-primary-dark); text-decoration: underline; }

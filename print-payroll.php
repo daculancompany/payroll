@@ -1,14 +1,23 @@
 <?php
 include 'db_connect.php';
+require_once __DIR__ . "/includes/session_bootstrap.php";
+// Reachable directly as well as through pdf-payroll.php, and it had no
+// access control: a plain GET rendered a whole payroll. Guarded here too so
+// the URL and the PDF entry point can never disagree about who may read it.
+if (empty($_SESSION["is_login"])) { http_response_code(403); exit("Not authorized."); }
+require_page_access("payroll", "text");
+
 if (!isset($_GET['id'])) {
     return;
 }
-$id = $_GET['id'];
-$site_id = isset($_GET['site_id']) ? $_GET['site_id'] : '';
+// Both were interpolated raw into the item query below — ?site_id= was a
+// straight SQL injection for anyone who could open this page.
+$id = (int) $_GET['id'];
+$site_id = isset($_GET['site_id']) && $_GET['site_id'] !== '' ? (int) $_GET['site_id'] : '';
 
 $custom_query = '';
 if ($site_id !== '') {
-    $custom_query = "AND a.site_id = '$site_id' ";
+    $custom_query = "AND a.site_id = $site_id ";
 }
 
 
@@ -409,7 +418,13 @@ LEFT JOIN sites f ON f.id = a.site_id
                         $legal_holiday = $row['legal_holiday'];
                         $legal_holiday_amount =  $legal_holiday * $perDay;
                         $sunday_duty = $row['sunday_duty'];
-                        $sunday_duty_amount =  $sunday_duty * $perDay;
+                        // Daily rate → the +30% premium only (the worked rest day is already
+                        // inside `present`); monthly/fixed → the full extra day. Flat
+                        // `× per_day` here printed a rest-day figure gross never contained.
+                        $__rt = $row['rate_type'] ?? 'daily';
+                        $sunday_duty_amount = ($__rt === 'monthly' || $__rt === 'fixed')
+                            ? $sunday_duty * $perDay
+                            : rest_day_premium($sunday_duty, $perDay);
                         $special_holiday = $row['special_holiday'];
                         // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                         $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
@@ -420,9 +435,15 @@ LEFT JOIN sites f ON f.id = a.site_id
                         $t_nsd_hrs  = ($t_nsd_hrs ?? 0) + $nsd_hours;
                         $t_nsd_amt  = ($t_nsd_amt ?? 0) + $nsd_amount;
 
-                        $total_amount =  ($total_basic_rate    +  $total_allowance - $absent_amount) / 2;
-                        $t_total_amount += $total_amount;
-                        $gross_salary =  (($total_basic_rate +   $overtime_amount   +  $total_allowance + $nsd_amount)   - $late_amount);
+                        // The ONE shared formula. This sheet used to halve basic, allowance
+                        // AND absences regardless of rate_type, and its gross dropped
+                        // holiday, rest-day and undertime — so the printed payroll and the
+                        // payslip generated from the same row disagreed.
+                        $__e              = payroll_earnings($row);
+                        $total_basic_rate = $__e['basic'];
+                        $total_amount     = $__e['subtotal'];
+                        $t_total_amount  += $total_amount;
+                        $gross_salary     = $__e['gross'];
 
                         $contributions = json_decode($row['contributions'], true);
                         $deductions = json_decode($row['deductions'], true);

@@ -46,7 +46,7 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
     .lb-kpi .lb-kpi-ic  { float:right; width:36px; height:36px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:18px; background:#eae6f2; color:#673bb6; }
 
     /* ── Utilization bar ── */
-    .lb-bar { height:6px; border-radius:4px; background:#eef2f0; overflow:hidden; min-width:70px; }
+    .lb-bar { height:6px; border-radius:4px; background:#efeaf8; overflow:hidden; min-width:70px; }
     .lb-bar > span { display:block; height:100%; border-radius:4px; background:#673bb6; }
     .lb-bar.warn > span { background:#f5a623; }
     .lb-bar.danger > span { background:#e05c5c; }
@@ -190,7 +190,7 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
         <!-- ── Per leave type summary ──────────────────────────────────── -->
         <div class="col-lg-7">
             <div class="card rpt-card h-100">
-                <div class="card-header bg-white d-flex align-items-center" style="border-bottom:1px solid #e4ece8;">
+                <div class="card-header bg-white d-flex align-items-center" style="border-bottom:1px solid var(--rpt-card-border);">
                     <span class="lb-section-title flex-grow-1"><i class="ri-pie-chart-2-line me-1"></i>Utilization by Leave Type</span>
                     <span class="text-muted" style="font-size:11px;">Year <?= (int) $f['year'] ?></span>
                 </div>
@@ -256,7 +256,7 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
         <!-- ── Watchlists ──────────────────────────────────────────────── -->
         <div class="col-lg-5">
             <div class="card rpt-card h-100">
-                <div class="card-header bg-white" style="border-bottom:1px solid #e4ece8;">
+                <div class="card-header bg-white" style="border-bottom:1px solid var(--rpt-card-border);">
                     <span class="lb-section-title"><i class="ri-alarm-warning-line me-1"></i>Watchlist</span>
                 </div>
                 <div class="card-body p-0">
@@ -304,7 +304,7 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
 
     <!-- ── Employee × leave type matrix ────────────────────────────────── -->
     <div class="card rpt-card mb-4">
-        <div class="card-header bg-white d-flex align-items-center" style="border-bottom:1px solid #e4ece8;">
+        <div class="card-header bg-white d-flex align-items-center" style="border-bottom:1px solid var(--rpt-card-border);">
             <span class="lb-section-title flex-grow-1"><i class="ri-table-line me-1"></i>Employee Leave Ledger</span>
             <span class="text-muted" style="font-size:11px;">A = available · U = used · R = remaining</span>
         </div>

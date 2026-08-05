@@ -151,8 +151,6 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
     <!-- Global DTR (Form 48) template — shared with the employee portal -->
     <link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
     <script src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
-    <!-- Shared employee quick-view drawer (data-emp-view="<id>" opens it) -->
-    <script src="<?= av('assets2/js/employee-view.js') ?>" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
@@ -1323,7 +1321,7 @@ function renderSummary(e) {
     let periodDays = 0; eachDay(() => periodDays++);
     const pct = periodDays ? Math.round(daysPresent / periodDays * 100) : 0;
     box.innerHTML = `
-        <button type="button" class="ddv-sum-emp" data-emp-view="${e.id}" title="View employee details">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></button>
+        <button type="button" class="ddv-sum-emp" data-emp-quickview="${e.id}" title="View employee details">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></button>
         <div class="ddv-sum-sub">${esc(e.no)}${e.position ? ' · ' + esc(e.position) : ''}${e.department ? ' · ' + esc(e.department) : ''}</div>
         <div class="ddv-sum-grid">
             <div class="ddv-sum-tile"><div class="v">${Number(e.totals.wh).toFixed(2)}</div><div class="l">Hours</div></div>
@@ -2321,5 +2319,12 @@ document.addEventListener('keydown', ev => {
 
 loadPage();
 </script>
+
+<?php
+// Employee quick-view drawer (the employee name in the summary panel opens
+// it). Standalone workbench, so "Full details" opens in a new tab.
+$eqv_full_target = '_blank';
+include __DIR__ . '/component/employee_quick_view.php';
+?>
 </body>
 </html>

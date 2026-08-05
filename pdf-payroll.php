@@ -1,7 +1,30 @@
 <?php
 // Renders the payroll print pages as a PDF via dompdf (landscape, tight margins)
 // and streams it inline so it can be previewed inside a modal iframe.
+//
+// This entry point had NO access control, and it INCLUDES the print sheets — so
+// pdf-payroll.php?src=payroll&id=N handed a full payroll PDF (every name, salary
+// and net pay) to anyone who could reach the URL. Gated here at the door; each
+// print sheet also guards itself, since they are reachable directly too.
+require_once __DIR__ . '/includes/session_bootstrap.php';
 require __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/db_connect.php';
+
+// The individual payslip is also reachable by the employee portal for its own
+// payslip; every other source is an admin payroll document.
+$__src_req = isset($_GET['src']) ? $_GET['src'] : 'payroll';
+if ($__src_req === 'payslip') {
+    if (empty($_SESSION['is_login']) && empty($_SESSION['emp_is_login'])) {
+        http_response_code(403);
+        exit('Not authorized.');
+    }
+} else {
+    if (empty($_SESSION['is_login'])) {
+        http_response_code(403);
+        exit('Not authorized.');
+    }
+    require_page_access($__src_req === '13th' ? 'thirteenth-month' : 'payroll', 'text');
+}
 
 use Dompdf\Dompdf;
 use Dompdf\Options;

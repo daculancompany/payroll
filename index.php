@@ -962,6 +962,14 @@ function getRole($login_role)
             }
             ?>
         </div>
+
+        <?php
+        // Shared employee quick-view drawer — any element on any routed page
+        // with data-emp-quickview="<employee id>" opens it. Replaces the old
+        // assets2/js/employee-view.js drawer that header.php used to load.
+        include 'component/employee_quick_view.php';
+        ?>
+
         <footer class="footer">
             <div class="container-fluid">
                 <div class="row">

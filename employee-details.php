@@ -201,6 +201,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     .emp-empty i { font-size:34px; display:block; margin-bottom:6px; opacity:.5; }
     .emp-empty b { display:block; font-size:13px; color:#6b7484; margin-bottom:2px; }
     .emp-empty span { font-size:11.5px; }
+
+    /* ---- Insights tab ---- */
+    .ins-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    @media (max-width:991.98px){ .ins-grid { grid-template-columns:1fr; } }
+    .ins-chart-body { background:#fff; padding:8px 10px 2px; }
+    .ins-chart-body .apexcharts-tooltip { font-size:12px; }
 </style>
 
 <div class="main-content">
@@ -268,6 +274,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <?php endif; ?>
                                     </div>
                                     <div class="emp-side-empno"><i class="ri-barcode-line me-1"></i><?= esc($employee_no) ?></div>
+                                    <?php if (!empty($portal_username)): ?>
+                                        <div style="font-size:11.5px;margin-top:7px;opacity:.95;word-break:break-all;">
+                                            <i class="ri-mail-line me-1"></i><a href="mailto:<?= esc($portal_username) ?>" style="color:#fff;"><?= esc($portal_username) ?></a>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
                                 <div class="emp-side-meta">
                                     <span class="badge" style="display:inline-flex;align-items:center;gap:2px;<?= clasif_badge_style($clasification) ?>">
@@ -336,6 +347,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 </a>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-insights" role="tab">
+                                    <i class="ri-line-chart-line"></i><span class="d-none d-sm-inline">Insights</span>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-profile" role="tab">
                                     <i class="ri-bank-card-line"></i><span class="d-none d-sm-inline">Loans</span>
                                     <?php if ($loan_agg['cnt'] > 0): ?><span class="tab-count"><?= $loan_agg['cnt'] ?></span><?php endif; ?>
@@ -400,6 +416,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <div class="detail-item">
                                             <div class="detail-label">Extension</div>
                                             <div class="detail-value"><?= esc($ext) ?: '<span class="text-muted">—</span>' ?></div>
+                                        </div>
+                                        <div class="detail-item">
+                                            <div class="detail-label">Email (Portal Login)</div>
+                                            <div class="detail-value" style="word-break:break-all;">
+                                                <?= !empty($portal_username) ? '<a href="mailto:' . esc($portal_username) . '">' . esc($portal_username) . '</a>' : '<span class="text-muted">Not set</span>' ?>
+                                            </div>
                                         </div>
                                     </div>
                                     <div class="detail-row">
@@ -530,6 +552,308 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         <div class="detail-item"></div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <!-- INSIGHTS TAB -->
+                            <div class="tab-pane" id="arrow-insights" role="tabpanel">
+                                <?php
+                                // Per-period figures for the charts. Earnings come from
+                                // payroll_earnings() (db_connect.php) — the same formula as the
+                                // payslip, register and exports — never from the stored net,
+                                // which is not refreshed by a recalculation.
+                                $ins_rows = [];
+                                $__iq = $conn->query("SELECT pi.*, p.date_from, p.date_to, p.type AS payroll_type
+                                    FROM payroll_items pi
+                                    INNER JOIN payroll p ON p.id = pi.payroll_id
+                                    WHERE pi.employee_id = $emp_id
+                                    ORDER BY p.date_from ASC, p.id ASC");
+                                if ($__iq) while ($__ir = $__iq->fetch_assoc()) $ins_rows[] = $__ir;
+
+                                // Named one-off extras (kind 1 deducts, kind 2 adds), fetched in
+                                // one query for every item. Guarded for DBs without the migration.
+                                $ins_extras = [];
+                                if ($ins_rows && $conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+                                    $__ids = implode(',', array_map(fn($r) => (int) $r['id'], $ins_rows));
+                                    $__xq = $conn->query("SELECT payroll_item_id pid, kind, SUM(amount) amt
+                                        FROM payroll_item_extras WHERE payroll_item_id IN ($__ids)
+                                        GROUP BY payroll_item_id, kind");
+                                    if ($__xq) while ($__x = $__xq->fetch_assoc()) {
+                                        $ins_extras[(int) $__x['pid']][(int) $__x['kind']] = (float) $__x['amt'];
+                                    }
+                                }
+
+                                $__json_sum = function ($txt) {
+                                    $t = 0.0;
+                                    foreach (json_decode((string) $txt, true) ?: [] as $it) $t += (float) ($it['amount'] ?? 0);
+                                    return $t;
+                                };
+
+                                $ins = ['labels' => [], 'full' => [], 'net' => [], 'basic' => [], 'allow' => [], 'otprem' => [],
+                                        'contrib' => [], 'loans' => [], 'taxother' => [], 'present' => [], 'leave' => [], 'absent' => [],
+                                        'gross' => [], 'ded' => [], 'late' => [], 'under' => []];
+                                $ins_ytd = ['gross' => 0.0, 'net' => 0.0, 'ded' => 0.0, 'ot_hrs' => 0.0, 'runs' => 0];
+                                $ins_year = (int) date('Y');
+
+                                foreach ($ins_rows as $__ir) {
+                                    $__e     = payroll_earnings($__ir);
+                                    $__xadd  = $ins_extras[(int) $__ir['id']][2] ?? 0.0;
+                                    $__xless = $ins_extras[(int) $__ir['id']][1] ?? 0.0;
+                                    $__gross = $__e['gross'] + $__xadd;
+
+                                    $__contrib  = $__json_sum($__ir['contributions']);
+                                    $__loans    = $__json_sum($__ir['loans']);
+                                    $__taxother = $__json_sum($__ir['deductions'])
+                                        + (float) $__ir['tax'] + (float) $__ir['other_deduction']
+                                        + (float) $__ir['jei_advances'] + (float) $__ir['jcc_advances']
+                                        + (float) ($__ir['sss_fund'] ?? 0) + $__xless;
+                                    $__ded = $__contrib + $__loans + $__taxother;
+
+                                    $__refunds = 0.0;
+                                    foreach (json_decode((string) ($__ir['refunds'] ?? ''), true) ?: [] as $__rf) $__refunds += (float) ($__rf['amount'] ?? 0);
+                                    // Same arithmetic as the payslip / resync_item_net().
+                                    $__net = $__gross - $__ded + $__refunds + (float) ($__ir['adjustment'] ?? 0);
+
+                                    $__f = strtotime($__ir['date_from']); $__t = strtotime($__ir['date_to']);
+                                    $ins['labels'][] = date('M j', $__f) . '–' . (date('M', $__f) === date('M', $__t) ? date('j', $__t) : date('M j', $__t));
+                                    $ins['full'][]   = date('M j, Y', $__f) . ' – ' . date('M j, Y', $__t);
+                                    $ins['net'][]     = round($__net, 2);
+                                    $ins['gross'][]   = round($__gross, 2);
+                                    $ins['ded'][]     = round($__ded, 2);
+                                    $ins['basic'][]   = round($__e['subtotal'], 2);
+                                    $ins['allow'][]   = round($__e['allowance'], 2);
+                                    $ins['otprem'][]  = round($__e['overtime'] + $__e['legal_amt'] + $__e['rest_amt'] + $__e['special_amt'] + $__e['nsd_amt'], 2);
+                                    $ins['contrib'][]  = round($__contrib, 2);
+                                    $ins['loans'][]    = round($__loans, 2);
+                                    $ins['taxother'][] = round($__taxother, 2);
+                                    $ins['present'][] = (float) $__ir['present'];
+                                    $ins['leave'][]   = (float) $__ir['paid_leave'];
+                                    $ins['absent'][]  = (float) $__ir['absent'];
+                                    $ins['late'][]    = (float) $__ir['late'];
+                                    $ins['under'][]   = (float) $__ir['under_time'];
+
+                                    if ((int) date('Y', $__f) === $ins_year) {
+                                        $ins_ytd['gross'] += $__gross;
+                                        $ins_ytd['net']   += $__net;
+                                        $ins_ytd['ded']   += $__ded;
+                                        $ins_ytd['ot_hrs'] += (float) $__ir['ot'];
+                                        $ins_ytd['runs']++;
+                                    }
+                                }
+                                // Charts read the most recent 12 periods; the table lists the same.
+                                $ins_chart = $ins;
+                                if (count($ins['labels']) > 12) {
+                                    foreach ($ins_chart as $k => $v) $ins_chart[$k] = array_slice($v, -12);
+                                }
+                                ?>
+
+                                <?php if (!$ins_rows): ?>
+                                    <div class="emp-empty mt-3">
+                                        <i class="ri-line-chart-line"></i>
+                                        <b>No payroll history yet</b>
+                                        <span>Charts appear here once this employee is included in a payroll run.</span>
+                                    </div>
+                                <?php else: ?>
+
+                                <div class="emp-stat-cards mt-2">
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-brand"><i class="ri-money-dollar-circle-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Gross Earned · <?= $ins_year ?></div>
+                                            <div class="emp-stat-val text-brand">&#8369;<?= number_format($ins_ytd['gross'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic"><i class="ri-wallet-3-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Net Pay · <?= $ins_year ?></div>
+                                            <div class="emp-stat-val">&#8369;<?= number_format($ins_ytd['net'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-danger"><i class="ri-subtract-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">Deductions · <?= $ins_year ?></div>
+                                            <div class="emp-stat-val text-loss">&#8369;<?= number_format($ins_ytd['ded'], 2) ?></div>
+                                        </div>
+                                    </div>
+                                    <div class="emp-stat-card">
+                                        <div class="emp-stat-ic ic-warn"><i class="ri-timer-flash-line"></i></div>
+                                        <div>
+                                            <div class="emp-stat-lbl">OT Hours · <?= $ins_year ?></div>
+                                            <div class="emp-stat-val"><?= rtrim(rtrim(number_format($ins_ytd['ot_hrs'], 2), '0'), '.') ?> <span style="font-size:11px;color:#889;font-weight:600;">across <?= $ins_ytd['runs'] ?> run<?= $ins_ytd['runs'] == 1 ? '' : 's' ?></span></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="detail-section">
+                                    <div class="detail-section-title"><i class="ri-line-chart-line"></i>Net Pay Trend <span style="font-weight:400;opacity:.8;text-transform:none;">— last <?= count($ins_chart['labels']) ?> payroll period<?= count($ins_chart['labels']) == 1 ? '' : 's' ?></span></div>
+                                    <div class="ins-chart-body"><div id="ins-chart-net"></div></div>
+                                </div>
+
+                                <div class="ins-grid mb-3">
+                                    <div class="detail-section mb-0">
+                                        <div class="detail-section-title"><i class="ri-stack-line"></i>Earnings Composition</div>
+                                        <div class="ins-chart-body"><div id="ins-chart-earn"></div></div>
+                                    </div>
+                                    <div class="detail-section mb-0">
+                                        <div class="detail-section-title"><i class="ri-scissors-cut-line"></i>Deductions Breakdown</div>
+                                        <div class="ins-chart-body"><div id="ins-chart-ded"></div></div>
+                                    </div>
+                                </div>
+
+                                <div class="ins-grid mb-3">
+                                    <div class="detail-section mb-0">
+                                        <div class="detail-section-title"><i class="ri-calendar-check-line"></i>Attendance per Period <span style="font-weight:400;opacity:.8;text-transform:none;">(days)</span></div>
+                                        <div class="ins-chart-body"><div id="ins-chart-att"></div></div>
+                                    </div>
+                                    <div class="detail-section mb-0">
+                                        <div class="detail-section-title"><i class="ri-table-line"></i>Recent Periods</div>
+                                        <div class="table-responsive" style="max-height:300px;overflow-y:auto;">
+                                            <table class="table table-sm table-hover align-middle mb-0" style="font-size:12px;">
+                                                <thead class="table-light" style="position:sticky;top:0;">
+                                                    <tr>
+                                                        <th>Period</th>
+                                                        <th class="text-end">Gross</th>
+                                                        <th class="text-end">Deductions</th>
+                                                        <th class="text-end">Net</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    <?php for ($__i = count($ins_chart['labels']) - 1; $__i >= 0; $__i--): ?>
+                                                    <tr>
+                                                        <td style="white-space:nowrap;"><?= esc($ins_chart['full'][$__i]) ?></td>
+                                                        <td class="text-end"><span class="emp-currency-val">&#8369;<?= number_format($ins_chart['gross'][$__i], 2) ?></span></td>
+                                                        <td class="text-end" style="color:#d63939;font-weight:600;">&#8369;<?= number_format($ins_chart['ded'][$__i], 2) ?></td>
+                                                        <td class="text-end"><b>&#8369;<?= number_format($ins_chart['net'][$__i], 2) ?></b></td>
+                                                    </tr>
+                                                    <?php endfor; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <script src="assets/libs/apexcharts/apexcharts.min.js"></script>
+                                <script>
+                                (function () {
+                                    const D = <?= json_encode($ins_chart) ?>;
+                                    const peso = v => '₱' + Number(v).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                    const compact = v => Math.abs(v) >= 1000 ? '₱' + (v / 1000).toFixed(Math.abs(v) >= 100000 ? 0 : 1) + 'k' : '₱' + (Math.round(v * 10) / 10);
+                                    const days = v => v + ' day' + (v == 1 ? '' : 's');
+                                    // All-zero stacked series render a degenerate axis — show a note instead.
+                                    const chartOrEmpty = (sel, seriesArrays, msg, cfg) => {
+                                        const el = document.querySelector(sel);
+                                        if (!el) return;
+                                        if (seriesArrays.every(a => a.every(v => !v))) {
+                                            el.innerHTML = '<div class="emp-empty" style="padding:44px 10px;"><i class="ri-bar-chart-2-line"></i><b>' + msg + '</b></div>';
+                                            return;
+                                        }
+                                        new ApexCharts(el, cfg).render();
+                                    };
+
+                                    // Shared chrome: recessive grid/axes, muted labels, no toolbar.
+                                    const base = {
+                                        chart: { toolbar: { show: false }, fontFamily: 'inherit', animations: { speed: 400 } },
+                                        grid: { borderColor: '#e9ecf3', strokeDashArray: 0, padding: { left: 8, right: 8 } },
+                                        dataLabels: { enabled: false },
+                                        xaxis: { categories: D.labels, labels: { style: { colors: '#889', fontSize: '10px' } }, axisBorder: { color: '#d8dce6' }, axisTicks: { show: false } },
+                                        legend: { position: 'bottom', fontSize: '11px', labels: { colors: '#5a6474' }, markers: { size: 5 }, itemMargin: { horizontal: 8 } },
+                                        tooltip: { shared: true, intersect: false, x: { formatter: (v, o) => D.full[o.dataPointIndex] || v } }
+                                    };
+                                    const stackedBar = {
+                                        ...base.chart, type: 'bar', height: 250, stacked: true
+                                    };
+                                    // 2px white stroke = the surface gap between stacked segments.
+                                    const segGap = { show: true, width: 2, colors: ['#fff'] };
+                                    const barShape = { columnWidth: D.labels.length > 8 ? '70%' : '45%', borderRadius: 2, borderRadiusApplication: 'end', borderRadiusWhenStacked: 'last' };
+
+                                    let rendered = false;
+                                    function render() {
+                                        if (rendered || typeof ApexCharts === 'undefined' || !D.labels.length) return;
+                                        rendered = true;
+
+                                        new ApexCharts(document.querySelector('#ins-chart-net'), {
+                                            ...base,
+                                            chart: { ...base.chart, type: 'area', height: 240 },
+                                            series: [{ name: 'Net Pay', data: D.net }],
+                                            colors: ['#673bb6'],
+                                            stroke: { curve: 'straight', width: 2 },
+                                            fill: { type: 'gradient', gradient: { shadeIntensity: 0, opacityFrom: 0.18, opacityTo: 0.02 } },
+                                            markers: { size: 0, hover: { size: 5 } },
+                                            legend: { show: false },
+                                            yaxis: { labels: { formatter: compact, style: { colors: '#889', fontSize: '10px' } } },
+                                            tooltip: { ...base.tooltip, y: { formatter: peso } }
+                                        }).render();
+
+                                        chartOrEmpty('#ins-chart-earn', [D.basic, D.allow, D.otprem], 'No earnings recorded', {
+                                            ...base,
+                                            chart: stackedBar,
+                                            series: [
+                                                { name: 'Basic Pay', data: D.basic },
+                                                { name: 'Allowance', data: D.allow },
+                                                { name: 'OT & Premiums', data: D.otprem }
+                                            ],
+                                            colors: ['#673bb6', '#1baf7a', '#eda100'],
+                                            stroke: segGap,
+                                            plotOptions: { bar: barShape },
+                                            yaxis: { labels: { formatter: compact, style: { colors: '#889', fontSize: '10px' } } },
+                                            tooltip: { ...base.tooltip, y: { formatter: peso } }
+                                        });
+
+                                        chartOrEmpty('#ins-chart-ded', [D.contrib, D.loans, D.taxother], 'No deductions in these periods', {
+                                            ...base,
+                                            chart: stackedBar,
+                                            series: [
+                                                { name: 'Contributions', data: D.contrib },
+                                                { name: 'Loans', data: D.loans },
+                                                { name: 'Tax & Other', data: D.taxother }
+                                            ],
+                                            colors: ['#2a78d6', '#eb6834', '#4a3aa7'],
+                                            stroke: segGap,
+                                            plotOptions: { bar: barShape },
+                                            yaxis: { labels: { formatter: compact, style: { colors: '#889', fontSize: '10px' } } },
+                                            tooltip: { ...base.tooltip, y: { formatter: peso } }
+                                        });
+
+                                        chartOrEmpty('#ins-chart-att', [D.present, D.leave, D.absent], 'No attendance days on these runs', {
+                                            ...base,
+                                            chart: stackedBar,
+                                            series: [
+                                                { name: 'Present', data: D.present },
+                                                { name: 'Paid Leave', data: D.leave },
+                                                { name: 'Absent', data: D.absent }
+                                            ],
+                                            colors: ['#0ca30c', '#2a78d6', '#d03b3b'],
+                                            stroke: segGap,
+                                            plotOptions: { bar: barShape },
+                                            yaxis: { labels: { formatter: v => Math.round(v), style: { colors: '#889', fontSize: '10px' } } },
+                                            tooltip: {
+                                                ...base.tooltip,
+                                                y: { formatter: (v, o) => {
+                                                    // Late/undertime minutes ride on the Present row of the tooltip.
+                                                    if (o && o.seriesIndex === 0) {
+                                                        const i = o.dataPointIndex, extra = [];
+                                                        if (D.late[i] > 0) extra.push(D.late[i] + 'm late');
+                                                        if (D.under[i] > 0) extra.push(D.under[i] + 'm undertime');
+                                                        return days(v) + (extra.length ? ' (' + extra.join(', ') + ')' : '');
+                                                    }
+                                                    return days(v);
+                                                } }
+                                            }
+                                        });
+                                    }
+
+                                    // Panes start hidden (width 0), so charts render on first reveal.
+                                    document.addEventListener('DOMContentLoaded', function () {
+                                        const link = document.querySelector('a[href="#arrow-insights"]');
+                                        if (link) link.addEventListener('shown.bs.tab', render);
+                                        // Covers the tab already being active (URL hash / remembered tab
+                                        // restored before this listener attached).
+                                        if (document.querySelector('#arrow-insights.active')) render();
+                                    });
+                                })();
+                                </script>
+                                <?php endif; ?>
                             </div>
 
                             <!-- LOANS TAB -->

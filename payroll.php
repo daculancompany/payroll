@@ -4,6 +4,11 @@
     .payroll-ref { font-weight:700; color:#1976d2; font-family:'Segoe UI',monospace; letter-spacing:.3px; }
     .payroll-period { font-size:12px; color:#444; white-space:nowrap; }
     .type-badge { font-size:11px; }
+    /* ── Summary stat cards ── */
+    .pay-stat-icon { width:48px; height:48px; flex-shrink:0; }
+    .pay-stat-sub { font-size:11px; display:block; line-height:1.5; }
+    .pay-stat-sub .badge { font-size:10px; font-weight:600; padding:2px 6px; }
+    #pay-sum-latest-net { letter-spacing:.2px; }
 </style>
 <div class="main-content">
 	<div class="page-content">
@@ -21,6 +26,65 @@
 						</div>
 					</div>
 				</div>
+
+				<!-- ── Payroll summary cards (values filled by payroll.js on every table refresh) ── -->
+				<div class="col-xl-3 col-md-6">
+					<div class="card card-animate">
+						<div class="card-body d-flex align-items-center">
+							<div class="rounded bg-primary-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
+								<i class="ri-stack-line fs-22 text-primary"></i>
+							</div>
+							<div>
+								<p class="text-muted mb-1">Payroll Batches</p>
+								<h4 class="mb-0" id="pay-sum-total">—</h4>
+								<small class="text-muted pay-stat-sub" id="pay-sum-total-sub">&nbsp;</small>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-xl-3 col-md-6">
+					<div class="card card-animate">
+						<div class="card-body d-flex align-items-center">
+							<div class="rounded bg-warning-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
+								<i class="ri-loader-4-line fs-22 text-warning"></i>
+							</div>
+							<div>
+								<p class="text-muted mb-1">In Progress</p>
+								<h4 class="mb-0" id="pay-sum-progress">—</h4>
+								<small class="text-muted pay-stat-sub" id="pay-sum-progress-sub">&nbsp;</small>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-xl-3 col-md-6">
+					<div class="card card-animate">
+						<div class="card-body d-flex align-items-center">
+							<div class="rounded bg-danger-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
+								<i class="ri-lock-fill fs-22 text-danger"></i>
+							</div>
+							<div>
+								<p class="text-muted mb-1">Locked</p>
+								<h4 class="mb-0" id="pay-sum-locked">—</h4>
+								<small class="text-muted pay-stat-sub">Finalized payroll runs</small>
+							</div>
+						</div>
+					</div>
+				</div>
+				<div class="col-xl-3 col-md-6">
+					<div class="card card-animate">
+						<div class="card-body d-flex align-items-center">
+							<div class="rounded bg-success-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
+								<i class="ri-money-dollar-circle-line fs-22 text-success"></i>
+							</div>
+							<div>
+								<p class="text-muted mb-1">Latest Net Pay</p>
+								<h4 class="mb-0" id="pay-sum-latest-net">—</h4>
+								<small class="text-muted pay-stat-sub" id="pay-sum-latest-sub">&nbsp;</small>
+							</div>
+						</div>
+					</div>
+				</div>
+
 				<div class="card">
 					<div class="card-header align-items-center d-flex">
 						<h4 class="card-title mb-0 flex-grow-1">

@@ -11,7 +11,8 @@ $conn = include 'db_connect.php';
 require_page_access('bir-alphalist', 'text');
 
 $al_year = isset($_GET['year']) ? (int) $_GET['year'] : (int) date('Y');
-const BIR_13TH_CAP = 90000.0;
+// BIR_13TH_CAP now lives in db_connect.php so the payroll calculation can
+// see it too — the cap has to apply when WITHHOLDING, not only when reporting.
 
 // Gov't contribution ids (SSS/PHIC/HDMF aliases).
 $gov_ids = [];
@@ -52,19 +53,9 @@ if ($iq) while ($r = $iq->fetch_assoc()) {
     $a = &$rows[$eid];
     if ($r['pf'] < $a['from']) $a['from'] = $r['pf'];
     if ($r['pt'] > $a['to'])   $a['to'] = $r['pt'];
-    $perMin = payroll_per_minute($r);
-    $allow = $r['allowance_amount'] * $r['allowance_days'];
-    $ot = $r['ot'] * $r['ot_rate'];
-    $late = $r['late'] * $perMin;
-    $rt = $r['rate_type'] ?? 'daily';
-    if ($rt === 'monthly' || $rt === 'fixed') {
-        $gross = (($r['basic_pay'] + $allow - $r['absent'] * $r['per_day']) / 2) + $ot
-               + $r['legal_holiday'] * $r['per_day'] + $r['sunday_duty'] * $r['per_day']
-               + ($r['per_day'] / 8 * 2.4) * $r['special_holiday'] - $late;
-    } else {
-        $gross = ($r['present'] + (float) ($r['paid_leave'] ?? 0)) * $r['per_day'] + $ot + $allow - $late;
-    }
-    $a['gross'] += $gross;
+    // Per-cutoff gross — the ONE shared formula (see bir-alphalist.php for why
+    // the hand-rolled copy that lived here understated BIR compensation).
+    $a['gross'] += payroll_earnings($r)['gross'];
     $a['adj']   += (float) ($r['adjustment'] ?? 0);
     $a['tax']   += (float) $r['tax'];
     $cons = json_decode($r['contributions'], true) ?: [];

@@ -7,18 +7,30 @@
 <link rel="icon" href="favicon.ico" type="image/x-icon">
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <?php
+// This print sheet had NO access control whatsoever: a plain GET to
+// printmonthlybackup.php?id=N rendered a whole payroll — every employee's name,
+// salary, deductions and net pay — to anyone who could reach the URL, signed in
+// or not. It now requires a session and the same admin-only payroll access as
+// the screen it prints from, exactly like the other print/export endpoints.
+require_once __DIR__ . '/includes/session_bootstrap.php';
 include 'db_connect.php';
+if (empty($_SESSION['is_login'])) {
+    header('Location: login.php');
+    exit;
+}
+require_page_access('payroll', 'text');
 if (!isset($_GET['id'])) {
     return;
 }
-$id = $_GET['id'];
+// Cast: both ids were interpolated raw into the item query below.
+$id = (int) $_GET['id'];
 
 
 $filter_query = "";
-$sid = '';
-if (isset($_GET['site_id'])  && $_GET['site_id'] !== 'all') {
-    $sid = $_GET['site_id'];
-    $filter_query = " AND a.site_id = $sid  ";
+$sid = 0;
+if (isset($_GET['site_id'])  && $_GET['site_id'] !== 'all' && $_GET['site_id'] !== '') {
+    $sid = (int) $_GET['site_id'];
+    $filter_query = " AND a.site_id = $sid ";
 }
 // LEFT JOIN payroll g ON g.id = a.payroll_id 
 // LEFT JOIN employers  h ON g.employer_id = h.id
@@ -305,9 +317,11 @@ $payroll_type = $payroll['type'];
                                 // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
                                 $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
 
-                                $total_amount =  ($total_basic_rate    + $allowance_amount - $absent_amount) / 2;
+                                // The ONE shared formula (payroll_earnings, db_connect.php).
+                                $__e = payroll_earnings($row);
+                                $total_amount =  $__e['subtotal'];
                                 $t_total_amount += $total_amount;
-                                $gross_salary =  ($total_amount +   $overtime_amount   +  $legal_holiday_amount + $sunday_duty_amount +  $special_holiday_amount - $late_amount);
+                                $gross_salary =  $__e['gross'];
 
                                 $contributions = json_decode($row['contributions'], true);
                                 $deductions = json_decode($row['deductions'], true);

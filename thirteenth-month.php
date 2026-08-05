@@ -89,6 +89,32 @@ foreach ($th13_rows as $r) {
                                     <i class="ri-lock-unlock-line me-1"></i>Unfinalize
                                 </button>
                             <?php endif; ?>
+                            <?php
+                            // Paying it out. Finalized only — a draft can still be
+                            // regenerated, and this is the step that actually moves
+                            // money and creates the withholding obligation.
+                            if ($th13_finalized):
+                                $th13_open = $conn->query(
+                                    "SELECT id, date_from, date_to FROM payroll
+                                      WHERE status <> 2 ORDER BY date_from DESC LIMIT 12"
+                                );
+                            ?>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-sm btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+                                        <i class="ri-bank-card-line me-1"></i>Pay through payroll
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <?php if ($th13_open && $th13_open->num_rows): while ($op = $th13_open->fetch_assoc()): ?>
+                                            <li><a class="dropdown-item" href="javascript:void(0)"
+                                                   onclick="th13Post(<?= (int) $op['id'] ?>, '<?= date('M j', strtotime($op['date_from'])) . ' – ' . date('M j, Y', strtotime($op['date_to'])) ?>')">
+                                                <?= date('M j', strtotime($op['date_from'])) ?> – <?= date('M j, Y', strtotime($op['date_to'])) ?>
+                                            </a></li>
+                                        <?php endwhile; else: ?>
+                                            <li><span class="dropdown-item text-muted">No unlocked payroll to post into</span></li>
+                                        <?php endif; ?>
+                                    </ul>
+                                </div>
+                            <?php endif; ?>
                             <?php if ($th13_rows): ?>
                                 <button class="btn btn-sm btn-outline-secondary" onclick="window.open('pdf-payroll.php?src=13th&id=<?= $th13_year ?>', '_blank')">
                                     <i class="ri-printer-line me-1"></i>Print Register
@@ -221,6 +247,32 @@ function th13SaveRow(id, btn) {
             Swal.fire({ icon: 'error', title: 'Error', text: res?.message || 'Failed.' });
         }
     }, 'json');
+}
+
+// Post the finalized year into a payroll run. This is the step that turns a
+// computed figure into money the employee is actually paid — and the point at
+// which the portion above the ₱90,000 exemption becomes withholdable.
+function th13Post(payrollId, label) {
+    Swal.fire({
+        title: 'Pay ' + TH13_YEAR + ' 13th month?',
+        html: 'It will be added to the payroll for <b>' + label + '</b> as a "13th Month Pay" line, '
+            + 'and will appear on payslips, in the bank payout and in the withholding base.'
+            + '<div style="margin-top:8px;font-size:12px;color:#888;">Posting again replaces this run\'s 13th-month lines rather than adding a second copy.</div>',
+        icon: 'question',
+        width: 560,
+        showCancelButton: true,
+        confirmButtonText: 'Post to payroll',
+    }).then(function (r) {
+        if (!r.isConfirmed) return;
+        Swal.fire({ title: 'Posting…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        $.post('ajax.php?action=th13_post_to_payroll', { year: TH13_YEAR, payroll_id: payrollId }, function (res) {
+            Swal.fire({
+                icon: res?.result ? 'success' : 'error',
+                title: res?.result ? 'Posted' : 'Could not post',
+                text: res?.message || 'Failed.',
+            });
+        }, 'json');
+    });
 }
 
 function th13Finalize(to) {

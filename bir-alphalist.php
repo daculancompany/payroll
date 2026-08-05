@@ -8,7 +8,8 @@
 // across the year's payrolls, plus the year's 13th month pay and signed
 // adjustments (they are compensation actually received).
 
-const BIR_13TH_CAP = 90000.0; // Sec 32(B)(7)(e) NIRC — 13th month & other benefits exemption cap
+// BIR_13TH_CAP now lives in db_connect.php so the payroll calculation can
+// see it too — the cap has to apply when WITHHOLDING, not only when reporting.
 
 $al_year = isset($_GET['year']) ? (int) $_GET['year'] : (int) date('Y');
 $al_years = [];
@@ -62,23 +63,11 @@ if ($iq) while ($r = $iq->fetch_assoc()) {
     if ($r['pf'] < $a['from']) $a['from'] = $r['pf'];
     if ($r['pt'] > $a['to'])   $a['to'] = $r['pt'];
 
-    // Per-cutoff gross — mirrors get_payroll_rows_data().
-    $perMin = payroll_per_minute($r);
-    $allow = $r['allowance_amount'] * $r['allowance_days'];
-    $ot = $r['ot'] * $r['ot_rate'];
-    $late = $r['late'] * $perMin;
-    $rt = $r['rate_type'] ?? 'daily';
-    if ($rt === 'monthly' || $rt === 'fixed') {
-        $gross = (($r['basic_pay'] + $allow - $r['absent'] * $r['per_day']) / 2)
-               + $ot
-               + $r['legal_holiday'] * $r['per_day']
-               + $r['sunday_duty'] * $r['per_day']
-               + ($r['per_day'] / 8 * 2.4) * $r['special_holiday']
-               - $late;
-    } else {
-        $gross = ($r['present'] + (float) ($r['paid_leave'] ?? 0)) * $r['per_day'] + $ot + $allow - $late;
-    }
-    $a['gross'] += $gross;
+    // Per-cutoff gross — the ONE shared formula. This used to be a hand-rolled
+    // copy that had drifted: it halved absences, and its daily branch dropped
+    // holiday, rest-day and night-differential pay entirely, so the compensation
+    // reported to BIR was lower than the employee was actually paid.
+    $a['gross'] += payroll_earnings($r)['gross'];
     $a['adj']   += (float) ($r['adjustment'] ?? 0);
     $a['tax']   += (float) $r['tax'];
 

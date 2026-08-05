@@ -142,9 +142,9 @@ if (!isset($page_title)) {
     <!-- Keeps SweetAlert dialogs above Bootstrap modals -->
     <link rel="stylesheet" href="assets2/css/modal-stacking.css">
 
-    <!-- Shared read-only employee quick-view drawer: any element with
-         data-emp-view="<employee_id>" opens it (see assets2/js/employee-view.js) -->
-    <script src="<?= av('assets2/js/employee-view.js') ?>" defer></script>
+    <!-- The employee quick-view drawer is now component/employee_quick_view.php,
+         included by index.php for every routed page (data-emp-quickview="<id>"
+         opens it); standalone pages include the component themselves. -->
     <style>
         /* Uniform DataTables empty-state (used by table.dataTables_empty cells) */
         td.dataTables_empty {

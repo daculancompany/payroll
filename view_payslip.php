@@ -59,7 +59,7 @@ $perMinute        = $payroll['per_day'] / ($dayHours * 60);
 $__e = payroll_earnings($payroll);
 
 $overtime_amount  = $__e['overtime'];
-$undertime_amount = $__e['under_amt'];   // informational only — not deducted in semi-monthly payroll
+$undertime_amount = $__e['under_amt'];   // deducted from gross, same per-minute rate as late
 $late_amount      = $__e['late_amt'];
 $absent_amount    = $__e['absent_amt'];
 $allowance_amount = $__e['allowance'];
@@ -73,13 +73,16 @@ $special_holiday_amt = $__e['special_amt'];
 $nsd_amount = $__e['nsd_amt'];
 
 // Pay basis, for the labels and the two basic lines below.
-//   monthly/fixed: (monthly basic + allowance − absent) / 2, + OT + holiday
-//                  premiums, − late. Undertime is NOT deducted.
-//   daily:         (days present + paid leave) × daily rate, + OT + allowance
-//                  + holiday/rest-day premiums, − late. (No absent line: daily
-//                  staff are paid per day worked.)
+//   monthly/fixed: monthly basic ÷ 2 − absences, + allowance + OT + holiday
+//                  premiums, − late − undertime.
+//   daily:         (days present + paid leave) × daily rate, + allowance + OT
+//                  + holiday/rest-day premiums, − late − undertime. (No absent
+//                  line: daily staff are paid per day worked.)
 $rate_type  = $payroll['rate_type'] ?? 'daily';
 $is_monthly = $__e['is_monthly'];
+// Half the monthly salary, BEFORE absences — the "÷2" line on the payslip.
+$semi_monthly_share  = (float) $payroll['basic_pay'] / 2;
+// Basic pay actually earned this period (that share less absences).
 $semi_monthly_amount = $__e['subtotal'];
 $daily_basic_amount  = $__e['basic'];
 $gross_salary        = $__e['gross'];
@@ -730,13 +733,27 @@ body.has-toolbar { padding-top: 50px; }
     <div class="grp-lbl">Basic Pay (Semi-Monthly)</div>
     <table class="item"><tr><td class="sub-lbl">Days Present</td><td class="sub-amt"><?= number_format($payroll['present'], 1) ?> days</td></tr></table>
     <table class="item"><tr><td class="sub-lbl">Daily Rate</td><td class="sub-amt">₱ <?= number_format($payroll['per_day'], 2) ?></td></tr></table>
-    <table class="item bold"><tr><td>Monthly Basic</td><td class="amt">₱ <?= number_format($monthly_basic, 2) ?></td></tr></table>
-    <?php if ($allowance_amount > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Allowance (<?= $payroll['allowance_days'] ?>d × ₱<?= number_format($payroll['allowance_amount'],2) ?>)</td><td class="sub-amt">₱ <?= number_format($allowance_amount, 2) ?></td></tr></table>
-    <?php endif; if ($payroll['absent'] > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Monthly Basic</td><td class="sub-amt">₱ <?= number_format($monthly_basic, 2) ?></td></tr></table>
+    <?php // The half-month share comes FIRST, then absences come off it. Absences
+    // are already priced for this cutoff (days × daily rate), so they are a
+    // straight subtraction — they used to sit inside the ÷2 and cost the
+    // employee only half of each day missed. ?>
+    <table class="item"><tr><td class="sub-lbl">Semi-Monthly Share (÷2)</td><td class="sub-amt">₱ <?= number_format($semi_monthly_share, 2) ?></td></tr></table>
+    <?php if ($payroll['absent'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Less: Absences (<?= $payroll['absent'] ?> day)</td><td class="sub-amt red">– ₱ <?= number_format($absent_amount, 2) ?></td></tr></table>
     <?php endif; ?>
-    <table class="item bold"><tr><td>Semi-Monthly Amount (÷2)</td><td class="amt">₱ <?= number_format($semi_monthly_amount, 2) ?></td></tr></table>
+    <table class="item bold"><tr><td>Basic Pay for Period</td><td class="amt">₱ <?= number_format($semi_monthly_amount, 2) ?></td></tr></table>
+    <?php if ($allowance_amount > 0): ?>
+    <?php // The hand-typed slot and each configured allowance type get their own
+    // line. A single blended "Allowance" figure could not be read back to its
+    // parts, and the label used to say "Xd × ₱Y" while showing the total.
+    $__manual = (float) $payroll['allowance_amount'] * (float) $payroll['allowance_days'];
+    if ($__manual > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Allowance (<?= $payroll['allowance_days'] ?>d × ₱<?= number_format($payroll['allowance_amount'],2) ?>)</td><td class="sub-amt">₱ <?= number_format($__manual, 2) ?></td></tr></table>
+    <?php endif; foreach (payroll_allowance_list($payroll) as $__a): ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($__a['label'] ?? 'Allowance') ?></td><td class="sub-amt">₱ <?= number_format((float) $__a['amount'], 2) ?></td></tr></table>
+    <?php endforeach; ?>
+    <?php endif; ?>
     <?php else: ?>
     <div class="grp-lbl">Basic Pay (Daily Rate)</div>
     <table class="item"><tr><td class="sub-lbl">Days Present</td><td class="sub-amt"><?= number_format($payroll['present'], 1) ?> days</td></tr></table>
@@ -746,7 +763,15 @@ body.has-toolbar { padding-top: 50px; }
     <table class="item"><tr><td class="sub-lbl">Daily Rate</td><td class="sub-amt">₱ <?= number_format($payroll['per_day'], 2) ?></td></tr></table>
     <table class="item bold"><tr><td>Basic Pay (days × rate)</td><td class="amt">₱ <?= number_format($daily_basic_amount, 2) ?></td></tr></table>
     <?php if ($allowance_amount > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Allowance (<?= $payroll['allowance_days'] ?>d × ₱<?= number_format($payroll['allowance_amount'],2) ?>)</td><td class="sub-amt">₱ <?= number_format($allowance_amount, 2) ?></td></tr></table>
+    <?php // The hand-typed slot and each configured allowance type get their own
+    // line. A single blended "Allowance" figure could not be read back to its
+    // parts, and the label used to say "Xd × ₱Y" while showing the total.
+    $__manual = (float) $payroll['allowance_amount'] * (float) $payroll['allowance_days'];
+    if ($__manual > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Allowance (<?= $payroll['allowance_days'] ?>d × ₱<?= number_format($payroll['allowance_amount'],2) ?>)</td><td class="sub-amt">₱ <?= number_format($__manual, 2) ?></td></tr></table>
+    <?php endif; foreach (payroll_allowance_list($payroll) as $__a): ?>
+    <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($__a['label'] ?? 'Allowance') ?></td><td class="sub-amt">₱ <?= number_format((float) $__a['amount'], 2) ?></td></tr></table>
+    <?php endforeach; ?>
     <?php endif; ?>
     <?php endif; ?>
 
@@ -789,7 +814,7 @@ body.has-toolbar { padding-top: 50px; }
     <?php if ($late_amount > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Late (<?= number_format($payroll['late']) ?> min)</td><td class="sub-amt red">– ₱ <?= number_format($late_amount, 2) ?></td></tr></table>
     <?php endif; if ($payroll['under_time'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl" style="color:#999;">Undertime (<?= number_format($payroll['under_time']) ?> min)</td><td class="sub-amt" style="color:#999;">not deducted</td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Undertime (<?= number_format($payroll['under_time']) ?> min)</td><td class="sub-amt red">– ₱ <?= number_format($undertime_amount, 2) ?></td></tr></table>
     <?php endif; endif; ?>
 </td>
 

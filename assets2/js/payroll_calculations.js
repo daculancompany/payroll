@@ -311,6 +311,11 @@ async function lockPayroll(id) {
             r => "<b>" + r.name + "</b> — " + r.missing + " day(s) unaccounted (" + r.counted + " of " + r.expected + ")");
         html += section("🌙", "Night hours but ₱0 night differential", chk.nd_zero,
             r => "<b>" + r.name + "</b> — " + r.hours + " hr(s) 10PM–6AM unpaid (check the shift's NSD setting)");
+        // Arithmetic reconciliation: the stored net vs the net its own components
+        // produce. Every other finding is a judgement call; this one is a defect.
+        html += section("🧮", "Stored net does not match its components", chk.unbalanced,
+            r => "<b>" + r.name + "</b> — stored " + peso(r.stored_net) + ", computes to " + peso(r.expected_net)
+               + " (" + (r.diff > 0 ? "+" : "") + peso(r.diff) + ") — recalculate this payroll");
     }
 
     const allClear = chk?.result && issues === 0;

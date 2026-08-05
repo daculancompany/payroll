@@ -26,6 +26,21 @@
     --sb-size:       10px;      /* width for vertical, height for horizontal */
     --sb-radius:     8px;
 
+    /* ── Report tables ──
+       Read by assets2/css/reports.css (.rpt-card / .rpt-table), shared by
+       payroll-register, payroll-report, attendance-summary, remittance-report,
+       loan-deduction-ledger, leave-balances-report, employee-masterlist. */
+    --rpt-card-border:  #e3dbf2;   /* card hairline */
+    --rpt-head-bg:      #e7dffa;   /* sticky header band */
+    --rpt-head-fg:      #4e3483;
+    --rpt-head-border:  #d4c6ee;
+    --rpt-cell-border:  #efeaf8;   /* cell grid lines */
+    --rpt-row-alt:      #faf8fe;   /* zebra stripe */
+    --rpt-row-hover:    #ece3fb;
+    --rpt-foot-bg:      #ded2f5;   /* pinned totals band */
+    --rpt-foot-fg:      #46297a;
+    --rpt-foot-border:  #c9b8ea;
+
     /* Legacy aliases — older pages still reference --sb-primary. */
     --sb-primary:      var(--app-primary);
     --sb-primary-soft: rgba(103, 59, 182, .08);

@@ -2,7 +2,7 @@
 /* App release shown on the login screen (mobile-app style: v<major>.<minor>.<build>).
  * Bump this on every deploy so users can report which build they are on. */
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '2.0.01');
+    define('APP_VERSION', '2.0.02');
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -358,7 +358,8 @@ if (!defined('ACTION_PAGE_MAP')) {
         'update_payroll_print' => 'payroll', 'update_payroll_status' => 'payroll',
         'save_payroll_item_etra' => 'payroll', 'delete_payroll_item_etra' => 'payroll',
         'get_payroll_rows_data' => 'payroll', 'payroll_history_details' => 'payroll',
-        'payroll_sanity_check' => 'payroll', 'compare_payrolls' => 'payroll',
+        'payroll_sanity_check' => 'payroll', 'payroll_reconcile' => 'payroll',
+        'compare_payrolls' => 'payroll',
         'remittance_breakdown' => 'payroll', 'isLock' => 'payroll',
         'relock_payroll_item' => 'payroll', 'unlock_payroll_item' => 'payroll',
         'set_payroll_item_review' => 'payroll', 'send_payroll_for_review' => 'payroll',
@@ -384,6 +385,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'import_employee' => 'employee',
         'assign_employee_schedule' => 'employee-details', 'delete_employee_schedule' => 'employee-details',
         'get_employee_schedule_history' => 'employee-details',
+        'employee_quick_view' => 'employee-details',
         'save_employee_loan' => 'employee-details', 'active_employee_loan' => 'employee-details',
         'loan_history_details' => 'employee-details',
         'save_employee_allowance' => 'employee-details', 'delete_employee_allowance' => 'employee-details',
@@ -403,6 +405,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'save_pay_settings' => 'pay-settings',
         'th13_generate' => 'thirteenth-month', 'th13_save_row' => 'thirteenth-month',
         'th13_set_final' => 'thirteenth-month',
+        'th13_post_to_payroll' => 'thirteenth-month',
         'save_user' => 'users', 'update_status_user' => 'users',
     ]);
 }
@@ -411,7 +414,8 @@ if (!defined('ACTION_PAGE_MAP')) {
 // employee records) may still call these; everything else mapped is a write.
 if (!defined('READ_ONLY_ACTIONS')) {
     define('READ_ONLY_ACTIONS', [
-        'get_employee_schedule_history', 'loan_history_details', 'plan_list',
+        'get_employee_schedule_history', 'employee_quick_view',
+        'loan_history_details', 'plan_list',
         'get_payroll_rows_data', 'payroll_history_details', 'remittance_breakdown',
         'isLock', 'dtr_review_progress', 'eport_payroll_reviews', 'eport_dtr_reviews',
     ]);
@@ -692,6 +696,359 @@ if (!function_exists('rest_day_premium')) {
     }
 }
 
+// ── Allowances (GLOBAL) ─────────────────────────────────────────────────
+// Total allowance on ONE payroll item. Two sources, deliberately ADDITIVE:
+//
+//   1. payroll_items.allowances — the JSON frozen at calculation time from the
+//      employee's configured allowance types (Meal, Hazard, …). Recurring, named,
+//      individually taxable-or-not.
+//   2. allowance_amount × allowance_days — the original single hand-typed slot,
+//      kept as the ad-hoc "this cutoff only" allowance.
+//
+// Existing rows carry an empty JSON column, so this returns exactly what it
+// always did for them; nothing restates a closed run.
+if (!function_exists('payroll_allowance_list')) {
+    function payroll_allowance_list($row): array
+    {
+        $list = json_decode($row['allowances'] ?? '', true);
+        return is_array($list) ? $list : [];
+    }
+}
+
+if (!function_exists('payroll_allowance_total')) {
+    function payroll_allowance_total($row): float
+    {
+        $t = (float) ($row['allowance_amount'] ?? 0) * (float) ($row['allowance_days'] ?? 0);
+        foreach (payroll_allowance_list($row) as $a) $t += (float) ($a['amount'] ?? 0);
+        return $t;
+    }
+}
+
+// How much of one run's allowance an employee_allowances row contributes.
+// `type` on that table: 1 = Monthly, 2 = Semi-Monthly, 3 = Once.
+//   Monthly      → spread across the run the same way statutory schedules are
+//                  (half on a semi-monthly cutoff, whole on a monthly run).
+//   Semi-Monthly → the stated amount, once per cutoff, as named.
+//   Once         → paid only in the run whose period contains effective_date.
+if (!function_exists('employee_allowance_amount_for_run')) {
+    function employee_allowance_amount_for_run(array $ea, string $date_from, string $date_to)
+    {
+        $amount = (float) ($ea['amount'] ?? 0);
+        $type   = (int) ($ea['type'] ?? 1);
+        $from   = $ea['effective_date'] ?? null;
+        $to     = $ea['effective_to'] ?? null;
+
+        // Outside its effectivity window → contributes nothing to this run.
+        if (!empty($from) && date('Y-m-d', strtotime($from)) > $date_to)   return 0.0;
+        if (!empty($to)   && date('Y-m-d', strtotime($to))   < $date_from) return 0.0;
+
+        if ($type === 3) {
+            // One-off: only in the cutoff that contains its effective date.
+            if (empty($from)) return 0.0;
+            $d = date('Y-m-d', strtotime($from));
+            return ($d >= $date_from && $d <= $date_to) ? $amount : 0.0;
+        }
+        if ($type === 2) return $amount;                                  // per cutoff as stated
+        return round($amount * statutory_period_factor($date_from, $date_to), 2);   // monthly
+    }
+}
+
+// ── Statutory contributions (GLOBAL) ────────────────────────────────────
+// SSS, PhilHealth and Pag-IBIG employee shares, resolved from the
+// effectivity-dated statutory_rates table (see the migration for why they are
+// not hardcoded any more). Each takes the MONTHLY compensation the schedule is
+// assessed on, and returns the EMPLOYEE share for a FULL MONTH — callers halve
+// it for a semi-monthly cutoff via statutory_period_factor().
+//
+// A missing table or a date with no row in force returns null, and the caller
+// falls back to the amount stored on employee_contributions. That keeps an
+// un-migrated installation working exactly as it did.
+if (!function_exists('statutory_config')) {
+    function statutory_config(mysqli $db, string $kind, string $on_date)
+    {
+        static $cache = [];
+        $key = $kind . '|' . $on_date;
+        if (array_key_exists($key, $cache)) return $cache[$key];
+
+        $cache[$key] = null;
+        $chk = $db->query("SHOW TABLES LIKE 'statutory_rates'");
+        if (!$chk || !$chk->num_rows) return null;
+
+        $st = $db->prepare(
+            "SELECT config FROM statutory_rates
+              WHERE kind = ? AND effective_from <= ?
+              ORDER BY effective_from DESC LIMIT 1"
+        );
+        if (!$st) return null;
+        $st->bind_param('ss', $kind, $on_date);
+        $st->execute();
+        $r = $st->get_result()->fetch_assoc();
+        if ($r) $cache[$key] = json_decode($r['config'], true) ?: null;
+        return $cache[$key];
+    }
+}
+
+// Which statutory schedule a contribution row refers to, from its name. Same
+// aliasing the remittance report and the BIR alphalist already use, kept in one
+// place so the three cannot disagree about what counts as "SSS".
+if (!function_exists('contribution_kind')) {
+    function contribution_kind(string $name)
+    {
+        $n = strtoupper($name);
+        if (strpos($n, 'SSS') !== false)  return 'sss';
+        if (strpos($n, 'PHIC') !== false || strpos($n, 'PHIL') !== false) return 'phic';
+        if (strpos($n, 'HDMF') !== false || strpos($n, 'PAG') !== false)  return 'hdmf';
+        return null;
+    }
+}
+
+// A full month's schedule spread over this run. Semi-monthly cutoffs take half
+// the monthly figure (which is what the client's own paysheet does — its SSS
+// column shows 500 / 550 / 920, all half-month amounts); a run covering a whole
+// month takes it once.
+if (!function_exists('statutory_period_factor')) {
+    function statutory_period_factor(string $date_from, string $date_to): float
+    {
+        $days = (int) round((strtotime($date_to) - strtotime($date_from)) / 86400) + 1;
+        return $days >= 28 ? 1.0 : 0.5;
+    }
+}
+
+if (!function_exists('sss_employee_share')) {
+    /** SSS EE share for a full month. MSC is the salary floored to its step. */
+    function sss_employee_share(float $monthly, array $cfg): float
+    {
+        $step = max(1.0, (float) ($cfg['msc_step'] ?? 500));
+        $min  = (float) ($cfg['msc_min'] ?? 5000);
+        $max  = (float) ($cfg['msc_max'] ?? 35000);
+        if ($monthly <= 0) return 0.0;
+        $msc = min(max($monthly, $min), $max);
+        $msc = floor($msc / $step) * $step;          // MSC is a step, not the raw salary
+        return round($msc * (float) ($cfg['ee_rate'] ?? 0.05), 2);
+    }
+}
+
+if (!function_exists('philhealth_employee_share')) {
+    /** PhilHealth EE share for a full month (premium × the employee's half). */
+    function philhealth_employee_share(float $monthly, array $cfg): float
+    {
+        if ($monthly <= 0) return 0.0;
+        $base = min(max($monthly, (float) ($cfg['floor'] ?? 10000)), (float) ($cfg['ceiling'] ?? 100000));
+        return round($base * (float) ($cfg['rate'] ?? 0.05) * (float) ($cfg['ee_share'] ?? 0.5), 2);
+    }
+}
+
+if (!function_exists('pagibig_employee_share')) {
+    /** Pag-IBIG EE share for a full month: 1% at or below the threshold, 2%
+     *  above it, on a base capped by cap_base. */
+    function pagibig_employee_share(float $monthly, array $cfg): float
+    {
+        if ($monthly <= 0) return 0.0;
+        $threshold = (float) ($cfg['threshold'] ?? 1500);
+        $rate = $monthly <= $threshold
+            ? (float) ($cfg['low_rate'] ?? 0.01)
+            : (float) ($cfg['high_rate'] ?? 0.02);
+        $base = min($monthly, (float) ($cfg['cap_base'] ?? 5000));
+        return round($base * $rate, 2);
+    }
+}
+
+// One entry point: the EE share for $kind on $monthly compensation, for a run
+// covering $date_from..$date_to. Returns null when no schedule is in force, so
+// the caller knows to fall back to the stored amount.
+if (!function_exists('statutory_employee_share')) {
+    function statutory_employee_share(mysqli $db, string $kind, float $monthly, string $date_from, string $date_to)
+    {
+        $cfg = statutory_config($db, $kind, $date_from);
+        if (!$cfg) return null;
+        $full = $kind === 'sss'  ? sss_employee_share($monthly, $cfg)
+              : ($kind === 'phic' ? philhealth_employee_share($monthly, $cfg)
+              : ($kind === 'hdmf' ? pagibig_employee_share($monthly, $cfg) : null));
+        if ($full === null) return null;
+        return round($full * statutory_period_factor($date_from, $date_to), 2);
+    }
+}
+
+// 13th month & other benefits exemption ceiling, Sec 32(B)(7)(e) NIRC. Lived as
+// a file-scoped `const` in bir-alphalist.php and its CSV twin, which meant the
+// payroll calculation could not see it — so the cap was applied when REPORTING
+// the year to BIR but never when withholding on it.
+if (!defined('BIR_13TH_CAP')) define('BIR_13TH_CAP', 90000.0);
+
+// ── Withholding tax (GLOBAL) ────────────────────────────────────────────
+// There was no tax computation in this system at all: payroll_items.tax was a
+// text box and calculate_payroll() only preserved what an admin typed. These
+// functions supply the missing arithmetic; whether it is actually POSTED is a
+// separate decision (pay_settings.tax_auto_post, off by default).
+
+// The bracket set in force for $period on $on_date. null when unmigrated.
+if (!function_exists('tax_bracket_config')) {
+    function tax_bracket_config(mysqli $db, string $period, string $on_date)
+    {
+        static $cache = [];
+        $key = $period . '|' . $on_date;
+        if (array_key_exists($key, $cache)) return $cache[$key];
+
+        $cache[$key] = null;
+        $chk = $db->query("SHOW TABLES LIKE 'tax_brackets'");
+        if (!$chk || !$chk->num_rows) return null;
+
+        $st = $db->prepare(
+            "SELECT config FROM tax_brackets
+              WHERE period = ? AND effective_from <= ?
+              ORDER BY effective_from DESC LIMIT 1"
+        );
+        if (!$st) return null;
+        $st->bind_param('ss', $period, $on_date);
+        $st->execute();
+        $r = $st->get_result()->fetch_assoc();
+        if ($r) $cache[$key] = json_decode($r['config'], true) ?: null;
+        return $cache[$key];
+    }
+}
+
+// tax = base + (taxable − over) × rate, for the highest band reached.
+if (!function_exists('tax_from_brackets')) {
+    function tax_from_brackets(float $taxable, array $bands): float
+    {
+        if ($taxable <= 0) return 0.0;
+        $pick = null;
+        foreach ($bands as $b) {
+            if ($taxable > (float) $b['over']) $pick = $b;
+        }
+        if ($pick === null) return 0.0;
+        $tax = (float) $pick['base'] + ($taxable - (float) $pick['over']) * (float) $pick['rate'];
+        return round(max(0.0, $tax), 2);
+    }
+}
+
+// Non-taxable portion of an item's allowances. An allowance frozen with
+// taxable = 0 is de minimis (meal, rice, uniform…) and is excluded from the
+// withholding base up to its own ceiling; anything above the ceiling, and every
+// allowance marked taxable, is compensation.
+if (!function_exists('payroll_nontaxable_allowance')) {
+    function payroll_nontaxable_allowance($row, float $period_factor = 1.0): float
+    {
+        $t = 0.0;
+        foreach (payroll_allowance_list($row) as $a) {
+            if ((int) ($a['taxable'] ?? 1) === 1) continue;
+            $amt = (float) ($a['amount'] ?? 0);
+            $cap = isset($a['cap']) && $a['cap'] !== null ? (float) $a['cap'] * $period_factor : null;
+            $t  += $cap !== null ? min($amt, $cap) : $amt;
+        }
+        return round($t, 2);
+    }
+}
+
+// Taxable compensation for ONE payroll item.
+//
+//   gross
+//   − non-taxable de minimis allowances (within their ceilings)
+//   − the employee share of SSS / PhilHealth / Pag-IBIG   [Sec 32(B)(7)(f) NIRC]
+//
+// Government contributions are deductible from the withholding base by law, and
+// the whole reason they had to be computed first: on a stored flat amount the
+// base is only as right as whatever someone last typed.
+if (!function_exists('payroll_taxable_income')) {
+    function payroll_taxable_income($row, array $gov_contribution_ids = [], float $period_factor = 1.0): float
+    {
+        $e = payroll_earnings($row);
+        $taxable = $e['gross'] - payroll_nontaxable_allowance($row, $period_factor);
+
+        foreach ((json_decode($row['contributions'] ?? '', true) ?: []) as $c) {
+            $cid = (int) ($c['contribution_id'] ?? 0);
+            // No id map supplied (e.g. a caller with only the item) → treat every
+            // contribution as statutory, which is what they are in practice here.
+            if (!$gov_contribution_ids || isset($gov_contribution_ids[$cid])) {
+                $taxable -= (float) ($c['amount'] ?? 0);
+            }
+        }
+        return round(max(0.0, $taxable), 2);
+    }
+}
+
+// Which bracket period a run's length corresponds to.
+if (!function_exists('tax_period_for_run')) {
+    function tax_period_for_run(string $date_from, string $date_to): string
+    {
+        $days = (int) round((strtotime($date_to) - strtotime($date_from)) / 86400) + 1;
+        return $days >= 28 ? 'monthly' : 'semi_monthly';
+    }
+}
+
+// Per-cutoff withholding: the table applied to this run's own taxable income.
+// Simple and auditable, but a cutoff carrying heavy overtime over-withholds
+// relative to the year — which is what the cumulative method below corrects.
+if (!function_exists('withholding_tax_per_cutoff')) {
+    function withholding_tax_per_cutoff(mysqli $db, float $taxable, string $date_from, string $date_to)
+    {
+        $bands = tax_bracket_config($db, tax_period_for_run($date_from, $date_to), $date_from);
+        if (!$bands) return null;
+        return tax_from_brackets($taxable, $bands);
+    }
+}
+
+// Cumulative / annualised withholding (RR 11-2018): project the year to date,
+// compute the annual tax on it, and withhold the difference against what has
+// already been withheld. Self-correcting — a heavy overtime cutoff is evened out
+// by the next one instead of needing a December true-up — and it is what the
+// client's own legacy paysheet appears to do (equal tax on unequal gross, and a
+// negative line where an over-withholding was refunded).
+//
+// $ytd_taxable / $ytd_withheld EXCLUDE the current run.
+if (!function_exists('withholding_tax_cumulative')) {
+    function withholding_tax_cumulative(
+        mysqli $db, float $taxable, float $ytd_taxable, float $ytd_withheld, string $date_from, string $date_to
+    ) {
+        $bands = tax_bracket_config($db, 'annual', $date_from);
+        if (!$bands) return null;
+        $annual_tax_to_date = tax_from_brackets($ytd_taxable + $taxable, $bands);
+        // May be negative — that is a refund of over-withholding, and it is
+        // correct to return it rather than clamp it to zero.
+        return round($annual_tax_to_date - $ytd_withheld, 2);
+    }
+}
+
+// ── Gross for ONE payroll item, in SQL (GLOBAL) ─────────────────────────
+// The database twin of payroll_earnings() below — same components, same order,
+// same rate_type branch. Dashboards and reports that SUM gross across a run
+// must call THIS instead of pasting the expression, which is how six near-copies
+// came to exist that all shared two faults:
+//
+//   1. NO rate_type branch — every one applied the monthly formula to every
+//      employee, so a daily-rate row was grossed as half a monthly salary.
+//   2. Absences (and allowance) halved, the same bug fixed in payroll_earnings.
+//
+// $a is the payroll_items alias. Emits one parenthesised expression.
+if (!function_exists('sql_gross')) {
+    function sql_gross(string $a = 'pi'): string
+    {
+        $pm      = sql_per_minute($a);
+        $monthly = "$a.rate_type IN ('monthly','fixed')";
+        $spec    = (float) SPECIAL_HOLIDAY_PREMIUM_RATE;
+        $rest    = (float) REST_DAY_PREMIUM_RATE;
+
+        return "(
+            CASE WHEN $monthly
+                 THEN $a.basic_pay / 2 - ($a.absent * $a.per_day)
+                 ELSE ($a.present + COALESCE($a.paid_leave, 0)) * $a.per_day
+            END
+            + ($a.allowance_amount * $a.allowance_days)
+            + COALESCE($a.allowance_total, 0)
+            + ($a.ot * $a.ot_rate)
+            + ($a.legal_holiday * $a.per_day)
+            + CASE WHEN $monthly
+                   THEN $a.sunday_duty * $a.per_day
+                   ELSE $a.sunday_duty * $a.per_day * $rest
+              END
+            + ($a.special_holiday * $a.per_day * $spec)
+            + COALESCE($a.nsd_amount, 0)
+            - ($a.late * $pm)
+            - ($a.under_time * $pm)
+        )";
+    }
+}
+
 // ── Earnings for ONE payroll item (GLOBAL) ──────────────────────────────
 // THE formula. Every screen, print sheet, export and dashboard must call this
 // instead of keeping its own copy — the copies are how the payroll register,
@@ -728,7 +1085,8 @@ if (!function_exists('payroll_earnings')) {
         $is_monthly = $rt === 'monthly' || $rt === 'fixed'
                    || ((int) ($row['payroll_type'] ?? 0) === 5);   // legacy whole-run override
 
-        $allowance   = (float) ($row['allowance_amount'] ?? 0) * (float) ($row['allowance_days'] ?? 0);
+        // Hand-typed slot + the configured allowance types frozen on the item.
+        $allowance   = payroll_allowance_total($row);
         $absent_amt  = (float) ($row['absent'] ?? 0) * $perDay;
         $overtime    = (float) ($row['ot'] ?? 0) * (float) ($row['ot_rate'] ?? 0);
         $late_amt    = (float) ($row['late'] ?? 0) * $perMinute;
@@ -742,15 +1100,33 @@ if (!function_exists('payroll_earnings')) {
             ? (float) ($row['sunday_duty'] ?? 0) * $perDay
             : rest_day_premium($row['sunday_duty'] ?? 0, $perDay);
 
+        // `subtotal` is BASIC PAY FOR THE PERIOD — no allowance, no premiums. It
+        // used to be ($basic + $allowance - $absent_amt) / 2 on both bases, which
+        // was wrong twice over:
+        //
+        //   1. Absences were halved. $basic is a MONTHLY figure, so ÷2 correctly
+        //      converts it to a semi-monthly share — but $absent_amt is already
+        //      cutoff-scoped (calculate_payroll counts absent days between
+        //      date_from and date_to), so dividing it too made a missed day cost
+        //      the employee only half a day's pay.
+        //   2. Allowance was halved on the monthly basis but added whole on the
+        //      daily one, from the same expression. allowance_amount ×
+        //      allowance_days is a per-cutoff figure (a day count typed per run),
+        //      so the daily branch was right and the monthly branch under-paid it.
+        //
+        // Both bases now share ONE gross expression: basic for the period, plus
+        // allowance and premiums, less lost time.
         if ($is_monthly) {
             $basic    = (float) ($row['basic_pay'] ?? 0);
-            $subtotal = ($basic + $allowance - $absent_amt) / 2;
-            $gross    = $subtotal + $overtime + $legal_amt + $rest_amt + $special_amt + $nsd_amt - $late_amt;
+            $subtotal = $basic / 2 - $absent_amt;
         } else {
+            // Daily staff are paid per day worked, so there is no absence line.
             $basic    = ((float) ($row['present'] ?? 0) + (float) ($row['paid_leave'] ?? 0)) * $perDay;
-            $subtotal = ($basic + $allowance - $absent_amt) / 2;
-            $gross    = ($basic + $overtime + $allowance + $legal_amt + $rest_amt + $special_amt + $nsd_amt) - $late_amt;
+            $subtotal = $basic;
         }
+        $gross = $subtotal + $allowance + $overtime
+               + $legal_amt + $rest_amt + $special_amt + $nsd_amt
+               - $late_amt - $under_amt;
 
         return [
             'is_monthly' => $is_monthly,

@@ -313,8 +313,14 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                  design system, validated against this card's white surface —
                  all six checks pass, contrast ≥ 3:1, CVD ΔE 24.7. Do not
                  recolour these by hand. -->
-            <div class="row">
-                <div class="col-xl-8">
+            <!-- Masonry container: the cards below have very different natural
+                 heights (charts vs. sentence lists vs. the holiday feed), so a
+                 plain row leaves large gaps. Masonry packs them; the hidden
+                 1-col sizer makes the packing grid 1/12 wide so the mixed
+                 8/7/5/4 column spans place correctly. -->
+            <div class="row" id="lv-masonry">
+                <div class="lv-msnry-sizer col-xl-1 p-0 m-0" style="height:0;"></div>
+                <div class="col-xl-8 lv-card-col">
                     <div class="card">
                         <div class="card-header d-flex align-items-center">
                             <h4 class="card-title mb-0 flex-grow-1">
@@ -327,7 +333,7 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                         </div>
                     </div>
                 </div>
-                <div class="col-xl-4">
+                <div class="col-xl-4 lv-card-col">
                     <div class="card">
                         <div class="card-header">
                             <h4 class="card-title mb-0">
@@ -375,10 +381,7 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                         </div>
                     </div>
                 </div>
-            </div>
-
-            <div class="row">
-                <div class="col-xl-<?= ($is_org_view && $view_dept === 0) ? '4' : '7' ?>">
+                <div class="col-xl-<?= ($is_org_view && $view_dept === 0) ? '4' : '7' ?> lv-card-col">
                     <div class="card">
                         <div class="card-header">
                             <h4 class="card-title mb-0">
@@ -399,7 +402,7 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                 </div>
 
                 <?php if ($is_org_view && $view_dept === 0): ?>
-                <div class="col-xl-4">
+                <div class="col-xl-4 lv-card-col">
                     <div class="card">
                         <div class="card-header">
                             <h4 class="card-title mb-0">
@@ -417,7 +420,7 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                 </div>
                 <?php endif; ?>
 
-                <div class="col-xl-<?= ($is_org_view && $view_dept === 0) ? '4' : '5' ?>">
+                <div class="col-xl-<?= ($is_org_view && $view_dept === 0) ? '4' : '5' ?> lv-card-col">
                     <div class="card">
                         <div class="card-header">
                             <h4 class="card-title mb-0">
@@ -654,8 +657,29 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
 </div>
 
 <script src="<?= av('assets/libs/apexcharts/apexcharts.min.js') ?>"></script>
+<script src="<?= av('assets/libs/masonry-layout/masonry.pkgd.min.js') ?>"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    /* ── Masonry over the mixed-height cards ─────────────────────────────
+       Init manually (not data-masonry) because the charts render async and
+       change card heights AFTER first layout — every chart render below
+       calls lvRelayout(). columnWidth is the hidden 1-col sizer so the
+       8/7/5/4 spans pack on a 12-column grid; Bootstrap's own column
+       padding provides the gutters. */
+    var lvMsnry = null;
+    (function () {
+        var el = document.getElementById('lv-masonry');
+        if (!el || typeof Masonry === 'undefined') return;
+        lvMsnry = new Masonry(el, {
+            itemSelector: '.lv-card-col',
+            columnWidth: '.lv-msnry-sizer',
+            percentPosition: true,
+            transitionDuration: '0.2s'
+        });
+        // Fonts / scrollbars can nudge heights after first paint.
+        window.addEventListener('load', function () { lvMsnry.layout(); });
+    })();
+    function lvRelayout() { if (lvMsnry) lvMsnry.layout(); }
     // jQuery and DataTables load near the END of index.php, after this block.
     // DOMContentLoaded normally covers that, but poll briefly rather than
     // assume — if they are not ready we silently lose paging AND the filters.
@@ -802,7 +826,7 @@ document.addEventListener('DOMContentLoaded', function () {
             yaxis: { labels: { style: axisStyle }, title: { text: 'Days', style: axisStyle } },
             legend: { position: 'top', horizontalAlign: 'right', fontSize: '12px', markers: { width: 9, height: 9, radius: 3 }, labels: { colors: INK_MUTED } },
             tooltip: Object.assign({}, baseOpts.tooltip, { shared: true, intersect: false, x: { show: true } })
-        })).render();
+        })).render().then(lvRelayout);
     }
 
     // ── Days by leave type — single series, so no legend; bars carry
@@ -820,7 +844,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 labels: { style: axisStyle }, axisBorder: { color: GRID }, axisTicks: { color: GRID }
             },
             yaxis: { labels: { style: axisStyle } }
-        })).render();
+        })).render().then(lvRelayout);
     }
 
     // ── Top departments (org view only) ──
@@ -837,7 +861,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 labels: { style: axisStyle }, axisBorder: { color: GRID }, axisTicks: { color: GRID }
             },
             yaxis: { labels: { style: axisStyle, maxWidth: 150 } }
-        })).render();
+        })).render().then(lvRelayout);
     }
 });
 </script>

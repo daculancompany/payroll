@@ -23,9 +23,14 @@ function showToast(message, type = "success") {
     }, 2600);
 }
 
+// Ask the server to recompute the summary cards only when data may have changed
+// (first load / create / delete / lock) — plain search & paging skip the extra queries.
+let payrollSummaryDirty = true;
+
 // Refresh the payroll list without a full page reload (keeps the toast visible).
 function reloadPayrollTable() {
     if ($.fn.DataTable && $.fn.DataTable.isDataTable("#table")) {
+        payrollSummaryDirty = true;
         $("#table").DataTable().ajax.reload(null, false);
     } else {
         location.reload();
@@ -55,6 +60,7 @@ $(document).ready(function () {
             type: "POST",
             data: function (d) {
                 d.p2 = p2;
+                d.with_summary = payrollSummaryDirty ? 1 : 0;
             },
         },
         columns: [
@@ -63,6 +69,11 @@ $(document).ready(function () {
             { data: "status" },
             { data: "action", orderable: false },
         ],
+    }).on("xhr.dt", function (e, settings, json) {
+        if (json && json.summary) {
+            payrollSummaryDirty = false;
+            updatePayrollSummary(json.summary);
+        }
     }).on("draw.dt", function () {
         document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
             bootstrap.Tooltip.getInstance(el)?.dispose();
@@ -74,6 +85,38 @@ $(document).ready(function () {
         refreshPayBulk();
     });
 });
+
+// ── Summary stat cards (fed by payroll-server.php "summary" key on every table load) ──
+function updatePayrollSummary(s) {
+    if (!s) return;
+    var set = function (id, html) {
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+    };
+    var peso = function (v) {
+        return "₱" + Number(v || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    set("pay-sum-total", s.total);
+    set("pay-sum-total-sub", s.this_year + " created this year");
+
+    set("pay-sum-progress", s.in_progress);
+    set("pay-sum-progress-sub",
+        '<span class="badge bg-primary-subtle text-primary me-1">' + s.s_new + " New</span>" +
+        '<span class="badge bg-success-subtle text-success me-1">' + s.s_calculated + " Calculated</span>" +
+        '<span class="badge bg-warning-subtle text-warning">' + s.s_review + " Review</span>");
+
+    set("pay-sum-locked", s.s_locked);
+
+    if (s.latest) {
+        set("pay-sum-latest-net", peso(s.latest.net_total));
+        set("pay-sum-latest-sub",
+            s.latest.ref_no + " · " + s.latest.period + " · " + s.latest.emp_count + " employee" + (s.latest.emp_count === 1 ? "" : "s"));
+    } else {
+        set("pay-sum-latest-net", "—");
+        set("pay-sum-latest-sub", "No payroll created yet");
+    }
+}
 
 // ── Payroll bulk "Send for Review" selection ──
 function refreshPayBulk() {

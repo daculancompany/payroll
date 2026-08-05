@@ -1061,6 +1061,7 @@ $refund_names = [];   // refund id => display name
                                             $t_ot_hrs = 0; $t_ot_amt = 0;
                                             $t_nsd_hrs = 0; $t_nsd_amt = 0;
                                             $t_late_min = 0; $t_late_amt = 0;
+                                            $t_ut_min = 0; $t_ut_amt = 0;
                                             $t_sss_fund = 0; $t_jei = 0; $t_jcc = 0; $t_tax = 0;
                                             $t_contrib = []; $t_refund = [];
 
@@ -1155,6 +1156,8 @@ $refund_names = [];   // refund id => display name
                                                 $t_nsd_amt     += $nsd_amount;
                                                 $t_late_min    += $row['late'];
                                                 $t_late_amt    += $late_amount;
+                                                $t_ut_min      += $row['under_time'];
+                                                $t_ut_amt      += $undertime_amount;
                                                 $t_sss_fund    += $sss_fund;
                                                 $t_jei         += $jei_advances;
                                                 $t_jcc         += $jcc_advances;
@@ -1183,9 +1186,9 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width:220px;">
                                                         <?php $emp_initials = strtoupper(substr($row['firstname'],0,1).substr($row['lastname'],0,1)); ?>
                                                         <div class="emp-cell">
-                                                            <a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>" target="_blank" class="emp-avatar" title="View employee details"><?= $emp_initials ?></a>
+                                                            <a href="javascript:void(0);" data-emp-quickview="<?= $row['employee_id'] ?>" class="emp-avatar" title="Employee quick view"><?= $emp_initials ?></a>
                                                             <div class="emp-cell-info">
-                                                                <a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>" target="_blank" class="emp-name-link" title="View employee details">
+                                                                <a href="javascript:void(0);" data-emp-quickview="<?= $row['employee_id'] ?>" class="emp-name-link" title="Employee quick view">
                                                                     <i class="ri-user-3-line"></i><b><?= $row['lastname'] ?>, <?= $row['firstname'] ?></b>
                                                                 </a>
                                                                 <div class="emp-meta-row">
@@ -1675,6 +1678,7 @@ $refund_names = [];   // refund id => display name
                                                 <th colspan="3" class="text-center info-header">Overtime</th>
                                                 <th colspan="2" class="text-center info-header">Night Diff</th>
                                                 <th colspan="3" class="text-center info-header">Late</th>
+                                                <th colspan="3" class="text-center info-header">Undertime</th>
                                                 <?php /* Holiday + rest-day duty. Days are auto-counted from the holiday
                                                         calendar during calculation (rest day from the roster); the inputs
                                                         stay editable so an admin can still override a day. */ ?>
@@ -1703,6 +1707,11 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-center  info-header">ND Hrs</th>
                                                 <th class="text-center  info-header">ND Amount</th>
 
+                                                <th class="text-center  info-header">Min</th>
+                                                <th class="text-center  info-header">Rate</th>
+                                                <th class="text-center  info-header">Amount</th>
+
+                                                <?php /* Undertime — same Min/Rate/Amount shape as Late above. */ ?>
                                                 <th class="text-center  info-header">Min</th>
                                                 <th class="text-center  info-header">Rate</th>
                                                 <th class="text-center  info-header">Amount</th>
@@ -1794,6 +1803,7 @@ $refund_names = [];   // refund id => display name
                                             $t_ot_hrs = 0; $t_ot_amt = 0;
                                             $t_nsd_hrs = 0; $t_nsd_amt = 0;
                                             $t_late_min = 0; $t_late_amt = 0;
+                                            $t_ut_min = 0; $t_ut_amt = 0;
                                             $t_sss_fund = 0; $t_jei = 0; $t_jcc = 0; $t_tax = 0;
                                             $t_contrib = []; $t_refund = [];
 
@@ -1838,26 +1848,19 @@ $refund_names = [];   // refund id => display name
                                                 $nsd_hours  = (float)($row['nsd_hours'] ?? 0);
                                                 $nsd_amount = (float)($row['nsd_amount'] ?? 0);
 
-                                                // Rate-type-aware Total Basic Rate — matches the authoritative net
-                                                // (admin_class.php) and the client payslips:
-                                                //   monthly/fixed → half-month salary (basic_pay ÷ 2) minus absences
-                                                //                   (fixed always has absent = 0, so full half salary)
-                                                //   daily         → days present × rate per day
-                                                if ($rate_type === 'monthly' || $rate_type === 'fixed') {
-                                                    $total_basic_rate = ($row['basic_pay'] - $absent_amount) / 2;
-                                                    $gross_salary = $total_basic_rate + ($total_allowance / 2) + $overtime_amount
-                                                        + $legal_holiday_amount + $sunday_duty_amount + $special_holiday_amount + $nsd_amount - $late_amount;
-                                                } else {
-                                                    // Daily staff are also paid for approved paid-leave days — matches
-                                                    // get_payroll_rows_data: (present + paid_leave) × per_day.
-                                                    $total_basic_rate = ($row['present'] + (float)($row['paid_leave'] ?? 0)) * $row['per_day'];
-                                                    // $sunday_duty_amount is the +30% premium here — the rest day's own
-                                                    // pay is already in $total_basic_rate via `present`. Leaving it out
-                                                    // (as this did) meant the payslip listed Rest Day Duty as an earning
-                                                    // that never reached gross.
-                                                    $gross_salary = ($total_basic_rate + $overtime_amount + $total_allowance
-                                                        + $sunday_duty_amount + $nsd_amount) - $late_amount;
-                                                }
+                                                // Basic pay for the period + gross, from the ONE shared formula
+                                                // (payroll_earnings, db_connect.php):
+                                                //   monthly/fixed → basic_pay ÷ 2, less absences
+                                                //   daily         → (days present + paid leave) × rate per day
+                                                //
+                                                // This block used to keep its own copy and had drifted three ways:
+                                                // it halved absences AND the allowance on the monthly basis, and its
+                                                // daily branch left legal- and special-holiday pay out of gross —
+                                                // so a daily employee who worked a holiday saw a different gross here
+                                                // than on the payslip printed from the same row.
+                                                $__e2             = payroll_earnings($row);
+                                                $total_basic_rate = $__e2['subtotal'];
+                                                $gross_salary     = $__e2['gross'];
                                                 // Named one-off items for this employee: allowances add to gross,
                                                 // deductions are applied with the other deductions below.
                                                 $rowExtras = $pcwExtras[(int)$row['id']] ?? [];
@@ -1901,6 +1904,8 @@ $refund_names = [];   // refund id => display name
                                                 $t_nsd_amt     += $nsd_amount;
                                                 $t_late_min    += $row['late'];
                                                 $t_late_amt    += $late_amount;
+                                                $t_ut_min      += $row['under_time'];
+                                                $t_ut_amt      += $undertime_amount;
                                                 $t_sss_fund    += $sss_fund;
                                                 $t_jei         += $jei_advances;
                                                 $t_jcc         += $jcc_advances;
@@ -1929,9 +1934,9 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width:220px;">
                                                         <?php $emp_initials = strtoupper(substr($row['firstname'],0,1).substr($row['lastname'],0,1)); ?>
                                                         <div class="emp-cell">
-                                                            <a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>" target="_blank" class="emp-avatar" title="View employee details"><?= $emp_initials ?></a>
+                                                            <a href="javascript:void(0);" data-emp-quickview="<?= $row['employee_id'] ?>" class="emp-avatar" title="Employee quick view"><?= $emp_initials ?></a>
                                                             <div class="emp-cell-info">
-                                                                <a href="index.php?page=employee-details&id=<?= $row['employee_id'] ?>"  class="emp-name-link" title="View employee details">
+                                                                <a href="javascript:void(0);" data-emp-quickview="<?= $row['employee_id'] ?>" class="emp-name-link" title="Employee quick view">
                                                                     <i class="ri-user-3-line"></i><b><?= $row['lastname'] ?>, <?= $row['firstname'] ?></b>
                                                                 </a>
                                                                 <div class="emp-meta-row">
@@ -1988,7 +1993,22 @@ $refund_names = [];   // refund id => display name
                                                         <b data-computed="allowance_amount"><?= number_format($allowance_amount, 2) ?></b>
                                                     </td>
                                                     <td class="text-right" style="min-width: 90px;">
-                                                        <b data-computed="allowance_total"><?= number_format($total_allowance, 2) ?></b>
+                                                        <?php
+                                                        // Amount = the hand-typed slot (days × rate) PLUS the employee's
+                                                        // configured allowance types, frozen on the item at calculation.
+                                                        // Listed in the tooltip so a blended figure can still be read
+                                                        // back to its parts — the whole point of moving recurring
+                                                        // allowances out of the generic Adjustment column.
+                                                        $__alist = payroll_allowance_list($row);
+                                                        $__atip  = [];
+                                                        if ($total_allowance > 0) $__atip[] = 'Manual: ' . number_format($total_allowance, 2);
+                                                        foreach ($__alist as $__a) {
+                                                            $__atip[] = $__a['label'] . ': ' . number_format((float) $__a['amount'], 2);
+                                                        }
+                                                        $__atot = $__e2['allowance'];
+                                                        ?>
+                                                        <b data-computed="allowance_total"
+                                                           <?= $__alist ? 'style="border-bottom:1px dotted #888;cursor:help;" title="' . htmlspecialchars(implode("\n", $__atip), ENT_QUOTES) . '"' : '' ?>><?= number_format($__atot, 2) ?></b>
                                                     </td>
 
 
@@ -2051,6 +2071,27 @@ $refund_names = [];   // refund id => display name
                                                         <b data-computed="late_amount"><?= number_format($late_amount, 2) ?></b>
                                                     </td>
                                                     <!-- /Late -->
+
+                                                    <!-- Undertime — leaving before the shift ends. Same unit and same
+                                                         per-minute rate as Late (it is lost time, not a premium); the
+                                                         two never overlap because the DTR measures late from the shift
+                                                         START and undertime to the shift END. -->
+                                                    <td style="min-width: 90px;" class="text-center">
+                                                        <?php if ($rowShowInputs) { ?>
+                                                            <div class="input-group mb-3">
+                                                                <input type="text" value="<?= $row['under_time'] ?>" data-id="<?= $row['id'] ?>" data-type="under_time" class="form-control input-class"<?= $rowRO ?> placeholder="Minutes" aria-label="Undertime minutes">
+                                                            </div>
+                                                        <?php } else { ?>
+                                                            <b><?= $row['under_time'] ?></b>
+                                                        <?php } ?>
+                                                    </td>
+                                                    <td style="min-width: 100px;" class="text-right">
+                                                        <b><?= number_format($perMinute, 2) ?></b>
+                                                    </td>
+                                                    <td class="text-right" style="min-width: 90px;">
+                                                        <b data-computed="undertime_amount"><?= number_format($undertime_amount, 2) ?></b>
+                                                    </td>
+                                                    <!-- /Undertime -->
 
                                                     <!-- Holiday / Rest Day. The day counts come from the calculation
                                                          (holiday calendar + roster) and stay overridable here; the
@@ -2306,6 +2347,9 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-center"><?= number_format($t_late_min, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_late_amt, 2) ?></th>
+                                                <th class="text-center"><?= number_format($t_ut_min, 0) ?></th>
+                                                <th class="text-right"><?= number_format($t_late, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_ut_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_legal_d, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_legal_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_sun_d, 0) ?></th>
@@ -3252,5 +3296,12 @@ window.PCW_META = <?= json_encode([
 
 <!-- deferred so it runs after the deferred jQuery/bootstrap/sweetalert above -->
 <script defer src="assets2/js/payroll_calculations.js"></script>
+
+<?php
+// Employee quick-view drawer (avatar / name clicks on the sheet). This page is
+// a standalone workbench, so "Full details" opens in a new tab.
+$eqv_full_target = '_blank';
+include __DIR__ . '/component/employee_quick_view.php';
+?>
 </body>
 </html>

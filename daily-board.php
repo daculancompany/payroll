@@ -277,9 +277,11 @@ function board_name($r)
                                     <div class="col-6 col-sm-4 col-md-3 col-xl-2 db-card-col" data-status="<?= htmlspecialchars($att['label']) ?>" data-search="<?= htmlspecialchars($search) ?>">
                                         <div class="db-card st-<?= $att['class'] ?>">
                                             <div class="db-card-top">
-                                                <a href="index.php?page=employee-details&id=<?= (int)$r['id'] ?>" class="db-avatar" title="View employee details"><?= board_initials($r) ?></a>
+                                                <!-- Quick-view drawer first; the full employee-details page
+                                                     is one more click away inside the drawer. -->
+                                                <a href="javascript:void(0);" data-emp-quickview="<?= (int)$r['id'] ?>" class="db-avatar" title="Employee quick view"><?= board_initials($r) ?></a>
                                                 <div style="min-width:0;flex:1;">
-                                                    <div class="db-name" title="<?= board_name($r) ?>"><a href="index.php?page=employee-details&id=<?= (int)$r['id'] ?>" class="db-name-link" title="View employee details"><?= board_name($r) ?></a></div>
+                                                    <div class="db-name" title="<?= board_name($r) ?>"><a href="javascript:void(0);" data-emp-quickview="<?= (int)$r['id'] ?>" class="db-name-link" title="Employee quick view"><?= board_name($r) ?></a></div>
                                                     <div class="db-sub">
                                                         <?php if ($isShiftGroup): ?>
                                                             <?= !empty($r['dept_name']) ? htmlspecialchars($r['dept_name']) : '<span class="text-muted">No dept</span>' ?>
@@ -326,3 +328,5 @@ function board_name($r)
         </div>
     </div>
 </div>
+<!-- Employee quick-view drawer is included globally by index.php -->
+

@@ -70,5 +70,10 @@ function dashboard_live_stats(mysqli $conn): array
         'pending_att_req'       => $count("SELECT COUNT(*) AS c FROM attendance_requests WHERE status=0 $dsSub"),
         'open_dtr_disputes'     => $count("SELECT COUNT(*) AS c FROM dtr_employee_reviews WHERE status=2 AND resolved_at IS NULL"),
         'open_payroll_disputes' => $count("SELECT COUNT(*) AS c FROM payroll_employee_reviews WHERE status=2 AND resolved_at IS NULL"),
+        // Open DTR batches carrying rows whose stamped shift no longer matches the
+        // current schedule assignment — fixed by Recompute on the batch screen.
+        'stale_sched_batches'   => $count("SELECT COUNT(DISTINCT d.ddtr_id) AS c
+                                           FROM DTR_details d INNER JOIN DTR ON DTR.id = d.ddtr_id
+                                           WHERE DTR.status <> 2 AND " . dtr_schedule_mismatch_where('d')),
     ];
 }

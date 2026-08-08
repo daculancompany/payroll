@@ -506,4 +506,8 @@ $(document).ready(function () {
     function warn(msg) {
         Swal.fire({ icon: "warning", title: "Hold on", text: msg });
     }
+
+    // Shift + rate-type dropdowns are rendered by the global custom-select
+    // control (assets2/js/custom-select.js), which auto-enhances every <select>
+    // on the page — nothing to wire up here.
 });

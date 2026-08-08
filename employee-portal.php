@@ -1941,6 +1941,11 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 <link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
 <script src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
 <script>window.DTR_LOG_MODE = <?= json_encode(defined('DTR_LOG_MODE') ? DTR_LOG_MODE : 'single') ?>;</script>
+
+    <!-- App-wide custom <select> control (also loaded globally from includes/header.php
+         for pages routed through index.php; this page renders standalone). -->
+    <link rel="stylesheet" href="assets2/css/custom-select.css">
+    <script defer src="assets2/js/custom-select.js"></script>
 </head>
 <body>
 
@@ -2788,14 +2793,17 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <div class="row g-2 align-items-end">
                 <div class="col-12 col-md-5">
                     <label class="info-lbl" style="margin-bottom:4px;">Period A</label>
-                    <select id="cmp-a"></select>
+                    <?php /* data-no-cs: these two are handed to bootstrap-select at
+                             runtime (see the .selectpicker() call further down), so the
+                             global custom-select control must leave them alone. */ ?>
+                    <select id="cmp-a" data-no-cs></select>
                 </div>
                 <div class="col-12 col-md-2 text-center" style="padding-bottom:4px;">
                     <span style="display:inline-flex;width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:800;font-size:11px;align-items:center;justify-content:center;">VS</span>
                 </div>
                 <div class="col-12 col-md-5">
                     <label class="info-lbl" style="margin-bottom:4px;">Period B</label>
-                    <select id="cmp-b"></select>
+                    <select id="cmp-b" data-no-cs></select>
                 </div>
             </div>
         </div>

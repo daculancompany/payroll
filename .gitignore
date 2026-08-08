@@ -5,3 +5,6 @@ firebase-service-account.json
 logs/*
 !logs/.gitkeep
 !logs/.htaccess
+
+# Employee face enrollment images — user data, never commit
+uploads/faces/

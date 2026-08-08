@@ -1847,6 +1847,28 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                 const json = await res.json();
                 if (json?.result) {
                     bootstrap.Modal.getInstance(document.getElementById('modal-assign-schedule'))?.hide();
+                    // Punches already recorded under the old shift stay frozen — offer to
+                    // recompute them right here instead of sending the admin to the batch.
+                    if (json.stale_rows > 0) {
+                        const ask = await Swal.fire({
+                            icon: 'warning', title: 'Schedule assigned',
+                            html: json.stale_rows + ' attendance record(s) were already computed under the old schedule.<br>' +
+                                  'Apply the new schedule to them now? Approved records whose figures change go back to Pending.',
+                            showCancelButton: true,
+                            confirmButtonText: 'Apply now', cancelButtonText: 'Later',
+                            confirmButtonColor: '#6642aa',
+                        });
+                        if (ask.isConfirmed) {
+                            const empId = data.get('employee_id');
+                            const rr = await fetch('ajax.php?action=recompute_employee_dtr', {
+                                method: 'POST',
+                                body: new URLSearchParams({ employee_id: empId }),
+                            }).then(r => r.json()).catch(() => null);
+                            await Swal.fire(rr?.result
+                                ? { icon: 'success', title: 'Recomputed', text: rr.message }
+                                : { icon: 'error', title: 'Error', text: rr?.message || 'Recompute failed.' });
+                        }
+                    }
                     location.reload();
                 } else {
                     Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to assign schedule.' });
@@ -1889,7 +1911,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                 html: 'Delete the schedule period <b>' + btn.dataset.label + '</b>?'
                     + (isCurrent
                         ? '<br><small class="text-muted">This is the current schedule — the previous period will become current again.</small>'
-                        : '<br><small class="text-muted">DTR and payroll already computed with this period will not be recalculated.</small>'),
+                        : '<br><small class="text-muted">DTR and payroll already computed with this period will not be recalculated automatically — open the affected DTR batch and press <b>Recompute</b> to apply the change.</small>'),
                 showCancelButton: true,
                 confirmButtonText: 'Yes, delete it',
                 cancelButtonText: 'Cancel',

@@ -947,45 +947,180 @@ function editContriAmount(el) {
 
 
 
-$("#uploadForm").on("submit", async function (e) {
-    e.preventDefault();
-    var form = $(this);
+// ── Import wizard: upload → server-side dry-run preview → confirm ──
+(function () {
+    var money = function (n) {
+        n = parseFloat(n) || 0;
+        return n > 0
+            ? n.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+            : '<span class="text-muted">—</span>';
+    };
+    var esc = function (s) {
+        return $("<div>").text(s == null ? "" : String(s)).html();
+    };
 
-    form.parsley().validate();
+    function setStep(step) {
+        $("#modal-upload .imp-step").each(function () {
+            $(this).toggleClass("active", +$(this).data("step") <= step);
+        });
+        var preview = step >= 2;
+        $("#import-step-upload").toggleClass("d-none", preview);
+        $("#import-step-preview").toggleClass("d-none", !preview);
+        $("#import-preview-btn").toggleClass("d-none", preview);
+        $("#import-back-btn, #import-confirm-btn").toggleClass("d-none", !preview);
+        $("#import-dialog").toggleClass("modal-xl", preview);
+    }
 
-    if (form.parsley().isValid()) {
+    // Dropzone: filename chip + drag highlight (the input itself covers the zone).
+    $("#excelFile").on("change", function () {
+        var f = this.files[0];
+        $("#import-file-chip").toggleClass("show", !!f);
+        if (f) {
+            $("#import-file-name").text(f.name);
+            $("#import-file-size").text((f.size / 1024).toFixed(0) + " KB");
+        }
+    });
+    $("#import-dropzone")
+        .on("dragover dragenter", function () { $(this).addClass("dragover"); })
+        .on("dragleave drop", function () { $(this).removeClass("dragover"); });
+
+    function badge(action) {
+        if (action === "insert") return '<span class="imp-badge b-new">New</span>';
+        if (action === "update") return '<span class="imp-badge b-upd">Update</span>';
+        return '<span class="imp-badge b-skip">Skip</span>';
+    }
+
+    function renderPreview(data) {
+        var c = data.counts;
+        $("#import-stats").html(
+            '<div class="imp-stat"><div class="v">' + data.total + '</div><div class="l">Rows</div></div>' +
+            '<div class="imp-stat s-new"><div class="v">' + c.insert + '</div><div class="l">New</div></div>' +
+            '<div class="imp-stat s-upd"><div class="v">' + c.update + '</div><div class="l">Updates</div></div>' +
+            '<div class="imp-stat s-skip"><div class="v">' + c.skip + '</div><div class="l">Skipped</div></div>' +
+            '<div class="imp-stat s-warn"><div class="v">' + c.warning + '</div><div class="l">Warnings</div></div>'
+        );
+
+        var html = "";
+        $.each(data.rows, function (_, r) {
+            var name = (r.lastname || r.firstname)
+                ? esc(r.lastname) + ", " + esc(r.firstname) + (r.middlename ? " " + esc(r.middlename) : "")
+                : '<span class="text-muted fst-italic">(no name)</span>';
+            var issues = "";
+            if (r.issues.length) {
+                issues = '<ul class="imp-issues">';
+                $.each(r.issues, function (_, i) { issues += "<li>" + esc(i) + "</li>"; });
+                issues += "</ul>";
+            }
+            var ids = [];
+            if (r.sss_no) ids.push("SSS " + esc(r.sss_no));
+            if (r.ph_no) ids.push("PHIC " + esc(r.ph_no));
+            if (r.hdmf_no) ids.push("HDMF " + esc(r.hdmf_no));
+
+            html +=
+                '<tr class="' + (r.action === "skip" ? "row-skip" : r.issues.length ? "row-warn" : "") + '">' +
+                '<td class="text-muted">' + r.row_no + "</td>" +
+                "<td>" + badge(r.action) + "</td>" +
+                '<td><div class="fw-semibold">' + name + "</div>" +
+                (ids.length ? '<div class="imp-sub">' + ids.join(" · ") + "</div>" : "") + issues + "</td>" +
+                "<td>" + esc(r.position || "—") +
+                (r.position_new && r.action !== "skip" ? ' <span class="imp-badge b-new">+ new</span>' : "") + "</td>" +
+                "<td>" + esc(r.clas) + "</td>" +
+                '<td class="imp-num">' + money(r.daily_rate) + "</td>" +
+                '<td class="imp-num">' + money(r.basic_pay) + "</td>" +
+                "<td>" + esc(r.rate_type) + "</td>" +
+                '<td class="imp-num">' + money(r.sss) + " / " + money(r.phic) + " / " + money(r.hdmf) + "</td>" +
+                "<td>" + esc(r.shift) + "</td>" +
+                "<td>" + (r.deduction ? esc(r.deduction) + " · " + money(r.ded_amount) : '<span class="text-muted">—</span>') + "</td>" +
+                "</tr>";
+        });
+        $("#import-preview-body").html(html);
+        $("#import-truncated-note").toggle(!!data.truncated);
+
+        var importable = c.insert + c.update;
+        $("#import-confirm-btn")
+            .prop("disabled", importable === 0)
+            .html('<i class="ri-check-double-line me-1"></i>Confirm Import (' + importable + ")");
+        setStep(2);
+    }
+
+    // Step 1 → dry-run preview (no writes).
+    $("#uploadForm").on("submit", function (e) {
+        e.preventDefault();
+        var form = $(this);
+        form.parsley().validate();
+        if (!form.parsley().isValid()) return;
+
         Swal.fire({
-            title: "Uploading, please wait...",
+            title: "Analyzing file...",
+            text: "Building the import preview — nothing is saved yet.",
             allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
+            didOpen: () => Swal.showLoading(),
+        });
+        $.ajax({
+            url: "ajax.php?action=preview_import_employee",
+            type: "POST",
+            data: new FormData(this),
+            contentType: false,
+            processData: false,
+            dataType: "json",
+            error: (xhr, status, error) => {
+                Swal.close();
+                handleError(error || "");
+            },
+            success: function (resp) {
+                Swal.close();
+                if (!resp || !resp.result) {
+                    Swal.fire({
+                        icon: "error",
+                        title: "Cannot preview file",
+                        text: (resp && resp.message) || "The file could not be read.",
+                    });
+                    return;
+                }
+                renderPreview(resp);
             },
         });
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        var formData = new FormData(this);
+    });
+
+    // Step 2 → commit for real.
+    $("#import-confirm-btn").on("click", function () {
+        Swal.fire({
+            title: "Importing, please wait...",
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading(),
+        });
         $.ajax({
             url: "ajax.php?action=import_employee",
             type: "POST",
-            data: formData,
+            data: new FormData(document.getElementById("uploadForm")),
             contentType: false,
             processData: false,
             error: (xhr, status, error) => {
                 Swal.close();
                 handleError(error || "");
             },
-            success: function (resp) {
+            success: function () {
                 Swal.fire({
                     icon: "success",
-                    title: "Success!",
-                    text: "Employee successfully imported!",
+                    title: "Import complete!",
+                    text: "Employees were successfully imported.",
                 }).then((result) => {
-                    if (result.isConfirmed) {
-                        window.location.reload();
-                    }
+                    if (result.isConfirmed) window.location.reload();
                 });
             },
         });
-    }
-});
+    });
+
+    $("#import-back-btn").on("click", function () { setStep(1); });
+
+    // Reset the wizard whenever the modal closes.
+    $(document).on("hidden.bs.modal", "#modal-upload", function () {
+        setStep(1);
+        $("#uploadForm")[0].reset();
+        $("#uploadForm").parsley().reset();
+        $("#import-file-chip").removeClass("show");
+        $("#import-preview-body").empty();
+    });
+})();
 
 

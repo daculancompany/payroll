@@ -117,10 +117,7 @@ function board_name($r)
     .db-date-pill { display:flex; align-items:center; gap:8px; background:#fff; border:1px solid #dad4e5; border-radius:20px; padding:6px 16px; font-weight:700; color:#57339d; cursor:pointer; font-size:14px; min-width:190px; justify-content:center; transition:border-color .15s, box-shadow .15s; }
     .db-date-pill:hover { border-color:#673bb6; box-shadow:0 2px 6px rgba(103,59,182,.15); }
     .db-today-badge { font-size:10px; background:#673bb6; color:#fff; border-radius:10px; padding:1px 8px; margin-left:6px; vertical-align:middle; }
-    /* daterangepicker theme override, same purple used on attendance.php */
-    .daterangepicker td.active, .daterangepicker td.active:hover { background-color:#673bb6 !important; }
-    .daterangepicker td.start-date, .daterangepicker td.end-date { background-color:#5d36a6 !important; }
-    .daterangepicker .drp-buttons .btn.applyBtn { background-color:#673bb6 !important; border-color:#5d36a6 !important; }
+    /* daterangepicker theme now lives globally in assets2/css/custom-select.css */
     .db-group-toggle .btn { padding:4px 10px; }
     .db-group-toggle .btn.active { background:#673bb6; border-color:#673bb6; color:#fff; }
 
@@ -148,11 +145,34 @@ function board_name($r)
     .db-sum-card.secondary { background:#f5f5f5; border-color:#e0e0e0; color:#666; }
 
     .db-group { margin-bottom:16px; }
-    .db-group-head { display:flex; align-items:center; gap:8px; background:linear-gradient(135deg,#f2f0f6,#edeaf3); border:1px solid #dad4e5; border-radius:8px; padding:7px 12px; margin-bottom:8px; }
+    .db-group-head { position:relative; display:flex; align-items:center; gap:8px; background:linear-gradient(135deg,#f2f0f6,#edeaf3); border:1px solid #dad4e5; border-radius:8px; padding:7px 12px 9px; cursor:pointer; user-select:none; overflow:hidden; transition:border-color .15s, box-shadow .15s, background .15s; }
+    .db-group-head:hover { border-color:#c3b3e2; box-shadow:0 2px 8px rgba(103,59,182,.12); }
+    .db-group-head:focus-visible { outline:2px solid #673bb6; outline-offset:2px; }
+    .db-group-chevron { color:#8b7bb0; font-size:16px; line-height:1; flex-shrink:0; transition:transform .25s ease, color .15s; }
+    .db-group-head:hover .db-group-chevron { color:#673bb6; }
+    .db-group.collapsed .db-group-chevron { transform:rotate(-90deg); }
     .db-group-title { font-size:13px; font-weight:700; color:#57339d; }
-    .db-group-time { font-size:11px; color:#746491; }
-    .db-group-in { font-size:11px; font-weight:700; color:#1a7f37; margin-left:auto; }
+    .db-group-time { font-size:11px; color:#746491; white-space:nowrap; }
+    .db-group-in { font-size:11px; font-weight:700; color:#1a7f37; white-space:nowrap; }
     .db-group-count { flex-shrink:0; }
+    .db-group-stats { display:flex; align-items:center; gap:5px; margin-left:auto; flex-wrap:wrap; justify-content:flex-end; }
+    .db-stat-chip { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:700; line-height:1; padding:3px 8px; border-radius:10px; background:#fff; border:1px solid #e3ddee; color:#6b6580; white-space:nowrap; }
+    .db-stat-chip .db-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+    .db-stat-chip.success .db-dot { background:#2eb872; } .db-stat-chip.success { color:#1a7f37; border-color:#c9ecd8; }
+    .db-stat-chip.warning .db-dot { background:#f0a800; } .db-stat-chip.warning { color:#ad6800; border-color:#f6e4b5; }
+    .db-stat-chip.danger  .db-dot { background:#e5484d; } .db-stat-chip.danger  { color:#cf1322; border-color:#f7cfcf; }
+    .db-stat-chip.info    .db-dot { background:#3a9bdc; } .db-stat-chip.info    { color:#096dd9; border-color:#c9e4f7; }
+    .db-stat-chip.secondary .db-dot { background:#b9bec9; }
+    .db-group-bar { position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(103,59,182,.10); }
+    .db-group-bar-fill { height:100%; background:linear-gradient(90deg,#6f47b5,#2eb872); transition:width .4s ease; }
+
+    /* Collapse animation — 1fr → 0fr keeps the natural height without measuring it in JS */
+    .db-group-body { display:grid; grid-template-rows:1fr; margin-top:8px; transition:grid-template-rows .28s ease, opacity .2s ease, margin-top .28s ease; }
+    .db-group-body > .db-group-body-inner { overflow:hidden; min-height:0; }
+    .db-group.collapsed .db-group-body { grid-template-rows:0fr; opacity:0; margin-top:0; }
+    .db-group.no-anim .db-group-body { transition:none; }
+
+    .db-collapse-toggle .btn { padding:4px 10px; }
 
     .db-card { border:1px solid #e2e5ee; border-left:3px solid #e2e5ee; border-radius:8px; padding:10px 12px; background:#fff; height:100%; transition:box-shadow .15s, transform .15s; }
     .db-card:hover { box-shadow:0 3px 10px rgba(0,0,0,.10); transform:translateY(-1px); }
@@ -209,6 +229,10 @@ function board_name($r)
                             <button type="button" class="btn btn-sm btn-outline-secondary active" id="btn-group-shift"><i class="ri-time-line"></i> Shift</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-group-dept"><i class="ri-building-3-line"></i> Department</button>
                         </div>
+                        <div class="btn-group db-collapse-toggle" role="group">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-expand-all" title="Expand all groups"><i class="ri-arrow-down-s-line"></i> Expand</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-collapse-all" title="Collapse all groups"><i class="ri-arrow-up-s-line"></i> Collapse</button>
+                        </div>
                     </div>
                     <div class="card-body">
 
@@ -260,17 +284,34 @@ function board_name($r)
                         function board_render_group($gkey, $group, $isShiftGroup)
                         {
                             if (empty($group['employees'])) return;
+                            $total = count($group['employees']);
                             $in_count = 0;
-                            foreach ($group['employees'] as $e) if (in_array($e['att']['label'], ['Present', 'Late'])) $in_count++;
+                            $counts = [];
+                            foreach ($group['employees'] as $e) {
+                                $lbl = $e['att']['label'];
+                                $counts[$lbl] = ($counts[$lbl] ?? 0) + 1;
+                                if (in_array($lbl, ['Present', 'Late'])) $in_count++;
+                            }
+                            // Status chips stay visible when the group is collapsed, so the head alone tells the story
+                            $chip_order = ['Present' => 'success', 'Late' => 'warning', 'Absent' => 'danger', 'Not Yet Due' => 'info', 'No Record' => 'secondary', 'Scheduled' => 'secondary'];
+                            $bar_pct = $total > 0 ? round($in_count / $total * 100) : 0;
                             ?>
                             <div class="db-group" data-group-key="<?= htmlspecialchars($gkey) ?>">
-                                <div class="db-group-head">
+                                <div class="db-group-head" role="button" tabindex="0" aria-expanded="true" title="Click to collapse / expand">
+                                    <i class="ri-arrow-down-s-line db-group-chevron"></i>
                                     <i class="ri-<?= $isShiftGroup ? 'time' : 'building-3' ?>-line" style="color:#673bb6;"></i>
                                     <span class="db-group-title"><?= htmlspecialchars($group['label']) ?></span>
                                     <?php if (!empty($group['time'])): ?><span class="db-group-time"><?= htmlspecialchars($group['time']) ?></span><?php endif; ?>
-                                    <span class="db-group-in"><i class="ri-user-follow-line"></i> <?= $in_count ?> in</span>
-                                    <span class="badge bg-secondary db-group-count"><?= count($group['employees']) ?></span>
+                                    <span class="db-group-stats">
+                                        <?php foreach ($chip_order as $lbl => $cls): if (empty($counts[$lbl])) continue; ?>
+                                        <span class="db-stat-chip <?= $cls ?>" data-chip-status="<?= htmlspecialchars($lbl) ?>" title="<?= htmlspecialchars($lbl) ?>"><span class="db-dot"></span><span class="db-chip-val"><?= $counts[$lbl] ?></span> <?= htmlspecialchars($lbl) ?></span>
+                                        <?php endforeach; ?>
+                                        <span class="db-group-in"><i class="ri-user-follow-line"></i> <?= $in_count ?> in</span>
+                                        <span class="badge bg-secondary db-group-count"><?= $total ?></span>
+                                    </span>
+                                    <span class="db-group-bar"><span class="db-group-bar-fill" style="width:<?= $bar_pct ?>%;"></span></span>
                                 </div>
+                                <div class="db-group-body"><div class="db-group-body-inner">
                                 <div class="row g-2">
                                     <?php foreach ($group['employees'] as $r): $att = $r['att'];
                                         $search = strtolower($r['lastname'] . ' ' . $r['firstname'] . ' ' . $r['employee_no'] . ' ' . ($r['dept_name'] ?? '') . ' ' . ($r['shift_desc'] ?? '')); ?>
@@ -303,6 +344,7 @@ function board_name($r)
                                     </div>
                                     <?php endforeach; ?>
                                 </div>
+                                </div></div>
                             </div>
                             <?php
                         }

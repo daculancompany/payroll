@@ -266,19 +266,19 @@ function getRole($login_role)
                         <div class="navbar-brand-box horizontal-logo">
                             <a href="index.php" class="logo logo-dark">
                                 <span class="logo-sm">
-                                    HR
+                                    <img src="assets2/images/pwa/icon-192.png" alt="COMC" class="brand-mark">
                                 </span>
                                 <span class="logo-lg">
-                                    Payroll System
+                                    <img src="assets2/images/pwa/icon-192.png" alt="COMC" class="brand-mark">Payroll System
                                 </span>
                             </a>
 
                             <a href="index.php" class="logo logo-light">
                                 <span class="logo-sm">
-                                    HR
+                                    <img src="assets2/images/pwa/icon-192.png" alt="COMC" class="brand-mark">
                                 </span>
                                 <span class="logo-lg">
-                                    Payroll System
+                                    <img src="assets2/images/pwa/icon-192.png" alt="COMC" class="brand-mark">Payroll System
                                 </span>
                             </a>
                         </div>
@@ -1051,6 +1051,10 @@ function getRole($login_role)
                     }
                     var opts = arg || {};
                     if (!$el.data('bs-select')) {
+                        // A lazily-initialised select (e.g. .select2() called on
+                        // modal show) may already carry the global CustomSelect
+                        // control. Hand over cleanly instead of stacking two UIs.
+                        if (window.CustomSelect && this._cs) window.CustomSelect.destroy(this);
                         $el.addClass('selectpicker');
                         // only show a search box when the list is long enough to need it
                         if ($el.find('option').length > 8) $el.attr('data-live-search', 'true');
@@ -1085,6 +1089,11 @@ function getRole($login_role)
             };
         })(jQuery);
     </script>
+
+    <!-- App-wide custom <select> control. Must load AFTER the bootstrap-select
+         shim above (so selects claimed by .select2() are skipped) and BEFORE the
+         page scripts below (so its DOMContentLoaded sweep runs after theirs). -->
+    <script src="<?= av('assets2/js/custom-select.js') ?>"></script>
     <!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/corejs-typeahead/1.3.0/typeahead.bundle.min.js"></script> -->
 
     <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>

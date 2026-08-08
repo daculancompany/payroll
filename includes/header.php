@@ -86,7 +86,10 @@ if (!isset($page_title)) {
 
     <!-- ── PWA: installable admin app (separate manifest from the employee portal) ── -->
     <link rel="manifest" href="manifest-admin.webmanifest">
-    <meta name="theme-color" content="#6642aa">
+    <!-- Installed-app window title bar. A ~30% tint of the primary instead of the
+         solid colour: Chrome then draws the window title in dark text, so the app
+         name stays readable. -->
+    <meta name="theme-color" content="#d1c6e5">
     <!-- iOS ignores the manifest; it reads these tags on "Add to Home Screen" -->
     <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -141,6 +144,9 @@ if (!isset($page_title)) {
 
     <!-- Keeps SweetAlert dialogs above Bootstrap modals -->
     <link rel="stylesheet" href="assets2/css/modal-stacking.css">
+
+    <!-- App-wide custom <select> control (assets2/js/custom-select.js) -->
+    <link rel="stylesheet" href="<?= av('assets2/css/custom-select.css') ?>">
 
     <!-- The employee quick-view drawer is now component/employee_quick_view.php,
          included by index.php for every routed page (data-emp-quickview="<id>"
@@ -285,6 +291,30 @@ if (!isset($page_title)) {
 
         .navbar-menu .logo-light {
             display: inline-block;
+        }
+
+        /* Brand mark on the purple logo bar — white disc keeps the multi-colour
+           COMC seal legible against the primary background. */
+        .navbar-brand-box .logo-lg {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+        }
+
+        .navbar-brand-box .brand-mark {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #fff;
+            padding: 2px;
+            object-fit: contain;
+            flex-shrink: 0;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+        }
+
+        .navbar-brand-box .logo-sm .brand-mark {
+            width: 28px;
+            height: 28px;
         }
 
         .navbar-menu .logo-light .logo,

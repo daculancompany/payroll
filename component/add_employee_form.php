@@ -705,31 +705,120 @@
     </form>
 </div>
 
-<!-- ── Import Employees ──────────────────────────────────────────── -->
-<div class="modal fade" id="modal-upload" tabindex="-1" role="dialog">
+<!-- ── Import Employees (upload → preview → commit) ──────────────── -->
+<style>
+    /* Scoped styling for the import wizard */
+    #modal-upload .imp-steps { display: flex; align-items: center; gap: 6px; font-size: 10.5px; }
+    #modal-upload .imp-step {
+        display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+        border-radius: 20px; background: #f1f0f6; color: #8b86a0; font-weight: 600;
+        text-transform: uppercase; letter-spacing: .4px; white-space: nowrap;
+    }
+    #modal-upload .imp-step .imp-step-num {
+        width: 15px; height: 15px; border-radius: 50%; background: #d9d5e6; color: #fff;
+        display: inline-flex; align-items: center; justify-content: center; font-size: 9.5px;
+    }
+    #modal-upload .imp-step.active { background: #efe9fb; color: #673bb6; }
+    #modal-upload .imp-step.active .imp-step-num { background: #673bb6; }
+    #modal-upload .imp-step-arrow { color: #c6c1d6; font-size: 13px; }
+
+    #modal-upload .imp-dropzone {
+        position: relative; border: 2px dashed #cabede; border-radius: 10px;
+        background: #faf9fd; padding: 28px 16px; text-align: center; transition: all .15s ease;
+    }
+    #modal-upload .imp-dropzone:hover, #modal-upload .imp-dropzone.dragover {
+        border-color: #673bb6; background: #f4f0fc;
+    }
+    #modal-upload .imp-dropzone input[type=file] {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        opacity: 0; cursor: pointer;
+    }
+    #modal-upload .imp-drop-icon {
+        width: 46px; height: 46px; margin: 0 auto 8px; border-radius: 12px;
+        background: #efe9fb; color: #673bb6; font-size: 24px;
+        display: flex; align-items: center; justify-content: center;
+    }
+    #modal-upload .imp-file-chip {
+        display: none; align-items: center; gap: 8px; margin-top: 12px;
+        padding: 7px 12px; border: 1px solid #e2ddf0; border-radius: 8px;
+        background: #fff; font-size: 12px; text-align: left;
+    }
+    #modal-upload .imp-file-chip.show { display: inline-flex; }
+
+    #modal-upload .imp-stats { display: flex; gap: 8px; flex-wrap: wrap; }
+    #modal-upload .imp-stat {
+        flex: 1 1 0; min-width: 92px; border: 1px solid #eceaf3; border-radius: 8px;
+        background: #fff; padding: 8px 12px;
+    }
+    #modal-upload .imp-stat .v { font-size: 18px; font-weight: 700; line-height: 1.1; }
+    #modal-upload .imp-stat .l {
+        font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+        color: #8b86a0; font-weight: 600;
+    }
+    #modal-upload .imp-stat.s-new   .v { color: #0ab39c; }
+    #modal-upload .imp-stat.s-upd   .v { color: #299cdb; }
+    #modal-upload .imp-stat.s-skip  .v { color: #f06548; }
+    #modal-upload .imp-stat.s-warn  .v { color: #f7b84b; }
+
+    #modal-upload .imp-table-wrap {
+        max-height: 52vh; overflow: auto; border: 1px solid #eceaf3; border-radius: 8px;
+    }
+    #modal-upload .imp-table { margin: 0; font-size: 12px; }
+    #modal-upload .imp-table thead th {
+        position: sticky; top: 0; z-index: 2; background: #2a2438; color: #fff;
+        font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+        border-color: #3b3450; padding: 8px 10px; white-space: nowrap;
+    }
+    #modal-upload .imp-table tbody td { padding: 7px 10px; vertical-align: top; }
+    #modal-upload .imp-table tbody tr.row-warn { background: #fffbf0; }
+    #modal-upload .imp-table tbody tr.row-skip { background: #fdf2f0; }
+    #modal-upload .imp-badge {
+        display: inline-block; padding: 2px 8px; border-radius: 12px;
+        font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+    }
+    #modal-upload .imp-badge.b-new  { background: #e6f8f5; color: #0ab39c; }
+    #modal-upload .imp-badge.b-upd  { background: #e8f4fb; color: #299cdb; }
+    #modal-upload .imp-badge.b-skip { background: #fdeae6; color: #f06548; }
+    #modal-upload .imp-issues { margin: 4px 0 0; padding-left: 14px; color: #b8860b; font-size: 11px; }
+    #modal-upload .imp-issues li { margin-top: 1px; }
+    #modal-upload .imp-sub { color: #8b86a0; font-size: 10.5px; }
+    #modal-upload .imp-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+</style>
+<div class="modal fade" id="modal-upload" tabindex="-1" role="dialog" data-bs-backdrop="static">
     <form id="uploadForm" novalidate>
-        <div class="modal-dialog" role="document">
+        <div class="modal-dialog modal-dialog-centered" role="document" id="import-dialog">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h6 class="modal-title mb-0">
+                <div class="modal-header align-items-center">
+                    <h6 class="modal-title mb-0 flex-grow-1">
                         <i class="ri-file-excel-2-line me-2" style="color:#673bb6;"></i>Import Employees
                     </h6>
+                    <div class="imp-steps me-3">
+                        <span class="imp-step active" data-step="1"><span class="imp-step-num">1</span>Upload</span>
+                        <i class="ri-arrow-right-s-line imp-step-arrow"></i>
+                        <span class="imp-step" data-step="2"><span class="imp-step-num">2</span>Review</span>
+                        <i class="ri-arrow-right-s-line imp-step-arrow"></i>
+                        <span class="imp-step" data-step="3"><span class="imp-step-num">3</span>Import</span>
+                    </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
-                        <i class="ri-upload-2-line me-1"></i>Excel File <span class="text-danger">*</span>
-                    </label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="ri-file-excel-2-line"></i></span>
-                        <input class="form-control" type="file" name="excelFile" id="excelFile"
-                            accept=".xlsx,.xls,.csv"
+
+                <!-- STEP 1 — choose file -->
+                <div class="modal-body" id="import-step-upload">
+                    <div class="imp-dropzone" id="import-dropzone">
+                        <input type="file" name="excelFile" id="excelFile" accept=".xlsx,.xls,.csv"
+                            data-parsley-errors-container="#excelFile-errors"
                             data-parsley-required-message="Please select a file." required>
+                        <div class="imp-drop-icon"><i class="ri-upload-cloud-2-line"></i></div>
+                        <div class="fw-semibold" style="font-size:13px;">Drag &amp; drop your file here, or <span style="color:#673bb6;text-decoration:underline;">browse</span></div>
+                        <div class="imp-sub mt-1">Accepted formats: .xlsx, .xls, .csv</div>
+                        <div class="imp-file-chip" id="import-file-chip">
+                            <i class="ri-file-excel-2-line" style="color:#0ab39c;font-size:16px;"></i>
+                            <span id="import-file-name" class="fw-semibold text-truncate" style="max-width:260px;"></span>
+                            <span id="import-file-size" class="imp-sub"></span>
+                        </div>
                     </div>
-                    <div class="form-text text-muted mt-1" style="font-size:11px;">
-                        <i class="ri-information-line me-1"></i>Accepted formats: .xlsx, .xls, .csv
-                    </div>
-                    <div class="mt-3 p-2" style="border:1px dashed #cabede;border-radius:6px;background:#f4f3f8;">
+                    <div id="excelFile-errors" class="mt-1"></div>
+                    <div class="mt-3 p-2" style="border:1px dashed #cabede;border-radius:8px;background:#f4f3f8;">
                         <div style="font-size:11px;color:#57339d;" class="mb-2">
                             <i class="ri-lightbulb-line me-1"></i>New to importing? Start from the template — its column order
                             must be kept, and the <b>Notes</b> sheet explains every field.
@@ -740,13 +829,49 @@
                         </a>
                     </div>
                 </div>
+
+                <!-- STEP 2 — preview -->
+                <div class="modal-body d-none" id="import-step-preview">
+                    <div class="imp-stats mb-3" id="import-stats"></div>
+                    <div class="imp-table-wrap">
+                        <table class="table table-hover imp-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:44px;">Row</th>
+                                    <th style="width:74px;">Action</th>
+                                    <th>Employee</th>
+                                    <th>Position</th>
+                                    <th>Classification</th>
+                                    <th class="imp-num">Daily Rate</th>
+                                    <th class="imp-num">Basic Pay</th>
+                                    <th>Rate Type</th>
+                                    <th class="imp-num">SSS / PHIC / HDMF</th>
+                                    <th>Shift</th>
+                                    <th>Deduction</th>
+                                </tr>
+                            </thead>
+                            <tbody id="import-preview-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="imp-sub mt-2" id="import-truncated-note" style="display:none;">
+                        <i class="ri-information-line me-1"></i>Showing the first 500 rows only — the summary counts above cover the whole file.
+                    </div>
+                </div>
+
                 <div class="modal-footer" style="background:#f8f9fa;">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="import-back-btn">
+                        <i class="ri-arrow-left-line me-1"></i>Back
+                    </button>
+                    <button type="submit" class="btn btn-sm text-white submitbutton" id="import-preview-btn"
+                        style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
-                        <i class="ri-upload-2-line me-1"></i>Upload
+                        <i class="ri-search-eye-line me-1"></i>Preview Import
+                    </button>
+                    <button type="button" class="btn btn-sm btn-success d-none" id="import-confirm-btn">
+                        <i class="ri-check-double-line me-1"></i>Confirm Import
                     </button>
                 </div>
             </div>

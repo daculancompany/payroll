@@ -522,6 +522,11 @@ if ($action == "import_employee") {
 		echo $save;
 }
 
+if ($action == "preview_import_employee") {
+	header('Content-Type: application/json');
+	echo json_encode($crud->preview_import_employee());
+}
+
 if ($action == "compare_payrolls") {
 	echo json_encode($crud->compare_payrolls());
 }
@@ -685,6 +690,9 @@ if ($action == 'decide_dtr_details') {
 }
 if ($action == 'recompute_dtr') {
     echo json_encode($crud->recompute_dtr());
+}
+if ($action == 'recompute_employee_dtr') {
+    echo json_encode($crud->recompute_employee_dtr());
 }
 if ($action == 'message_dtr_record') {
     echo json_encode($crud->message_dtr_record());

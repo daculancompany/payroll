@@ -1,0 +1,484 @@
+/* ============================================================================
+   Custom Select — app-wide replacement for the native <select> dropdown.
+
+   Loaded globally from index.php and applied automatically by
+   assets2/js/custom-select.js. The native <select> stays in the DOM as the
+   single source of truth (so every existing $('#x').val() / form post /
+   Parsley rule keeps working) — this only replaces the *visual* control.
+
+   Despite the name this file is the app's shared form-control skin. Later
+   sections restyle text inputs/textareas to the same metrics (so a select and
+   an input side by side line up), the daterangepicker date pills, and the
+   daterangepicker calendar itself. Grep a class name to find its section.
+
+   Notes that matter if you touch this file:
+   - The empty-state class is .cs-empty, NOT "placeholder": Bootstrap ships a
+     .placeholder skeleton-loader that paints the text as a gray bar.
+   - .cs-menu is position:FIXED and positioned by JS. It has to be: this app
+     puts selects inside .table-responsive (overflow-x:auto) and inside modal
+     bodies (overflow-y:auto), and an absolutely-positioned menu gets clipped
+     by both. Fixed + JS coordinates also lets the menu flip up when it would
+     otherwise run off the bottom of the viewport.
+   ========================================================================= */
+
+/* The native select is kept visually hidden but NOT display:none — a
+   display:none control with `required` makes the browser throw
+   "An invalid form control is not focusable" and silently block submits. */
+.cs-native {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.cs-select {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+/* ---- Trigger (the thing that looks like the select) ---- */
+.cs-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    text-align: left;
+    background: #fff;
+    border: 1px solid #d9d3e4;
+    border-radius: 9px;
+    padding: 7px 11px;
+    font-size: 13.5px;
+    line-height: 1.35;
+    color: #28223b;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+/* Pinned so the trigger and a sibling .form-control are always the same height.
+   Without it the caret/leading-icon glyph drives the trigger taller than an
+   input with identical padding (34px vs 29px in the roster's small tier). */
+.cs-trigger { min-height: 38px; }
+
+.cs-trigger:hover:not(:disabled) { border-color: #a98fd6; }
+.cs-trigger:focus-visible { outline: none; border-color: #673bb6; box-shadow: 0 0 0 3px rgba(103, 59, 182, .12); }
+.cs-select.open .cs-trigger { border-color: #673bb6; box-shadow: 0 0 0 3px rgba(103, 59, 182, .12); }
+
+.cs-trigger:disabled,
+.cs-select.cs-disabled .cs-trigger {
+    background: #f4f3f6;
+    color: #9895a3;
+    cursor: not-allowed;
+    border-color: #e4e3e9;
+}
+
+/* Small variant — mirrors .form-select-sm */
+.cs-select.cs-sm .cs-trigger { padding: 5px 10px; font-size: 12.5px; border-radius: 8px; min-height: 34px; }
+.cs-select.cs-sm .cs-ic { font-size: 13px; }
+
+.cs-ic { color: #673bb6; font-size: 14px; flex-shrink: 0; }
+.cs-select.cs-disabled .cs-ic { color: #b6b2c2; }
+
+.cs-value {
+    flex: 1;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-value.cs-empty { color: #9895a3; font-weight: 500; }
+
+.cs-caret { color: #9895a3; font-size: 16px; flex-shrink: 0; transition: transform .18s; }
+.cs-select.open .cs-caret { transform: rotate(180deg); color: #673bb6; }
+/* When the menu flips upward the caret should point the other way at rest. */
+.cs-select.cs-up .cs-caret { transform: rotate(180deg); }
+.cs-select.cs-up.open .cs-caret { transform: rotate(0deg); }
+
+/* ---- Menu (position + size are set inline by the JS) ---- */
+.cs-menu {
+    position: fixed;
+    /* Above Bootstrap modals (1055) AND daterangepicker (3001) — the picker's
+       own month/year selects are enhanced too, and their menus must not open
+       behind the calendar they belong to. */
+    z-index: 3060;
+    background: #fff;
+    border: 1px solid #e4e3e9;
+    border-radius: 14px;
+    padding: 6px;
+    box-shadow: 0 14px 40px -10px rgba(47, 35, 73, .30);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px) scale(.985);
+    transform-origin: top left;
+    transition: opacity .15s ease, transform .15s ease, visibility .15s;
+}
+
+.cs-menu.cs-menu-up { transform: translateY(6px) scale(.985); transform-origin: bottom left; }
+/* Open state is keyed on the menu itself, not on an ancestor wrapper: the menu
+   is a child of <body>, so it has no .cs-select ancestor to inherit from. */
+.cs-menu.open { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+
+/* ---- Menu header: title and/or search, plus the close button ---- */
+.cs-top { display: flex; align-items: center; gap: 6px; margin: 2px 2px 6px; }
+.cs-top .cs-search { flex: 1; margin: 0; }
+
+.cs-title {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #767283;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    padding-left: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-title i { color: #673bb6; font-size: 13px; }
+
+.cs-close {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border: 1px solid #e9e7ee;
+    border-radius: 8px;
+    background: #f4f3f6;
+    color: #767283;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .12s;
+}
+
+.cs-close:hover { background: #efe9f9; border-color: #d9ccf0; color: #673bb6; }
+
+.cs-search {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: #f4f3f6;
+    border: 1px solid #e9e7ee;
+    border-radius: 9px;
+    padding: 5px 10px;
+}
+
+.cs-search i { color: #9895a3; font-size: 13px; flex-shrink: 0; }
+.cs-search input { border: 0; background: transparent; outline: none; width: 100%; font-size: 12.5px; color: #28223b; }
+
+/* ---- Options ---- */
+.cs-opts { overflow-y: auto; overscroll-behavior: contain; }
+
+.cs-opt {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 9px;
+    padding: 7px 9px;
+    cursor: pointer;
+    transition: background .1s;
+}
+
+.cs-opt:hover,
+.cs-opt.cs-active { background: #f4f1fa; }
+
+.cs-opt[disabled] { opacity: .45; cursor: not-allowed; }
+
+/* Leading icon chip (opt-in via data-cs-icon on the <option>) */
+.cs-tod {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+    background: #f1eef8;
+    color: #673bb6;
+}
+
+/* Shift time-of-day palette */
+.cs-tod-morning   { background: #fff4d6; color: #d8930a; }
+.cs-tod-afternoon { background: #ffe9d9; color: #e8590c; }
+.cs-tod-night     { background: #e7e4f7; color: #5f3dc4; }
+/* Pay-rate palette */
+.cs-rate-daily    { background: #e6f7ee; color: #0e6b37; }
+.cs-rate-monthly  { background: #e3f2fd; color: #1565c0; }
+.cs-rate-fixed    { background: #f4f1fa; color: #673bb6; }
+
+.cs-opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+
+.cs-opt-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #28223b;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-opt-time {
+    font-size: 11.5px;
+    color: #767283;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cs-night {
+    font-size: 9.5px;
+    font-weight: 700;
+    background: #2b2b3a;
+    color: #fff;
+    border-radius: 5px;
+    padding: 2px 7px;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.cs-opt-check { color: #673bb6; font-size: 16px; visibility: hidden; flex-shrink: 0; }
+.cs-opt.sel { background: #f4f1fa; box-shadow: inset 0 0 0 1px #d9ccf0; }
+.cs-opt.sel .cs-opt-check { visibility: visible; }
+
+/* Grouped options (<optgroup>) */
+.cs-group {
+    font-size: 10px;
+    font-weight: 800;
+    color: #9895a3;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    padding: 8px 10px 4px;
+}
+
+.cs-none { padding: 12px 10px; font-size: 12px; color: #9895a3; text-align: center; }
+
+/* The menu is a direct child of <body>, so printing would otherwise leave a
+   stray floating panel on the page. */
+@media print { .cs-menu { display: none !important; } }
+
+/* ============================================================================
+   Text inputs matched to the select trigger.
+
+   Bootstrap's defaults left .form-control noticeably shorter than the custom
+   select sitting beside it (27px vs 34px in the roster action bar), so a row
+   of "select + input" looked ragged. These rules give inputs the same metrics,
+   border, radius and focus ring as .cs-trigger above.
+
+   Scoped to input/textarea ON PURPOSE — bootstrap-select renders its wrapper
+   as <div class="dropdown bootstrap-select form-control">, so a blanket
+   .form-control rule would paint a second border around those dropdowns.
+   Native <select> needs nothing here: it's either enhanced (hidden) or owned
+   by bootstrap-select.
+
+   Bootstrap's .input-group radius rules are far more specific than these, so
+   grouped inputs keep their joined corners.
+   ========================================================================= */
+input.form-control,
+textarea.form-control {
+    border: 1px solid #d9d3e4;
+    border-radius: 9px;
+    padding: 7px 11px;
+    font-size: 13.5px;
+    line-height: 1.35;
+    color: #28223b;
+    background-color: #fff;
+    transition: border-color .15s, box-shadow .15s;
+}
+
+/* Same pinned heights as .cs-trigger / .cs-sm .cs-trigger above. Textareas are
+   left out — their height comes from `rows`. */
+input.form-control { min-height: 38px; }
+
+textarea.form-control { line-height: 1.45; }
+
+input.form-control-sm,
+textarea.form-control-sm {
+    padding: 5px 10px;
+    font-size: 12.5px;
+    border-radius: 8px;
+}
+
+input.form-control-sm { min-height: 34px; }
+
+input.form-control:hover:not(:disabled):not([readonly]),
+textarea.form-control:hover:not(:disabled):not([readonly]) { border-color: #a98fd6; }
+
+input.form-control:focus,
+textarea.form-control:focus {
+    border-color: #673bb6;
+    box-shadow: 0 0 0 3px rgba(103, 59, 182, .12);
+    outline: none;
+}
+
+input.form-control::placeholder,
+textarea.form-control::placeholder { color: #9895a3; }
+
+input.form-control:disabled,
+input.form-control[readonly],
+textarea.form-control:disabled,
+textarea.form-control[readonly] {
+    background-color: #f4f3f6;
+    color: #9895a3;
+    border-color: #e4e3e9;
+}
+
+/* ---- Date pills (daterangepicker triggers) ------------------------------
+   These are <div>s, not form controls, so they never received a focus state —
+   clicking one only smeared a text selection across the date. The .is-open
+   class is applied globally by custom-select.js on show/hide.daterangepicker,
+   giving them the same active ring as the select and the input beside them. */
+.rp-date-pill,
+.db-date-pill {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.rp-date-pill.is-open,
+.db-date-pill.is-open,
+.rp-date-pill:focus-visible,
+.db-date-pill:focus-visible {
+    border-color: #673bb6;
+    box-shadow: 0 0 0 3px rgba(103, 59, 182, .12);
+    outline: none;
+}
+
+/* The roster pill sits in a row with a small select and input — match them. */
+.rp-date-pill { border-radius: 8px; min-height: 34px; }
+
+/* ============================================================================
+   Date-range picker (daterangepicker) — themed to match the controls above.
+   Ships with its own blue/Bootstrap-3 look, which clashed with everything
+   else once the selects and inputs moved to the purple system.
+
+   Every selector is prefixed with `body` on purpose: daterangepicker.css is
+   linked LATER in the document than this file (index.php loads the CDN copy
+   in the body), so equal-specificity rules would lose to it.
+   ========================================================================= */
+body .daterangepicker {
+    border: 1px solid #e4e3e9;
+    border-radius: 14px;
+    box-shadow: 0 14px 40px -10px rgba(47, 35, 73, .30);
+    font-family: inherit;
+    padding: 0;
+}
+
+/* The little pointer triangle above the panel */
+body .daterangepicker:before { border-bottom-color: #e4e3e9; }
+body .daterangepicker:after { border-bottom-color: #fff; }
+body .daterangepicker.drop-up:before { border-top-color: #e4e3e9; }
+body .daterangepicker.drop-up:after { border-top-color: #fff; }
+
+/* ---- Preset ranges rail ---- */
+body .daterangepicker .ranges { padding: 6px; }
+body .daterangepicker .ranges ul { width: 150px; }
+
+body .daterangepicker .ranges li {
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #28223b;
+    transition: background .12s, color .12s;
+}
+
+body .daterangepicker .ranges li:hover { background: #f4f1fa; }
+
+body .daterangepicker .ranges li.active {
+    background: #673bb6;
+    color: #fff;
+}
+
+/* ---- Calendars ---- */
+body .daterangepicker .drp-calendar { padding: 10px 12px; max-width: 290px; }
+body .daterangepicker .drp-calendar.left { border-left: 0; }
+
+body .daterangepicker .calendar-table { border: 0; border-radius: 0; }
+body .daterangepicker .calendar-table th,
+body .daterangepicker .calendar-table td { font-size: 12.5px; min-width: 32px; height: 32px; border-radius: 8px; }
+body .daterangepicker .calendar-table th { color: #8f8aa0; font-weight: 700; }
+
+body .daterangepicker td.available:hover,
+body .daterangepicker th.available:hover { background: #f4f1fa; color: #673bb6; }
+
+body .daterangepicker td.off,
+body .daterangepicker td.off.in-range,
+body .daterangepicker td.off.start-date,
+body .daterangepicker td.off.end-date { background: transparent; color: #c9c5d4; }
+
+body .daterangepicker td.in-range { background: #f0eafb; color: #28223b; border-radius: 0; }
+
+body .daterangepicker td.active,
+body .daterangepicker td.active:hover { background: #673bb6; color: #fff; }
+
+body .daterangepicker td.start-date { background: #5d36a6; color: #fff; border-radius: 8px 0 0 8px; }
+body .daterangepicker td.end-date { background: #5d36a6; color: #fff; border-radius: 0 8px 8px 0; }
+body .daterangepicker td.start-date.end-date { border-radius: 8px; }
+
+/* Prev/next arrows */
+body .daterangepicker th.prev,
+body .daterangepicker th.next { border-radius: 8px; }
+body .daterangepicker th.prev .daterangepicker-prev-icon,
+body .daterangepicker th.next .daterangepicker-next-icon { border-color: #673bb6; }
+
+/* Month/year pickers: these are real <select>s created by the plugin, so the
+   custom-select control enhances them. Its wrapper is display:block, which
+   stacked the two vertically — put them back on one row and shrink them. */
+body .daterangepicker .calendar-table .cs-select { display: inline-block; width: auto; margin: 0 2px; }
+body .daterangepicker .calendar-table .cs-trigger { min-height: 30px; padding: 4px 8px; font-size: 12px; border-radius: 8px; }
+body .daterangepicker .calendar-table .cs-trigger .cs-value { font-weight: 700; }
+body .daterangepicker select.monthselect,
+body .daterangepicker select.yearselect { font-size: 12px; }
+
+/* ---- Footer ---- */
+body .daterangepicker .drp-buttons {
+    border-top: 1px solid #eceaf1;
+    padding: 10px 14px;
+    background: #faf9fc;
+    border-radius: 0 0 14px 14px;
+}
+
+body .daterangepicker .drp-selected { font-size: 12px; color: #767283; font-variant-numeric: tabular-nums; }
+
+body .daterangepicker .drp-buttons .btn {
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 700;
+    padding: 6px 16px;
+}
+
+body .daterangepicker .drp-buttons .btn.btn-primary,
+body .daterangepicker .drp-buttons .applyBtn {
+    background: #673bb6;
+    border-color: #673bb6;
+    color: #fff;
+}
+
+body .daterangepicker .drp-buttons .btn.btn-primary:hover,
+body .daterangepicker .drp-buttons .applyBtn:hover { background: #5a32a3; border-color: #5a32a3; }
+
+body .daterangepicker .drp-buttons .btn.btn-default,
+body .daterangepicker .drp-buttons .cancelBtn {
+    background: #fff;
+    border: 1px solid #d9d3e4;
+    color: #767283;
+}
+
+body .daterangepicker .drp-buttons .btn.btn-default:hover,
+body .daterangepicker .drp-buttons .cancelBtn:hover { background: #f4f1fa; color: #673bb6; border-color: #a98fd6; }

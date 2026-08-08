@@ -14,7 +14,7 @@
 
     <!-- ── PWA: lets the admin app be installed from the login screen too ── -->
     <link rel="manifest" href="manifest-admin.webmanifest">
-    <meta name="theme-color" content="#6642aa">
+    <meta name="theme-color" content="#d1c6e5">
     <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">

@@ -3,7 +3,7 @@
 
 // Shift definitions (used for the bulk selector, the edit modal, and the filter list)
 $shift_rows = [];
-$sq = $conn->query("SELECT id, description, start_time, end_time FROM work_schedules WHERE status=1 ORDER BY start_time ASC");
+$sq = $conn->query("SELECT id, description, start_time, end_time, is_graveyard FROM work_schedules WHERE status=1 ORDER BY start_time ASC");
 while ($sq && $s = $sq->fetch_assoc()) {
     $s['label'] = $s['description'] . ' (' . date('h:i A', strtotime($s['start_time'])) . ' – ' . date('h:i A', strtotime($s['end_time'])) . ')';
     $shift_rows[] = $s;
@@ -130,7 +130,9 @@ if (!function_exists('rest_days_pills')) {
     .planner-hint { font-size:11px; color:#8c6d1f; }
 
     /* ---- Bootstrap date picker pill (same pattern as Daily Board) ---- */
-    .rp-date-pill { display:flex; align-items:center; gap:6px; width:100%; padding:6px 11px; border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:13px; font-weight:600; color:#57339d; cursor:pointer; transition:border-color .15s; }
+    /* radius/height deliberately match the small select + input beside it —
+       the shared focus ring and user-select rules live in custom-select.css */
+    .rp-date-pill { display:flex; align-items:center; gap:6px; width:100%; padding:6px 11px; border:1px solid #d9d3e4; border-radius:8px; background:#fff; font-size:13px; font-weight:600; color:#57339d; cursor:pointer; transition:border-color .15s, box-shadow .15s; }
     .rp-date-pill:hover { border-color:#673bb6; }
     .rp-date-pill i { color:#673bb6; }
     /* daterangepicker theme override, same purple used on attendance.php / daily-board.php */
@@ -176,6 +178,7 @@ if (!function_exists('rest_days_pills')) {
     .rab-field { display:flex; flex-direction:column; }
     .rab-hint { font-size:11.5px; color:#9895a3; margin-top:8px; }
     @media (max-width:640px){ .rab-clear{ margin-left:0; } }
+
 </style>
 
 <div class="main-content">
@@ -262,10 +265,30 @@ if (!function_exists('rest_days_pills')) {
                                 <div class="rab-row">
                                     <div class="rab-field" style="flex:1;min-width:190px;">
                                         <div class="form-label"><i class="ri-time-line me-1"></i>Shift</div>
-                                        <select class="form-select form-select-sm" id="bulk-shift">
+                                        <?php /* Plain <select> — the global custom-select control
+                                                 (assets2/js/custom-select.js) renders it. The data-cs-*
+                                                 attributes add the icon chip, the time sub-line and the
+                                                 Night badge; option text is left untouched because
+                                                 schedule-roster.js reads it for the confirm dialog. */ ?>
+                                        <select class="form-select form-select-sm" id="bulk-shift"
+                                                data-cs-title="Shift" data-cs-icon="ri-time-line" data-cs-search="true">
                                             <option value="">— Select shift —</option>
-                                            <?php foreach ($shift_rows as $s): ?>
-                                                <option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['label']) ?></option>
+                                            <?php foreach ($shift_rows as $s):
+                                                // "8-5 (8AM-5PM)" → code "8-5"; the parenthetical just
+                                                // repeats the time sub-line, so the row shows the code.
+                                                $code = trim(preg_replace('/\s*\(.*$/', '', $s['description']));
+                                                $h    = (int) date('G', strtotime($s['start_time']));
+                                                if ($s['is_graveyard'] || $h >= 18 || $h < 5) { $tod = 'night';     $todIc = 'ri-moon-clear-fill'; }
+                                                elseif ($h < 12)                              { $tod = 'morning';   $todIc = 'ri-sun-fill'; }
+                                                else                                          { $tod = 'afternoon'; $todIc = 'ri-sun-foggy-fill'; }
+                                                $range = date('g:i A', strtotime($s['start_time'])) . ' – ' . date('g:i A', strtotime($s['end_time']));
+                                            ?>
+                                            <option value="<?= $s['id'] ?>"
+                                                    data-cs-name="<?= htmlspecialchars($code) ?>"
+                                                    data-cs-sub="<?= htmlspecialchars($range) ?>"
+                                                    data-cs-display="<?= htmlspecialchars($code . ' · ' . $range) ?>"
+                                                    data-cs-icon="<?= $todIc ?>" data-cs-icon-class="cs-tod-<?= $tod ?>"
+                                                    <?= $s['is_graveyard'] ? 'data-cs-badge="Night"' : '' ?>><?= htmlspecialchars($s['label']) ?></option>
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
@@ -316,11 +339,17 @@ if (!function_exists('rest_days_pills')) {
                                 <div class="rab-row">
                                     <div class="rab-field" style="min-width:250px;">
                                         <div class="form-label"><i class="ri-money-dollar-circle-line me-1"></i>Pay rate type</div>
-                                        <select class="form-select form-select-sm" id="bulk-rate-type">
+                                        <?php /* Plain <select> — rendered by the global custom-select
+                                                 control; data-cs-* adds the icon chip + description line. */ ?>
+                                        <select class="form-select form-select-sm" id="bulk-rate-type"
+                                                data-cs-title="Pay rate type" data-cs-icon="ri-money-dollar-circle-line">
                                             <option value="">— Choose rate —</option>
-                                            <option value="daily">Daily — per day present</option>
-                                            <option value="monthly">Monthly — salary minus absences</option>
-                                            <option value="fixed">Fixed — full salary, no attendance</option>
+                                            <option value="daily"   data-cs-name="Daily"   data-cs-sub="Per day present"
+                                                    data-cs-display="Daily" data-cs-icon="ri-coins-fill" data-cs-icon-class="cs-rate-daily">Daily — per day present</option>
+                                            <option value="monthly" data-cs-name="Monthly" data-cs-sub="Salary minus absences"
+                                                    data-cs-display="Monthly" data-cs-icon="ri-calendar-2-fill" data-cs-icon-class="cs-rate-monthly">Monthly — salary minus absences</option>
+                                            <option value="fixed"   data-cs-name="Fixed"   data-cs-sub="Full salary, no attendance"
+                                                    data-cs-display="Fixed" data-cs-icon="ri-safe-2-fill" data-cs-icon-class="cs-rate-fixed">Fixed — full salary, no attendance</option>
                                         </select>
                                     </div>
                                     <div class="flex-grow-1"></div>
@@ -396,7 +425,13 @@ if (!function_exists('rest_days_pills')) {
                                     <tr>
                                         <td class="text-center"><input type="checkbox" class="form-check-input row-chk" value="<?= $r['id'] ?>"></td>
                                         <td>
-                                            <a href="index.php?page=employee-details&id=<?= $r['id'] ?>" class="roster-emp-link d-flex align-items-center gap-2" title="View Employee Details">
+                                            <?php /* data-emp-quickview opens the shared drawer (component/
+                                                     employee_quick_view.php, included by index.php) instead of
+                                                     navigating away — same behaviour as the daily board, payroll
+                                                     sheet and DTR screens. The href stays real so the URL still
+                                                     shows on hover and the drawer's "Full details" button lands
+                                                     on the same page. */ ?>
+                                            <a href="index.php?page=employee-details&id=<?= $r['id'] ?>" data-emp-quickview="<?= (int)$r['id'] ?>" class="roster-emp-link d-flex align-items-center gap-2" title="Employee quick view">
                                                 <span class="roster-avatar"><?= $initials ?></span>
                                                 <div>
                                                     <div class="roster-emp-name"><?= $name ?></div>
@@ -471,7 +506,7 @@ if (!function_exists('rest_days_pills')) {
                                         <div class="roster-card">
                                             <div class="roster-card-head">
                                                 <input type="checkbox" class="form-check-input row-chk" value="<?= $r['id'] ?>">
-                                                <a href="index.php?page=employee-details&id=<?= $r['id'] ?>" class="roster-emp-link" title="View Employee Details">
+                                                <a href="index.php?page=employee-details&id=<?= $r['id'] ?>" data-emp-quickview="<?= (int)$r['id'] ?>" class="roster-emp-link" title="Employee quick view">
                                                     <span class="roster-avatar"><?= $initials ?></span>
                                                     <div class="roster-emp-text">
                                                         <div class="roster-emp-name"><?= $name ?></div>

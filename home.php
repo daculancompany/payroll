@@ -176,6 +176,33 @@ $pending_att_req = db_count($conn, "SELECT COUNT(*) AS c FROM attendance_request
 $open_dtr_disputes     = db_count($conn, "SELECT COUNT(*) AS c FROM dtr_employee_reviews WHERE status=2 AND resolved_at IS NULL");
 $open_payroll_disputes = db_count($conn, "SELECT COUNT(*) AS c FROM payroll_employee_reviews WHERE status=2 AND resolved_at IS NULL");
 
+// ── Action needed: schedule changes not yet applied to open DTR batches ──
+// A batch counts when any of its rows carries a stamped shift that disagrees
+// with the employee's current schedule assignment (admin changed a schedule
+// after the punches were recorded). Fixed by Recompute on the batch screen;
+// final-approved batches are locked and excluded.
+$stale_sched_batches = db_count($conn, "SELECT COUNT(DISTINCT d.ddtr_id) AS c
+    FROM DTR_details d INNER JOIN DTR ON DTR.id = d.ddtr_id
+    WHERE DTR.status <> 2 AND " . dtr_schedule_mismatch_where('d'));
+
+// ── Schedule changes: made in the last 7 days or taking effect soon ──────
+$sched_changes = [];
+$scr = $conn->query("
+    SELECT CONCAT(e.lastname, ', ', e.firstname) AS emp_name,
+           COALESCE(ws.description, '—') AS shift,
+           es.effective_from, es.created_at, u.name AS changed_by_name
+    FROM employee_schedules es
+    INNER JOIN employee e ON e.id = es.employee_id
+    LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
+    LEFT JOIN users u ON u.id = es.changed_by
+    WHERE (es.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+           OR es.effective_from BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 14 DAY))
+          $dsE
+    ORDER BY es.created_at DESC
+    LIMIT 8
+");
+if ($scr) while ($r = $scr->fetch_assoc()) { $sched_changes[] = $r; }
+
 // ── Pending leave requests (top 6, for the approval widget) ────
 $pending_leave_list = [];
 $plr = $conn->query("
@@ -481,7 +508,7 @@ $recent_dtr = $conn->query("
 
             <!-- ── ROW 1b: Action needed — pending approvals (approver roles only) ── -->
             <?php
-            $has_approver_items = $can_approve && ($pending_leaves || $pending_att_req || ($show_dtr && $pending_dtr));
+            $has_approver_items = $can_approve && ($pending_leaves || $pending_att_req || ($show_dtr && ($pending_dtr || $stale_sched_batches)));
             $has_finance_items  = $show_finance && ($pay_review || $open_payroll_disputes);
             ?>
             <?php if ($has_approver_items || $has_finance_items || ($can_approve && $open_dtr_disputes)): ?>
@@ -562,6 +589,18 @@ $recent_dtr = $conn->query("
                         <div>
                             <div class="ac-val" data-stat="open_dtr_disputes"><?= $open_dtr_disputes ?></div>
                             <div class="ac-lbl">DTR dispute<?= $open_dtr_disputes == 1 ? '' : 's' ?> to resolve</div>
+                        </div>
+                        <i class="ri-arrow-right-line ac-go"></i>
+                    </a>
+                </div>
+                <?php endif; ?>
+                <?php if ($can_approve && $show_dtr && $stale_sched_batches): ?>
+                <div class="col-md-4">
+                    <a href="dtr" class="action-card" style="--ac:#c98a00;">
+                        <div class="ac-ic"><i class="ri-calendar-schedule-line"></i></div>
+                        <div>
+                            <div class="ac-val" data-stat="stale_sched_batches"><?= $stale_sched_batches ?></div>
+                            <div class="ac-lbl">DTR batch<?= $stale_sched_batches == 1 ? '' : 'es' ?> with a schedule change to recompute</div>
                         </div>
                         <i class="ri-arrow-right-line ac-go"></i>
                     </a>
@@ -1109,6 +1148,50 @@ $recent_dtr = $conn->query("
                 </div>
             </div>
 
+            <?php endif; ?>
+
+            <?php if ($show_dtr && count($sched_changes)): ?>
+            <!-- ── ROW 3e: Recent & Upcoming Schedule Changes ── -->
+            <div class="row g-3 mb-3">
+                <div class="col-12">
+                    <div class="card" style="border-top:3px solid #c98a00;">
+                        <div class="card-header d-flex align-items-center py-2">
+                            <h6 class="card-title mb-0 flex-grow-1">
+                                <i class="ri-calendar-schedule-line me-2" style="color:#c98a00;"></i>Schedule Changes — recent &amp; upcoming
+                            </h6>
+                            <a href="index.php?page=schedule-roster" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">Schedule Roster <i class="ri-arrow-right-line ms-1"></i></a>
+                        </div>
+                        <div class="card-body py-2" style="max-height:260px;overflow-y:auto;">
+                            <?php foreach ($sched_changes as $sc):
+                                $eff      = strtotime($sc['effective_from']);
+                                $upcoming = $sc['effective_from'] > date('Y-m-d');
+                            ?>
+                            <div class="ev-row">
+                                <div class="bday-avatar" style="background:linear-gradient(135deg,#c98a00,#8a6400);">
+                                    <?= strtoupper(substr($sc['emp_name'], 0, 1)) ?>
+                                </div>
+                                <div style="min-width:0;">
+                                    <div style="font-size:12px;font-weight:700;line-height:1.2;"><?= htmlspecialchars($sc['emp_name']) ?></div>
+                                    <div style="font-size:11px;color:#aaa;">
+                                        <?= htmlspecialchars($sc['shift']) ?>
+                                        <?php if (!empty($sc['changed_by_name'])): ?> · changed by <?= htmlspecialchars($sc['changed_by_name']) ?><?php endif; ?>
+                                        <?php if (!empty($sc['created_at'])): ?> · <?= date('M d', strtotime($sc['created_at'])) ?><?php endif; ?>
+                                    </div>
+                                </div>
+                                <div class="bday-day" style="<?= $upcoming ? 'background:#e6f7fb;color:#0891b2;' : 'background:#fff6e0;color:#c98a00;' ?>">
+                                    <?= $upcoming ? 'starts' : 'since' ?> <?= date('M d', $eff) ?>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                            <?php if ($stale_sched_batches): ?>
+                            <div style="font-size:11px;color:#c98a00;padding:6px 2px 2px;">
+                                <i class="ri-error-warning-line me-1"></i><?= $stale_sched_batches ?> open DTR batch<?= $stale_sched_batches == 1 ? ' still uses' : 'es still use' ?> the old schedule — open the batch and press <b>Recompute</b> to apply.
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <?php endif; ?>
 
             <?php if ($show_finance): ?>

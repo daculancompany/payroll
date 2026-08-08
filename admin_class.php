@@ -996,9 +996,26 @@ class Action
             $r = $this->applyScheduleChange($employee_id, $schedule_id, $effective_from, $notes, $changed_by, $rest_days);
 
             $this->db->commit();
-            return $r === 'unchanged'
-                ? ['result' => true, 'message' => 'No change — already on this schedule.']
-                : ['result' => true, 'message' => 'Schedule assigned'];
+            if ($r === 'unchanged') {
+                return ['result' => true, 'message' => 'No change — already on this schedule.'];
+            }
+
+            // Bell + FCM push to the employee — the roster bulk path and the
+            // planner already send this; the single-assign modal never did.
+            $this->notifyScheduleChange($employee_id, $schedule_id, $effective_from);
+
+            // Attendance already recorded under the old shift stays frozen until a
+            // batch Recompute — count those rows so the UI can warn the admin
+            // immediately instead of leaving it to the dashboard card.
+            $stale = $this->db->query(
+                "SELECT COUNT(*) AS n FROM DTR_details d
+                 INNER JOIN DTR ON DTR.id = d.ddtr_id
+                 WHERE d.employee_id = $employee_id AND DTR.status <> 2
+                   AND " . dtr_schedule_mismatch_where('d')
+            );
+            $staleRows = $stale ? (int) ($stale->fetch_assoc()['n'] ?? 0) : 0;
+
+            return ['result' => true, 'message' => 'Schedule assigned', 'stale_rows' => $staleRows];
         } catch (Exception $e) {
             $this->db->rollback();
             return ['result' => false, 'message' => $e->getMessage()];
@@ -1403,22 +1420,29 @@ class Action
 
         $this->db->begin_transaction();
         try {
+            $today = date('Y-m-d');
             $sel = $this->db->prepare(
-                "SELECT id, rest_days FROM employee_schedules WHERE employee_id=? AND effective_to IS NULL LIMIT 1"
-            );
-            $upd = $this->db->prepare(
-                "UPDATE employee_schedules SET rest_days=?, changed_by=? WHERE id=?"
+                "SELECT schedule_id FROM employee_schedules
+                 WHERE employee_id=? AND effective_from <= ?
+                   AND (effective_to IS NULL OR effective_to >= ?)
+                 ORDER BY effective_from DESC LIMIT 1"
             );
             foreach ($ids as $emp) {
-                $sel->bind_param('i', $emp);
+                $sel->bind_param('iss', $emp, $today, $today);
                 $sel->execute();
-                $open = $sel->get_result()->fetch_assoc();
-                if (!$open) { $skipped++; continue; }              // no active schedule to attach rest days to
-                if ((string)$open['rest_days'] === $rest_days) { $unchanged++; continue; }
-                $upd->bind_param('sii', $rest_days, $changed_by, $open['id']);
-                $upd->execute();
-                $updated++;
-                $notify[] = $emp;
+                $cur = $sel->get_result()->fetch_assoc();
+                if (!$cur) { $skipped++; continue; }              // no active schedule to attach rest days to
+                // Same shift + new rest days, effective today, through
+                // applyScheduleChange — the change lands as a NEW period so
+                // past dates keep the rest days they were computed under. The
+                // old in-place UPDATE rewrote history and retro-repainted the
+                // off-day markers on closed DTR sheets.
+                $r = $this->applyScheduleChange($emp, (int)$cur['schedule_id'], $today, 'Rest days update', $changed_by, $rest_days);
+                if ($r === 'updated') {
+                    $updated++;
+                    $notify[] = $emp;
+                } elseif ($r === 'unchanged') $unchanged++;
+                else $skipped++;
             }
             $this->db->commit();
         } catch (Exception $e) {
@@ -1960,9 +1984,11 @@ class Action
             $stmt = $this->db->prepare(
                 "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
                  day_type=?, nsd_hours=?, is_complete=1, attendance_type='incident',
+                 schedule_id=?, day_hours=?, is_rest_day=?,
                  status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
             );
-            $stmt->bind_param('sddddsdi', $logs, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours, $existing_id);
+            $stmt->bind_param('sddddsdidii', $logs, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours,
+                              $c['schedule_id'], $c['day_hours'], $c['is_rest_day'], $existing_id);
             if (!$stmt->execute()) throw new Exception('Could not update the DTR record: ' . $stmt->error);
             return;
         }
@@ -2015,10 +2041,12 @@ class Action
 
         $stmt = $this->db->prepare(
             "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, late, undertime,
-                                      day_type, nsd_hours, is_complete, logs, attendance_type, status)
-             VALUES (?,?,?,?,?,?,?,?,?,1,?,'incident',0)"
+                                      day_type, nsd_hours, is_complete, logs, attendance_type, status,
+                                      schedule_id, day_hours, is_rest_day)
+             VALUES (?,?,?,?,?,?,?,?,?,1,?,'incident',0,?,?,?)"
         );
-        $stmt->bind_param('iisddddsds', $ddtr_id, $employee_id, $date, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours, $logs);
+        $stmt->bind_param('iisddddsdsidi', $ddtr_id, $employee_id, $date, $work_hours, $overtime, $late, $undertime,
+                          $day_type, $nsd_hours, $logs, $c['schedule_id'], $c['day_hours'], $c['is_rest_day']);
         if (!$stmt->execute()) throw new Exception('Could not write the DTR record: ' . $stmt->error);
     }
 
@@ -2052,11 +2080,15 @@ class Action
         if (!$batch) return false;
 
         $ddtr_id = (int) $batch['id'];
+        // Stamp the shift on the parked row so it follows the same frozen-shift
+        // policy as every other new attendance row (no logs → figures stay 0).
+        $cs = dtr_compute_day($this->db, $employee_id, $req['request_date'], []);
         $stmt = $this->db->prepare(
-            "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, logs, attendance_type, status)
-             VALUES (?,?,?,0,?,'[]','overtime',0)"
+            "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, logs, attendance_type, status,
+                                      schedule_id, day_hours, is_rest_day)
+             VALUES (?,?,?,0,?,'[]','overtime',0,?,?,?)"
         );
-        $stmt->bind_param('iisd', $ddtr_id, $employee_id, $date, $ot_hours);
+        $stmt->bind_param('iisdidi', $ddtr_id, $employee_id, $date, $ot_hours, $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
         if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
         return true;
     }
@@ -2836,9 +2868,15 @@ class Action
                     }
                 }
 
-                $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime) VALUES (?, ?, ?, ?, ?, ?, ?)";
+                // Stamp the shift like biometric ingestion does, so uploaded rows
+                // follow the same frozen-shift policy instead of drifting with
+                // later roster edits.
+                $cs = dtr_compute_day($this->db, (int)$employee_id, date('Y-m-d', strtotime($date_time)), []);
+                $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime,
+                                                  schedule_id, day_hours, is_rest_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt2 = $this->db->prepare($sql2);
-                $stmt2->bind_param('sssssss', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime);
+                $stmt2->bind_param('sssssssidi', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime,
+                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
                 try {
                     $stmt2->execute();
                 } catch (Exception $e) {
@@ -2931,9 +2969,13 @@ class Action
                         throw new Exception('Failed to insert data');
                     }
                 }
-                $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                // Same frozen-shift stamp the web upload and biometric ingestion apply.
+                $cs = dtr_compute_day($this->db, (int)$employee_id, date('Y-m-d', strtotime($date_time)), []);
+                $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime, notes,
+                                                  schedule_id, day_hours, is_rest_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt2 = $this->db->prepare($sql2);
-                $stmt2->bind_param('ssssssss', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes);
+                $stmt2->bind_param('ssssssssidi', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes,
+                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
                 try {
                     $stmt2->execute();
                 } catch (Exception $e) {
@@ -5330,9 +5372,13 @@ class Action
                     $new_logs[$k]['type'] =  'manual';
                 }
                 $logs = json_encode($new_logs);
-                $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                // Same frozen-shift stamp the other insert paths apply.
+                $cs = dtr_compute_day($this->db, (int)$employee_id, date('Y-m-d', strtotime($date_time)), []);
+                $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime, notes,
+                                                  schedule_id, day_hours, is_rest_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt2 = $this->db->prepare($sql2);
-                $stmt2->bind_param('ssssssss', $id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes);
+                $stmt2->bind_param('ssssssssidi', $id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes,
+                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
                 try {
                     $stmt2->execute();
                 } catch (Exception $e) {
@@ -8852,12 +8898,16 @@ class Action
         $is_complete = $c['is_complete'];
 
         $json_logs = json_encode($logs);
+        // schedule_id/day_hours/is_rest_day come from the same stamp-mode call:
+        // a stamped row keeps its frozen shift, a legacy unstamped one gets
+        // stamped now so it stops drifting with later roster edits.
         $stmt = $this->db->prepare(
             "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
-             day_type=?, nsd_hours=?, is_complete=?, attendance_type='manual' WHERE id=?"
+             day_type=?, nsd_hours=?, is_complete=?, attendance_type='manual',
+             schedule_id=?, day_hours=?, is_rest_day=? WHERE id=?"
         );
         $stmt->bind_param(
-            'sddddsdii',
+            'sddddsdiidii',
             $json_logs,
             $work_hours,
             $overtime,
@@ -8866,6 +8916,9 @@ class Action
             $day_type,
             $nsd_hours,
             $is_complete,
+            $c['schedule_id'],
+            $c['day_hours'],
+            $c['is_rest_day'],
             $id
         );
         return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Saved'];
@@ -8995,9 +9048,13 @@ class Action
 
     /**
      * Recompute every record of a batch from its raw logs using the shared
-     * day math (dtr_compute_day: current schedules + holiday calendar).
-     * Needed for batches generated before schedules existed, or after a
-     * schedule assignment changes mid-period.
+     * day math (dtr_compute_day) with the employee's CURRENT schedule
+     * assignment + the holiday calendar. This is the one deliberate override
+     * of the shift frozen on each row at punch time: pressing Recompute means
+     * "the roster is right, the rows are wrong" — e.g. admin forgot to change
+     * an employee's schedule before the period ran. The re-resolved shift is
+     * stamped back onto each row (schedule_id / day_hours / is_rest_day) so
+     * payroll and the DTR sheets follow it too.
      *
      * Policy: figures are updated in place; APPROVED rows whose figures
      * actually changed are reset to pending for re-approval (the approval
@@ -9012,56 +9069,40 @@ class Action
 
         $ddtr_id = (int)($_POST['id'] ?? 0);
         if (!$ddtr_id) return ['result' => false, 'message' => 'Missing DTR id'];
-        $batch = $this->db->query("SELECT id, status FROM DTR WHERE id = $ddtr_id")->fetch_assoc();
+        $batch = $this->db->query("SELECT id, status, date_from, date_to FROM DTR WHERE id = $ddtr_id")->fetch_assoc();
         if (!$batch) return ['result' => false, 'message' => 'Batch not found'];
         if ((int)$batch['status'] === 2) {
             return ['result' => false, 'message' => 'This batch is final-approved — its figures are locked.'];
         }
 
         $res = $this->db->query("SELECT id, employee_id, date_time, work_hours, overtime, undertime,
-                                        late, nsd_hours, day_type, status, logs
+                                        late, nsd_hours, day_type, status, logs,
+                                        schedule_id, day_hours, is_rest_day
                                  FROM DTR_details WHERE ddtr_id = $ddtr_id");
-        $scanned = $changed = $repending = 0;
 
         $this->db->begin_transaction();
         try {
-            $upd = $this->db->prepare(
-                "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=? WHERE id=?"
-            );
-            $updPend = $this->db->prepare(
-                "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=?,
-                 status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
-            );
-            while ($row = $res->fetch_assoc()) {
-                $scanned++;
-                $ts = [];
-                foreach ((json_decode($row['logs']) ?: []) as $lg) {
-                    $t = strtotime($lg->dateTime ?? '');
-                    if ($t !== false) $ts[] = $t;
-                }
-                $c = dtr_compute_day($this->db, (int)$row['employee_id'], $row['date_time'], $ts);
-
-                $same = abs($c['work_hours'] - (float)$row['work_hours']) < 0.005
-                     && abs($c['overtime']   - (float)$row['overtime'])   < 0.005
-                     && abs($c['undertime']  - (float)$row['undertime'])  < 0.005
-                     && abs($c['late']       - (float)$row['late'])       < 0.005
-                     && abs($c['nsd_hours']  - (float)$row['nsd_hours'])  < 0.005
-                     && $c['day_type'] === $row['day_type'];
-                if ($same) continue;
-
-                $changed++;
-                $rowId    = (int)$row['id'];
-                $toPend   = ((int)$row['status'] === 1);   // only approved rows re-open
-                $stmt     = $toPend ? $updPend : $upd;
-                if ($toPend) $repending++;
-                $stmt->bind_param('dddddsii', $c['work_hours'], $c['overtime'], $c['undertime'],
-                                  $c['late'], $c['nsd_hours'], $c['day_type'], $c['is_complete'], $rowId);
-                if (!$stmt->execute()) throw new Exception('Row ' . $rowId . ': ' . $stmt->error);
-            }
+            [$scanned, $changed, $repending, $affectedEmp] = $this->recomputeDetailRows($res);
             $this->db->commit();
         } catch (Exception $e) {
             $this->db->rollback();
             return ['result' => false, 'message' => 'Recompute failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        $this->logRecompute($ddtr_id, null, 'batch', $scanned, $changed, $repending);
+
+        // Bell + FCM push to each employee whose figures moved (after commit) —
+        // numbers they may already have seen or signed off on just changed.
+        $periodLbl = date('M j', strtotime($batch['date_from'])) . '–' . date('M j, Y', strtotime($batch['date_to']));
+        foreach ($affectedEmp as $empId => $n) {
+            $this->notifyEmployee(
+                $empId,
+                'Attendance recalculated',
+                $n . ' day(s) of your attendance for ' . $periodLbl . ' were recalculated after a schedule update. Please review them in your portal.',
+                'ri-refresh-line',
+                'info',
+                'employee-portal.php?tab=attendance'
+            );
         }
 
         return [
@@ -9071,6 +9112,129 @@ class Action
             'repending' => $repending,
             'message'   => "$scanned record(s) scanned, $changed updated, $repending sent back to pending.",
         ];
+    }
+
+    /**
+     * Scoped recompute: ONE employee, every open (not final-approved) batch.
+     * Backs the "Apply now" button shown right after a schedule assignment,
+     * so the admin can apply the fix without opening each affected batch.
+     * Same math and re-approval policy as the batch Recompute.
+     */
+    function recompute_employee_dtr()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $employee_id = (int)($_POST['employee_id'] ?? 0);
+        if (!$employee_id) return ['result' => false, 'message' => 'Missing employee id'];
+
+        $res = $this->db->query("SELECT d.id, d.employee_id, d.date_time, d.work_hours, d.overtime, d.undertime,
+                                        d.late, d.nsd_hours, d.day_type, d.status, d.logs,
+                                        d.schedule_id, d.day_hours, d.is_rest_day
+                                 FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+                                 WHERE d.employee_id = $employee_id AND b.status <> 2");
+
+        $this->db->begin_transaction();
+        try {
+            [$scanned, $changed, $repending, ] = $this->recomputeDetailRows($res);
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Recompute failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        $this->logRecompute(null, $employee_id, 'employee', $scanned, $changed, $repending);
+
+        if ($changed) {
+            $this->notifyEmployee(
+                $employee_id,
+                'Attendance recalculated',
+                $changed . ' day(s) of your attendance were recalculated after a schedule update. Please review them in your portal.',
+                'ri-refresh-line',
+                'info',
+                'employee-portal.php?tab=attendance'
+            );
+        }
+
+        return [
+            'result'    => true,
+            'scanned'   => $scanned,
+            'changed'   => $changed,
+            'repending' => $repending,
+            'message'   => "$scanned record(s) scanned, $changed updated, $repending sent back to pending.",
+        ];
+    }
+
+    /**
+     * Shared row-processor for both recompute entry points. Re-derives every
+     * row in $res from its raw logs with dtr_compute_day($use_stamp=false) —
+     * the current roster wins over the frozen stamp — and writes the new
+     * figures + stamp back. Approved rows whose figures change reset to
+     * pending. Caller owns the transaction.
+     * Returns [scanned, changed, repending, affectedEmp(employee_id => days)].
+     */
+    private function recomputeDetailRows($res): array
+    {
+        $scanned = $changed = $repending = 0;
+        $affectedEmp = [];
+
+        $upd = $this->db->prepare(
+            "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=?,
+             schedule_id=?, day_hours=?, is_rest_day=? WHERE id=?"
+        );
+        $updPend = $this->db->prepare(
+            "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=?,
+             schedule_id=?, day_hours=?, is_rest_day=?,
+             status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+        );
+        while ($row = $res->fetch_assoc()) {
+            $scanned++;
+            $ts = [];
+            foreach ((json_decode($row['logs']) ?: []) as $lg) {
+                $t = strtotime($lg->dateTime ?? '');
+                if ($t !== false) $ts[] = $t;
+            }
+            $c = dtr_compute_day($this->db, (int)$row['employee_id'], $row['date_time'], $ts, false);
+
+            $same = abs($c['work_hours'] - (float)$row['work_hours']) < 0.005
+                 && abs($c['overtime']   - (float)$row['overtime'])   < 0.005
+                 && abs($c['undertime']  - (float)$row['undertime'])  < 0.005
+                 && abs($c['late']       - (float)$row['late'])       < 0.005
+                 && abs($c['nsd_hours']  - (float)$row['nsd_hours'])  < 0.005
+                 && $c['day_type'] === $row['day_type']
+                 && (int)($c['schedule_id'] ?? 0) === (int)($row['schedule_id'] ?? 0)
+                 && abs((float)($c['day_hours'] ?? 0) - (float)($row['day_hours'] ?? 0)) < 0.005
+                 && (int)$c['is_rest_day'] === (int)($row['is_rest_day'] ?? 0);
+            if ($same) continue;
+
+            $changed++;
+            $affectedEmp[(int)$row['employee_id']] = ($affectedEmp[(int)$row['employee_id']] ?? 0) + 1;
+            $rowId    = (int)$row['id'];
+            $toPend   = ((int)$row['status'] === 1);   // only approved rows re-open
+            $stmt     = $toPend ? $updPend : $upd;
+            if ($toPend) $repending++;
+            $stmt->bind_param('dddddsiidii', $c['work_hours'], $c['overtime'], $c['undertime'],
+                              $c['late'], $c['nsd_hours'], $c['day_type'], $c['is_complete'],
+                              $c['schedule_id'], $c['day_hours'], $c['is_rest_day'], $rowId);
+            if (!$stmt->execute()) throw new Exception('Row ' . $rowId . ': ' . $stmt->error);
+        }
+        return [$scanned, $changed, $repending, $affectedEmp];
+    }
+
+    // Best-effort audit row for a recompute run — who ran it, its scope, and
+    // what moved. Recomputes rewrite figures in bulk, so disputes need a
+    // trail; a missing log table must never fail the recompute itself.
+    private function logRecompute($ddtr_id, $employee_id, $scope, $scanned, $changed, $repending)
+    {
+        try {
+            $ranBy = (int)($_SESSION['login_id'] ?? 0) ?: null;
+            $stmt = $this->db->prepare(
+                "INSERT INTO dtr_recompute_log (ddtr_id, employee_id, ran_by, scope, scanned, changed, repending)
+                 VALUES (?,?,?,?,?,?,?)"
+            );
+            $stmt->bind_param('iiisiii', $ddtr_id, $employee_id, $ranBy, $scope, $scanned, $changed, $repending);
+            $stmt->execute();
+        } catch (\Throwable $e) { /* audit is best-effort */ }
     }
 
     /**
@@ -10128,5 +10292,217 @@ class Action
         $stmtCheckClas->close();
         $stmtCheckSchedule->close();
         $stmtCheckDeduct->close();
+    }
+
+    // Dry-run twin of import_employee(): parses the uploaded sheet with the
+    // exact same column rules but performs NO writes, so the admin can review
+    // what each row will do (insert / update / skip + warnings) before
+    // committing. Any parsing change made to import_employee() must be
+    // mirrored here, or the preview will lie.
+    function preview_import_employee()
+    {
+        $allowedExt = ['xls', 'xlsx', 'csv'];
+        $fileName = $_FILES['excelFile']['name'] ?? '';
+        $fileExt = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+        if (!in_array($fileExt, $allowedExt)) {
+            return ['result' => false, 'message' => 'Invalid file type. Only .xlsx, .xls and .csv files are allowed.'];
+        }
+
+        try {
+            $spreadsheet = IOFactory::load($_FILES['excelFile']['tmp_name']);
+        } catch (Exception $e) {
+            return ['result' => false, 'message' => 'Could not read the file: ' . $e->getMessage()];
+        }
+        $data = $spreadsheet->getActiveSheet()->toArray();
+        if (count($data) > 1) {
+            array_shift($data); // header row
+        } else {
+            return ['result' => false, 'message' => 'The sheet has no data rows below the header.'];
+        }
+
+        $stmtCheckEmployee = $this->db->prepare("SELECT id FROM employee
+            WHERE LOWER(firstname) = LOWER(?) AND LOWER(lastname) = LOWER(?) AND LOWER(middlename) = LOWER(?)");
+        $stmtCheckPosition = $this->db->prepare("SELECT id FROM position WHERE LOWER(name) = LOWER(?)");
+        $stmtCheckClas     = $this->db->prepare("SELECT id FROM clasification WHERE LOWER(clasification) = LOWER(?)");
+        $stmtCheckSchedule = $this->db->prepare("SELECT id FROM work_schedules WHERE LOWER(description) = LOWER(?) AND status = 1");
+        $stmtCheckDeduct   = $this->db->prepare("SELECT id FROM deductions WHERE LOWER(deduction) = LOWER(?)");
+
+        $rows = [];
+        $counts = ['insert' => 0, 'update' => 0, 'skip' => 0, 'warning' => 0];
+        $seen_names = [];   // duplicate-in-sheet detection
+        $row_no = 1;        // header was row 1; data starts at 2
+
+        foreach ($data as $row) {
+            $row_no++;
+            // Entirely blank line (trailing rows Excel keeps around) — ignore silently.
+            $joined = trim(implode('', array_map(fn($c) => trim((string) $c), $row)));
+            if ($joined === '') continue;
+
+            $issues = [];
+
+            // Name: "LASTNAME, FIRSTNAME[ MIDDLENAME]" in col D, legacy split cols B/C otherwise.
+            $raw_name = trim((string) ($row[3] ?? ''));
+            if (strpos($raw_name, ',') !== false) {
+                [$last_part, $rest] = explode(',', $raw_name, 2);
+                $lastname   = trim($last_part);
+                $name_parts = preg_split('/\s+/', trim($rest), 2);
+                $firstname  = $name_parts[0] ?? '';
+                $middlename = $name_parts[1] ?? '';
+            } else {
+                $lastname   = $raw_name;
+                $firstname  = trim((string) ($row[1] ?? ''));
+                $middlename = trim((string) ($row[2] ?? ''));
+            }
+
+            $action = 'insert';
+            if (empty($firstname) || empty($lastname)) {
+                $action = 'skip';
+                $issues[] = 'Name is missing or not in "LASTNAME, FIRSTNAME" format — row will be skipped.';
+            } else {
+                $stmtCheckEmployee->bind_param("sss", $firstname, $lastname, $middlename);
+                $stmtCheckEmployee->execute();
+                $stmtCheckEmployee->store_result();
+                if ($stmtCheckEmployee->num_rows > 0) $action = 'update';
+                $stmtCheckEmployee->free_result();
+
+                $name_key = strtolower("$lastname|$firstname|$middlename");
+                if (isset($seen_names[$name_key])) {
+                    $issues[] = 'Duplicate of row ' . $seen_names[$name_key] . ' in this sheet — the later row overwrites the earlier one.';
+                } else {
+                    $seen_names[$name_key] = $row_no;
+                }
+            }
+
+            // Position (col E): unknown names are auto-created by the import.
+            $position_name = trim((string) ($row[4] ?? ''));
+            $position_new = false;
+            if ($action !== 'skip') {
+                if ($position_name === '') {
+                    $position_new = true;
+                    $issues[] = 'Position is blank — an empty position record will be created.';
+                } else {
+                    $stmtCheckPosition->bind_param("s", $position_name);
+                    $stmtCheckPosition->execute();
+                    $stmtCheckPosition->store_result();
+                    $position_new = ($stmtCheckPosition->num_rows === 0);
+                    $stmtCheckPosition->free_result();
+                }
+            }
+
+            // Classification (col N): unknown/blank falls back to Regular.
+            $clas_name = trim((string) ($row[13] ?? ''));
+            $clas_label = 'Regular (default)';
+            if ($clas_name !== '') {
+                $stmtCheckClas->bind_param("s", $clas_name);
+                $stmtCheckClas->execute();
+                $stmtCheckClas->store_result();
+                if ($stmtCheckClas->num_rows > 0) {
+                    $clas_label = $clas_name;
+                } else {
+                    $issues[] = 'Classification "' . $clas_name . '" not found — Regular will be used.';
+                }
+                $stmtCheckClas->free_result();
+            }
+
+            $basic_pay      = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[10] ?? '')));
+            $allowance_rate = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[11] ?? '')));
+            $ot_rate        = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[12] ?? '')));
+            $salary         = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[20] ?? '')));
+            $rate_type_raw  = strtolower(trim((string) ($row[21] ?? '')));
+            $rate_type      = in_array($rate_type_raw, ['daily', 'monthly', 'fixed'], true) ? $rate_type_raw : 'daily';
+            if ($rate_type_raw !== '' && $rate_type_raw !== $rate_type) {
+                $issues[] = 'Rate type "' . $rate_type_raw . '" is not daily/monthly/fixed — "daily" will be used.';
+            }
+            if ($action !== 'skip' && $salary <= 0 && $basic_pay <= 0) {
+                $issues[] = 'Both Daily Rate and Basic Pay are blank/zero.';
+            }
+
+            $sss  = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[14] ?? '')));
+            $phic = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[15] ?? '')));
+            $hdmf = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[16] ?? '')));
+
+            // Shift (col R): blank -> global default; a named-but-unknown shift is NOT assigned.
+            $shift_name = trim((string) ($row[17] ?? ''));
+            $shift_label = $shift_name === '' ? DTR_DEFAULT_SHIFT . ' (default)' : $shift_name;
+            if ($action !== 'skip') {
+                $lookup = $shift_name === '' ? DTR_DEFAULT_SHIFT : $shift_name;
+                $stmtCheckSchedule->bind_param("s", $lookup);
+                $stmtCheckSchedule->execute();
+                $stmtCheckSchedule->store_result();
+                if ($stmtCheckSchedule->num_rows === 0) {
+                    $issues[] = 'Shift "' . $lookup . '" not found among active schedules — no shift will be assigned.';
+                    $shift_label = $shift_name === '' ? $shift_label : $shift_name;
+                }
+                $stmtCheckSchedule->free_result();
+            }
+
+            // Recurring deduction (cols S/T): needs a known name AND amount > 0.
+            $ded_name   = trim((string) ($row[18] ?? ''));
+            $ded_amount = floatval(preg_replace('/[^0-9.]/', '', (string) ($row[19] ?? '')));
+            $ded_label = '';
+            if ($ded_name !== '' && $action !== 'skip') {
+                if ($ded_amount <= 0) {
+                    $issues[] = 'Deduction "' . $ded_name . '" has no amount — it will not be assigned.';
+                } else {
+                    $stmtCheckDeduct->bind_param("s", $ded_name);
+                    $stmtCheckDeduct->execute();
+                    $stmtCheckDeduct->store_result();
+                    if ($stmtCheckDeduct->num_rows > 0) {
+                        $ded_label = $ded_name;
+                    } else {
+                        $issues[] = 'Deduction "' . $ded_name . '" not found — it will not be assigned.';
+                    }
+                    $stmtCheckDeduct->free_result();
+                }
+            }
+
+            $counts[$action === 'skip' ? 'skip' : $action]++;
+            if ($issues) $counts['warning']++;
+
+            // Cap the payload; counts above stay exact for the whole sheet.
+            if (count($rows) < 500) {
+                $rows[] = [
+                    'row_no'       => $row_no,
+                    'action'       => $action,
+                    'lastname'     => $lastname,
+                    'firstname'    => $firstname,
+                    'middlename'   => $middlename,
+                    'position'     => $position_name,
+                    'position_new' => $position_new,
+                    'clas'         => $clas_label,
+                    'daily_rate'   => $salary,
+                    'basic_pay'    => $basic_pay,
+                    'rate_type'    => $rate_type,
+                    'ot_rate'      => $ot_rate,
+                    'allowance'    => $allowance_rate,
+                    'sss'          => $sss,
+                    'phic'         => $phic,
+                    'hdmf'         => $hdmf,
+                    'sss_no'       => trim((string) ($row[7] ?? '')),
+                    'ph_no'        => trim((string) ($row[5] ?? '')),
+                    'hdmf_no'      => trim((string) ($row[9] ?? '')),
+                    'shift'        => $shift_label,
+                    'deduction'    => $ded_label,
+                    'ded_amount'   => $ded_amount,
+                    'issues'       => $issues,
+                ];
+            }
+        }
+
+        $stmtCheckEmployee->close();
+        $stmtCheckPosition->close();
+        $stmtCheckClas->close();
+        $stmtCheckSchedule->close();
+        $stmtCheckDeduct->close();
+
+        $total = $counts['insert'] + $counts['update'] + $counts['skip'];
+        return [
+            'result'    => true,
+            'file'      => $fileName,
+            'total'     => $total,
+            'truncated' => $total > count($rows),
+            'counts'    => $counts,
+            'rows'      => $rows,
+        ];
     }
 }

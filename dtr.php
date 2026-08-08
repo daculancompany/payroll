@@ -85,7 +85,7 @@ function dtr_status_badge($s) {
                                         WHERE 1=1
                                         $filter_query
                                         GROUP BY DTR.id
-                                        ORDER BY DTR.id DESC");
+                                        ORDER BY DTR.date_from DESC, DTR.id DESC");
                                     while ($row = $query->fetch_assoc()):
                                         $status = (int)$row['status'];
                                         $period = date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M j, Y", strtotime($row['date_to']));
@@ -96,7 +96,7 @@ function dtr_status_badge($s) {
                                             . "&status=" . base64_encode($row['status']);
                                     ?>
                                         <tr>
-                                            <td>
+                                            <td data-order="<?= (int)strtotime($row['date_from']) ?>">
                                                 <div class="dtr-period">
                                                     <i class="ri-calendar-2-line me-1 text-muted"></i><?= $period ?>
                                                 </div>

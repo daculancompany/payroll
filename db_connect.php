@@ -370,6 +370,9 @@ if (!defined('ACTION_PAGE_MAP')) {
         'delete_dtr_note' => 'dtr', 'delete_dtr_record' => 'dtr', 'edit_dtr_time' => 'dtr',
         'finalize_dtr' => 'dtr', 'finalize_dtr_bulk' => 'dtr', 'message_dtr_record' => 'dtr',
         'recompute_dtr' => 'dtr', 'save_dtr_note' => 'dtr', 'update_dtr_logs' => 'dtr',
+        // Scoped recompute rides the schedule-assign flow (employee-details
+        // modal), so it carries that page's permission, not the DTR screen's.
+        'recompute_employee_dtr' => 'employee-details',
         'update_status_dtr' => 'dtr', 'send_dtr_for_review' => 'dtr',
         'bulk_send_dtr_for_review' => 'dtr', 'remind_dtr_review' => 'dtr',
         'dtr_review_progress' => 'dtr', 'eport_dtr_reviews' => 'dtr',
@@ -541,7 +544,7 @@ if (!defined('DTR_LOW_ATTENDANCE_PCT')) {
 // applied to new employees (save_employee) and imports (import_employee).
 // Matched by work_schedules.description.
 if (!defined('DTR_DEFAULT_SHIFT')) {
-    define('DTR_DEFAULT_SHIFT', 'Day Shift');
+    define('DTR_DEFAULT_SHIFT', '8-5 (8AM-5PM)');
 }
 // Default rest days for auto-assigned schedules: 0=Sun … 6=Sat.
 if (!defined('DTR_DEFAULT_REST_DAYS')) {
@@ -1203,7 +1206,7 @@ if (!function_exists('dtr_punch_time')) {
 //      A schedule assigned today with effective_from = today does not cover
 //      punches already made this week; without this a night-shift clock-out at
 //      07:01 opened its own next-day row instead of closing the evening's shift.
-//   4. DEFAULT_WORK_SCHEDULE_ID (Day Shift) when the employee has no assignment
+//   4. DEFAULT_WORK_SCHEDULE_ID (8-5, 8AM-5PM) when the employee has no assignment
 //      at all, so a day still computes against something sane rather than zero.
 // Returns null only if the default schedule row itself is missing.
 if (!defined('DEFAULT_WORK_SCHEDULE_ID')) define('DEFAULT_WORK_SCHEDULE_ID', 1);
@@ -1261,9 +1264,15 @@ if (!function_exists('resolve_employee_schedule')) {
 // calendar. Used by the manual time edit, the incident-report repair and
 // batch recompute so the three can never drift apart.
 //   $log_ts: unix timestamps of the record's logs, any order.
-// Returns [work_hours, overtime, undertime, late, nsd_hours, day_type, is_complete].
+//   $use_stamp: true (default) honours the shift frozen on the row at punch
+//               time; false re-resolves from employee_schedules so a corrected
+//               assignment actually applies (batch Recompute uses this).
+// Returns [work_hours, overtime, undertime, late, nsd_hours, day_type, is_complete,
+//          schedule_id, day_hours, is_rest_day] — the last three are the stamp
+// values for the shift the figures were computed under, so callers that force
+// a re-resolve can write the new stamp back onto the row.
 if (!function_exists('dtr_compute_day')) {
-    function dtr_compute_day(mysqli $db, int $employee_id, string $date, array $log_ts): array
+    function dtr_compute_day(mysqli $db, int $employee_id, string $date, array $log_ts, bool $use_stamp = true): array
     {
         sort($log_ts);
         $n      = count($log_ts);
@@ -1276,24 +1285,42 @@ if (!function_exists('dtr_compute_day')) {
         $hol = $db->query("SELECT type FROM calendar_events WHERE '$dateEsc' BETWEEN start_date AND COALESCE(end_date,'$dateEsc') AND type IN (1,3) LIMIT 1")->fetch_assoc();
         if ($hol) $day_type = $hol['type'] == 1 ? 'legal_holiday' : 'special_holiday';
 
-        // The shift frozen on the row when the punch was recorded wins. Only rows
-        // predating that column (schedule_id NULL) fall back to resolving it now —
-        // otherwise a later roster change would restate days already closed.
+        // The shift frozen on the row when the punch was recorded wins, so a
+        // later roster change can't silently restate days already closed. Rows
+        // predating the stamp column (schedule_id NULL) fall back to resolving
+        // now — and $use_stamp=false skips the stamp entirely, which is how an
+        // explicit Recompute applies a corrected schedule assignment.
         $schedule = null;
-        $st = $db->query("
-            SELECT ws.*, d.day_hours AS stamped_day_hours
-            FROM DTR_details d INNER JOIN work_schedules ws ON ws.id = d.schedule_id
-            WHERE d.employee_id = $employee_id AND d.date_time = '$dateEsc'
-              AND d.schedule_id IS NOT NULL
-            ORDER BY d.id DESC LIMIT 1
-        ");
-        if ($st && ($srow = $st->fetch_assoc())) {
-            $schedule = $srow;
-            // The stamped day length beats the shift's current total_hours, which
-            // may have been edited on the work_schedules row since.
-            if ($srow['stamped_day_hours'] !== null) $schedule['total_hours'] = $srow['stamped_day_hours'];
+        if ($use_stamp) {
+            $st = $db->query("
+                SELECT ws.*, d.day_hours AS stamped_day_hours, d.is_rest_day AS stamped_is_rest
+                FROM DTR_details d INNER JOIN work_schedules ws ON ws.id = d.schedule_id
+                WHERE d.employee_id = $employee_id AND d.date_time = '$dateEsc'
+                  AND d.schedule_id IS NOT NULL
+                ORDER BY d.id DESC LIMIT 1
+            ");
+            if ($st && ($srow = $st->fetch_assoc())) {
+                $schedule = $srow;
+                // The stamped day length beats the shift's current total_hours, which
+                // may have been edited on the work_schedules row since.
+                if ($srow['stamped_day_hours'] !== null) $schedule['total_hours'] = $srow['stamped_day_hours'];
+            }
         }
         if (!$schedule) $schedule = resolve_employee_schedule($db, $employee_id, $date);
+
+        // Rest-day flag for whichever shift won above — same rule as ingestion
+        // (weekday number in employee_schedules.rest_days CSV). A stamped row
+        // keeps its stamped flag; a re-resolved one gets the roster's answer.
+        if (isset($schedule['stamped_is_rest']) && $schedule['stamped_is_rest'] !== null) {
+            $is_rest = (int) $schedule['stamped_is_rest'];
+        } else {
+            $rest_csv = (string) ($schedule['rest_days'] ?? '');
+            $is_rest  = ($rest_csv !== '' && in_array(
+                (int) date('w', strtotime($date)),
+                array_map('intval', explode(',', $rest_csv)),
+                true
+            )) ? 1 : 0;
+        }
 
         $raw_hours  = ($in_ts && $out_ts) ? ($out_ts - $in_ts) / 3600 : 0;
         $break_hrs  = (isset($schedule['break_minutes']) ? $schedule['break_minutes'] : 60) / 60;
@@ -1358,7 +1385,59 @@ if (!function_exists('dtr_compute_day')) {
             'work_hours' => $work_hours, 'overtime' => $overtime, 'undertime' => $undertime,
             'late' => $late, 'nsd_hours' => $nsd_hours, 'day_type' => $day_type,
             'is_complete' => $out_ts ? 1 : 0,
+            'schedule_id' => isset($schedule['id']) ? (int) $schedule['id'] : null,
+            'day_hours'   => isset($schedule['total_hours']) ? (float) $schedule['total_hours'] : null,
+            'is_rest_day' => $is_rest,
         ];
+    }
+}
+
+// ── Schedule-mismatch detection (GLOBAL) ────────────────────────────────
+// A row is "stale" when the shift stamped onto it at punch time no longer
+// matches the employee_schedules period covering that date — i.e. someone
+// changed (or corrected) the employee's schedule AFTER the attendance was
+// recorded. Figures are frozen, so nothing recomputes by itself; these
+// helpers power the warning banner on dtr-documents.php and the dashboard
+// card so an admin knows a batch needs its Recompute button pressed.
+// Only stamped rows (schedule_id NOT NULL) are testable — unstamped legacy
+// rows carry no record of the shift that computed them. Rest-day-only edits
+// are caught too (they overwrite employee_schedules.rest_days in place).
+if (!function_exists('dtr_schedule_mismatch_where')) {
+    function dtr_schedule_mismatch_where(string $alias = 'd'): string
+    {
+        return "($alias.schedule_id IS NOT NULL AND EXISTS (
+            SELECT 1 FROM employee_schedules es
+            WHERE es.employee_id = $alias.employee_id
+              AND es.effective_from <= $alias.date_time
+              AND (es.effective_to IS NULL OR es.effective_to >= $alias.date_time)
+              AND (es.schedule_id <> $alias.schedule_id
+                OR (FIND_IN_SET(DAYOFWEEK($alias.date_time) - 1, COALESCE(es.rest_days, '')) > 0)
+                   <> (COALESCE($alias.is_rest_day, 0) = 1))
+        ))";
+    }
+}
+
+// Per-employee stale-row counts for one batch — feeds the banner on
+// dtr-documents.php. Returns ['rows' => total, 'employees' => [{id,name,rows}]].
+if (!function_exists('dtr_schedule_mismatches')) {
+    function dtr_schedule_mismatches(mysqli $db, int $ddtr_id): array
+    {
+        $out = ['rows' => 0, 'employees' => []];
+        $res = $db->query("
+            SELECT d.employee_id AS id,
+                   CONCAT(e.lastname, ', ', e.firstname) AS name,
+                   COUNT(*) AS n
+            FROM DTR_details d
+            INNER JOIN employee e ON e.id = d.employee_id
+            WHERE d.ddtr_id = " . (int) $ddtr_id . " AND " . dtr_schedule_mismatch_where('d') . "
+            GROUP BY d.employee_id, e.lastname, e.firstname
+            ORDER BY e.lastname, e.firstname
+        ");
+        while ($res && ($r = $res->fetch_assoc())) {
+            $out['rows'] += (int) $r['n'];
+            $out['employees'][] = ['id' => (int) $r['id'], 'name' => (string) $r['name'], 'rows' => (int) $r['n']];
+        }
+        return $out;
     }
 }
 

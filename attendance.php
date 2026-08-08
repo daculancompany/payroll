@@ -23,12 +23,7 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
     .att-range-picker { display:flex; align-items:center; gap:6px; width:100%; padding:6px 11px; border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:13px; font-weight:600; color:#0c5460; cursor:pointer; transition:border-color .15s,box-shadow .15s; }
     .att-range-picker:hover { border-color:#673bb6; }
     .att-range-picker i:first-child { color:#673bb6; }
-    /* daterangepicker theme override → attendance purple */
-    .daterangepicker td.active, .daterangepicker td.active:hover { background-color:#673bb6 !important; }
-    .daterangepicker td.in-range { background-color:#eeeaf5 !important; color:#0c5460 !important; }
-    .daterangepicker .ranges li.active { background-color:#673bb6 !important; }
-    .daterangepicker .drp-buttons .btn.applyBtn { background-color:#673bb6 !important; border-color:#5d36a6 !important; }
-    .daterangepicker td.start-date, .daterangepicker td.end-date { background-color:#5d36a6 !important; }
+    /* daterangepicker theme now lives globally in assets2/css/custom-select.css */
     .att-filter-bar { background:#673bb6; color:#fff; border-radius:4px; padding:10px 16px; margin-bottom:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
     .att-filter-bar .lbl { font-size:12px; opacity:.8; }
     .att-filter-bar .val { font-weight:700; font-size:13px; }

@@ -89,6 +89,21 @@ $agg = $sumStmt->get_result()->fetch_assoc() ?: [];
 
 $batchStatus  = (int)$dtr['status'];
 $canEdit      = ($login_role !== 6);
+
+// ── Stale-schedule detection ── rows recorded under a shift that no longer
+// matches the employee's current schedule assignment (admin changed/corrected
+// a schedule after the punches were saved). Also computed for locked batches:
+// they can't be recomputed, but the discrepancy must at least be visible.
+$schedMM = dtr_schedule_mismatches($conn, $id);
+
+// Last recompute of this batch (dtr_recompute_log audit trail).
+$lastRecompute = null;
+try {
+    $lrq = $conn->query("SELECT l.created_at, l.changed, l.repending, u.name AS ran_by_name
+                         FROM dtr_recompute_log l LEFT JOIN users u ON u.id = l.ran_by
+                         WHERE l.ddtr_id = $id ORDER BY l.id DESC LIMIT 1");
+    $lastRecompute = $lrq ? $lrq->fetch_assoc() : null;
+} catch (\Throwable $e) { /* migration not applied yet — just omit the line */ }
 $pendingRecs  = (int)($agg['pending'] ?? 0);
 $cleanPending = (int)($agg['clean_pending'] ?? 0);
 $excPending   = max(0, $pendingRecs - $cleanPending);
@@ -520,11 +535,12 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
     font-size:9.5px; font-weight:700; color:#827d91; padding:4px 2px; transition:all .12s;
     white-space:nowrap; overflow:hidden;
 }
-.ddv-lvpick button.on { color:#fff; }
-.ddv-lvpick button[data-lv="info"].on     { background:#1565c0; border-color:#1565c0; }
-.ddv-lvpick button[data-lv="good"].on     { background:#0f9d58; border-color:#0f9d58; }
-.ddv-lvpick button[data-lv="watch"].on    { background:#c98a00; border-color:#c98a00; }
-.ddv-lvpick button[data-lv="critical"].on { background:#c62828; border-color:#c62828; }
+.ddv-lvpick button.on::before { content:"\2713"; font-weight:800; }
+.ddv-lvpick button.on .ic { display:none; }
+.ddv-lvpick button[data-lv="info"].on     { background:#eef4fd; border-color:#1565c0; color:#1565c0; }
+.ddv-lvpick button[data-lv="good"].on     { background:#eefaf3; border-color:#0f9d58; color:#0f9d58; }
+.ddv-lvpick button[data-lv="watch"].on    { background:#fff8e6; border-color:#c98a00; color:#c98a00; }
+.ddv-lvpick button[data-lv="critical"].on { background:#fdecec; border-color:#c62828; color:#c62828; }
 .ddv-note-in { display:flex; gap:5px; }
 .ddv-note-in input { flex:1; min-width:0; border:1px solid #ddd9e7; border-radius:7px; font-size:11px; padding:5px 8px; outline:none; }
 .ddv-note-in input:focus { border-color:var(--brand); box-shadow:0 0 0 2px rgba(102,66,170,.14); }
@@ -741,6 +757,11 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
     }
 }
 </style>
+
+    <!-- App-wide custom <select> control (also loaded globally from includes/header.php
+         for pages routed through index.php; this page renders standalone). -->
+    <link rel="stylesheet" href="assets2/css/custom-select.css">
+    <script defer src="assets2/js/custom-select.js"></script>
 </head>
 <body>
 <div class="ddv-app"
@@ -801,15 +822,107 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
                 <?php endif; ?>
             <?php endif; ?>
             <?php if ($canEdit && $batchStatus !== 2): ?>
-                <button class="ddv-btn ddv-tip" onclick="recomputeBatch()"
-                    data-tip="Re-derive every record's hours / late / undertime / OT from its raw logs using current schedules and the holiday calendar.">
-                    <i class="ri-refresh-line"></i> Recompute
+                <button class="ddv-btn ddv-tip<?= $schedMM['rows'] ? ' ddv-btn-attn' : '' ?>" id="ddv-recompute-btn" onclick="recomputeBatch()"
+                    data-tip="Re-derive every record's hours / late / undertime / OT from its raw logs using each employee's CURRENT schedule assignment and the holiday calendar. Use this after fixing a wrong or forgotten schedule change.">
+                    <i class="ri-refresh-line"></i> Recompute<?php if ($schedMM['rows']): ?> <span class="ddv-recompute-dot"><?= (int)$schedMM['rows'] ?></span><?php endif; ?>
                 </button>
             <?php endif; ?>
             <button class="ddv-btn ddv-tip" id="ddv-print" onclick="window.print()" data-tip="Print the selected employee's DTR sheet."><i class="ri-printer-line"></i> Print</button>
             <button class="ddv-btn ddv-tip" id="ddv-print-all-btn" onclick="printAll()" data-tip="Print every employee's DTR sheet in this batch."><i class="ri-printer-cloud-line"></i> Print All</button>
         </div>
     </div>
+
+    <?php if ($schedMM['rows'] || $lastRecompute): ?>
+    <!-- ── Stale-schedule warning — this batch was computed under shifts that no
+         longer match the current roster. Open batch: Recompute applies the new
+         assignment. Locked batch: read-only notice, figures stay as paid. ── -->
+    <style>
+        .ddv-sched-warn { display:flex; align-items:flex-start; gap:10px; margin:10px 14px 0;
+            padding:10px 14px; border:1px solid #f0c36d; border-left:4px solid #e6a817;
+            background:#fdf6e3; border-radius:8px; font-size:.85rem; color:#5a4a12; }
+        .ddv-sched-warn i { font-size:1.15rem; color:#c98a00; margin-top:1px; }
+        .ddv-sched-warn b { color:#42350a; }
+        .ddv-sched-warn.locked { border-color:#c9ced6; border-left-color:#8a8f98;
+            background:#f4f5f7; color:#565c66; }
+        .ddv-sched-warn.locked i { color:#8a8f98; }
+        .ddv-sched-warn.locked b { color:#3d424a; }
+        .ddv-btn-attn { border-color:#e6a817 !important; color:#8a6400 !important; }
+        .ddv-recompute-dot { display:inline-block; min-width:18px; padding:0 5px; margin-left:4px;
+            border-radius:9px; background:#e6a817; color:#fff; font-size:.7rem; font-weight:700;
+            text-align:center; line-height:18px; }
+        .ddv-recompute-last { margin:6px 14px 0; font-size:.75rem; color:#8a8f98; }
+        @media print { .ddv-sched-warn, .ddv-recompute-last { display:none; } }
+
+        /* ── Recompute confirmation, dressed as an app modal ──────────────
+           SweetAlert is used instead of a Bootstrap modal because this page
+           loads bootstrap's CSS but not its JS bundle. buttonsStyling:false
+           and padding:0 hand the whole popup to these rules. */
+        .ddv-swal { border-radius:14px !important; overflow:hidden; padding:0 !important; }
+        .ddv-swal-html { margin:0 !important; padding:0 !important; text-align:left !important; }
+        .ddv-swal-head { display:flex; align-items:center; gap:13px; padding:18px 22px;
+            background:linear-gradient(135deg,#6642aa,#4e3483); color:#fff; }
+        .ddv-swal-ic { width:42px; height:42px; border-radius:12px; flex-shrink:0;
+            background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.35);
+            display:flex; align-items:center; justify-content:center; font-size:20px; }
+        .ddv-swal-title { font-size:1.05rem; font-weight:700; line-height:1.25; }
+        .ddv-swal-sub { font-size:.76rem; opacity:.85; margin-top:2px; }
+        .ddv-swal-content { padding:18px 22px 4px; font-size:.85rem; color:#4a4f57; }
+        .ddv-swal-content p { margin:0 0 12px; line-height:1.55; }
+        .ddv-swal-content b { color:#2b2b33; }
+        .ddv-swal-note { display:flex; align-items:flex-start; gap:9px; margin-bottom:9px;
+            padding:9px 12px; border-radius:9px; background:#f4f1fa; border:1px solid #e3dbf4;
+            font-size:.8rem; line-height:1.5; }
+        .ddv-swal-note i { color:#6642aa; font-size:1.05rem; margin-top:1px; flex-shrink:0; }
+        .ddv-swal-note.warn { background:#fdf6e3; border-color:#f0c36d; }
+        .ddv-swal-note.warn i { color:#c98a00; }
+        .ddv-swal-actions { justify-content:flex-end !important; gap:9px; margin:0 !important;
+            padding:14px 22px 18px; }
+        .ddv-swal-btn { border:1px solid #d9d3e4; background:#fff; color:#565c66;
+            border-radius:9px; padding:8px 18px; font-size:.85rem; font-weight:600;
+            cursor:pointer; transition:all .12s; }
+        .ddv-swal-btn:hover { background:#f4f1fa; color:#6642aa; border-color:#a98fd6; }
+        .ddv-swal-btn.primary { background:#6642aa; border-color:#6642aa; color:#fff;
+            display:inline-flex; align-items:center; gap:6px; }
+        .ddv-swal-btn.primary:hover { background:#573793; border-color:#573793; color:#fff; }
+    </style>
+    <?php if ($schedMM['rows']): ?>
+    <div class="ddv-sched-warn<?= $batchStatus === 2 ? ' locked' : '' ?>">
+        <i class="ri-calendar-schedule-line"></i>
+        <div>
+            <?php
+                $mmNames = array_map(function ($m) {
+                    return htmlspecialchars($m['name']) . ' (' . (int)$m['rows'] . ' day' . ($m['rows'] == 1 ? '' : 's') . ')';
+                }, array_slice($schedMM['employees'], 0, 6));
+                $mmMore = count($schedMM['employees']) - 6;
+                $mmList = implode(', ', $mmNames) . ($mmMore > 0 ? ' and ' . $mmMore . ' more' : '');
+            ?>
+            <?php if ($batchStatus === 2): ?>
+                <b>Computed under an older schedule.</b>
+                <?= (int)$schedMM['rows'] ?> record(s) for <?= count($schedMM['employees']) ?> employee(s) (<?= $mmList ?>)
+                predate a later schedule change. This batch is final-approved, so its figures are locked as paid — the
+                change applies from the next batch onward.
+            <?php else: ?>
+                <b>Schedule change not yet applied.</b>
+                <?= (int)$schedMM['rows'] ?> record(s) for <?= count($schedMM['employees']) ?> employee(s) were computed under a shift that no longer
+                matches their current schedule assignment: <?= $mmList ?>.
+                <?php if ($canEdit): ?>
+                    Press <b>Recompute</b> to re-derive those days using the current schedule — approved records whose figures change will return to Pending for re-approval.
+                <?php else: ?>
+                    An admin with edit access must press <b>Recompute</b> to apply the current schedule.
+                <?php endif; ?>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+    <?php if ($lastRecompute): ?>
+    <div class="ddv-recompute-last">
+        <i class="ri-history-line"></i>
+        Last recomputed <?= date('M j, Y g:i A', strtotime($lastRecompute['created_at'])) ?><?=
+            $lastRecompute['ran_by_name'] ? ' by ' . htmlspecialchars($lastRecompute['ran_by_name']) : '' ?>
+        — <?= (int)$lastRecompute['changed'] ?> record(s) updated, <?= (int)$lastRecompute['repending'] ?> sent back to Pending.
+    </div>
+    <?php endif; ?>
+    <?php endif; ?>
 
     <!-- ── Workspace ── -->
     <div class="ddv-wrap">
@@ -1109,6 +1222,11 @@ const DDTR_ID   = root.dataset.id;
 const DATE_FROM = root.dataset.from;
 const DATE_TO   = root.dataset.to;
 const CAN_EDIT  = root.dataset.canEdit === '1';
+// Subtitle for the Recompute modal — same period label the header chip shows.
+const RECOMPUTE_PERIOD = <?= json_encode(
+    htmlspecialchars($dtr['site_code'] ?? '', ENT_QUOTES) . ' · ' .
+    date('M d', strtotime($dtr['date_from'])) . ' – ' . date('M d, Y', strtotime($dtr['date_to']))
+) ?>;
 // Global DTR rules (defined once in db_connect.php)
 const LOG_MODE  = <?= json_encode(DTR_LOG_MODE) ?>;      // 'single' | 'ampm'
 const OT_HOURS  = <?= (float)DTR_HIGH_OT_HOURS ?>;
@@ -1378,7 +1496,7 @@ function notesHTML(e) {
     const adder = CAN_EDIT ? `
         <div class="ddv-note-add">
             <div class="ddv-lvpick" id="ddv-lvpick">
-                ${Object.keys(NOTE_LV).map(k => `<button type="button" data-lv="${k}" class="${k === noteLevel ? 'on' : ''}" onclick="pickNoteLevel('${k}')">${NOTE_LV[k].icon} ${NOTE_LV[k].lbl}</button>`).join('')}
+                ${Object.keys(NOTE_LV).map(k => `<button type="button" data-lv="${k}" class="${k === noteLevel ? 'on' : ''}" onclick="pickNoteLevel('${k}')"><span class="ic">${NOTE_LV[k].icon}</span>${NOTE_LV[k].lbl}</button>`).join('')}
             </div>
             <div class="ddv-note-in">
                 <input type="text" id="ddv-note-input" maxlength="500" placeholder="Add an internal note…"
@@ -1708,14 +1826,45 @@ function approveAllBatch() {
 }
 
 function recomputeBatch() {
+    // Presented as a proper app modal rather than a stock SweetAlert warning:
+    // the default icon/title/text layout read as a generic alert next to the
+    // rest of this workbench. buttonsStyling:false + padding:0 hand the whole
+    // popup over to the .ddv-swal styles at the top of this file.
     Swal.fire({
-        title: 'Recompute this batch?',
-        html: 'Every record\'s hours, late, undertime, OT and night-diff will be <b>re-derived from its raw logs</b> ' +
-              'using current schedules and the holiday calendar.<br><br>' +
-              '<b>Approved records whose figures change go back to Pending</b> for re-approval; ' +
-              'unchanged records are left untouched.',
-        icon: 'warning', showCancelButton: true,
-        confirmButtonColor: '#6642aa', confirmButtonText: 'Yes, recompute',
+        html:
+            '<div class="ddv-swal-head">' +
+              '<span class="ddv-swal-ic"><i class="ri-refresh-line"></i></span>' +
+              '<div class="ddv-swal-heading">' +
+                '<div class="ddv-swal-title">Recompute this batch?</div>' +
+                '<div class="ddv-swal-sub">' + RECOMPUTE_PERIOD + '</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="ddv-swal-content">' +
+              '<p>Every record\'s hours, late, undertime, OT and night-diff are ' +
+              '<b>re-derived from its raw logs</b> using each employee\'s ' +
+              '<b>current schedule assignment</b> and the holiday calendar.</p>' +
+              '<div class="ddv-swal-note"><i class="ri-calendar-schedule-line"></i>' +
+                '<span>A schedule changed <b>after</b> the punches were recorded <b>will</b> be applied.</span>' +
+              '</div>' +
+              '<div class="ddv-swal-note warn"><i class="ri-user-received-2-line"></i>' +
+                '<span>Approved records whose figures change go back to <b>Pending</b> for re-approval. ' +
+                'Unchanged records are left untouched.</span>' +
+              '</div>' +
+            '</div>',
+        width: 540,
+        padding: 0,
+        showCancelButton: true,
+        buttonsStyling: false,
+        reverseButtons: true,
+        confirmButtonText: '<i class="ri-refresh-line"></i> Yes, recompute',
+        cancelButtonText: 'Cancel',
+        customClass: {
+            popup: 'ddv-swal',
+            htmlContainer: 'ddv-swal-html',
+            actions: 'ddv-swal-actions',
+            confirmButton: 'ddv-swal-btn primary',
+            cancelButton: 'ddv-swal-btn',
+        },
     }).then(res => {
         if (!res.isConfirmed) return;
         Swal.fire({ title: 'Recomputing…', text: 'Re-deriving figures from raw logs', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
@@ -1726,6 +1875,11 @@ function recomputeBatch() {
                 if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
                 await loadPage(st.sel);
                 await refreshBatch();
+                // The stale-schedule banner + button badge are rendered server-side —
+                // drop them now that every row is re-stamped with the current shift.
+                document.querySelector('.ddv-sched-warn')?.remove();
+                document.querySelector('.ddv-recompute-dot')?.remove();
+                document.getElementById('ddv-recompute-btn')?.classList.remove('ddv-btn-attn');
                 Swal.fire({
                     icon: 'success', title: 'Recomputed',
                     html: `${r.scanned} record(s) scanned — <b>${r.changed}</b> updated, <b>${r.repending}</b> sent back to Pending.`,

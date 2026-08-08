@@ -133,6 +133,24 @@ if ($commaSeparatedSites !== '') {
     }
 }
 
+// ── Stale-schedule check ── rows this payroll consumed (same scope as the
+// query above) whose stamped shift no longer matches the current schedule
+// assignment — i.e. the schedule was corrected after the DTR was computed.
+// The paid figures stay frozen; this only makes the discrepancy visible.
+$pcwSchedStale = ['rows' => 0, 'employees' => 0];
+if ($commaSeparatedSites !== '') {
+    $ssq = $conn->query("SELECT COUNT(*) AS n, COUNT(DISTINCT d.employee_id) AS e
+        FROM DTR_details d
+        INNER JOIN DTR b ON b.id = d.ddtr_id
+        WHERE d.date_time BETWEEN '$df_esc' AND '$dt_esc'
+          AND b.status = 2 AND d.status = 1
+          AND b.site_id IN ($commaSeparatedSites)
+          AND " . dtr_schedule_mismatch_where('d'));
+    if ($ssq && ($ssr = $ssq->fetch_assoc())) {
+        $pcwSchedStale = ['rows' => (int)$ssr['n'], 'employees' => (int)$ssr['e']];
+    }
+}
+
 // Internal admin notes written on the DTR batches that overlap this payroll —
 // listed read-only in the workbench's Employee Summary (same content and style
 // as dtr-documents.php). Guarded for older databases without the table.
@@ -451,6 +469,11 @@ $refund_names = [];   // refund id => display name
     <link href="<?= av('assets2/css/payroll_calculations.css') ?>" rel="stylesheet">
 
 <!-- ── Version History Offcanvas ──────────────────────── -->
+
+    <!-- App-wide custom <select> control (also loaded globally from includes/header.php
+         for pages routed through index.php; this page renders standalone). -->
+    <link rel="stylesheet" href="assets2/css/custom-select.css">
+    <script defer src="assets2/js/custom-select.js"></script>
 </head>
 <body class="pcw-booting">
 
@@ -491,6 +514,19 @@ $refund_names = [];   // refund id => display name
                                     <span class="pcw-meta-chip"><i class="ri-global-line"></i><?= htmlspecialchars($payroll_r['cluster']) ?></span>
                                 <?php endif; ?> -->
                             </div>
+                            <?php if ($pcwSchedStale['rows']): ?>
+                            <div style="margin-top:8px;display:flex;align-items:flex-start;gap:8px;padding:8px 12px;border:1px solid #f0c36d;border-left:4px solid #e6a817;background:#fdf6e3;border-radius:8px;font-size:12px;color:#5a4a12;max-width:680px;">
+                                <i class="ri-calendar-schedule-line" style="color:#c98a00;font-size:15px;margin-top:1px;"></i>
+                                <div>
+                                    <b style="color:#42350a;">Schedule changed after this payroll's DTR was computed.</b>
+                                    <?= (int)$pcwSchedStale['rows'] ?> attendance record(s) for <?= (int)$pcwSchedStale['employees'] ?> employee(s) in this period
+                                    carry a shift that no longer matches the current schedule assignment.
+                                    The figures below were computed under the old shift<?= (int)$status === 2
+                                        ? ' and are locked as paid — the change applies from the next period onward.'
+                                        : ' — recompute the DTR batch, then recalculate this payroll, to apply the change.' ?>
+                                </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="pcw-h-actions">

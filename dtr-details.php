@@ -1845,7 +1845,12 @@ function human_time_diff(int $ts): string {
                     }
                 }
             </style>
-        </head>
+        
+    <!-- App-wide custom <select> control (also loaded globally from includes/header.php
+         for pages routed through index.php; this page renders standalone). -->
+    <link rel="stylesheet" href="assets2/css/custom-select.css">
+    <script defer src="assets2/js/custom-select.js"></script>
+</head>
         <body>
             ${printContent}
             <script>

@@ -114,13 +114,17 @@
     visibility: hidden;
     transform: translateY(-6px) scale(.985);
     transform-origin: top left;
-    transition: opacity .15s ease, transform .15s ease, visibility .15s;
+    /* visibility must flip to visible INSTANTLY on open (delay only on close):
+       open() focuses the filter input synchronously, and focus() is a no-op on
+       a visibility:hidden subtree — a .15s visibility transition left the menu
+       hidden at that moment, so the filter box never received focus. */
+    transition: opacity .15s ease, transform .15s ease, visibility 0s linear .15s;
 }
 
 .cs-menu.cs-menu-up { transform: translateY(6px) scale(.985); transform-origin: bottom left; }
 /* Open state is keyed on the menu itself, not on an ancestor wrapper: the menu
    is a child of <body>, so it has no .cs-select ancestor to inherit from. */
-.cs-menu.open { opacity: 1; visibility: visible; transform: translateY(0) scale(1); }
+.cs-menu.open { opacity: 1; visibility: visible; transform: translateY(0) scale(1); transition-delay: 0s; }
 
 /* ---- Menu header: title and/or search, plus the close button ---- */
 .cs-top { display: flex; align-items: center; gap: 6px; margin: 2px 2px 6px; }

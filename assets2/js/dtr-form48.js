@@ -136,6 +136,10 @@
         // the shift was assigned for — a period covering the whole cutoff would
         // otherwise report 15 days for someone who logged three.
         var rows = '', shiftTally = {}, shiftOrder = [], noteTally = {}, noteOrder = [];
+        // OT the payroll will actually pay: per day min(rendered, approved
+        // hours), 0 when no approved request. The footer prints THIS, so the
+        // sheet total always matches the payslip's OT line.
+        var otPaid = 0;
         eachDay(opt.dateFrom, opt.dateTo, function (iso, dayNo, dow) {
             var d = days[iso];
             var wkend = (dow === 0 || dow === 6) ? ' wkend' : '';
@@ -194,6 +198,16 @@
                 return;
             }
             var ut = utSplit(d.ut);
+            // Approved OT request for this day → the OT figure renders green
+            // with a check; unfiled excess fades out (visible, but reads unpaid).
+            // m.h carries the approved hours, capping what the day contributes
+            // to the paid total — exactly the payroll rule (min of rendered
+            // and approved). A payload without h falls back to the row figure.
+            var otAppr = false, otApprH = 0;
+            raw.forEach(function (m) {
+                if (m.k === 'req' && m.t === 'overtime' && m.s === 1) { otAppr = true; otApprH += Number(m.h || 0); }
+            });
+            if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
             var times = ampm
                 ? '<td class="t-col">' + esc(d.am_in) + '</td><td class="t-col">' + esc(d.am_out) + '</td>'
                   + '<td class="t-col">' + esc(d.pm_in) + '</td>'
@@ -217,7 +231,16 @@
             rows += '<tr class="' + wkend.trim() + '">'
                 + '<td class="day">' + dayCell + '</td>' + times
                 + '<td class="x-col num">' + (d.wh > 0 ? num(d.wh) : '') + '</td>'
-                + '<td class="x-col num ot">' + (d.ot > 0 ? num(d.ot) : '') + '</td>'
+                + '<td class="x-col num ot' + (d.ot > 0 ? (otAppr ? ' ot-appr' : ' ot-raw') : '') + '">'
+                + (d.ot > 0
+                    ? (otAppr
+                        ? '<span tabindex="0" role="note" data-tip="Overtime request APPROVED'
+                          + (otApprH > 0 ? ' for ' + num(Math.min(d.ot, otApprH)) + ' hr(s)' : '') + ' — paid.">'
+                          + num(d.ot) + '<i class="ri-checkbox-circle-fill ot-ok-ic"></i></span>'
+                        : '<span tabindex="0" role="note" data-tip="Unfiled OT — rendered past the shift end but NOT paid unless filed and approved.">'
+                          + num(d.ot) + '</span>')
+                    : '')
+                + '</td>'
                 + '<td class="ut">' + (d.ut > 0 ? ut[0] : '') + '</td>'
                 + '<td class="ut">' + (d.ut > 0 ? ut[1] : '') + '</td>'
                 + '<td class="x-col num late">' + (d.late > 0 ? num(d.late) : '') + '</td>'
@@ -279,7 +302,10 @@
         var totalSpan = ampm ? 5 : 3;
         var foot = '<td colspan="' + totalSpan + '">TOTAL</td>'
             + '<td class="x-col num">' + num(totals.wh) + '</td>'
-            + '<td class="x-col num ot">' + num(totals.ot) + '</td>'
+            + '<td class="x-col num ot' + (otPaid > 0 ? ' ot-appr' : '') + '">'
+            + '<span tabindex="0" role="note" data-tip="Approved OT only — '
+            + num(otPaid) + ' of ' + num(totals.ot) + ' rendered hr(s) is filed, approved, and paid.">'
+            + num(otPaid) + (otPaid > 0 ? '<i class="ri-checkbox-circle-fill ot-ok-ic"></i>' : '') + '</span></td>'
             + '<td>' + tut[0] + '</td><td>' + tut[1] + '</td>'
             + '<td class="x-col num late">' + num(totals.late) + '</td>';
 

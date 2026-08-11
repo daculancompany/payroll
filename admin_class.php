@@ -1984,11 +1984,12 @@ class Action
             $stmt = $this->db->prepare(
                 "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
                  day_type=?, nsd_hours=?, is_complete=1, attendance_type='incident',
-                 schedule_id=?, day_hours=?, is_rest_day=?,
+                 schedule_id=?, day_hours=?, is_rest_day=?, sched_start=?, sched_end=?, sched_break=?, sched_graveyard=?,
                  status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
             );
-            $stmt->bind_param('sddddsdidii', $logs, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours,
-                              $c['schedule_id'], $c['day_hours'], $c['is_rest_day'], $existing_id);
+            $stmt->bind_param('sddddsdidissiii', $logs, $work_hours, $overtime, $late, $undertime, $day_type, $nsd_hours,
+                              $c['schedule_id'], $c['day_hours'], $c['is_rest_day'],
+                              $c['sched_start'], $c['sched_end'], $c['sched_break'], $c['sched_graveyard'], $existing_id);
             if (!$stmt->execute()) throw new Exception('Could not update the DTR record: ' . $stmt->error);
             return;
         }
@@ -2042,11 +2043,12 @@ class Action
         $stmt = $this->db->prepare(
             "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, late, undertime,
                                       day_type, nsd_hours, is_complete, logs, attendance_type, status,
-                                      schedule_id, day_hours, is_rest_day)
-             VALUES (?,?,?,?,?,?,?,?,?,1,?,'incident',0,?,?,?)"
+                                      schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
+             VALUES (?,?,?,?,?,?,?,?,?,1,?,'incident',0,?,?,?,?,?,?,?)"
         );
-        $stmt->bind_param('iisddddsdsidi', $ddtr_id, $employee_id, $date, $work_hours, $overtime, $late, $undertime,
-                          $day_type, $nsd_hours, $logs, $c['schedule_id'], $c['day_hours'], $c['is_rest_day']);
+        $stmt->bind_param('iisddddsdsidissii', $ddtr_id, $employee_id, $date, $work_hours, $overtime, $late, $undertime,
+                          $day_type, $nsd_hours, $logs, $c['schedule_id'], $c['day_hours'], $c['is_rest_day'],
+                          $c['sched_start'], $c['sched_end'], $c['sched_break'], $c['sched_graveyard']);
         if (!$stmt->execute()) throw new Exception('Could not write the DTR record: ' . $stmt->error);
     }
 
@@ -2085,10 +2087,11 @@ class Action
         $cs = dtr_compute_day($this->db, $employee_id, $req['request_date'], []);
         $stmt = $this->db->prepare(
             "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, logs, attendance_type, status,
-                                      schedule_id, day_hours, is_rest_day)
-             VALUES (?,?,?,0,?,'[]','overtime',0,?,?,?)"
+                                      schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
+             VALUES (?,?,?,0,?,'[]','overtime',0,?,?,?,?,?,?,?)"
         );
-        $stmt->bind_param('iisdidi', $ddtr_id, $employee_id, $date, $ot_hours, $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
+        $stmt->bind_param('iisdidissii', $ddtr_id, $employee_id, $date, $ot_hours, $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
+                          $cs['sched_start'], $cs['sched_end'], $cs['sched_break'], $cs['sched_graveyard']);
         if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
         return true;
     }
@@ -2873,10 +2876,12 @@ class Action
                 // later roster edits.
                 $cs = dtr_compute_day($this->db, (int)$employee_id, date('Y-m-d', strtotime($date_time)), []);
                 $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime,
-                                                  schedule_id, day_hours, is_rest_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                                                  schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt2 = $this->db->prepare($sql2);
-                $stmt2->bind_param('sssssssidi', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime,
-                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
+                $stmt2->bind_param('sssssssidissii', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime,
+                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
+                                   $cs['sched_start'], $cs['sched_end'], $cs['sched_break'], $cs['sched_graveyard']);
                 try {
                     $stmt2->execute();
                 } catch (Exception $e) {
@@ -2972,10 +2977,12 @@ class Action
                 // Same frozen-shift stamp the web upload and biometric ingestion apply.
                 $cs = dtr_compute_day($this->db, (int)$employee_id, date('Y-m-d', strtotime($date_time)), []);
                 $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime, notes,
-                                                  schedule_id, day_hours, is_rest_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                                                  schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt2 = $this->db->prepare($sql2);
-                $stmt2->bind_param('ssssssssidi', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes,
-                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
+                $stmt2->bind_param('ssssssssidissii', $ddtr_id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes,
+                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
+                                   $cs['sched_start'], $cs['sched_end'], $cs['sched_break'], $cs['sched_graveyard']);
                 try {
                     $stmt2->execute();
                 } catch (Exception $e) {
@@ -3387,6 +3394,29 @@ class Action
                     }
                 }
 
+                // Approved OT requests in the period — the ONLY overtime payroll
+                // pays, and only UP TO the hours actually approved. The DTR row
+                // carries the raw computed excess (and a Recompute restores it
+                // even after an approval overwrote it), so the row figure can
+                // exceed what was authorized — an employee who filed 5 hrs with
+                // 5.35 on the scans is paid 5. The scans still cap it from the
+                // other side: approved 5 with only 4.2 rendered pays 4.2.
+                $otApproved = [];   // eid => 'Y-m-d' => approved hours (summed)
+                $oq = $this->db->prepare(
+                    "SELECT employee_id, request_date, COALESCE(ot_hours_requested, 0) AS hrs
+                     FROM attendance_requests
+                     WHERE request_type = 'overtime' AND status = 1
+                       AND request_date BETWEEN ? AND ?"
+                );
+                $oq->bind_param('ss', $date_from, $date_to);
+                $oq->execute();
+                $ores = $oq->get_result();
+                while ($o = $ores->fetch_assoc()) {
+                    $oid = (int) $o['employee_id'];
+                    $oymd = date('Y-m-d', strtotime($o['request_date']));
+                    $otApproved[$oid][$oymd] = ($otApproved[$oid][$oymd] ?? 0) + (float) $o['hrs'];
+                }
+
                 foreach ($result as $row) {
                     $employee_id = $row["employee_id"];
                     $isAutoDeduct = $row["isAutoDeduct"];
@@ -3415,16 +3445,18 @@ class Action
                     // Cap a single day's worth of hours at one full day
                     $work_hours = floor($row["work_hours"]) >= $day_hours ? $day_hours : $row["work_hours"];
 
-                    // Convert to days
+                    // Fraction of the day actually WORKED — the basis for rest-day
+                    // and holiday premiums, which follow hours rendered. (Basic-pay
+                    // day credit is computed separately below.)
                     if ($work_hours == $day_hours) {
-                        $days = 1;
+                        $frac_worked = 1;
                     } else if ($day_hours == 8 && $work_hours == 4.5625) {
                         // Long-standing special case for the 8-hour day; left exactly
                         // as it was so existing runs keep reproducing. It has no
                         // meaning on any other shift length, hence the guard.
-                        $days = 0.5625;
+                        $frac_worked = 0.5625;
                     } else {
-                        $days = $work_hours / $day_hours;
+                        $frac_worked = $work_hours / $day_hours;
                     }
 
                     // Initialize the employee bucket first so the accumulators
@@ -3470,7 +3502,7 @@ class Action
                         ? ((int) ($row['is_rest_day'] ?? 0) === 1)
                         : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
                     if ($was_rest) {
-                        $grouped_data[$employee_id]["rest_duty"] += $days;
+                        $grouped_data[$employee_id]["rest_duty"] += $frac_worked;
                     }
 
                     // Holiday duty: this DTR date falls on a declared holiday, so the
@@ -3478,9 +3510,9 @@ class Action
                     // above — fractional here, rounded to whole days at insert.
                     $hol_type = (int) ($holidayDates[$ymd] ?? 0);
                     if ($hol_type === 1) {
-                        $grouped_data[$employee_id]["legal_duty"] += $days;
+                        $grouped_data[$employee_id]["legal_duty"] += $frac_worked;
                     } elseif ($hol_type === 3) {
-                        $grouped_data[$employee_id]["special_duty"] += $days;
+                        $grouped_data[$employee_id]["special_duty"] += $frac_worked;
                     }
 
                     // ── Undertime: leaving BEFORE the shift ends ────────────────
@@ -3506,6 +3538,27 @@ class Action
                         $ut_hours = max(0.0, $ut_hours - $leave_hours);
                     }
                     $grouped_data[$employee_id]["under_time"] += $ut_hours * 60;
+
+                    // ── Day credit for basic pay ────────────────────────────────
+                    // A scheduled day the employee showed up for stands as ONE whole
+                    // day; the late/undertime minutes carved out of it are deducted
+                    // in pesos (payroll_earnings). Crediting only the worked fraction
+                    // here — as this used to — charged the same minutes twice on the
+                    // daily basis (paid 5.35 of 8 hrs AND deducted 2:39 UT), and on
+                    // the monthly basis let accumulated early-outs round into a
+                    // phantom "absent" day on top of the UT deduction.
+                    //
+                    // worked + late + charged-UT spans the whole shift on a complete
+                    // row, so the credit is exactly 1; an incomplete row (no time-out)
+                    // has all three at 0 and credits nothing; approved paid leave
+                    // reduces the charged UT above, and the paid-leave cap fills the
+                    // remainder of the day, so leave days still total 1. Rest-day
+                    // duty keeps the worked fraction — no shift was owed, and UT is
+                    // never charged there.
+                    $late_hours = (float) ($row['late'] ?? 0);
+                    $days = $was_rest
+                        ? $frac_worked
+                        : min(1, $frac_worked + ($late_hours + $ut_hours) / $day_hours);
 
                     $per_day = $row['salary'];
                     $basic_pay = $row['basic_pay'];
@@ -3554,7 +3607,14 @@ class Action
                         $grouped_data[$employee_id]["nsd_amount"] += $nsd_day * $per_hour * $nsd_rate;
                     }
 
-                    $grouped_data[$employee_id]["overtime"] +=  $row['overtime'];
+                    // Only OT that was filed and APPROVED is paid (see $otApproved
+                    // above), capped at the approved hours. Raw excess on an
+                    // uncovered date stays on the DTR sheet as information but
+                    // earns nothing.
+                    if (!empty($otApproved[(int) $employee_id][$ymd])) {
+                        $grouped_data[$employee_id]["overtime"] +=
+                            min((float) $row['overtime'], $otApproved[(int) $employee_id][$ymd]);
+                    }
                     // ×60: dtr_compute_day() returns late in HOURS ((time_in − sched_start)
                     // ÷ 3600) but payroll_items.late is MINUTES — payroll_earnings() prices
                     // it at per_minute, and the sheet labels the column "Min". Copied
@@ -3678,7 +3738,12 @@ class Action
                             $date2 = strtotime($data__details[0]["date_time"]);
                             foreach ($data__details as $data__detail) {
                                 $data['total_hours'] += $data__detail['work_hours'];
-                                $data['overtime'] += $data__detail['overtime'];
+                                // Same approved-OT-only policy (and cap) as the main loop.
+                                $d2ymd_ot = date('Y-m-d', strtotime($data__detail['date_time']));
+                                if (!empty($otApproved[(int) $employee_id][$d2ymd_ot])) {
+                                    $data['overtime'] +=
+                                        min((float) $data__detail['overtime'], $otApproved[(int) $employee_id][$d2ymd_ot]);
+                                }
                                 // Same hours→minutes conversion as the main loop above:
                                 // the DTR measures both in hours, payroll_items stores
                                 // minutes. Cross-cluster days were losing the same 60×.
@@ -3686,13 +3751,19 @@ class Action
                                 $data['under_time'] = ($data['under_time'] ?? 0)
                                     + (empty($data__detail['is_rest_day']) ? (float) $data__detail['undertime'] * 60 : 0);
                                 $data['late_in_minutes'] += $data__detail['late'] * 60;
-                                $data['present'] += $data__detail['work_hours'] / $data__detail['day_hours'];
+                                // Same whole-day credit as the main loop: late/UT are
+                                // deducted as minutes, so the day they were carved from
+                                // must be credited whole or they'd be charged twice.
+                                $frac2 = $data__detail['work_hours'] / $data__detail['day_hours'];
+                                $credit2 = !empty($data__detail['is_rest_day'])
+                                    ? $frac2
+                                    : min(1, $frac2 + ((float) $data__detail['late'] + (float) $data__detail['undertime']) / $data__detail['day_hours']);
+                                $data['present'] += $credit2;
                                 // Count rest-day duty from cross-cluster attendance too.
                                 $d2ymd = date('Y-m-d', strtotime($data__detail['date_time']));
                                 // Keep the per-date worked fraction in step with "present"
                                 // so the paid-leave cap sees cross-cluster days too.
-                                $data['worked_frac'][$d2ymd] = ($data['worked_frac'][$d2ymd] ?? 0)
-                                    + $data__detail['work_hours'] / $data__detail['day_hours'];
+                                $data['worked_frac'][$d2ymd] = ($data['worked_frac'][$d2ymd] ?? 0) + $credit2;
                                 if (!empty($data__detail['is_rest_day'])) {
                                     $data['rest_duty'] = ($data['rest_duty'] ?? 0) + $data__detail['work_hours'] / $data__detail['day_hours'];
                                 }
@@ -4566,6 +4637,16 @@ class Action
             if ($pend && (int)$pend['c'] > 0) {
                 return ['result' => false, 'message' => 'Cannot approve: ' . (int)$pend['c'] . ' record(s) still pending. Approve or disapprove all first.'];
             }
+            // Block while any row's frozen shift disagrees with the current roster.
+            // Status 2 is one-way — recompute_dtr refuses locked batches — so
+            // approving over the stale-schedule banner would freeze figures the
+            // roster no longer agrees with, permanently. Same detector as the
+            // banner, so an admin is never blocked without a visible warning.
+            $stale = $this->db->query("SELECT COUNT(*) AS c FROM DTR_details d
+                WHERE d.ddtr_id = $id AND " . dtr_schedule_mismatch_where('d'))->fetch_assoc();
+            if ($stale && (int)$stale['c'] > 0) {
+                return ['result' => false, 'message' => 'Cannot approve: ' . (int)$stale['c'] . ' record(s) were computed under an outdated schedule. Run Recompute on this batch first.'];
+            }
             $stmt = $this->db->prepare("UPDATE DTR SET status = ?, approved_by = ? WHERE id = ?");
             $stmt->bind_param('ssi', $status, $approved_by, $id);
             if ($stmt->execute()) {
@@ -5375,10 +5456,12 @@ class Action
                 // Same frozen-shift stamp the other insert paths apply.
                 $cs = dtr_compute_day($this->db, (int)$employee_id, date('Y-m-d', strtotime($date_time)), []);
                 $sql2 = "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, overtime, notes,
-                                                  schedule_id, day_hours, is_rest_day) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                                                  schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt2 = $this->db->prepare($sql2);
-                $stmt2->bind_param('ssssssssidi', $id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes,
-                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day']);
+                $stmt2->bind_param('ssssssssidissii', $id, $employee_id, $date_time, $hours, $logs, $attendance_type, $overtime, $notes,
+                                   $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
+                                   $cs['sched_start'], $cs['sched_end'], $cs['sched_break'], $cs['sched_graveyard']);
                 try {
                     $stmt2->execute();
                 } catch (Exception $e) {
@@ -5748,6 +5831,12 @@ class Action
             // back-dating an assignment can no longer silently restate closed days.
             $sched_id  = $schedule ? (int) $schedule['id'] : null;
             $sched_dh  = $schedule && isset($schedule['total_hours']) ? (float) $schedule['total_hours'] : null;
+            // Boundaries too, not just the id — dtr_compute_day prices late/UT/OT
+            // against these, so they must survive a later work_schedules edit.
+            $sched_st  = $schedule['start_time'] ?? null;
+            $sched_en  = $schedule['end_time'] ?? null;
+            $sched_bk  = $schedule && isset($schedule['break_minutes']) ? (int) $schedule['break_minutes'] : null;
+            $sched_gv  = $schedule && isset($schedule['is_graveyard']) ? (int) $schedule['is_graveyard'] : null;
             $rest_csv  = (string) ($schedule['rest_days'] ?? '');
             $is_rest   = ($rest_csv !== '' && in_array(
                 (int) date('w', strtotime($scan_date)),
@@ -5760,11 +5849,11 @@ class Action
                 $logs = json_encode([$log_entry]);
                 $stmt6 = $this->db->prepare(
                     "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type, day_type, nsd_hours, is_complete, notes,
-                                              schedule_id, day_hours, is_rest_day)
-                     VALUES (?, ?, ?, 0, ?, 'biometric', ?, 0, 0, ?, ?, ?, ?)"
+                                              schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
+                     VALUES (?, ?, ?, 0, ?, 'biometric', ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)"
                 );
-                $stmt6->bind_param('iissssidi', $ddtr_id, $employee_id, $scan_date, $logs, $day_type, $shift_note,
-                                   $sched_id, $sched_dh, $is_rest);
+                $stmt6->bind_param('iissssidissii', $ddtr_id, $employee_id, $scan_date, $logs, $day_type, $shift_note,
+                                   $sched_id, $sched_dh, $is_rest, $sched_st, $sched_en, $sched_bk, $sched_gv);
                 $stmt6->execute();
                 $this->db->commit();
                 // Notify the employee on their portal bell that a clock-in was captured.
@@ -5824,7 +5913,6 @@ class Action
 
                 $raw_hours  = ($latest - $earliest) / 3600;
                 $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
-                $work_hours = max(0, $raw_hours - $break_hrs);
 
                 // Schedule-based: late, undertime, overtime.
                 // Anchor the shift to the DTR row's day ($scan_date), NOT the first
@@ -5839,26 +5927,31 @@ class Action
                     $late      = round(max(0, ($earliest - $sched_start) / 3600), 2);
                     $undertime = round(max(0, ($sched_end - $latest) / 3600), 2);
                     $overtime  = round(max(0, ($latest - $sched_end) / 3600), 2);
+                    // Only time INSIDE the shift counts as work — same clamp as
+                    // dtr_compute_day. Without it an early clock-in inflated
+                    // work_hours from the raw span (5:20 AM in on an 8–5 shift
+                    // read 8.00 hrs worked alongside 2:40 undertime), and the two
+                    // paths restated each other on every recompute.
+                    $eff_in     = max($earliest, $sched_start);
+                    $eff_out    = min($latest, $sched_end);
+                    $work_hours = round(max(0, ($eff_out - $eff_in) / 3600 - $break_hrs), 2);
                     $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
                 } else {
+                    $work_hours = max(0, $raw_hours - $break_hrs);
                     $overtime   = round(max(0, $work_hours - 8), 2);
                     $work_hours = round(min(8, $work_hours), 2);
                 }
 
-                // Proper NSD: count hours between 10PM–6AM only
+                // NSD: hours worked inside 22:00–06:00 — one contiguous 8-hour
+                // window crossing midnight, swept across the row's neighbouring
+                // days. Mirrors dtr_compute_day exactly; the old per-day window
+                // pair dropped the 23:59:59→00:00 second and missed the previous
+                // evening's window on a re-dated overnight row.
                 $nsd_hours = 0;
-                $date_str  = date('Y-m-d', $earliest);
-                $nsd_windows = [
-                    [strtotime($date_str . ' 22:00:00'), strtotime($date_str . ' 23:59:59')],
-                    [strtotime($date_str . ' 00:00:00'), strtotime($date_str . ' 06:00:00')],
-                    [
-                        strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 00:00:00'),
-                        strtotime(date('Y-m-d', strtotime('+1 day', $earliest)) . ' 06:00:00')
-                    ],
-                ];
-                foreach ($nsd_windows as $w) {
-                    $overlap = max(0, min($latest, $w[1]) - max($earliest, $w[0]));
-                    $nsd_hours += $overlap / 3600;
+                for ($k = -1; $k <= 1; $k++) {
+                    $w_start = strtotime(date('Y-m-d', strtotime("$scan_date $k day")) . ' 22:00:00');
+                    $w_end   = strtotime('+8 hours', $w_start);   // 22:00 → 06:00 next day
+                    $nsd_hours += max(0, min($latest, $w_end) - max($earliest, $w_start)) / 3600;
                 }
                 $nsd_hours = round($nsd_hours, 2);
 
@@ -5869,10 +5962,11 @@ class Action
                 $stmt7 = $this->db->prepare(
                     "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
                      day_type=?, nsd_hours=?, is_complete=1,
-                     schedule_id=?, day_hours=?, is_rest_day=? WHERE id=?"
+                     schedule_id=?, day_hours=?, is_rest_day=?,
+                     sched_start=?, sched_end=?, sched_break=?, sched_graveyard=? WHERE id=?"
                 );
                 $stmt7->bind_param(
-                    'sddddsdidii',
+                    'sddddsdidissiii',
                     $logs,
                     $work_hours,
                     $overtime,
@@ -5883,6 +5977,10 @@ class Action
                     $sched_id,
                     $sched_dh,
                     $is_rest,
+                    $sched_st,
+                    $sched_en,
+                    $sched_bk,
+                    $sched_gv,
                     $detail['id']
                 );
                 $stmt7->execute();
@@ -7405,6 +7503,16 @@ class Action
         $data .= ", loan_type = $loan_type ";
         $data .= ", loan_balance = $loan_balance ";
         $data .= ", damount = $damount ";
+        // Optional supporting document (image/PDF ≤ 5 MB, shared helper). An
+        // edit that sends no new file keeps the stored one — the column is
+        // simply left out of the UPDATE.
+        $up = payroll_save_attachment('attachment', 'loan');
+        if (!$up['ok']) {
+            return $up['error'];
+        }
+        if ($up['file'] !== null) {
+            $data .= ", attachment='" . $this->db->real_escape_string($up['file']) . "' ";
+        }
         if (empty($id)) {
             $save = $this->db->query("INSERT INTO loans SET " . $data);
             return 1;
@@ -8904,10 +9012,11 @@ class Action
         $stmt = $this->db->prepare(
             "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?,
              day_type=?, nsd_hours=?, is_complete=?, attendance_type='manual',
-             schedule_id=?, day_hours=?, is_rest_day=? WHERE id=?"
+             schedule_id=?, day_hours=?, is_rest_day=?,
+             sched_start=?, sched_end=?, sched_break=?, sched_graveyard=? WHERE id=?"
         );
         $stmt->bind_param(
-            'sddddsdiidii',
+            'sddddsdiidissiii',
             $json_logs,
             $work_hours,
             $overtime,
@@ -8919,6 +9028,10 @@ class Action
             $c['schedule_id'],
             $c['day_hours'],
             $c['is_rest_day'],
+            $c['sched_start'],
+            $c['sched_end'],
+            $c['sched_break'],
+            $c['sched_graveyard'],
             $id
         );
         return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Saved'];
@@ -9077,7 +9190,8 @@ class Action
 
         $res = $this->db->query("SELECT id, employee_id, date_time, work_hours, overtime, undertime,
                                         late, nsd_hours, day_type, status, logs,
-                                        schedule_id, day_hours, is_rest_day
+                                        schedule_id, day_hours, is_rest_day,
+                                        sched_start, sched_end, sched_break, sched_graveyard
                                  FROM DTR_details WHERE ddtr_id = $ddtr_id");
 
         $this->db->begin_transaction();
@@ -9130,7 +9244,8 @@ class Action
 
         $res = $this->db->query("SELECT d.id, d.employee_id, d.date_time, d.work_hours, d.overtime, d.undertime,
                                         d.late, d.nsd_hours, d.day_type, d.status, d.logs,
-                                        d.schedule_id, d.day_hours, d.is_rest_day
+                                        d.schedule_id, d.day_hours, d.is_rest_day,
+                                        d.sched_start, d.sched_end, d.sched_break, d.sched_graveyard
                                  FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
                                  WHERE d.employee_id = $employee_id AND b.status <> 2");
 
@@ -9180,11 +9295,11 @@ class Action
 
         $upd = $this->db->prepare(
             "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=?,
-             schedule_id=?, day_hours=?, is_rest_day=? WHERE id=?"
+             schedule_id=?, day_hours=?, is_rest_day=?, sched_start=?, sched_end=?, sched_break=?, sched_graveyard=? WHERE id=?"
         );
         $updPend = $this->db->prepare(
             "UPDATE DTR_details SET work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?, day_type=?, is_complete=?,
-             schedule_id=?, day_hours=?, is_rest_day=?,
+             schedule_id=?, day_hours=?, is_rest_day=?, sched_start=?, sched_end=?, sched_break=?, sched_graveyard=?,
              status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
         );
         while ($row = $res->fetch_assoc()) {
@@ -9204,7 +9319,13 @@ class Action
                  && $c['day_type'] === $row['day_type']
                  && (int)($c['schedule_id'] ?? 0) === (int)($row['schedule_id'] ?? 0)
                  && abs((float)($c['day_hours'] ?? 0) - (float)($row['day_hours'] ?? 0)) < 0.005
-                 && (int)$c['is_rest_day'] === (int)($row['is_rest_day'] ?? 0);
+                 && (int)$c['is_rest_day'] === (int)($row['is_rest_day'] ?? 0)
+                 // Boundary stamp too — a shift-definition edit that happens to
+                 // leave every figure equal must still refresh the frozen times.
+                 && (string)($c['sched_start'] ?? '') === (string)($row['sched_start'] ?? '')
+                 && (string)($c['sched_end'] ?? '')   === (string)($row['sched_end'] ?? '')
+                 && (int)($c['sched_break'] ?? -1)    === (int)($row['sched_break'] ?? -1)
+                 && (int)($c['sched_graveyard'] ?? -1) === (int)($row['sched_graveyard'] ?? -1);
             if ($same) continue;
 
             $changed++;
@@ -9213,9 +9334,10 @@ class Action
             $toPend   = ((int)$row['status'] === 1);   // only approved rows re-open
             $stmt     = $toPend ? $updPend : $upd;
             if ($toPend) $repending++;
-            $stmt->bind_param('dddddsiidii', $c['work_hours'], $c['overtime'], $c['undertime'],
+            $stmt->bind_param('dddddsiidissiii', $c['work_hours'], $c['overtime'], $c['undertime'],
                               $c['late'], $c['nsd_hours'], $c['day_type'], $c['is_complete'],
-                              $c['schedule_id'], $c['day_hours'], $c['is_rest_day'], $rowId);
+                              $c['schedule_id'], $c['day_hours'], $c['is_rest_day'],
+                              $c['sched_start'], $c['sched_end'], $c['sched_break'], $c['sched_graveyard'], $rowId);
             if (!$stmt->execute()) throw new Exception('Row ' . $rowId . ': ' . $stmt->error);
         }
         return [$scanned, $changed, $repending, $affectedEmp];

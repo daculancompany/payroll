@@ -1,0 +1,104 @@
+/* ============================================================================
+   Attach Upload — shared one-file attachment picker + stored-attachment view.
+   Pairs with assets2/js/attach-upload.js; see the markup convention there.
+   ========================================================================= */
+
+/* ── Picker — a drop-zone: click the button OR drag a file onto the box ── */
+.att-up {
+    border: 1.5px dashed #cfc6e2; border-radius: 12px; padding: 14px 12px;
+    background: #faf9fd; text-align: center; transition: border-color .15s, background .15s;
+}
+.att-up:hover { border-color: #a98fd6; }
+.att-up.dragover { border-color: #673bb6; background: #f1ecfa; }
+.att-up.has-file { border-style: solid; border-color: #d9ccf0; background: #fff; padding: 10px 12px; text-align: left; }
+
+.att-up-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid #d9d3e4; background: #fff; color: #4e3483;
+    font-size: 12px; font-weight: 700; padding: 7px 14px; border-radius: 9px;
+    cursor: pointer; transition: all .12s; box-shadow: 0 1px 2px rgba(58, 40, 93, .06);
+}
+.att-up-btn:hover { border-color: #a98fd6; background: #f4f1fa; }
+.att-up-btn i { font-size: 14px; color: #673bb6; }
+
+.att-up-hint { margin-top: 6px; font-size: 10.5px; color: #948ea5; line-height: 1.4; }
+.att-up.has-file .att-up-btn,
+.att-up.has-file .att-up-hint { display: none; }
+
+/* Selected-file preview card */
+.att-up-prev { display: none; }
+.att-up-card { display: flex; align-items: center; gap: 10px; }
+.att-up-thumb {
+    width: 54px; height: 54px; object-fit: cover; border-radius: 8px;
+    border: 1px solid #e4e0ee; flex-shrink: 0; background: #f4f3f6;
+}
+.att-up-pdf {
+    width: 54px; height: 54px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #fdecea; border: 1px solid #f5c6cb;
+}
+.att-up-pdf i { font-size: 26px; color: #c62828; }
+.att-up-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.att-up-name { font-size: 12px; font-weight: 700; color: #3c3846; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-up-size { font-size: 10.5px; color: #948ea5; }
+.att-up-x {
+    width: 26px; height: 26px; flex-shrink: 0; border: 1px solid #e9e7ee;
+    border-radius: 8px; background: #f4f3f6; color: #767283; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+    transition: all .12s;
+}
+.att-up-x:hover { background: #fdecea; border-color: #f5c6cb; color: #c62828; }
+
+/* ── Stored-attachment view (AttachUpload.viewHTML) ── */
+.att-view { display: inline-flex; text-decoration: none; }
+.att-view-img { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid #e4e0ee; max-width: 240px; }
+.att-view-img img { display: block; width: 100%; max-height: 160px; object-fit: cover; }
+.att-view-img .att-view-zoom {
+    position: absolute; inset: auto 0 0 0; padding: 5px 9px;
+    display: flex; align-items: center; gap: 5px;
+    background: linear-gradient(transparent, rgba(30, 22, 48, .78));
+    color: #fff; font-size: 10.5px; font-weight: 700;
+}
+.att-view-img:hover img { filter: brightness(1.05); }
+.att-view-pdf {
+    align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px;
+    border: 1px solid #f5c6cb; background: #fdf6f5; color: #8a2731;
+    font-size: 12px; font-weight: 700; transition: all .12s;
+}
+.att-view-pdf i:first-child { font-size: 18px; color: #c62828; }
+.att-view-pdf .att-view-open { font-size: 13px; color: #b58b8f; margin-left: 2px; }
+.att-view-pdf:hover { background: #fdecea; color: #8a2731; }
+
+/* ── In-app viewer overlay (AttachUpload.open) ── */
+.att-viewer {
+    position: fixed; inset: 0; z-index: 3200;   /* above bootstrap modals (1055) */
+    display: none; align-items: center; justify-content: center;
+    background: rgba(24, 17, 40, .72); backdrop-filter: blur(3px);
+    padding: 22px;
+}
+.att-viewer.open { display: flex; }
+.att-viewer-card {
+    background: #fff; border-radius: 16px; overflow: hidden;
+    max-width: min(920px, 94vw); max-height: 90vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 24px 70px -18px rgba(0, 0, 0, .55);
+    animation: attViewerIn .18s ease;
+}
+@keyframes attViewerIn { from { transform: translateY(10px) scale(.985); opacity: 0; } to { transform: none; opacity: 1; } }
+.att-viewer-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 11px 14px; background: linear-gradient(135deg, #6f47b5, #5d36a6); color: #fff;
+}
+.att-viewer-title { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 700; min-width: 0; }
+.att-viewer-title .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.att-viewer-acts { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.att-viewer-open, .att-viewer-x {
+    width: 30px; height: 30px; border-radius: 9px; border: 1px solid rgba(255,255,255,.35);
+    background: rgba(255,255,255,.16); color: #fff; font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; text-decoration: none;
+    transition: background .12s;
+}
+.att-viewer-open:hover, .att-viewer-x:hover { background: rgba(255,255,255,.32); color: #fff; }
+.att-viewer-body { background: #17121f; display: flex; align-items: center; justify-content: center; min-height: 200px; }
+.att-viewer-body img { max-width: 100%; max-height: calc(90vh - 54px); display: block; }
+.att-viewer-body iframe { width: min(880px, 92vw); height: calc(90vh - 54px); border: 0; background: #fff; }

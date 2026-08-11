@@ -1151,6 +1151,37 @@ if (!function_exists('payroll_earnings')) {
     }
 }
 
+// ── Attachment upload (GLOBAL) ──────────────────────────────────────────
+// One optional supporting document (image or PDF, max 5 MB) for loans and
+// attendance requests. Validates the REAL MIME type via finfo — the client's
+// filename/extension is never trusted — and stores under a server-generated
+// name in uploads/. Pairs with assets2/js/attach-upload.js on the form side.
+if (!function_exists('payroll_save_attachment')) {
+    function payroll_save_attachment(string $field, string $prefix = 'att'): array
+    {
+        if (empty($_FILES[$field]) || ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+            return ['ok' => true, 'file' => null];   // optional — nothing sent is fine
+        }
+        $f = $_FILES[$field];
+        if (($f['error'] ?? -1) !== UPLOAD_ERR_OK) {
+            return ['ok' => false, 'error' => 'The attachment failed to upload — please try again.'];
+        }
+        if (($f['size'] ?? 0) > 5 * 1024 * 1024) {
+            return ['ok' => false, 'error' => 'The attachment is larger than 5 MB — please compress it first.'];
+        }
+        $mime = (new finfo(FILEINFO_MIME_TYPE))->file($f['tmp_name']);
+        $extByMime = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp', 'application/pdf' => 'pdf'];
+        if (!isset($extByMime[$mime])) {
+            return ['ok' => false, 'error' => 'Only an image (JPG/PNG/WebP) or a PDF can be attached.'];
+        }
+        $name = $prefix . '_' . uniqid() . '.' . $extByMime[$mime];
+        if (!@move_uploaded_file($f['tmp_name'], __DIR__ . '/uploads/' . $name)) {
+            return ['ok' => false, 'error' => 'Could not store the attachment on the server.'];
+        }
+        return ['ok' => true, 'file' => $name];
+    }
+}
+
 // ── Punch display (GLOBAL) ──────────────────────────────────────────────
 // A punch time, flagged when it lands on a LATER calendar day than the DTR row
 // it belongs to. An overnight shift's 5:00 AM time-out is stored on the row of
@@ -1268,9 +1299,11 @@ if (!function_exists('resolve_employee_schedule')) {
 //               time; false re-resolves from employee_schedules so a corrected
 //               assignment actually applies (batch Recompute uses this).
 // Returns [work_hours, overtime, undertime, late, nsd_hours, day_type, is_complete,
-//          schedule_id, day_hours, is_rest_day] — the last three are the stamp
-// values for the shift the figures were computed under, so callers that force
-// a re-resolve can write the new stamp back onto the row.
+//          schedule_id, day_hours, is_rest_day,
+//          sched_start, sched_end, sched_break, sched_graveyard] — everything
+// after is_complete is the stamp for the shift the figures were computed
+// under, so callers that force a re-resolve can write the new stamp back
+// onto the row.
 if (!function_exists('dtr_compute_day')) {
     function dtr_compute_day(mysqli $db, int $employee_id, string $date, array $log_ts, bool $use_stamp = true): array
     {
@@ -1293,7 +1326,9 @@ if (!function_exists('dtr_compute_day')) {
         $schedule = null;
         if ($use_stamp) {
             $st = $db->query("
-                SELECT ws.*, d.day_hours AS stamped_day_hours, d.is_rest_day AS stamped_is_rest
+                SELECT ws.*, d.day_hours AS stamped_day_hours, d.is_rest_day AS stamped_is_rest,
+                       d.sched_start AS stamped_start, d.sched_end AS stamped_end,
+                       d.sched_break AS stamped_break, d.sched_graveyard AS stamped_graveyard
                 FROM DTR_details d INNER JOIN work_schedules ws ON ws.id = d.schedule_id
                 WHERE d.employee_id = $employee_id AND d.date_time = '$dateEsc'
                   AND d.schedule_id IS NOT NULL
@@ -1301,9 +1336,17 @@ if (!function_exists('dtr_compute_day')) {
             ");
             if ($st && ($srow = $st->fetch_assoc())) {
                 $schedule = $srow;
-                // The stamped day length beats the shift's current total_hours, which
-                // may have been edited on the work_schedules row since.
+                // Every stamped field beats the shift's CURRENT definition, which
+                // may have been edited on the work_schedules row since (in the app
+                // or directly in the DB). Without this, late/UT/OT/NSD re-derived
+                // against moved shift boundaries even in stamp mode — the freeze
+                // only actually covered day_hours and the rest-day flag. NULL
+                // (row predates the column) falls back to the live value.
                 if ($srow['stamped_day_hours'] !== null) $schedule['total_hours'] = $srow['stamped_day_hours'];
+                if ($srow['stamped_start']     !== null) $schedule['start_time']    = $srow['stamped_start'];
+                if ($srow['stamped_end']       !== null) $schedule['end_time']      = $srow['stamped_end'];
+                if ($srow['stamped_break']     !== null) $schedule['break_minutes'] = (int) $srow['stamped_break'];
+                if ($srow['stamped_graveyard'] !== null) $schedule['is_graveyard']  = (int) $srow['stamped_graveyard'];
             }
         }
         if (!$schedule) $schedule = resolve_employee_schedule($db, $employee_id, $date);
@@ -1388,6 +1431,13 @@ if (!function_exists('dtr_compute_day')) {
             'schedule_id' => isset($schedule['id']) ? (int) $schedule['id'] : null,
             'day_hours'   => isset($schedule['total_hours']) ? (float) $schedule['total_hours'] : null,
             'is_rest_day' => $is_rest,
+            // Shift boundaries the figures above were computed against — the
+            // rest of the frozen-shift stamp. Write paths persist these onto
+            // the row so a later work_schedules edit can't re-price it.
+            'sched_start'     => $schedule['start_time'] ?? null,
+            'sched_end'       => $schedule['end_time'] ?? null,
+            'sched_break'     => isset($schedule['break_minutes']) ? (int) $schedule['break_minutes'] : null,
+            'sched_graveyard' => isset($schedule['is_graveyard']) ? (int) $schedule['is_graveyard'] : null,
         ];
     }
 }
@@ -1402,17 +1452,39 @@ if (!function_exists('dtr_compute_day')) {
 // Only stamped rows (schedule_id NOT NULL) are testable — unstamped legacy
 // rows carry no record of the shift that computed them. Rest-day-only edits
 // are caught too (they overwrite employee_schedules.rest_days in place).
+//
+// Two branches, mirroring resolve_employee_schedule's first two steps:
+//   1. A period COVERS the date and disagrees with the stamp — the normal case.
+//   2. NO period covers the date but one had already STARTED — a gap left by a
+//      deleted period. A recompute would resolve the last-started period
+//      (resolver step 2), so the stamp is stale when THAT disagrees. Requiring
+//      a started period is deliberate: rows predating the employee's FIRST
+//      assignment were computed under the system default and that stays the
+//      right answer — flagging them would demand a recompute that restates
+//      history against a shift the employee was not yet on.
 if (!function_exists('dtr_schedule_mismatch_where')) {
     function dtr_schedule_mismatch_where(string $alias = 'd'): string
     {
-        return "($alias.schedule_id IS NOT NULL AND EXISTS (
-            SELECT 1 FROM employee_schedules es
+        $differs = "(es.schedule_id <> $alias.schedule_id
+                OR (FIND_IN_SET(DAYOFWEEK($alias.date_time) - 1, COALESCE(es.rest_days, '')) > 0)
+                   <> (COALESCE($alias.is_rest_day, 0) = 1))";
+        $covering = "SELECT 1 FROM employee_schedules es
             WHERE es.employee_id = $alias.employee_id
               AND es.effective_from <= $alias.date_time
-              AND (es.effective_to IS NULL OR es.effective_to >= $alias.date_time)
-              AND (es.schedule_id <> $alias.schedule_id
-                OR (FIND_IN_SET(DAYOFWEEK($alias.date_time) - 1, COALESCE(es.rest_days, '')) > 0)
-                   <> (COALESCE($alias.is_rest_day, 0) = 1))
+              AND (es.effective_to IS NULL OR es.effective_to >= $alias.date_time)";
+        return "($alias.schedule_id IS NOT NULL AND (
+            EXISTS ($covering AND $differs)
+            OR (NOT EXISTS ($covering)
+                AND EXISTS (
+                    SELECT 1 FROM employee_schedules es
+                    WHERE es.employee_id = $alias.employee_id
+                      AND es.effective_from <= $alias.date_time
+                      AND es.effective_from = (
+                          SELECT MAX(es2.effective_from) FROM employee_schedules es2
+                          WHERE es2.employee_id = $alias.employee_id
+                            AND es2.effective_from <= $alias.date_time)
+                      AND $differs
+                ))
         ))";
     }
 }
@@ -1502,9 +1574,9 @@ if (!function_exists('ot_request_limit')) {
         $dateStr = date('M d, Y', $ts);
 
         // The schedule in effect that date — its end time is what OT is measured
-        // against, and its rest days decide whether the whole span counts.
+        // against, and its rest days decide which rule prices the span.
         $sched = $db->query("
-            SELECT ws.end_time, ws.break_minutes, ws.is_graveyard, es.rest_days
+            SELECT ws.end_time, ws.break_minutes, ws.is_graveyard, ws.total_hours, es.rest_days
             FROM employee_schedules es
             INNER JOIN work_schedules ws ON ws.id = es.schedule_id
             WHERE es.employee_id = " . (int) $employee_id . "
@@ -1547,16 +1619,20 @@ if (!function_exists('ot_request_limit')) {
         $out['time_in']  = date('g:i A', $in_ts);
         $out['time_out'] = date('g:i A', $out_ts);
 
-        // Rest day → the whole worked span is overtime; otherwise only the part
-        // past the shift end (dtr_compute_day, so this always agrees with the DTR).
+        // Rest day → duty up to one full day's hours is paid AUTOMATICALLY from
+        // the punches (basic + rest-day premium in payroll), so it must not be
+        // filed as OT too — that double-paid the same hours. Only time rendered
+        // BEYOND the full duty is fileable. Regular day → only the part past the
+        // shift end (dtr_compute_day, so this always agrees with the DTR).
         $rest = array_filter(array_map('intval', explode(',', (string) ($sched['rest_days'] ?? ''))), function ($d) {
             return $d >= 0 && $d <= 6;
         });
         $out['rest_day'] = in_array((int) date('w', $ts), $rest, true);
 
+        $duty = day_hours_or_default($sched['total_hours'] ?? null);
         if ($out['rest_day']) {
             $break  = ($sched['break_minutes'] ?? 60) / 60;
-            $excess = round(max(0, ($out_ts - $in_ts) / 3600 - $break), 2);
+            $excess = round(max(0, ($out_ts - $in_ts) / 3600 - $break - $duty), 2);
         } else {
             $calc   = dtr_compute_day($db, $employee_id, $ymd, $log_ts);
             $excess = round(max(0, (float) $calc['overtime']), 2);
@@ -1572,7 +1648,9 @@ if (!function_exists('ot_request_limit')) {
             $min  = rtrim(rtrim(number_format(OT_REQUEST_MIN_HOURS, 2), '0'), '.');
             $span = "$dateStr ({$out['time_in']} – {$out['time_out']})";
             if ($out['rest_day']) {
-                $out['message'] = "Your scans for $span total less than $min hr of work, so there is no overtime to file.";
+                $out['message'] = "Rest-day duty is paid automatically from your scans (with the rest-day premium) — no filing needed. "
+                    . "Overtime on a rest day is only the time beyond your full {$duty}-hr duty, and your scans for $span "
+                    . ($excess > 0 ? "show only $excess hr beyond it — less than the $min hr minimum." : "do not go beyond it.");
             } elseif ($excess > 0) {
                 // Went past the shift end, but by less than one filing step.
                 $out['message'] = "Your scans for $span go past your {$out['shift_end']} shift end by only $excess hr — less than the $min hr minimum, so there is no overtime to file.";
@@ -1601,7 +1679,7 @@ if (!function_exists('ot_request_limit')) {
         $out['allowed']   = true;
         $out['max_hours'] = $remaining;
         $out['message']   = $out['rest_day']
-            ? "Rest day — your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) support up to $remaining hr of overtime."
+            ? "Rest day — your first {$duty} hrs are paid automatically with the rest-day premium; your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) support up to $remaining hr of overtime beyond that."
             : "Your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) run past your {$out['shift_end']} shift end, so you may file up to $remaining hr of overtime.";
         return $out;
     }

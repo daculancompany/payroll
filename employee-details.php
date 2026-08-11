@@ -914,7 +914,16 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     : 0;
                                             ?>
                                                 <tr>
-                                                    <td><span style="font-weight:600;"><?= esc($row['loan_type']) ?></span></td>
+                                                    <td>
+                                                        <span style="font-weight:600;"><?= esc($row['loan_type']) ?></span>
+                                                        <?php if (!empty($row['attachment'])): ?>
+                                                            <a href="uploads/<?= rawurlencode($row['attachment']) ?>" class="att-view"
+                                                               data-att-name="<?= htmlspecialchars($row['attachment']) ?>"
+                                                               title="View attached document" style="margin-left:4px;color:#673bb6;text-decoration:none;font-size:13px;">
+                                                                <i class="ri-attachment-2"></i>
+                                                            </a>
+                                                        <?php endif; ?>
+                                                    </td>
                                                     <td>
                                                         <span style="font-size:12px;color:#555;"><i class="ri-calendar-2-line me-1 text-muted"></i><?= esc($row['loan_date']) ?></span>
                                                         <?php if (!empty($row['effective_date']) && $row['effective_date'] !== $row['loan_date']): ?>

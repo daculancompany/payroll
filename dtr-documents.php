@@ -325,12 +325,15 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
     color:#c62828; font-size:10px; font-weight:700; cursor:pointer; padding:2px 5px; border-radius:6px;
 }
 .ddv-fp-reset:hover { background:#fdf4f3; }
-.ddv-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:9px 0 3px; }
+.ddv-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:10px 0 3px; padding-top:9px; border-top:1px solid #eceaf2; }
 .ddv-fp-select {
     width:100%; margin-top:4px; border:1px solid #ddd9e7; border-radius:8px;
     font-size:11.5px; padding:5px 8px; color:#3c3846; background:#fff; outline:none;
 }
 .ddv-fp-select:focus { border-color:var(--brand); box-shadow:0 0 0 2px rgba(102,66,170,.15); }
+/* The custom-select wrapper replaces the native select visually, so the
+   margin-top on .ddv-fp-select never renders — space the wrappers instead. */
+.ddv-filter-pop .cs-select + .cs-select { margin-top:7px; }
 .ddv-search-wrap { display:flex; align-items:center; gap:7px; border:1px solid #ddd9e7; border-radius:8px; background:#fff; padding:6px 10px; }
 .ddv-search-wrap:focus-within { border-color:var(--brand); box-shadow:0 0 0 2px rgba(102,66,170,.15); }
 .ddv-search-wrap i { color:var(--brand); font-size:14px; }
@@ -486,10 +489,10 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
     scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track);
 }
 .ddv-sum-body { padding:13px 15px; }
-/* The name doubles as the trigger for the shared employee quick-view drawer */
+/* The name links to the employee's details page (same tab) */
 .ddv-sum-emp {
     display:inline-flex; align-items:center; gap:5px; padding:0; text-align:left;
-    border:none; background:transparent; cursor:pointer;
+    border:none; background:transparent; cursor:pointer; text-decoration:none;
     font-size:12.5px; font-weight:800; color:#3c3846; font-family:inherit;
 }
 .ddv-sum-emp i { color:#b3a8ca; font-size:14px; transition:color .12s; }
@@ -506,6 +509,17 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-chip.appr { background:#eafaf0; color:#0f9d58; border:1px solid #b7e4c7; }
 .ddv-chip.pend { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
 .ddv-chip.disa { background:#fdecea; color:#c62828; border:1px solid #f5c6cb; }
+/* "Why flagged" — plain-language reasons behind the red ! on the employee card */
+.ddv-why { margin-top:9px; padding:9px 11px; border:1px solid #f0c36d; border-left:4px solid #e6a817;
+    background:#fdf6e3; border-radius:9px; }
+.ddv-why-hd { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.5px;
+    color:#8a6400; display:flex; align-items:center; gap:5px; margin-bottom:6px; }
+.ddv-why-row { display:flex; align-items:flex-start; gap:8px; font-size:11px; color:#5a4a12;
+    line-height:1.45; padding:4px 0; }
+.ddv-why-row + .ddv-why-row { border-top:1px dashed #eeddb0; }
+.ddv-why-row i { color:#c98a00; font-size:13px; margin-top:1px; flex-shrink:0; }
+.ddv-why-row b { color:#42350a; }
+.ddv-why-row .why { display:block; margin-top:2px; font-size:10.5px; color:#8a7a3f; }
 .ddv-attend-bar { margin-top:9px; }
 .ddv-attend-lbl { display:flex; justify-content:space-between; font-size:10px; color:#827d91; font-weight:600; margin-bottom:3px; }
 .ddv-bar { height:7px; border-radius:6px; background:#ecebf1; overflow:hidden; }
@@ -852,11 +866,16 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
             text-align:center; line-height:18px; }
         .ddv-recompute-last { margin:6px 14px 0; font-size:.75rem; color:#8a8f98; }
         @media print { .ddv-sched-warn, .ddv-recompute-last { display:none; } }
+    </style>
+    <?php endif; ?>
 
-        /* ── Recompute confirmation, dressed as an app modal ──────────────
-           SweetAlert is used instead of a Bootstrap modal because this page
-           loads bootstrap's CSS but not its JS bundle. buttonsStyling:false
-           and padding:0 hand the whole popup to these rules. */
+    <!-- ── Recompute confirmation, dressed as an app modal ──────────────
+         SweetAlert is used instead of a Bootstrap modal because this page
+         loads bootstrap's CSS but not its JS bundle. buttonsStyling:false
+         and padding:0 hand the whole popup to these rules. Deliberately
+         OUTSIDE the stale-schedule conditional above: the Recompute button
+         (and its dialog) exists on every open batch. -->
+    <style>
         .ddv-swal { border-radius:14px !important; overflow:hidden; padding:0 !important; }
         .ddv-swal-html { margin:0 !important; padding:0 !important; text-align:left !important; }
         .ddv-swal-head { display:flex; align-items:center; gap:13px; padding:18px 22px;
@@ -921,7 +940,6 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
             $lastRecompute['ran_by_name'] ? ' by ' . htmlspecialchars($lastRecompute['ran_by_name']) : '' ?>
         — <?= (int)$lastRecompute['changed'] ?> record(s) updated, <?= (int)$lastRecompute['repending'] ?> sent back to Pending.
     </div>
-    <?php endif; ?>
     <?php endif; ?>
 
     <!-- ── Workspace ── -->
@@ -1432,6 +1450,31 @@ function fmtPeriod() {
 }
 
 // ── Right: summary ───────────────────────────────────────────────────────────
+// The plain-language answer to "why does this employee carry the red ! flag":
+// every exception among their PENDING records, grouped by flag type with the
+// dates it hit and what to do about it. Approved/rejected records are excluded
+// — once decided, a flag no longer needs explaining.
+function flagExplainHTML(e) {
+    const byFlag = {};
+    Object.keys(e.days).sort().forEach(date => (e.days[date].recs || []).forEach(r => {
+        if (r.status !== 0) return;
+        (r.flags || []).forEach(f => { if (f !== 'manual') (byFlag[f] = byFlag[f] || []).push(date); });
+    }));
+    const keys = Object.keys(byFlag);
+    if (!keys.length && !e.low_att) return '';
+    const fmt = d => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    let rows = keys.map(f => {
+        const m = FLAG_META[f];
+        return `<div class="ddv-why-row"><i class="${m.icon}"></i><div>
+            <b>${m.lbl}</b> — ${byFlag[f].length} day(s): ${byFlag[f].map(fmt).join(', ')}
+            <span class="why">${m.why}</span></div></div>`;
+    }).join('');
+    if (e.low_att) rows += `<div class="ddv-why-row"><i class="ri-calendar-close-line"></i><div>
+        <b>Low attendance</b> — logged ${Object.keys(e.days).length} day(s), below the batch minimum of ${MIN_DAYS}.
+        <span class="why">Excluded from clean bulk-approval — check whether days are missing scans or the employee was simply absent.</span></div></div>`;
+    return `<div class="ddv-why"><div class="ddv-why-hd"><i class="ri-error-warning-line"></i> Why flagged</div>${rows}</div>`;
+}
+
 function renderSummary(e) {
     const box = $id('ddv-emp-summary');
     if (!e) { box.innerHTML = '<div style="font-size:12px;color:#948ea5;">No employee selected.</div>'; return; }
@@ -1439,7 +1482,7 @@ function renderSummary(e) {
     let periodDays = 0; eachDay(() => periodDays++);
     const pct = periodDays ? Math.round(daysPresent / periodDays * 100) : 0;
     box.innerHTML = `
-        <button type="button" class="ddv-sum-emp" data-emp-quickview="${e.id}" title="View employee details">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></button>
+        <a href="index.php?page=employee-details&id=${e.id}" class="ddv-sum-emp" title="View employee details">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></a>
         <div class="ddv-sum-sub">${esc(e.no)}${e.position ? ' · ' + esc(e.position) : ''}${e.department ? ' · ' + esc(e.department) : ''}</div>
         <div class="ddv-sum-grid">
             <div class="ddv-sum-tile"><div class="v">${Number(e.totals.wh).toFixed(2)}</div><div class="l">Hours</div></div>
@@ -1454,6 +1497,7 @@ function renderSummary(e) {
             ${e.exc > 0 ? `<span class="ddv-chip disa" title="Flagged pending records — review them below"><i class="ri-error-warning-line"></i> ${e.exc} flagged</span>` : ''}
             ${e.low_att ? `<span class="ddv-chip pend" title="Logged fewer than ${MIN_DAYS} of the period's days — excluded from clean bulk-approval"><i class="ri-calendar-close-line"></i> Low attendance</span>` : ''}
         </div>
+        ${flagExplainHTML(e)}
         <div class="ddv-attend-bar">
             <div class="ddv-attend-lbl"><span>Attendance</span><span>${daysPresent} of ${periodDays} days (${pct}%)</span></div>
             <div class="ddv-bar"><div style="width:${pct}%;"></div></div>
@@ -1561,6 +1605,19 @@ function deleteNote(arg) {
     });
 }
 
+// One flag, one explanation — the chips (record cards) and the "Why flagged"
+// box (Summary tab) tell the same story from the same table.
+const FLAG_META = {
+    no_out:     { cls: 'block', icon: 'ri-logout-box-r-line', lbl: 'No time-out',
+                  why: 'Only one scan on this day — there is no time-out, so hours cannot be computed. Add the missing punch (edit, or have the employee file an incident report) or decide it manually. Bulk approval skips it.' },
+    zero_hours: { cls: 'block', icon: 'ri-time-line',          lbl: 'Zero hours',
+                  why: 'The scans compute to zero worked hours — usually punches entirely outside the scheduled shift window. Check the logs against the shift before approving.' },
+    high_ot:    { cls: 'block', icon: 'ri-sun-line',           lbl: 'High OT',
+                  why: `Overtime above the ${OT_HOURS}-hr threshold — confirm it was actually rendered and authorized (an approved OT request) before approving.` },
+    manual:     { cls: 'info',  icon: 'ri-edit-line',          lbl: 'Manual log',
+                  why: 'Has manually-entered punches (not from the biometric device). Informational only — it does not block bulk approval.' },
+};
+
 // ── Right: records & logs ────────────────────────────────────────────────────
 function renderRecords(e) {
     const box = $id('ddv-recs');
@@ -1578,15 +1635,9 @@ function renderRecords(e) {
                 ? r.logs.map(l => `<span class="ddv-log-chip ${l.bio ? 'bio' : 'manual'}"><i class="${l.bio ? 'ri-fingerprint-line' : 'ri-edit-line'}"></i>${esc(l.t)}</span>`).join('')
                 : '<span style="font-size:9.5px;color:#aaa;">No logs</span>';
             const dLbl = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            const FLAG_META = {
-                no_out:     { cls: 'block', icon: 'ri-logout-box-r-line',    lbl: 'No time-out' },
-                zero_hours: { cls: 'block', icon: 'ri-time-line',            lbl: 'Zero hours' },
-                high_ot:    { cls: 'block', icon: 'ri-sun-line',             lbl: 'High OT' },
-                manual:     { cls: 'info',  icon: 'ri-edit-line',            lbl: 'Manual log' },
-            };
             const flags = (r.flags || []).map(f => {
                 const m = FLAG_META[f];
-                return m ? `<span class="ddv-flag ${m.cls}"><i class="${m.icon}"></i>${m.lbl}</span>` : '';
+                return m ? `<span class="ddv-flag ${m.cls}" title="${esc(m.why)}"><i class="${m.icon}"></i>${m.lbl}</span>` : '';
             }).join('');
             // Leave-vs-attendance conflict: this date carries a leave request AND
             // real worked hours. Legitimate (half-day, or leave taken mid-shift),
@@ -2203,7 +2254,7 @@ async function loadFilterOpts() {
         if (!j.result) return;
         const fill = (id, rows, label) => {
             $id(id).innerHTML = `<option value="">${label}: All</option>`
-                + (rows || []).map(o => `<option value="${o.id}">${esc(o.name)}</option>`).join('');
+                + (rows || []).map((o, i) => `<option value="${o.id}"${i === 0 ? ' data-cs-divider' : ''}>${esc(o.name)}</option>`).join('');
         };
         fill('ddv-f-dep', j.departments, 'Department');
         fill('ddv-f-pos', j.positions, 'Position');
@@ -2474,11 +2525,5 @@ document.addEventListener('keydown', ev => {
 loadPage();
 </script>
 
-<?php
-// Employee quick-view drawer (the employee name in the summary panel opens
-// it). Standalone workbench, so "Full details" opens in a new tab.
-$eqv_full_target = '_blank';
-include __DIR__ . '/component/employee_quick_view.php';
-?>
 </body>
 </html>

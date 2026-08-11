@@ -342,7 +342,13 @@
         sel.parentNode.insertBefore(wrap, sel);
         wrap.appendChild(sel);
         wrap.appendChild(trigger);
-        document.body.appendChild(menu);      // see header note #1
+        /* See header note #1 for why the menu leaves the wrapper. Inside a
+           Bootstrap modal the menu must stay INSIDE the modal element: the
+           modal's focus trap yanks focus off anything outside it, which made
+           the menu's filter box untypable. The .modal element itself is
+           position:fixed with no transform, so fixed-position math still
+           resolves against the viewport there. */
+        (sel.closest('.modal') || document.body).appendChild(menu);
         sel.classList.add('cs-native');
         sel.dataset.csDone = '1';
 

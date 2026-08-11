@@ -274,6 +274,19 @@ switch ($action) {
             ];
         }
 
+        // Attendance requests (incident/OT) — same 'req' mark the admin sheet
+        // carries; an approved OT request also turns that day's OT figure green
+        // in the shared Form 48 template.
+        $rq = $conn->prepare("SELECT request_date, request_type, status,
+                                     COALESCE(ot_hours_requested, 0) AS hrs
+                              FROM attendance_requests
+                              WHERE employee_id = ? AND status IN (0,1) AND request_date BETWEEN ? AND ?");
+        $rq->bind_param('iss', $emp_id, $pFrom, $pTo);
+        $rq->execute();
+        foreach ($rq->get_result()->fetch_all(MYSQLI_ASSOC) as $r) {
+            $marks[$r['request_date']][] = ['k' => 'req', 't' => $r['request_type'], 's' => (int) $r['status'], 'h' => (float) $r['hrs']];
+        }
+
         $review = $conn->query("SELECT status, comment, reviewed_at, admin_reply, resolved_at FROM dtr_employee_reviews WHERE ddtr_id = $ddtr_id AND employee_id = $emp_id")->fetch_assoc();
 
         echo json_encode([
@@ -618,8 +631,17 @@ switch ($action) {
             }
         }
 
-        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, is_half_day, half_period, half_date, dates, reason, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,0)");
-        $ins->bind_param('iisssdissss', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $is_half, $half_per, $half_date, $dates_json, $lreason);
+        // Optional proof (medical certificate, etc.) — one image/PDF ≤ 5 MB via
+        // the shared helper; a bad file rejects the request outright.
+        $lv_up = payroll_save_attachment('attachment', 'leave');
+        if (!$lv_up['ok']) {
+            echo json_encode(['result' => false, 'message' => $lv_up['error']]);
+            break;
+        }
+        $lv_att = $lv_up['file'];
+
+        $ins = $conn->prepare("INSERT INTO leave_requests (employee_id, leave_type_id, date_applied, date_from, date_to, duration, is_half_day, half_period, half_date, dates, reason, attachment, status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0)");
+        $ins->bind_param('iisssdisssss', $emp_id, $lt_id, $today, $d_from, $d_to, $dur, $is_half, $half_per, $half_date, $dates_json, $lreason, $lv_att);
         if (!$ins->execute()) {
             echo json_encode(['result' => false, 'message' => 'Could not submit your request. Please try again.']);
             break;
@@ -688,6 +710,7 @@ switch ($action) {
                 'date_to' => $d_to,
                 'duration' => $dur,
                 'reason' => $lreason,
+                'attachment' => $lv_att,
                 'status' => 0, 'sup_status' => 0, 'hr_status' => 0, 'admin_status' => 0,
             ],
         ]);
@@ -700,6 +723,29 @@ switch ($action) {
     case 'ot_request_limit': {
         $lim = ot_request_limit($conn, $emp_id, trim($_POST['request_date'] ?? $_GET['request_date'] ?? ''));
         echo json_encode(['result' => true, 'limit' => $lim, 'min_hours' => OT_REQUEST_MIN_HOURS, 'step' => OT_REQUEST_STEP_HOURS]);
+        break;
+    }
+
+    // ── Shift for one date: prefills the incident claimed in/out with the
+    // employee's scheduled start/end so they only adjust, not build, the time.
+    // Advisory only — the claimed times stay fully editable before submit.
+    case 'sched_for_date': {
+        $d = trim($_POST['request_date'] ?? $_GET['request_date'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $d)) {
+            echo json_encode(['result' => false]);
+            break;
+        }
+        $sched = resolve_employee_schedule($conn, $emp_id, $d);
+        if (!$sched) {
+            echo json_encode(['result' => false]);
+            break;
+        }
+        echo json_encode([
+            'result'      => true,
+            'start'       => substr($sched['start_time'], 0, 5),   // 'HH:mm'
+            'end'         => substr($sched['end_time'], 0, 5),
+            'description' => $sched['description'] ?? '',
+        ]);
         break;
     }
 
@@ -747,8 +793,18 @@ switch ($action) {
             }
         }
 
-        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes) VALUES (?,?,?,?,?,?,?,?)");
-        $ins->bind_param('isssssds', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $att_notes);
+        // Optional proof (one image or PDF, ≤ 5 MB) — validated and stored by
+        // the shared helper; a bad file rejects the whole request so the
+        // employee never files thinking their proof went through.
+        $up = payroll_save_attachment('attachment', 'req');
+        if (!$up['ok']) {
+            echo json_encode(['result' => false, 'message' => $up['error']]);
+            break;
+        }
+        $att_file = $up['file'];
+
+        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes, attachment) VALUES (?,?,?,?,?,?,?,?,?)");
+        $ins->bind_param('isssssdss', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $att_notes, $att_file);
         if (!$ins->execute()) {
             echo json_encode(['result' => false, 'message' => 'Could not submit your request. Please try again.']);
             break;
@@ -788,6 +844,7 @@ switch ($action) {
                 'claimed_time_out' => $time_out,
                 'ot_hours_requested' => $ot_hours,
                 'notes' => $att_notes,
+                'attachment' => $att_file,
                 'created_at' => date('Y-m-d H:i:s'),
                 'status' => 0,
             ],

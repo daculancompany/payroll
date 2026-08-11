@@ -214,6 +214,20 @@ function pcw_row_editable($status, $row) {
     return (int)$status === 3 && !empty($row['unlocked_at']);
 }
 
+// Attendance requests (incident/OT) in the period — the same 'req' day marks
+// the dtr-documents sheet carries. The shared Form 48 template renders the R
+// badge from them and, when an APPROVED overtime request covers a day, turns
+// that day's OT figure green so authorized OT reads apart from raw excess.
+$pcwReqMarks = [];   // eid => 'Y-m-d' => [['k'=>'req','t'=>...,'s'=>...,'h'=>hrs], ...]
+$rmq = @$conn->query("SELECT employee_id, request_date, request_type, status,
+        COALESCE(ot_hours_requested, 0) AS hrs
+    FROM attendance_requests
+    WHERE status IN (0, 1) AND request_date BETWEEN '$df_esc' AND '$dt_esc'");
+if ($rmq) while ($rm = $rmq->fetch_assoc()) {
+    $pcwReqMarks[(int)$rm['employee_id']][date('Y-m-d', strtotime($rm['request_date']))][] =
+        ['k' => 'req', 't' => $rm['request_type'], 's' => (int)$rm['status'], 'h' => (float)$rm['hrs']];
+}
+
 // Builds the Form 48 payload (days map + totals) for one employee+site from
 // the approved DTR_details rows, mirroring dtr-employee-server.php's cells so
 // window.DTRForm48.render() draws the same Daily Time Record sheet.
@@ -1606,6 +1620,7 @@ $refund_names = [];   // refund id => display name
                                                         'sch' => (string)($schedByEmp[(int)$row['employee_id']] ?? ''),
                                                         'nsd_hrs' => (float)($row['nsd_hours'] ?? 0), 'nsd_amt' => (float)($row['nsd_amount'] ?? 0),
                                                         'late_min' => (float)$row['late'], 'late_amt' => (float)$late_amount,
+                                                        'ut_min' => (float)$row['under_time'], 'ut_amt' => (float)$undertime_amount,
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
                                                         'legal' => (float)$legal_holiday, 'legal_amt' => (float)$legal_holiday_amount,
@@ -1620,7 +1635,7 @@ $refund_names = [];   // refund id => display name
                                                         'net' => (float)$net,
                                                         'prev_net' => $prevPayroll ? ($prevNetByEmpSite[$row['employee_id'] . '-' . $row['site_id']] ?? $prevNetByEmp[$row['employee_id']] ?? null) : null,
                                                         'dtr_days' => count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
-                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
+                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwReqMarks[(int)$row['employee_id']] ?? new stdClass()],
                                                         'notes' => $pcwNotesByEmp[(int)$row['employee_id']] ?? [],
                                                         'msgs' => $pcwMsgsByEmp[(int)$row['employee_id']] ?? [],
                                                         'rv' => $rv, 'rv_c' => (string)($row['review_comment'] ?? ''),
@@ -2319,6 +2334,7 @@ $refund_names = [];   // refund id => display name
                                                         'sch' => (string)($schedByEmp[(int)$row['employee_id']] ?? ''),
                                                         'nsd_hrs' => (float)($row['nsd_hours'] ?? 0), 'nsd_amt' => (float)($row['nsd_amount'] ?? 0),
                                                         'late_min' => (float)$row['late'], 'late_amt' => (float)$late_amount,
+                                                        'ut_min' => (float)$row['under_time'], 'ut_amt' => (float)$undertime_amount,
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
                                                         'legal' => (float)$legal_holiday, 'legal_amt' => (float)$legal_holiday_amount,
@@ -2333,7 +2349,7 @@ $refund_names = [];   // refund id => display name
                                                         'net' => (float)$net,
                                                         'prev_net' => $prevPayroll ? ($prevNetByEmpSite[$row['employee_id'] . '-' . $row['site_id']] ?? $prevNetByEmp[$row['employee_id']] ?? null) : null,
                                                         'dtr_days' => count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
-                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
+                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwReqMarks[(int)$row['employee_id']] ?? new stdClass()],
                                                         'notes' => $pcwNotesByEmp[(int)$row['employee_id']] ?? [],
                                                         'msgs' => $pcwMsgsByEmp[(int)$row['employee_id']] ?? [],
                                                         'rv' => $rv, 'rv_c' => (string)($row['review_comment'] ?? ''),
@@ -2487,7 +2503,10 @@ $refund_names = [];   // refund id => display name
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" style="background:#f0eff2;">
-                <div class="d-flex justify-content-between flex-wrap gap-2 mb-3">
+                <!-- Employee + period + tabs pinned as ONE header — scrolling the
+                     day cards must never run content over the employee's name. -->
+                <div class="al-sticky-top">
+                <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
                     <div>
                         <div class="al-meta-label"><i class="ri-user-line me-1"></i>Employee</div>
                         <div class="al-meta-value" id="al-employee"></div>
@@ -2504,6 +2523,7 @@ $refund_names = [];   // refund id => display name
                     <button type="button" class="pcw-tab" data-tab="msgs"><i class="ri-chat-3-line"></i> Messages <span class="pcw-tab-count" id="al-tab-msgs">0</span></button>
                     <button type="button" class="pcw-tab" data-tab="notes"><i class="ri-sticky-note-line"></i> Notes <span class="pcw-tab-count" id="al-tab-notes">0</span></button>
                 </div>
+                </div><!-- /.al-sticky-top -->
                 <div class="pcw-tab-panes">
                     <div class="pcw-tab-pane active" data-pane="dtr">
                         <div id="al-body" class="pcw-dtr-paper"></div>

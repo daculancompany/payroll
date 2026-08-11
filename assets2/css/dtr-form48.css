@@ -79,6 +79,11 @@
 .dtrf48-table th.x-col,
 .dtrf48-table td.x-col { background: #f7fbfa; }
 .dtrf48-table td.x-col.ot   { color: #8a6d1a; }
+/* Approved OT request that day → green + check, apart from raw excess */
+.dtrf48-table td.x-col.ot.ot-appr { color: #0f7a3d; font-weight: 700; }
+.dtrf48-table td.x-col.ot.ot-appr .ot-ok-ic { font-size: 9px; vertical-align: 1px; margin-left: 2px; }
+/* Rendered past the shift end but never filed/approved → visible, clearly unpaid */
+.dtrf48-table td.x-col.ot.ot-raw { color: #b9ad93; font-weight: 400; }
 .dtrf48-table td.x-col.late { color: #b02a37; }
 .dtrf48-table tfoot td { font-weight: 800; background: #efeadb; }
 .dtrf48-table tfoot td.x-col { background: #e9f2ee; }

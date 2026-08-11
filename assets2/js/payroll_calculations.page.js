@@ -592,7 +592,8 @@
         }
         if (ed || e.absent > 0) h += earnRow('Absences', fld(e, 'absent', e.absent) + ' day(s) × ' + fmt(e.per_day), e.absent_amt, true);
         if (ed || e.late_min > 0) h += earnRow('Late', fld(e, 'late', Math.round(e.late_min)) + ' min', e.late_amt, true);
-        if (!ed && !(e.absent > 0) && !(e.late_min > 0)) h += '<tr><td colspan="3" style="color:#4a7d4a;font-size:11.5px;">No absences or tardiness this period.</td></tr>';
+        if (e.ut_min > 0) h += earnRow('Undertime', fmt2(e.ut_min) + ' min', e.ut_amt, true);
+        if (!ed && !(e.absent > 0) && !(e.late_min > 0) && !(e.ut_min > 0)) h += '<tr><td colspan="3" style="color:#4a7d4a;font-size:11.5px;">No absences or tardiness this period.</td></tr>';
         h += '</table></div>';
 
         // B. Earnings
@@ -631,6 +632,10 @@
         // Was Math.round() here while section A prints the same figure to 2dp —
         // one sheet, one quantity, two different numbers.
         if (e.late_amt) h += earnRow('Less: Late', fmt2(e.late_min) + ' min', e.late_amt, true);
+        // Undertime is deducted inside payroll_earnings' gross, so the sheet
+        // must print it — without this line the B-section rows summed to MORE
+        // than the gross they claim to explain (by exactly this amount).
+        if (e.ut_amt) h += earnRow('Less: Undertime', fmt2(e.ut_min) + ' min', e.ut_amt, true);
         // Named one-off allowances for this employee only.
         extrasOfKind(e, 2).forEach(function (x) {
             h += extraRow(e, x, false);
@@ -1480,6 +1485,7 @@
                 logMode: M.log_mode || 'single',
                 compact: true,
                 days: (e.dtr && e.dtr.days) || {},
+                marks: (e.dtr && e.dtr.marks) || {},
                 totals: (e.dtr && e.dtr.totals) || { wh: 0, ot: 0, ut: 0, late: 0 }
             });
         } else {
@@ -1571,7 +1577,20 @@
         // Footer totals — same figures the Form 48 TOTAL row shows, plus this
         // employee's standing in the batch's review round.
         var tot = (e.dtr && e.dtr.totals) || { wh: 0, ot: 0, ut: 0, late: 0 };
-        [['al-tot-wh', tot.wh, 2], ['al-tot-ot', tot.ot, 2],
+        // OT chip shows what payroll PAYS: per day min(rendered, approved
+        // hours), 0 with no approved request — the same rule as the sheet's
+        // TOTAL row and calculate_payroll, so all three always agree.
+        var otPaid = 0, dtrDays = (e.dtr && e.dtr.days) || {}, dtrMarks = (e.dtr && e.dtr.marks) || {};
+        Object.keys(dtrDays).forEach(function (iso) {
+            var dot = Number(dtrDays[iso].ot || 0);
+            if (dot <= 0) return;
+            var appr = false, apprH = 0;
+            (dtrMarks[iso] || []).forEach(function (m) {
+                if (m.k === 'req' && m.t === 'overtime' && m.s === 1) { appr = true; apprH += Number(m.h || 0); }
+            });
+            if (appr) otPaid += apprH > 0 ? Math.min(dot, apprH) : dot;
+        });
+        [['al-tot-wh', tot.wh, 2], ['al-tot-ot', otPaid, 2],
          ['al-tot-ut', tot.ut, 2], ['al-tot-late', tot.late, 0]].forEach(function (t) {
             var el = byId(t[0]);
             if (!el) return;

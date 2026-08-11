@@ -25,6 +25,9 @@ $reasonLabels = [
     'other'        => 'Other',
 ];
 ?>
+<!-- Stored-attachment view + in-app viewer (shared with the portal's request form) -->
+<link rel="stylesheet" href="<?= av('assets2/css/attach-upload.css') ?>">
+<script src="<?= av('assets2/js/attach-upload.js') ?>"></script>
 <div class="main-content">
     <div class="page-content">
         <div class="container-fluid">
@@ -180,7 +183,25 @@ $reasonLabels = [
                                                     <div><b><?= $row['ot_hours_requested'] ?> hrs</b> requested</div>
                                                 <?php endif; ?>
                                             </td>
-                                            <td style="max-width:180px;"><span class="text-muted"><?= nl2br(htmlspecialchars($row['notes'] ?? '')) ?></span></td>
+                                            <td style="max-width:180px;">
+                                                <span class="text-muted"><?= nl2br(htmlspecialchars($row['notes'] ?? '')) ?></span>
+                                                <?php if (!empty($row['attachment'])):
+                                                    $attUrl   = 'uploads/' . rawurlencode($row['attachment']);
+                                                    $attIsPdf = (bool) preg_match('/\.pdf$/i', $row['attachment']); ?>
+                                                    <div style="margin-top:4px;">
+                                                        <?php if ($attIsPdf): ?>
+                                                            <a href="<?= $attUrl ?>" data-att-name="<?= htmlspecialchars($row['attachment']) ?>" class="att-view att-view-pdf" style="padding:4px 9px;font-size:11px;">
+                                                                <i class="ri-file-pdf-2-fill"></i><span>View PDF</span><i class="ri-eye-line att-view-open"></i>
+                                                            </a>
+                                                        <?php else: ?>
+                                                            <a href="<?= $attUrl ?>" data-att-name="<?= htmlspecialchars($row['attachment']) ?>" class="att-view att-view-img" style="max-width:110px;" title="View">
+                                                                <img src="<?= $attUrl ?>" alt="attachment" style="max-height:64px;">
+                                                                <span class="att-view-zoom"><i class="ri-zoom-in-line"></i> View</span>
+                                                            </a>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </td>
                                             <td class="text-center">
                                                 <span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span>
                                                 <?php if ($row['status'] != 0): ?>

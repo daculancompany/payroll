@@ -283,6 +283,7 @@
                                 </a>
                             </li>
                             <?php endif; ?>
+                            <?php /* Refunds — hidden
                             <?php if (page_allowed('refunds')): ?>
                             <li class="nav-item">
                                 <a href="refunds" class="nav-link <?= $page === 'refunds' ? 'active' : '' ?>">
@@ -290,6 +291,7 @@
                                 </a>
                             </li>
                             <?php endif; ?>
+                            */ ?>
                         </ul>
                     </div>
                 </li>
@@ -349,10 +351,11 @@
                 <?php endif; ?>
 
                 <!-- ===== SYSTEM ===== -->
-                <?php if (page_allowed('sites') || page_allowed('users')): ?>
+                <?php if (page_allowed('users')): ?>
                 <li class="menu-title"><span>System</span></li>
                 <?php endif; ?>
 
+                <?php /* Biometric Sites — hidden
                 <?php if (page_allowed('sites')): ?>
                 <li class="nav-item">
                     <a href="sites" class="nav-link menu-link <?= $page === 'sites' ? 'active' : '' ?>">
@@ -360,6 +363,7 @@
                     </a>
                 </li>
                 <?php endif; ?>
+                */ ?>
 
                 <?php if (page_allowed('users')): ?>
                 <?php /* Visitors Logs — hidden

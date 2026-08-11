@@ -589,6 +589,9 @@
 </div>
 
 <!-- ── Add / Edit Loan ───────────────────────────────────────────── -->
+<!-- Shared attachment picker (loan supporting document — image/PDF, max 5 MB) -->
+<link rel="stylesheet" href="<?= av('assets2/css/attach-upload.css') ?>">
+<script src="<?= av('assets2/js/attach-upload.js') ?>"></script>
 <div class="modal fade" id="modal-loan" tabindex="-1" role="dialog">
     <form id="employee-loan" novalidate>
         <input type="hidden" name="id" id="loan_id">
@@ -678,6 +681,17 @@
                             <small class="text-muted" style="font-size:10px;">
                                 Leave blank to start on the loan date. Payrolls ending before this date skip the deduction.
                             </small>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                Attachment <span class="text-muted" style="text-transform:none;font-weight:600;">(optional)</span>
+                            </label>
+                            <div class="att-up" id="loan-attach">
+                                <input type="file" name="attachment" hidden accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+                                <button type="button" class="att-up-btn"><i class="ri-attachment-2"></i> Attach image or PDF…</button>
+                                <div class="att-up-hint">One file only · max <b>5 MB</b> — please compress your attachment (signed loan form, promissory note, etc.).</div>
+                                <div class="att-up-prev"></div>
+                            </div>
                         </div>
                         <div class="col-12">
                             <div style="border:1px solid #e8eaf6;border-radius:4px;padding:8px 12px;background:#f9f9ff;">

@@ -564,8 +564,9 @@ if ($action === 'docs') {
             }
         }
 
-        $reqMap = [];     // eid => 'Y-m-d' => [['t' => 'incident'|'overtime', 's'], ...]
-        $aq = $conn->prepare("SELECT employee_id, request_type, request_date, status
+        $reqMap = [];     // eid => 'Y-m-d' => [['t' => 'incident'|'overtime', 's', 'h'], ...]
+        $aq = $conn->prepare("SELECT employee_id, request_type, request_date, status,
+                                     COALESCE(ot_hours_requested, 0) AS hrs
                               FROM attendance_requests
                               WHERE employee_id IN ($idList) AND status IN (0,1)
                                 AND request_date BETWEEN ? AND ?");
@@ -574,7 +575,7 @@ if ($action === 'docs') {
         $ares = $aq->get_result();
         while ($r = $ares->fetch_assoc()) {
             $reqMap[(int)$r['employee_id']][$r['request_date']][] =
-                ['t' => $r['request_type'], 's' => (int)$r['status']];
+                ['t' => $r['request_type'], 's' => (int)$r['status'], 'h' => (float)$r['hrs']];
         }
 
         // EVERY schedule window these employees have, not just the ones overlapping
@@ -629,12 +630,16 @@ if ($action === 'docs') {
                 $logs = $E['_logs'][$date];
                 sort($logs);
                 $f = function ($ts) { return date('g:i', $ts); };
+                // Single-mode columns are just Arrival/Departure, so unlike the
+                // positional A.M./P.M. grid the cell itself must say which half
+                // of the day the punch fell on.
+                $fa = function ($ts) { return date('g:i A', $ts); };
                 $n = count($logs);
                 // Single-mode cells: plain first-in / last-out for the day.
                 $cells = ['am_in' => '', 'am_out' => '', 'pm_in' => '', 'pm_out' => '', 'in' => '', 'out' => '',
                           'in_off' => 0, 'out_off' => 0];
-                if ($n >= 1) $cells['in']  = $f($logs[0]);
-                if ($n >= 2) $cells['out'] = $f($logs[$n - 1]);
+                if ($n >= 1) $cells['in']  = $fa($logs[0]);
+                if ($n >= 2) $cells['out'] = $fa($logs[$n - 1]);
                 // How many calendar days past the row's own date each punch fell
                 // on. A night shift's out is stored on the day the shift STARTED,
                 // so "6:10" alone reads as if they left before they arrived —
@@ -644,8 +649,8 @@ if ($action === 'docs') {
                 };
                 if ($n >= 1) $cells['in_off']  = max(0, $dayOff($logs[0]));
                 if ($n >= 2) $cells['out_off'] = max(0, $dayOff($logs[$n - 1]));
-                // Full stamp for the marker's tooltip. The cell prints "6:10"
-                // with no AM/PM, so the tooltip is where that gets resolved.
+                // Full stamp for the marker's tooltip — the cell shows only the
+                // clock time, so the tooltip carries the actual calendar date.
                 $tip = function ($ts) { return date('D, M j, Y · g:i A', $ts); };
                 if ($cells['in_off']  > 0) $cells['in_tip']  = $tip($logs[0]);
                 if ($cells['out_off'] > 0) $cells['out_tip'] = $tip($logs[$n - 1]);

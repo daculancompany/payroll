@@ -124,6 +124,7 @@ foreach ($rows as $row) {
         'status_color' => $scolor,
         'status_slug'  => $sslug,
         'reviewer_html'=> $reviewerCard,
+        'attachment'   => $row['attachment'] ?? null,
     ];
 }
 

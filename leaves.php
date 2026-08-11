@@ -68,6 +68,9 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
     return '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-time-line me-1"></i>Pending</span>';
 }
 ?>
+<!-- Stored-attachment view + in-app viewer (shared with the portal's leave form) -->
+<link rel="stylesheet" href="<?= av('assets2/css/attach-upload.css') ?>">
+<script src="<?= av('assets2/js/attach-upload.js') ?>"></script>
 <div class="main-content">
     <div class="page-content">
         <div class="container-fluid">
@@ -233,7 +236,25 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                     <?= date('M d', strtotime($row['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($row['date_to'])) ?>
                                                 </div>
                                             </td>
-                                            <td style="max-width:200px;"><span class="text-muted"><?= nl2br(htmlspecialchars($row['reason'] ?? '')) ?></span></td>
+                                            <td style="max-width:200px;">
+                                                <span class="text-muted"><?= nl2br(htmlspecialchars($row['reason'] ?? '')) ?></span>
+                                                <?php if (!empty($row['attachment'])):
+                                                    $lvAttUrl   = 'uploads/' . rawurlencode($row['attachment']);
+                                                    $lvAttIsPdf = (bool) preg_match('/\.pdf$/i', $row['attachment']); ?>
+                                                    <div style="margin-top:4px;">
+                                                        <?php if ($lvAttIsPdf): ?>
+                                                            <a href="<?= $lvAttUrl ?>" data-att-name="<?= htmlspecialchars($row['attachment']) ?>" class="att-view att-view-pdf" style="padding:4px 9px;font-size:11px;">
+                                                                <i class="ri-file-pdf-2-fill"></i><span>View PDF</span><i class="ri-eye-line att-view-open"></i>
+                                                            </a>
+                                                        <?php else: ?>
+                                                            <a href="<?= $lvAttUrl ?>" data-att-name="<?= htmlspecialchars($row['attachment']) ?>" class="att-view att-view-img" style="max-width:110px;" title="View">
+                                                                <img src="<?= $lvAttUrl ?>" alt="attachment" style="max-height:64px;">
+                                                                <span class="att-view-zoom"><i class="ri-zoom-in-line"></i> View</span>
+                                                            </a>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                <?php endif; ?>
+                                            </td>
                                             <?php foreach ($leave_stage_defs as $skey => $sdef): ?>
                                             <td class="text-center"><?= stageBadge($row[$skey . '_status'], $row[$skey . '_name'] ?? '', $row[$skey . '_remarks'], $row[$skey . '_at'], (int) ($row[$skey . '_by'] ?? 0)) ?></td>
                                             <?php endforeach; ?>

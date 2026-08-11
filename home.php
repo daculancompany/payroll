@@ -360,7 +360,7 @@ $recent_dtr = $conn->query("
 ");
 ?>
 <style>
-    .dash-stat { border-top:3px solid #673bb6; border-radius:6px; background:#fff; padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 4px rgba(57,75,124,.07); transition:box-shadow .2s; }
+    .dash-stat { height:100%; border-top:3px solid #673bb6; border-radius:6px; background:#fff; padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 4px rgba(57,75,124,.07); transition:box-shadow .2s; }
     .dash-stat:hover { box-shadow:0 4px 16px rgba(57,75,124,.13); }
     .dash-stat .ds-icon { width:44px; height:44px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:21px; flex-shrink:0; }
     .dash-stat .ds-val { font-size:22px; font-weight:800; color:#673bb6; line-height:1; }

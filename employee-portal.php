@@ -553,6 +553,9 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <link href="<?= av('assets2/css/theme.css') ?>" rel="stylesheet">
 <!-- Clock-face timepicker web component (File a Request claimed times) — https://github.com/loebi-ch/clock-timepicker -->
 <script type="module" src="assets2/vendor/clock-timepicker.js"></script>
+<!-- Shared attachment picker (File a Request proof — image/PDF, max 5 MB) -->
+<link rel="stylesheet" href="<?= av('assets2/css/attach-upload.css') ?>">
+<script src="<?= av('assets2/js/attach-upload.js') ?>"></script>
 <style>
 *{box-sizing:border-box;}
 body{
@@ -1481,6 +1484,11 @@ clock-timepicker{
 .ctp-12h clock-timepicker{position:absolute;inset:0;}
 .ctp-12h clock-timepicker input{width:100%;height:100%;opacity:0;border:0;padding:0;background:transparent;}
 .ctp-12h:focus-within .ctp-display{border-color:#6642aa;box-shadow:0 0 0 .25rem rgba(102,66,170,.15);}
+/* Clear (×) — sits ABOVE the invisible picker overlay so its tap wins */
+.ctp-12h .ctp-clear{position:absolute;top:50%;right:8px;transform:translateY(-50%);z-index:2;
+    border:0;background:transparent;color:#9a94ab;font-size:17px;line-height:1;padding:2px;cursor:pointer;display:none;}
+.ctp-12h .ctp-clear:hover{color:#c62828;}
+.ctp-12h.has-val .ctp-clear{display:block;}
 .bootstrap-datetimepicker-widget a[data-action] span::after{
     font-family:'Segoe UI',-apple-system,Arial,sans-serif;font-size:12.5px;font-weight:800;margin-left:6px;line-height:1;}
 .bootstrap-datetimepicker-widget a[data-action="clear"]{background:#fdecea;color:#c62828;}
@@ -3034,6 +3042,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'days'     => rtrim(rtrim(number_format($ml['duration'], 1), '0'), '.'),
                         'half'     => $ml['is_half_day'] ? ($ml['half_period'] . ' half' . (!empty($ml['half_date']) ? ' · ' . date('M j', strtotime($ml['half_date'])) : '')) : '',
                         'reason'   => (string)($ml['reason'] ?? ''),
+                        'attachment' => $ml['attachment'] ?? null,
                         'status'   => (int)$ml['status'],
                         'rej'      => $rej,
                         'timeline' => leave_timeline_html($ml),
@@ -3731,6 +3740,9 @@ function openLeaveDetail(id) {
         + (d.half ? ' <span style="background:#fff8e8;color:#fd7e14;border-radius:8px;padding:1px 7px;font-size:10px;font-weight:700;">' + escapeHtml(d.half) + '</span>' : '') + '</div>'
         + '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">Period</div>' + escapeHtml(d.period) + '</div>'
         + (d.reason ? '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">Reason</div>' + escapeHtml(d.reason) + '</div>' : '')
+        + (d.attachment && window.AttachUpload
+            ? '<div class="col-12"><div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">Attachment</div><div style="margin-top:4px;">' + AttachUpload.viewHTML(d.attachment) + '</div></div>'
+            : '')
         + '</div>'
         + (d.rej ? '<div style="background:#fff0f0;color:#dc3545;border-radius:10px;padding:8px 12px;font-size:12px;margin-bottom:10px;"><i class="ri-information-line me-1"></i><b>Rejected:</b> ' + escapeHtml(d.rej) + '</div>' : '')
         + '<div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">Approval Timeline</div>'
@@ -4159,13 +4171,21 @@ document.addEventListener('DOMContentLoaded', function () {
 // ── AJAX submit: Leave / LWOP / Attendance requests (no page reload) ─────────
 function ajaxSubmitForm(form, action, onSuccess) {
     var fd = new FormData(form);
-    var params = new URLSearchParams();
-    fd.forEach(function (v, k) { params.append(k, v); });
-    fetch('emp-portal-ajax.php?action=' + action, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: params.toString()
-    }).then(function (r) { return r.json(); }).then(function (res) {
+    // A form carrying a real file must go up as multipart — flattening it into
+    // URL-encoded params silently drops the file. CSRF rides the X-CSRF-Token
+    // header (csrf.js), so both encodings pass the same check.
+    var hasFile = false;
+    fd.forEach(function (v) { if (v instanceof File && v.size > 0) hasFile = true; });
+    var opts = { method: 'POST', credentials: 'same-origin' };
+    if (hasFile) {
+        opts.body = fd;                     // browser sets the multipart boundary
+    } else {
+        var params = new URLSearchParams();
+        fd.forEach(function (v, k) { if (!(v instanceof File)) params.append(k, v); });
+        opts.headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+        opts.body = params.toString();
+    }
+    fetch('emp-portal-ajax.php?action=' + action, opts).then(function (r) { return r.json(); }).then(function (res) {
         if (res.result) {
             Swal.fire({ icon: 'success', title: 'Done', text: res.message, timer: 2500, showConfirmButton: false });
             onSuccess(res);
@@ -4208,6 +4228,7 @@ wireAjaxForm('leave-request-form', 'submit_leave_request', function (res) {
     form.reset();
     if (window.jQuery && jQuery.fn.parsley) jQuery(form).parsley().reset();
     if (_lvPicker) { _lvPicker.destroy(); _lvPicker = null; }
+    if (window.AttachUpload) AttachUpload.clear(document.getElementById('lv-attach'));
     document.getElementById('lv-dur').style.display = 'none';
     // Keep the live balance in step with the just-filed (now pending) request.
     if (res.request && res.request.leave_type_id in LV_REMAIN) {
@@ -4229,6 +4250,7 @@ wireAjaxForm('lwop-request-form', 'submit_leave_request', function (res) {
     form.reset();
     if (window.jQuery && jQuery.fn.parsley) jQuery(form).parsley().reset();
     if (_lwopPicker) _lwopPicker.clear();
+    if (window.AttachUpload) AttachUpload.clear(document.getElementById('lwop-attach'));
     setLwopDuration('full');
     setLwopHalfOn('first');
     document.getElementById('lwop-dates-hidden').value = '';
@@ -4243,6 +4265,7 @@ wireAjaxForm('att-request-form', 'submit_attendance_request', function (res) {
     document.getElementById('att-request-form').reset();
     document.getElementById('att-req-date').value = '';
     document.getElementById('att-req-date-hidden').value = '';
+    if (window.AttachUpload) AttachUpload.clear(document.getElementById('att-req-attach'));
     toggleAttFields('');
     prependAttRequestRow(res.request);
     PENDING.att = res.att_req_pending_count;
@@ -5547,6 +5570,7 @@ $(function () {
         $('#att-req-date-hidden').val(picker.startDate.format('YYYY-MM-DD'));
         if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().validate();
         refreshOtLimit();               // OT ceiling is per-date — re-check it
+        attPrefillSched();              // claimed in/out from the rostered shift
     });
     $rd.on('cancel.daterangepicker', function () {
         $rd.val('');
@@ -5561,8 +5585,9 @@ $(function () {
 // expects; the .ctp-display twin mirrors it as 12-hour text ("8:00 PM").
 $(function () {
     document.querySelectorAll('#att-request-form .ctp-12h').forEach(function (wrap) {
-        var ctp  = wrap.querySelector('clock-timepicker');
-        var disp = wrap.querySelector('.ctp-display');
+        var ctp   = wrap.querySelector('clock-timepicker');
+        var disp  = wrap.querySelector('.ctp-display');
+        var clear = wrap.querySelector('.ctp-clear');
         function sync() {
             var v = ctp.value;                       // 'HH:mm' or undefined
             if (v) {
@@ -5571,11 +5596,46 @@ $(function () {
             } else {
                 disp.value = '';
             }
+            wrap.classList.toggle('has-val', !!v);
             if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().validate();
         }
         ctp.addEventListener('input', sync);         // live while the popup is open
         ctp.addEventListener('change', sync);
+        wrap._ctpSync = sync;                        // the schedule prefill below reuses it
+        if (clear) clear.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();                     // must not fall through to the picker overlay
+            ctp.value = '';
+            var inner = ctp.querySelector('input');
+            if (inner) inner.value = '';
+            sync();
+        });
     });
+});
+
+// ── Claimed times prefilled from the shift the employee is ACTUALLY rostered on
+// for the chosen date (sched_for_date). Fires when the date is picked and when
+// the type flips to incident; only ever fills EMPTY fields, so a time the
+// employee already set (or adjusted) is never overwritten.
+function attPrefillSched() {
+    var d    = (document.getElementById('att-req-date-hidden') || {}).value;
+    var type = (document.getElementById('att-req-type') || {}).value;
+    if (!d || type !== 'incident') return;
+    $.getJSON('emp-portal-ajax.php', { action: 'sched_for_date', request_date: d }, function (r) {
+        if (!(r && r.result)) return;
+        document.querySelectorAll('#att-request-form .ctp-12h').forEach(function (wrap) {
+            var ctp   = wrap.querySelector('clock-timepicker');
+            var inner = ctp.querySelector('input');
+            if (ctp.value) return;                   // already set — hands off
+            ctp.value = (inner && inner.name === 'claimed_time_in') ? r.start : r.end;
+            if (inner) inner.value = ctp.value || '';
+            if (wrap._ctpSync) wrap._ctpSync();
+        });
+    });
+}
+$(function () {
+    var typeSel = document.getElementById('att-req-type');
+    if (typeSel) typeSel.addEventListener('change', attPrefillSched);
 });
 
 function clearAttFilter() {
@@ -5609,6 +5669,9 @@ function openAreqDetail(r) {
         + '<div class="col-6">' + lbl('Filed') + (r.filed || '—') + '</div>'
         + '<div class="col-12">' + lbl('Reason') + (r.reason_plain || '—') + '</div>'
         + '<div class="col-12">' + lbl('Details') + (r.details_html || '—') + '</div>'
+        + (r.attachment && window.AttachUpload
+            ? '<div class="col-12">' + lbl('Attachment') + '<div style="margin-top:4px;">' + AttachUpload.viewHTML(r.attachment) + '</div></div>'
+            : '')
         + '</div>'
         + (r.reviewer_html
             ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e7e6ed;font-size:12px;color:#555;">' + lbl('Reviewer Notes') + r.reviewer_html + '</div>'
@@ -6036,6 +6099,16 @@ jQuery(function ($) {
                             <textarea name="reason" class="form-control" rows="3" placeholder="State the reason for your leave"
                                 data-parsley-required-message="Please state your reason for leave." required></textarea>
                         </div>
+                        <!-- Optional proof (medical certificate, etc.), previewed before submit -->
+                        <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Attachment <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span></label>
+                            <div class="att-up" id="lv-attach">
+                                <input type="file" name="attachment" hidden accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+                                <button type="button" class="att-up-btn"><i class="ri-attachment-2"></i> Attach image or PDF…</button>
+                                <div class="att-up-hint">One file only · max <b>5 MB</b> — please compress your attachment (medical certificate, supporting document).</div>
+                                <div class="att-up-prev"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -6120,6 +6193,15 @@ jQuery(function ($) {
                             <textarea name="reason" class="form-control" rows="2" placeholder="State the reason for LWOP"
                                 data-parsley-required-message="Please state your reason for LWOP." required></textarea>
                         </div>
+                        <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#c62828;text-transform:uppercase;letter-spacing:.4px;">Attachment <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span></label>
+                            <div class="att-up" id="lwop-attach">
+                                <input type="file" name="attachment" hidden accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+                                <button type="button" class="att-up-btn"><i class="ri-attachment-2"></i> Attach image or PDF…</button>
+                                <div class="att-up-hint">One file only · max <b>5 MB</b> — please compress your attachment.</div>
+                                <div class="att-up-prev"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -6183,6 +6265,7 @@ jQuery(function ($) {
                                 <clock-timepicker format="HH:mm" precision="00:05">
                                     <input type="text" name="claimed_time_in" autocomplete="off">
                                 </clock-timepicker>
+                                <button type="button" class="ctp-clear" title="Clear time" tabindex="-1"><i class="ri-close-circle-fill"></i></button>
                             </div>
                         </div>
                         <div class="col-6 att-incident-field" style="display:none;">
@@ -6193,6 +6276,7 @@ jQuery(function ($) {
                                 <clock-timepicker format="HH:mm" precision="00:05">
                                     <input type="text" name="claimed_time_out" autocomplete="off">
                                 </clock-timepicker>
+                                <button type="button" class="ctp-clear" title="Clear time" tabindex="-1"><i class="ri-close-circle-fill"></i></button>
                             </div>
                         </div>
 
@@ -6216,6 +6300,17 @@ jQuery(function ($) {
                         <div class="col-12">
                             <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Notes / Explanation</label>
                             <textarea name="notes" class="form-control" rows="2" placeholder="Describe what happened…"></textarea>
+                        </div>
+
+                        <!-- Optional proof: one image or PDF, previewed before submit -->
+                        <div class="col-12">
+                            <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Attachment <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span></label>
+                            <div class="att-up" id="att-req-attach">
+                                <input type="file" name="attachment" hidden accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf">
+                                <button type="button" class="att-up-btn"><i class="ri-attachment-2"></i> Attach image or PDF…</button>
+                                <div class="att-up-hint">One file only · max <b>5 MB</b> — please compress your attachment before uploading (photo of the authorization slip, medical note, etc.).</div>
+                                <div class="att-up-prev"></div>
+                            </div>
                         </div>
                     </div>
                 </div>

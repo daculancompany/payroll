@@ -741,10 +741,14 @@ $("#employee-loan").on("submit", async function (e) {
             },
         });
         await new Promise((resolve) => setTimeout(resolve, 1000));
+        // FormData, not serialize(): the optional attachment (image/PDF proof)
+        // only survives a multipart post — serialize() silently drops files.
         $.ajax({
             url: "ajax.php?action=save_employee_loan",
             method: "POST",
-            data: $(this).serialize(),
+            data: new FormData(this),
+            processData: false,
+            contentType: false,
             error: (xhr, status, error) => {
                 Swal.close();
                 handleError(error || "");
@@ -771,6 +775,15 @@ $("#employee-loan").on("submit", async function (e) {
                             window.location.reload();
                         }
                     });
+                } else {
+                    // Server-side attachment validation (size/type) returns its
+                    // message as text instead of the 1/2 success codes.
+                    Swal.fire({
+                        icon: "error",
+                        title: "Error!",
+                        text: (typeof resp === "string" && resp.trim()) ? resp.trim() : "Could not save the loan.",
+                    });
+                    $(".submitbutton").removeAttr("disabled");
                 }
             },
         });

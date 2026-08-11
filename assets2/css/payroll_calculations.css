@@ -993,6 +993,13 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 /* ── Tabs inside the Daily Time Record modal (DTR · Logs · Messages · Notes) ── */
 .pcw-tabs { display:flex; gap:4px; border-bottom:2px solid #ddd9e7; margin-bottom:12px; flex-wrap:wrap;
   position:sticky; top:0; z-index:5; background:#f0eff2; padding-top:2px; }
+/* Employee + period + tabs pinned as ONE block at the top of the scrolling
+   modal body. The tabs alone used to be sticky, so day cards scrolled straight
+   over the employee's name; the negative margins stretch the pinned block over
+   the body's own padding so nothing peeks through beside it. */
+.al-sticky-top { position:sticky; top:0; z-index:6; background:#f0eff2;
+  margin:-1rem -1rem 12px; padding:1rem 1rem 0; }
+.al-sticky-top .pcw-tabs { position:static; margin-bottom:0; }
 .pcw-tab { display:inline-flex; align-items:center; gap:5px; border:none; background:transparent; cursor:pointer;
   padding:8px 14px; margin-bottom:-2px; font-size:12px; font-weight:700; color:#635f73;
   border-bottom:2px solid transparent; border-radius:6px 6px 0 0; transition:color .12s, border-color .12s, background .12s; }

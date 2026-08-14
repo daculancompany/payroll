@@ -600,6 +600,30 @@ if ($action === 'docs') {
         $sres = $sq->get_result();
         while ($sr = $sres->fetch_assoc()) $schedMap[(int)$sr['employee_id']][] = $sr;
 
+        // Published duty-roster days for this batch. This sheet had no idea the
+        // duty roster existed: a rotating nurse's UNSTAMPED days (future dates,
+        // absences, anything not yet punched) fell back to the period roster and
+        // the weekday rest-day CSV — and for rotating staff that CSV is not a
+        // rough answer, it is the wrong one. It stamped DAY OFF on days they
+        // were rostered to work and left their real days off unmarked.
+        // Worked days were already correct: those carry the shift stamp, which
+        // was written from the resolver that does know about the roster.
+        $dutyMap = [];   // eid => [Y-m-d => row]
+        $dq = $conn->prepare("SELECT eds.employee_id, eds.work_date, eds.is_rest_day,
+                                     ws.description AS sched_name, ws.start_time, ws.end_time, ws.is_graveyard
+                              FROM employee_day_schedule eds
+                              LEFT JOIN work_schedules ws ON ws.id = eds.schedule_id
+                              WHERE eds.employee_id IN ($idList) AND eds.status = 1
+                                AND eds.work_date BETWEEN ? AND ?");
+        if ($dq) {
+            $dq->bind_param('ss', $dFrom, $dTo);
+            $dq->execute();
+            $dres = $dq->get_result();
+            while ($dr = $dres->fetch_assoc()) {
+                $dutyMap[(int)$dr['employee_id']][$dr['work_date']] = $dr;
+            }
+        }
+
         // Internal admin notes for these employees in this batch (admin-only,
         // never sent to the employee side). Guarded for older databases.
         $noteMap = [];
@@ -694,6 +718,11 @@ if ($action === 'docs') {
                 // Deliberately covering-only — marking someone off duty on the
                 // strength of an assignment that doesn't cover the day would be
                 // inventing a day off.
+                // A published duty-roster day answers outright — it is the fact
+                // for that date, and the weekday CSV below cannot speak for
+                // someone whose day off moves through the week.
+                $duty = $dutyMap[$eid][$ymd] ?? null;
+
                 $rest = null;
                 foreach ($sch as $srow) {
                     if ($srow['effective_from'] <= $ymd
@@ -722,6 +751,12 @@ if ($action === 'docs') {
                         'end_time'    => $ws['end_time'],
                         'is_graveyard' => $ws['is_graveyard'],
                     ];
+                } elseif ($duty && !empty($duty['sched_name'])) {
+                    // 1b. Unstamped, but the ward published a shift for this
+                    //     exact date. That is a fact, not a guess — same
+                    //     precedence resolve_employee_schedule() applies, so the
+                    //     sheet shows what the day will actually compute against.
+                    $shift = $duty;
                 } else {
                     // 2. Unstamped day (no attendance, or a row predating the
                     //    column) — fall back to employee_schedules. A period that
@@ -748,10 +783,13 @@ if ($action === 'docs') {
                         'inf' => $inf,
                     ];
                 }
-                if ($rest !== null && $rest !== ''
-                    && in_array((int)date('w', $d), array_map('intval', explode(',', $rest)), true)) {
-                    $m[] = ['k' => 'off'];
-                }
+                // Day off: the roster's own flag when the day is rostered, the
+                // weekday CSV only for staff who are not.
+                $isOff = $duty
+                    ? ((int) $duty['is_rest_day'] === 1)
+                    : ($rest !== null && $rest !== ''
+                       && in_array((int)date('w', $d), array_map('intval', explode(',', $rest)), true));
+                if ($isOff) $m[] = ['k' => 'off'];
                 foreach (($reqMap[$eid][$ymd] ?? []) as $rq) $m[] = ['k' => 'req'] + $rq;
                 if ($m) $marks[$ymd] = $m;
             }

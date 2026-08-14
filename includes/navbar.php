@@ -41,27 +41,51 @@
 
                 <?php elseif (is_leave_approver($login_role)): ?>
                 <!-- ═══ SUPERVISOR / DEPARTMENT HEAD ═══
-                     Leave-only slice: their department's dashboard and the
-                     requests awaiting their approval. No DTR, no payroll, no
-                     salary. index.php enforces the same list server-side, so
-                     this menu is convenience, not the security boundary. -->
+                     Their own department only: leave they must decide, and the
+                     duty roster they plan it against. No DTR, no payroll, no
+                     salary.
+
+                     Every item is gated on page_allowed() rather than simply
+                     written out. This branch used to be a hardcoded list of
+                     three, and when duty-roster was added to
+                     LEAVE_APPROVER_ALLOWED_PAGES the page became reachable by
+                     URL while no menu item ever appeared — the list and the
+                     allowlist had silently drifted apart. Asking the same
+                     function index.php asks keeps them in step. -->
                 <li class="menu-title"><span>Leave Management</span></li>
 
+                <?php if (page_allowed('leave-dashboard')): ?>
                 <li class="nav-item">
                     <a href="leave-dashboard" class="nav-link menu-link <?= $page === 'leave-dashboard' ? 'active' : '' ?>">
                         <i class="ri-dashboard-fill"></i> <span>Leave Dashboard</span>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if (page_allowed('leaves')): ?>
                 <li class="nav-item">
                     <a href="leaves" class="nav-link menu-link <?= $page === 'leaves' ? 'active' : '' ?>">
                         <i class="ri-file-list-3-line"></i> <span>Leave Requests</span>
                     </a>
                 </li>
+                <?php endif; ?>
+                <?php if (page_allowed('calendar')): ?>
                 <li class="nav-item">
                     <a href="calendar" class="nav-link menu-link <?= $page === 'calendar' ? 'active' : '' ?>">
                         <i class="ri-calendar-2-line"></i> <span>Holiday Calendar</span>
                     </a>
                 </li>
+                <?php endif; ?>
+
+                <?php if (page_allowed('duty-roster')): ?>
+                <li class="menu-title"><span>Scheduling</span></li>
+                <li class="nav-item">
+                    <!-- Full-viewport page of its own, so it is linked directly
+                         rather than through index.php's ?page= router. -->
+                    <a href="duty-roster.php" class="nav-link menu-link">
+                        <i class="ri-calendar-schedule-line"></i> <span>Duty Roster</span>
+                    </a>
+                </li>
+                <?php endif; ?>
 
                 <?php else: ?>
 
@@ -107,7 +131,7 @@
                 <?php
                 $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests'];
                 $att_shown  = array_filter($att_pages, 'page_allowed');
-                $sched_shown = array_filter(['work-schedules','schedule-roster'], 'page_allowed');
+                $sched_shown = array_filter(['work-schedules','schedule-roster','duty-roster'], 'page_allowed');
                 ?>
                 <?php if ($sched_shown || $att_shown): ?>
                 <li class="menu-title"><span>Scheduling &amp; Time</span></li>
@@ -124,6 +148,15 @@
                 <li class="nav-item">
                     <a href="schedule-roster" class="nav-link menu-link <?= $page === 'schedule-roster' ? 'active' : '' ?>">
                         <i class="ri-calendar-todo-line"></i> <span>Shift Roster</span>
+                    </a>
+                </li>
+                <?php endif; ?>
+                <?php if (page_allowed('duty-roster')): ?>
+                <li class="nav-item">
+                    <!-- Full-viewport page of its own (like dtr-documents.php), so it is
+                         linked directly rather than through index.php's ?page= router. -->
+                    <a href="duty-roster.php" class="nav-link menu-link">
+                        <i class="ri-calendar-schedule-line"></i> <span>Duty Roster</span>
                     </a>
                 </li>
                 <?php endif; ?>

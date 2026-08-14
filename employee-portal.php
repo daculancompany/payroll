@@ -2298,6 +2298,87 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <div style="font-size:13px;color:#908c9c;"><i class="ri-information-line me-1"></i>No work schedule assigned yet.</div>
             <?php endif; ?>
 
+            <?php
+            // Published duty-roster days from today on. Rotating staff (nurses)
+            // are planned per DAY, so the fixed shift + weekday day-off above is
+            // not their real answer — this is. Only published rows are read:
+            // drafts are the planner's working copy and must not reach anyone.
+            $duty_days = [];
+            $dq2 = $conn->query("SELECT eds.work_date, eds.is_rest_day, ws.description, ws.start_time, ws.end_time, ws.is_graveyard
+                FROM employee_day_schedule eds
+                LEFT JOIN work_schedules ws ON ws.id = eds.schedule_id
+                WHERE eds.employee_id = $emp_id AND eds.status = 1
+                  AND eds.work_date >= CURDATE() AND eds.work_date <= DATE_ADD(CURDATE(), INTERVAL 45 DAY)
+                ORDER BY eds.work_date ASC");
+            while ($dq2 && $dd = $dq2->fetch_assoc()) $duty_days[] = $dd;
+            ?>
+            <?php if (count($duty_days)): ?>
+            <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e8e7eb;">
+                <?php
+                // The strip runs 45 days and therefore crosses months, but each
+                // chip only ever said "SUN 14" — with no month anywhere on the
+                // panel, a chip in the second month read as a date in the first.
+                $dutyFrom = $duty_days[0]['work_date'];
+                $dutyTo   = $duty_days[count($duty_days) - 1]['work_date'];
+                $dutyLbl  = date('M j', strtotime($dutyFrom))
+                          . ' – ' . date('M j, Y', strtotime($dutyTo));
+                ?>
+                <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                    <div style="font-size:10px;color:#57339d;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">
+                        <i class="ri-calendar-schedule-line me-1"></i>My Duty Schedule
+                    </div>
+                    <div style="font-size:10.5px;color:#908c9c;font-weight:600;"><?= htmlspecialchars($dutyLbl) ?></div>
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+                    <?php $curMonth = null; ?>
+                    <?php foreach ($duty_days as $dd):
+                        $rest = (int) $dd['is_rest_day'] === 1;
+                        $today = $dd['work_date'] === date('Y-m-d');
+                        // A month marker wherever the strip rolls over, so a "14"
+                        // in the second month is never read as one in the first.
+                        $mon = date('M Y', strtotime($dd['work_date']));
+                        if ($mon !== $curMonth):
+                            $curMonth = $mon; ?>
+                            <div style="font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+                                        color:#57339d;background:#f1ecfa;border:1px solid #ddd3f0;border-radius:7px;
+                                        padding:5px 8px;align-self:stretch;display:flex;align-items:center;">
+                                <?= htmlspecialchars(strtoupper(date('M', strtotime($dd['work_date'])))) ?>
+                                <span style="color:#9b93b5;margin-left:3px;"><?= date('y', strtotime($dd['work_date'])) ?></span>
+                            </div>
+                        <?php endif; ?>
+                        <?php
+                        // Same shortening the planner's grid uses ("NOC / 11-7
+                        // (11PM-7AM)" → "NOC"), so the chip and the roster the
+                        // ward posted read as the same word.
+                        $lbl = 'OFF';
+                        if (!$rest) {
+                            $lbl = '—';
+                            if ($dd['description']) {
+                                $lbl = explode('/', explode('(', $dd['description'])[0])[0];
+                                $lbl = mb_substr(trim($lbl), 0, 5) ?: '—';
+                            }
+                        }
+                        // The full date leads the tooltip — the chip shows a bare
+                        // day number, so this is the only place the whole date
+                        // is ever spelled out.
+                        $tip = date('l, M j, Y', strtotime($dd['work_date'])) . "\n"
+                             . ($rest ? 'Rest day (off duty)' : ($dd['description']
+                                ? $dd['description'] . ' · ' . date('h:i A', strtotime($dd['start_time'])) . ' – ' . date('h:i A', strtotime($dd['end_time']))
+                                : 'No shift set'));
+                    ?>
+                    <div title="<?= htmlspecialchars($tip) ?>" style="min-width:58px;text-align:center;border-radius:9px;padding:5px 7px;border:1px solid <?= $today ? '#673bb6' : '#e8e7eb' ?>;background:<?= $rest ? '#f6f6f8' : ($dd['is_graveyard'] ? '#2f3350' : '#f4f1fa') ?>;">
+                        <div style="font-size:9.5px;font-weight:700;letter-spacing:.3px;color:<?= $dd['is_graveyard'] && !$rest ? '#c9c6da' : '#908c9c' ?>;"><?= date('D', strtotime($dd['work_date'])) ?></div>
+                        <div style="font-size:13px;font-weight:800;color:<?= $dd['is_graveyard'] && !$rest ? '#fff' : '#2b2639' ?>;"><?= date('j', strtotime($dd['work_date'])) ?></div>
+                        <div style="font-size:9.5px;font-weight:700;color:<?= $rest ? '#a9a5b6' : ($dd['is_graveyard'] ? '#fff' : '#57339d') ?>;"><?= htmlspecialchars($lbl) ?></div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <div style="font-size:11px;color:#908c9c;margin-top:8px;">
+                    <i class="ri-information-line me-1"></i>Your ward plans duty per day. These days override the fixed shift above.
+                </div>
+            </div>
+            <?php endif; ?>
+
             <?php if (count($sched_upcoming)): ?>
             <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e8e7eb;">
                 <div style="font-size:10px;color:#ad6800;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;"><i class="ri-calendar-schedule-line me-1"></i>Upcoming Changes</div>

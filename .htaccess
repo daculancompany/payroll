@@ -1,5 +1,29 @@
 RewriteEngine On
 
+# ── Force HTTPS ──────────────────────────────────────────────────────────
+# includes/session_bootstrap.php marks the session cookie Secure whenever the
+# request arrives over HTTPS. With no redirect, the same browser could reach
+# the app on both schemes: the cookie set on https:// is then withheld on any
+# http:// request, PHP sees no session, and the user is bounced to the login
+# page — intermittently, and differently on every machine, because HSTS and
+# Chrome's HTTPS-First upgrade are per-browser state. Pinning the site to one
+# scheme is what makes the session cookie behave the same everywhere.
+#
+# Three independent HTTPS signals are checked before redirecting. Behind a
+# TLS-terminating proxy (LiteSpeed on shared hosting) only some of them are
+# set, and redirecting on a false negative would be an infinite loop, so the
+# rule fires only when all three say plain HTTP.
+RewriteCond %{HTTPS} !=on
+RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+RewriteCond %{SERVER_PORT} !=443
+# Local XAMPP has no certificate; leave development on plain HTTP.
+# HTTP_HOST carries the port when it is not 80, so localhost:8080 must still
+# match here — without the optional port group it would fall through and get
+# redirected to a certificate that does not exist.
+RewriteCond %{HTTP_HOST} !^(localhost|127\.0\.0\.1|.*\.local|.*\.test)(:[0-9]+)?$ [NC]
+RewriteCond %{HTTP_HOST} !^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.) [NC]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
 # ── Access ───────────────────────────────────────────────────────────────
 # Explicitly allow every visitor IP/network. This app does its own auth in
 # PHP; no LAN or IP range should ever be denied at the web-server level.
@@ -84,6 +108,11 @@ RedirectMatch 404 /\.DS_Store
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
     # Keep payroll data out of search indexes even if a box is internet-facing.
     Header always set X-Robots-Tag "noindex, nofollow"
+    # Make the browser go straight to HTTPS from then on, so a fresh machine
+    # never touches http:// even once — the redirect above only fixes the
+    # request that already went out. env=HTTPS keeps this off the plain-HTTP
+    # LAN/XAMPP installs, where advertising HSTS would lock the site out.
+    Header always set Strict-Transport-Security "max-age=31536000" env=HTTPS
 </IfModule>
 
 # Serve the PWA manifest with the correct MIME type (some Apache builds don't

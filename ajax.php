@@ -626,6 +626,28 @@ if ($action == 'plan_clear') {
 if ($action == 'plan_apply_all') {
     echo json_encode($crud->plan_apply_all());
 }
+// ── Duty Roster (per-day cutoff grid for rotating staff) ──
+if ($action == 'duty_roster_data') {
+    echo json_encode($crud->duty_roster_data());
+}
+if ($action == 'duty_roster_save') {
+    echo json_encode($crud->duty_roster_save());
+}
+if ($action == 'duty_roster_publish') {
+    echo json_encode($crud->duty_roster_publish());
+}
+if ($action == 'duty_roster_copy') {
+    echo json_encode($crud->duty_roster_copy());
+}
+if ($action == 'duty_roster_clear_drafts') {
+    echo json_encode($crud->duty_roster_clear_drafts());
+}
+if ($action == 'duty_roster_recompute') {
+    echo json_encode($crud->duty_roster_recompute());
+}
+if ($action == 'duty_roster_import') {
+    echo json_encode($crud->duty_roster_import());
+}
 if ($action == 'get_employee_schedule_history') {
     echo json_encode($crud->get_employee_schedule_history());
 }

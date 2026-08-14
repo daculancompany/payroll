@@ -68,13 +68,20 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
                                     <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                         <i class="ri-user-search-line me-1"></i>Select Employee
                                     </label>
-                                    <select name="emp" id="emp-select" class="form-control" data-live-search="true" required>
+                                    <!-- Global custom select (assets2/js/custom-select.js): no init call
+                                         needed, and no .select2() — that shim hands the field to
+                                         bootstrap-select instead, which is what this used to do. -->
+                                    <select name="emp" id="emp-select" class="form-select" required
+                                            data-cs-title="Select Employee" data-cs-icon="ri-user-search-line"
+                                            data-cs-search="true">
                                         <option value="">Search employee…</option>
                                         <?php
                                         $emps = $conn->query("SELECT id, employee_no, firstname, lastname FROM employee WHERE status = 1" . dept_scope_sql('department_id') . " ORDER BY lastname ASC");
                                         if ($emps) while ($e = $emps->fetch_assoc()):
                                         ?>
-                                            <option value="<?= $e['id'] ?>" <?= $sel_emp == $e['id'] ? 'selected' : '' ?>>
+                                            <option value="<?= $e['id'] ?>" <?= $sel_emp == $e['id'] ? 'selected' : '' ?>
+                                                    data-cs-name="<?= htmlspecialchars($e['lastname'] . ', ' . $e['firstname']) ?>"
+                                                    data-cs-sub="<?= htmlspecialchars($e['employee_no']) ?>">
                                                 <?= htmlspecialchars($e['lastname'] . ', ' . $e['firstname']) ?> (<?= htmlspecialchars($e['employee_no']) ?>)
                                             </option>
                                         <?php endwhile; ?>
@@ -472,12 +479,6 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    if (window.jQuery && jQuery.fn.select2) {
-        jQuery('#emp-select').select2({ placeholder: 'Search employee…', width: '100%' });
-    }
-});
-
 // Save the per-employee leave eligibility override.
 document.getElementById('leave-override-save')?.addEventListener('click', function () {
     const btn = this;

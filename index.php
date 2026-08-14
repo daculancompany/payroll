@@ -30,6 +30,12 @@ if (($_GET['page'] ?? '') === 'payroll_calculations') {
     header('Location: payroll_calculations.php?id=' . (int)($_GET['id'] ?? 0));
     exit;
 }
+// The duty roster is a full-viewport grid on its own page (like dtr-documents.php),
+// so ?page=duty-roster links from bookmarks or older builds land there.
+if (($_GET['page'] ?? '') === 'duty-roster') {
+    header('Location: duty-roster.php');
+    exit;
+}
 ?>
 
 <?php include 'includes/header.php' ?>

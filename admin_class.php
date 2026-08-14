@@ -1172,8 +1172,45 @@ class Action
     }
 
     // True if $ymd (a Y-m-d date) falls on one of the employee's rest days per $periods.
-    private function isRestDay($periods, $ymd)
+    // Published duty-roster rest flags for the payroll range being processed,
+    // keyed [employee_id][Y-m-d]. Loaded once per run by loadDutyRestMap().
+    private $dutyRestMap = [];
+
+    /**
+     * Preload the duty roster's rest flags for one date range.
+     *
+     * The tallies that walk DATES rather than DTR rows — expected working days
+     * for a monthly rate, paid-leave eligibility — ask isRestDay() about days
+     * that may have no attendance row at all, so there is no stamp to read.
+     * For a rotating employee the weekday CSV underneath is meaningless (their
+     * day off moves through the week), and without this map a nurse's absences
+     * were counted against a Mon-Fri week they were never on.
+     */
+    private function loadDutyRestMap($date_from, $date_to)
     {
+        $this->dutyRestMap = [];
+        $q = $this->db->prepare(
+            "SELECT employee_id, work_date, is_rest_day FROM employee_day_schedule
+             WHERE status = 1 AND work_date BETWEEN ? AND ?"
+        );
+        if (!$q) return;                    // table not migrated yet → weekday CSV as before
+        $q->bind_param('ss', $date_from, $date_to);
+        $q->execute();
+        $r = $q->get_result();
+        while ($row = $r->fetch_assoc()) {
+            $this->dutyRestMap[(int) $row['employee_id']][$row['work_date']] = (int) $row['is_rest_day'];
+        }
+    }
+
+    // $employee_id is optional only so older callers keep working; pass it
+    // whenever you have it, or a rostered employee gets the weekly answer.
+    private function isRestDay($periods, $ymd, $employee_id = null)
+    {
+        // A published duty-roster day is the specific answer for that date and
+        // beats the weekly pattern — same precedence as resolve_employee_schedule.
+        if ($employee_id !== null && isset($this->dutyRestMap[(int) $employee_id][$ymd])) {
+            return $this->dutyRestMap[(int) $employee_id][$ymd] === 1;
+        }
         $rd = $this->restDaysForDate($periods, $ymd);
         if ($rd === '') return false;
         $w = (int)date('w', strtotime($ymd)); // 0=Sun … 6=Sat
@@ -1677,6 +1714,1088 @@ class Action
             'applied' => $applied,
             'message' => ($parts ? implode(', ', $parts) . '.' : 'Nothing to apply.') . ' Employees were notified.'
         ];
+    }
+
+    /* ══════════════════════════════════════════════════════════════════════
+     * DUTY ROSTER — the per-day cutoff grid for rotating staff
+     *
+     * The period roster above (employee_schedules) answers "which shift, from
+     * when to when" with rest days as a fixed weekday CSV. Nurses rotate — the
+     * shift changes every couple of days and the day off moves through the
+     * week — so they are planned on a DAY grid instead, one row per employee
+     * per date in employee_day_schedule.
+     *
+     * Three states decide what may be edited, and they follow the DTR, not the
+     * calendar:
+     *   free    — no attendance row yet. Edit freely; the shift is only stamped
+     *             onto a DTR row when the employee actually punches.
+     *   punched — an attendance row exists in an OPEN batch. Editable, but its
+     *             figures were frozen under the old shift, so the change needs
+     *             a Recompute to apply. The existing stale-schedule detector
+     *             finds these and blocks batch approval until it is run.
+     *   locked  — the batch is approved (status 2, one-way). Rejected here, not
+     *             just hidden in the UI: recompute_dtr refuses locked batches,
+     *             so an edit would leave the roster claiming a shift that was
+     *             never what the employee was paid under.
+     * ══════════════════════════════════════════════════════════════════════ */
+
+    // "YYYY-MM-1" / "YYYY-MM-2" → the semi-monthly cutoff's date range.
+    // The client names a PERIOD rather than two free dates so a hand-crafted
+    // request cannot paint an arbitrary span (e.g. a whole year) in one call.
+    public function dutyPeriodRange($period)
+    {
+        if (!preg_match('/^(\d{4})-(\d{2})-([12])$/', (string) $period, $m)) return null;
+        $y = (int) $m[1];
+        $mo = (int) $m[2];
+        if ($mo < 1 || $mo > 12 || $y < 2000 || $y > 2100) return null;
+        if ((int) $m[3] === 1) {
+            return ['from' => sprintf('%04d-%02d-01', $y, $mo), 'to' => sprintf('%04d-%02d-15', $y, $mo)];
+        }
+        $last = (int) date('t', mktime(0, 0, 0, $mo, 1, $y));
+        return ['from' => sprintf('%04d-%02d-16', $y, $mo), 'to' => sprintf('%04d-%02d-%02d', $y, $mo, $last)];
+    }
+
+    // The cutoff before this one — for "Copy last cutoff".
+    private function dutyPrevPeriod($period)
+    {
+        if (!preg_match('/^(\d{4})-(\d{2})-([12])$/', (string) $period, $m)) return null;
+        if ((int) $m[3] === 2) return $m[1] . '-' . $m[2] . '-1';
+        $t = strtotime($m[1] . '-' . $m[2] . '-01 -1 month');
+        return date('Y-m', $t) . '-2';
+    }
+
+    /**
+     * Which employee-days already carry attendance, and whether that batch is
+     * locked. Keyed "employee_id|Y-m-d" => 'locked' | 'punched'; anything absent
+     * is free. One query for the whole grid — the alternative is a lookup per
+     * cell, and a 40 × 15 grid is 600 of them.
+     */
+    public function dutyZoneMap($from, $to, array $empIds): array
+    {
+        $out = [];
+        if (empty($empIds)) return $out;
+        $ids = implode(',', array_map('intval', $empIds));
+        $res = $this->db->query(
+            "SELECT d.employee_id AS eid, DATE(d.date_time) AS wd, MAX(b.status = 2) AS locked
+             FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+             WHERE d.employee_id IN ($ids)
+               AND DATE(d.date_time) BETWEEN '" . $this->db->real_escape_string($from) . "'
+                                         AND '" . $this->db->real_escape_string($to) . "'
+             GROUP BY d.employee_id, DATE(d.date_time)"
+        );
+        while ($res && ($r = $res->fetch_assoc())) {
+            $out[$r['eid'] . '|' . $r['wd']] = ((int) $r['locked'] === 1) ? 'locked' : 'punched';
+        }
+        return $out;
+    }
+
+    /**
+     * The department this session is locked to, or 0 for an unscoped role.
+     *
+     * Wraps dept_scope_id() so the duty-roster code has one dependency to load
+     * rather than a require_once at every call site — and so it degrades to
+     * "unscoped" rather than fatal if the file is ever moved.
+     */
+    public function dutyScopeId(): int
+    {
+        if (!function_exists('dept_scope_id')) {
+            $f = __DIR__ . '/dept-scope.php';
+            if (is_file($f)) require_once $f;
+        }
+        return function_exists('dept_scope_id') ? dept_scope_id() : 0;
+    }
+
+    // Employees shown on the grid: everyone in the chosen department, PLUS
+    // anyone who already has a row in this cutoff. The second half matters —
+    // a nurse transferred out mid-cutoff still has duties on this sheet, and
+    // dropping them from the grid would hide days nobody can then correct.
+    public function dutyRosterEmployees($department_id, $from, $to): array
+    {
+        $dept = (int) $department_id;
+        $fromE = $this->db->real_escape_string($from);
+        $toE   = $this->db->real_escape_string($to);
+
+        // A Department Head / Supervisor is pinned to their own ward, and the
+        // pin is applied HERE rather than at each caller. This one method feeds
+        // the grid, the Excel export and the importer, so a caller that forgot
+        // would be a silent leak of another ward's roster; there is nowhere else
+        // to forget it.
+        $scope = $this->dutyScopeId();
+        if ($scope > 0) $dept = $scope;
+
+        // 0 = every department. Resigned staff are excluded from the pool, but
+        // the "already has a row" clause below still surfaces anyone who left
+        // mid-cutoff — their duties are on this sheet and must stay correctable.
+        $where = $dept > 0 ? "(e.department_id = $dept AND e.status = 1)" : "e.status = 1";
+        // The "OR they already have a row" arm below is deliberately NOT limited
+        // by department — that is how a nurse transferred out mid-cutoff stays
+        // correctable. For a scoped viewer that is a hole: it would hand them
+        // every ward's transfers. So the whole condition is fenced instead of
+        // the first arm only.
+        $fence = $scope > 0 ? " AND e.department_id = $scope" : '';
+        // The fixed shift is a correlated subquery rather than a join + GROUP BY:
+        // several periods can overlap one cutoff, and grouping to collapse them
+        // would select columns that ONLY_FULL_GROUP_BY rejects on a stricter
+        // server than this one. LIMIT 1 also makes "which period" explicit —
+        // the latest one that has started — instead of whatever the group kept.
+        $res = $this->db->query("
+            SELECT e.id, e.employee_no, e.firstname, e.lastname, e.middlename, e.status,
+                   d.name AS dept_name, p.name AS pname,
+                   (SELECT ws.description
+                      FROM employee_schedules es
+                      INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+                     WHERE es.employee_id = e.id
+                       AND es.effective_from <= '$toE'
+                       AND (es.effective_to IS NULL OR es.effective_to >= '$fromE')
+                     ORDER BY es.effective_from DESC LIMIT 1) AS period_shift
+            FROM employee e
+            LEFT JOIN department d ON d.id = e.department_id
+            LEFT JOIN position p ON p.id = e.position_id
+            WHERE ($where
+                   OR e.id IN (SELECT employee_id FROM employee_day_schedule
+                               WHERE work_date BETWEEN '$fromE' AND '$toE'))
+                  $fence
+            ORDER BY e.lastname ASC, e.firstname ASC
+        ");
+        $out = [];
+        while ($res && ($r = $res->fetch_assoc())) {
+            $out[] = [
+                'id'           => (int) $r['id'],
+                'employee_no'  => (string) $r['employee_no'],
+                'name'         => trim($r['lastname'] . ', ' . $r['firstname']),
+                'dept'         => (string) ($r['dept_name'] ?? ''),
+                'position'     => (string) ($r['pname'] ?? ''),
+                'period_shift' => (string) ($r['period_shift'] ?? ''),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * The active shifts with the SHORT CODE each one is written as in Excel.
+     *
+     * "NOC / 11-7 (11PM-7AM)" → "NOC". Mirrors shortLabel() in
+     * assets2/js/duty-roster.js so the sheet, the screen and the importer all
+     * say the same word. A collision is disambiguated with the id rather than
+     * left to silently mean two shifts — the code is what gets typed back in.
+     *
+     * Export and import BOTH read this. They used to build the map separately,
+     * which is a class of bug that only shows up after someone renames a shift.
+     */
+    public function dutyShiftCodes(): array
+    {
+        $used = [];
+        $out  = [];
+        $sq = $this->db->query("SELECT id, description, start_time, end_time, total_hours, is_graveyard
+                                FROM work_schedules WHERE status = 1 ORDER BY start_time ASC");
+        while ($sq && ($s = $sq->fetch_assoc())) {
+            $code = trim(explode('/', explode('(', $s['description'])[0])[0]);
+            $code = mb_substr($code, 0, 5) ?: ('S' . $s['id']);
+            if (isset($used[$code])) $code = $code . '-' . $s['id'];
+            $used[$code] = true;
+            $out[] = [
+                'id'    => (int) $s['id'],
+                'code'  => $code,
+                'desc'  => (string) $s['description'],
+                'start' => date('g:i A', strtotime($s['start_time'])),
+                'end'   => date('g:i A', strtotime($s['end_time'])),
+                'hours' => (float) $s['total_hours'],
+                'noc'   => (int) $s['is_graveyard'],
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Approved leave, expanded to the actual DAYS, keyed "employee_id|Y-m-d".
+     *
+     * The expansion is the whole point. A leave row carries date_from/date_to,
+     * but `dates` holds the days actually taken, and the two are not the same
+     * thing: a real row in this database spans Jul 29 – Aug 27 and is THREE
+     * days — the 29th, the 24th and the 27th. Reading the range would flag
+     * thirty. A conflict warning that cries wolf thirty times gets switched off
+     * in a week, so this reads `dates` first and only falls back to the range
+     * when it is empty.
+     *
+     * Unpaid leave is included, unlike the payroll tally which only wants paid:
+     * being rostered while on LWOP is still someone who will not be on the ward.
+     */
+    public function dutyLeaveMap($from, $to, array $empIds): array
+    {
+        $out = [];
+        if (empty($empIds)) return $out;
+        $ids = implode(',', array_map('intval', $empIds));
+        $res = $this->db->query(
+            "SELECT lr.employee_id, lr.dates, lr.date_from, lr.date_to,
+                    lr.is_half_day, lr.half_date, lr.half_period,
+                    COALESCE(lt.name, 'Leave') AS type_name
+             FROM leave_requests lr
+             LEFT JOIN leave_types lt ON lt.id = lr.leave_type_id
+             WHERE lr.status = 1
+               AND lr.employee_id IN ($ids)
+               AND lr.date_from <= '" . $this->db->real_escape_string($to) . "'
+               AND lr.date_to   >= '" . $this->db->real_escape_string($from) . "'"
+        );
+        while ($res && ($lv = $res->fetch_assoc())) {
+            $days = [];
+            if (!empty($lv['dates'])) {
+                $decoded = json_decode($lv['dates'], true);
+                if (is_array($decoded)) $days = $decoded;
+            }
+            if (!$days) {
+                for ($d = strtotime($lv['date_from']); $d <= strtotime($lv['date_to']); $d = strtotime('+1 day', $d)) {
+                    $days[] = date('Y-m-d', $d);
+                }
+            }
+            foreach ($days as $dy) {
+                $ymd = date('Y-m-d', strtotime($dy));
+                if ($ymd < $from || $ymd > $to) continue;
+                $half = ((int) $lv['is_half_day'] === 1 && !empty($lv['half_date'])
+                         && date('Y-m-d', strtotime($lv['half_date'])) === $ymd);
+                $k = $lv['employee_id'] . '|' . $ymd;
+                // A full day beats a half day when two leaves land on one date.
+                if (isset($out[$k]) && !$out[$k]['half']) continue;
+                $out[$k] = [
+                    'name' => (string) $lv['type_name'],
+                    'half' => $half ? 1 : 0,
+                    'part' => $half ? (string) ($lv['half_period'] ?? '') : '',
+                ];
+            }
+        }
+        return $out;
+    }
+
+    /** Everything the grid needs for one cutoff, in one request. */
+    function duty_roster_data()
+    {
+        $range = $this->dutyPeriodRange($_POST['period'] ?? '');
+        if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
+        $dept = (int) ($_POST['department_id'] ?? 0);
+
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $empIds    = array_column($employees, 'id');
+
+        $days = [];
+        for ($t = strtotime($range['from']); $t <= strtotime($range['to']); $t = strtotime('+1 day', $t)) {
+            $days[] = ['date' => date('Y-m-d', $t), 'dom' => (int) date('j', $t), 'dow' => date('D', $t), 'w' => (int) date('w', $t)];
+        }
+
+        // Holidays colour the header the same way the DTR sheets do.
+        $holidays = [];
+        $hq = $this->db->query("SELECT start_date, end_date, type, title FROM calendar_events
+            WHERE type IN (1,3) AND start_date <= '" . $this->db->real_escape_string($range['to']) . "'
+              AND COALESCE(end_date, start_date) >= '" . $this->db->real_escape_string($range['from']) . "'");
+        while ($hq && ($h = $hq->fetch_assoc())) {
+            $end = $h['end_date'] ?: $h['start_date'];
+            for ($t = strtotime($h['start_date']); $t <= strtotime($end); $t = strtotime('+1 day', $t)) {
+                $holidays[date('Y-m-d', $t)] = ['type' => (int) $h['type'], 'title' => (string) $h['title']];
+            }
+        }
+
+        $shifts = [];
+        $sq = $this->db->query("SELECT id, description, start_time, end_time, total_hours, is_graveyard
+                                FROM work_schedules WHERE status = 1 ORDER BY start_time ASC");
+        while ($sq && ($s = $sq->fetch_assoc())) {
+            $shifts[] = [
+                'id'    => (int) $s['id'],
+                'desc'  => (string) $s['description'],
+                'start' => date('g:i A', strtotime($s['start_time'])),
+                'end'   => date('g:i A', strtotime($s['end_time'])),
+                'hours' => (float) $s['total_hours'],
+                'noc'   => (int) $s['is_graveyard'],
+            ];
+        }
+
+        $cells = [];
+        if ($empIds) {
+            $ids = implode(',', array_map('intval', $empIds));
+            $cq = $this->db->query("
+                SELECT eds.employee_id, eds.work_date, eds.schedule_id, eds.is_rest_day, eds.status,
+                       eds.planned_schedule_id, eds.planned_is_rest_day, eds.note, eds.changed_at,
+                       u.name AS changed_by_name
+                FROM employee_day_schedule eds
+                LEFT JOIN users u ON u.id = eds.changed_by
+                WHERE eds.employee_id IN ($ids)
+                  AND eds.work_date BETWEEN '" . $this->db->real_escape_string($range['from']) . "'
+                                        AND '" . $this->db->real_escape_string($range['to']) . "'");
+            while ($cq && ($c = $cq->fetch_assoc())) {
+                $planned = $c['planned_schedule_id'] !== null || $c['planned_is_rest_day'] !== null;
+                $cells[$c['employee_id'] . '|' . $c['work_date']] = [
+                    's'  => $c['schedule_id'] !== null ? (int) $c['schedule_id'] : null,
+                    'r'  => (int) $c['is_rest_day'],
+                    'st' => (int) $c['status'],
+                    // Only surfaced when it actually differs — that is the swap
+                    // the head nurse will be asked about later.
+                    'ps' => $planned ? ($c['planned_schedule_id'] !== null ? (int) $c['planned_schedule_id'] : null) : null,
+                    'pr' => $planned ? (int) $c['planned_is_rest_day'] : null,
+                    'by' => trim((string) ($c['changed_by_name'] ?? '')),
+                    'at' => $c['changed_at'] ? date('M j, g:i A', strtotime($c['changed_at'])) : '',
+                    'n'  => (string) ($c['note'] ?? ''),
+                ];
+            }
+        }
+
+        // Which OTHER cutoffs these same employees have days in. Planning runs
+        // ahead of the calendar, so opening on an empty cutoff is normal and
+        // looks identical to losing the work — this lets the UI answer "your
+        // roster is over there" instead of showing a blank grid.
+        $other = [];
+        if ($empIds) {
+            $ids = implode(',', array_map('intval', $empIds));
+            $oq = $this->db->query("
+                SELECT CONCAT(YEAR(work_date), '-', LPAD(MONTH(work_date), 2, '0'), '-',
+                              IF(DAY(work_date) <= 15, '1', '2')) AS period,
+                       COUNT(*) AS n, SUM(status = 1) AS published, MIN(work_date) AS first_day
+                FROM employee_day_schedule
+                WHERE employee_id IN ($ids)
+                  AND work_date NOT BETWEEN '" . $this->db->real_escape_string($range['from']) . "'
+                                        AND '" . $this->db->real_escape_string($range['to']) . "'
+                GROUP BY period
+                ORDER BY first_day DESC
+                LIMIT 6");
+            while ($oq && ($o = $oq->fetch_assoc())) {
+                $ts = strtotime($o['first_day']);
+                $half = ((int) date('j', $ts) <= 15) ? 1 : 2;
+                $last = (int) date('t', $ts);
+                $other[] = [
+                    'period'    => (string) $o['period'],
+                    'label'     => $half === 1
+                        ? date('M 1', $ts) . ' – ' . date('M 15, Y', $ts)
+                        : date('M 16', $ts) . ' – ' . date("M $last, Y", $ts),
+                    'days'      => (int) $o['n'],
+                    'published' => (int) $o['published'],
+                ];
+            }
+        }
+
+        return [
+            'result'    => true,
+            'from'      => $range['from'],
+            'to'        => $range['to'],
+            'days'      => $days,
+            'holidays'  => $holidays,
+            'shifts'    => $shifts,
+            'employees' => $employees,
+            'cells'     => (object) $cells,
+            'zones'     => (object) $this->dutyZoneMap($range['from'], $range['to'], $empIds),
+            'leaves'    => (object) $this->dutyLeaveMap($range['from'], $range['to'], $empIds),
+            'other'     => $other,
+        ];
+    }
+
+    /**
+     * Write painted cells.
+     *
+     * A cell with neither a shift nor a rest flag is DELETED, not stored blank:
+     * "not on the day grid" is a real answer that hands the date back to the
+     * period roster, and a blank row would instead force a rest-day-with-no-
+     * shift reading.
+     *
+     * status is left alone on rows that already exist. A new cell therefore
+     * stays a draft until Publish, while an edit to an already-published day
+     * takes effect immediately — which is what a mid-cutoff swap has to do.
+     * The response says how many of those touched days already carry
+     * attendance, so the UI can offer the Recompute they now need.
+     */
+    function duty_roster_save()
+    {
+        $range = $this->dutyPeriodRange($_POST['period'] ?? '');
+        if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
+
+        $cells = json_decode((string) ($_POST['cells'] ?? '[]'), true);
+        if (!is_array($cells) || !$cells) return ['result' => false, 'message' => 'Nothing to save.'];
+        if (count($cells) > 5000) return ['result' => false, 'message' => 'Too many cells in one save.'];
+
+        $uid   = (int) ($_SESSION['login_id'] ?? 0) ?: null;
+        $empIds = [];
+        foreach ($cells as $c) if (!empty($c['e'])) $empIds[(int) $c['e']] = true;
+        $zones = $this->dutyZoneMap($range['from'], $range['to'], array_keys($empIds));
+
+        $validShifts = [];
+        $vq = $this->db->query("SELECT id FROM work_schedules WHERE status = 1");
+        while ($vq && ($v = $vq->fetch_assoc())) $validShifts[(int) $v['id']] = true;
+
+        $ins = $this->db->prepare(
+            "INSERT INTO employee_day_schedule (employee_id, work_date, schedule_id, is_rest_day, note, created_by, changed_by)
+             VALUES (?,?,?,?,?,?,?)
+             ON DUPLICATE KEY UPDATE schedule_id = VALUES(schedule_id),
+                                     is_rest_day = VALUES(is_rest_day),
+                                     note        = VALUES(note),
+                                     changed_by  = VALUES(changed_by)"
+        );
+        $del = $this->db->prepare("DELETE FROM employee_day_schedule WHERE employee_id = ? AND work_date = ?");
+
+        $saved = $cleared = $locked = $invalid = 0;
+        $needsRecompute = [];
+
+        $this->db->begin_transaction();
+        try {
+            foreach ($cells as $c) {
+                $eid  = (int) ($c['e'] ?? 0);
+                $date = (string) ($c['d'] ?? '');
+                if (!$eid || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) { $invalid++; continue; }
+                if ($date < $range['from'] || $date > $range['to']) { $invalid++; continue; }
+
+                $zone = $zones[$eid . '|' . $date] ?? 'free';
+                if ($zone === 'locked') { $locked++; continue; }
+
+                $sid  = isset($c['s']) && $c['s'] !== null && $c['s'] !== '' ? (int) $c['s'] : null;
+                $rest = !empty($c['r']) ? 1 : 0;
+                if ($sid !== null && !isset($validShifts[$sid])) { $invalid++; continue; }
+
+                if ($sid === null && !$rest) {
+                    $del->bind_param('is', $eid, $date);
+                    if (!$del->execute()) throw new Exception($del->error);
+                    if ($del->affected_rows > 0) $cleared++;
+                    if ($del->affected_rows > 0 && $zone === 'punched') $needsRecompute[$eid] = true;
+                    continue;
+                }
+
+                $note = mb_substr(trim((string) ($c['n'] ?? '')), 0, 255);
+                $ins->bind_param('isiisii', $eid, $date, $sid, $rest, $note, $uid, $uid);
+                if (!$ins->execute()) throw new Exception($ins->error);
+                $saved++;
+                if ($zone === 'punched') $needsRecompute[$eid] = true;
+            }
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Save failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        $msg = [];
+        if ($saved)   $msg[] = "$saved day(s) saved";
+        if ($cleared) $msg[] = "$cleared cleared";
+        if ($locked)  $msg[] = "$locked skipped (approved DTR — locked)";
+        if ($invalid) $msg[] = "$invalid skipped (invalid)";
+
+        return [
+            'result'          => true,
+            'saved'           => $saved,
+            'cleared'         => $cleared,
+            'locked'          => $locked,
+            'needs_recompute' => array_keys($needsRecompute),
+            'message'         => $msg ? implode(', ', $msg) . '.' : 'No changes.',
+        ];
+    }
+
+    /**
+     * Make this cutoff's drafts real. Publishing is the only act that lets a
+     * rostered day reach DTR figures or the employee portal, so it is also
+     * where employees are told what they are working.
+     *
+     * planned_* is filled on FIRST publish only (COALESCE), preserving what was
+     * originally handed out even after a swap rewrites schedule_id.
+     */
+    function duty_roster_publish()
+    {
+        $range = $this->dutyPeriodRange($_POST['period'] ?? '');
+        if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
+        $dept = (int) ($_POST['department_id'] ?? 0);
+
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $empIds    = array_column($employees, 'id');
+        if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
+        $ids   = implode(',', array_map('intval', $empIds));
+        $fromE = $this->db->real_escape_string($range['from']);
+        $toE   = $this->db->real_escape_string($range['to']);
+
+        // Who gets a notification — read BEFORE the update, while the drafts
+        // are still identifiable as drafts.
+        $affected = [];
+        $aq = $this->db->query("SELECT employee_id, COUNT(*) AS n FROM employee_day_schedule
+            WHERE status = 0 AND employee_id IN ($ids) AND work_date BETWEEN '$fromE' AND '$toE'
+            GROUP BY employee_id");
+        while ($aq && ($a = $aq->fetch_assoc())) $affected[(int) $a['employee_id']] = (int) $a['n'];
+        if (!$affected) return ['result' => false, 'message' => 'Nothing to publish — no draft days in this cutoff.'];
+
+        /**
+         * Someone rostered on a day they have APPROVED leave.
+         *
+         * Publishing is where this has to be caught, because publishing is what
+         * tells the employee they are working — and a nurse who is on approved
+         * leave that day will not come in. The day then reads as an absence
+         * against a shift they were never going to work, and it surfaces weeks
+         * later in payroll where it costs money to unpick.
+         *
+         * Reported, not blocked: a cancelled leave or an agreed swap is a real
+         * reason to roster over one, and the planner is the one who knows. The
+         * client asks for confirmation on the way past.
+         */
+        $conflicts = [];
+        $leaves = $this->dutyLeaveMap($range['from'], $range['to'], array_keys($affected));
+        if ($leaves) {
+            $names = [];
+            foreach ($employees as $e) $names[$e['id']] = $e['name'];
+            $dq = $this->db->query("SELECT employee_id, work_date, is_rest_day
+                FROM employee_day_schedule
+                WHERE status = 0 AND employee_id IN ($ids) AND work_date BETWEEN '$fromE' AND '$toE'");
+            while ($dq && ($d = $dq->fetch_assoc())) {
+                // A rest day on a leave day is not a conflict — it agrees with it.
+                if ((int) $d['is_rest_day'] === 1) continue;
+                $k = $d['employee_id'] . '|' . $d['work_date'];
+                if (!isset($leaves[$k])) continue;
+                $conflicts[] = [
+                    'employee' => $names[(int) $d['employee_id']] ?? ('#' . $d['employee_id']),
+                    'date'     => date('M j', strtotime($d['work_date'])),
+                    'leave'    => $leaves[$k]['name'] . ($leaves[$k]['half'] ? ' (half day)' : ''),
+                ];
+            }
+        }
+        // The client re-sends with confirm_leave=1 once the planner has read them.
+        if ($conflicts && empty($_POST['confirm_leave'])) {
+            return [
+                'result'    => false,
+                'conflicts' => array_slice($conflicts, 0, 25),
+                'conflict_total' => count($conflicts),
+                'message'   => count($conflicts) . ' day(s) are rostered on approved leave.',
+            ];
+        }
+
+        $ok = $this->db->query("UPDATE employee_day_schedule
+            SET status = 1,
+                published_at = NOW(),
+                planned_schedule_id = COALESCE(planned_schedule_id, schedule_id),
+                planned_is_rest_day = COALESCE(planned_is_rest_day, is_rest_day)
+            WHERE status = 0 AND employee_id IN ($ids) AND work_date BETWEEN '$fromE' AND '$toE'");
+        if (!$ok) return ['result' => false, 'message' => 'Publish failed: ' . $this->db->error];
+
+        $label = date('M j', strtotime($range['from'])) . ' – ' . date('M j, Y', strtotime($range['to']));
+        foreach ($affected as $eid => $n) {
+            $this->notifyEmployee(
+                $eid,
+                'Your duty schedule is out',
+                "Your duty schedule for $label has been published ($n day(s)). Please check your shifts and rest days.",
+                'ri-calendar-check-line',
+                'info',
+                'employee-portal.php?tab=info'
+            );
+        }
+
+        // Days already punched under the OLD shift need a recompute before the
+        // batch can be approved — same rule the stale-schedule banner enforces.
+        $zones = $this->dutyZoneMap($range['from'], $range['to'], array_keys($affected));
+        $needs = [];
+        foreach ($zones as $k => $z) {
+            if ($z !== 'punched') continue;
+            [$eid, $d] = explode('|', $k);
+            if (isset($affected[(int) $eid])) $needs[(int) $eid] = true;
+        }
+
+        return [
+            'result'          => true,
+            'published'       => array_sum($affected),
+            'employees'       => count($affected),
+            'needs_recompute' => array_keys($needs),
+            'leave_conflicts' => count($conflicts),
+            'message'         => array_sum($affected) . ' day(s) published for ' . count($affected) . ' employee(s). They have been notified.'
+                                 . ($conflicts ? ' ' . count($conflicts) . ' were on approved leave — you confirmed these.' : ''),
+        ];
+    }
+
+    /**
+     * Seed this cutoff from the previous one, as drafts.
+     *
+     * Days are mapped by POSITION, not by weekday: a rotation is a cycle, so
+     * day 1 of this cutoff continues from day 1 of the last. Cutoffs differ in
+     * length (15 vs 13-16 days), so the source wraps — which keeps the cycle
+     * running instead of leaving the tail blank.
+     *
+     * Existing rows are never touched: published days stay as handed out, and
+     * locked days are refused outright.
+     */
+    function duty_roster_copy()
+    {
+        $range = $this->dutyPeriodRange($_POST['period'] ?? '');
+        $prev  = $this->dutyPrevPeriod($_POST['period'] ?? '');
+        $prevRange = $prev ? $this->dutyPeriodRange($prev) : null;
+        if (!$range || !$prevRange) return ['result' => false, 'message' => 'Invalid cutoff period.'];
+
+        $dept      = (int) ($_POST['department_id'] ?? 0);
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $empIds    = array_column($employees, 'id');
+        if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
+        $ids = implode(',', array_map('intval', $empIds));
+
+        $srcDays = [];
+        for ($t = strtotime($prevRange['from']); $t <= strtotime($prevRange['to']); $t = strtotime('+1 day', $t)) $srcDays[] = date('Y-m-d', $t);
+        $dstDays = [];
+        for ($t = strtotime($range['from']); $t <= strtotime($range['to']); $t = strtotime('+1 day', $t)) $dstDays[] = date('Y-m-d', $t);
+
+        $src = [];
+        $sq = $this->db->query("SELECT employee_id, work_date, schedule_id, is_rest_day
+            FROM employee_day_schedule
+            WHERE employee_id IN ($ids)
+              AND work_date BETWEEN '" . $this->db->real_escape_string($prevRange['from']) . "'
+                                AND '" . $this->db->real_escape_string($prevRange['to']) . "'");
+        while ($sq && ($s = $sq->fetch_assoc())) {
+            $src[(int) $s['employee_id']][$s['work_date']] = [
+                's' => $s['schedule_id'] !== null ? (int) $s['schedule_id'] : null,
+                'r' => (int) $s['is_rest_day'],
+            ];
+        }
+        if (!$src) return ['result' => false, 'message' => 'The previous cutoff has no roster to copy.'];
+
+        $existing = [];
+        $eq = $this->db->query("SELECT employee_id, work_date FROM employee_day_schedule
+            WHERE employee_id IN ($ids)
+              AND work_date BETWEEN '" . $this->db->real_escape_string($range['from']) . "'
+                                AND '" . $this->db->real_escape_string($range['to']) . "'");
+        while ($eq && ($e = $eq->fetch_assoc())) $existing[$e['employee_id'] . '|' . $e['work_date']] = true;
+
+        $zones = $this->dutyZoneMap($range['from'], $range['to'], $empIds);
+        $uid   = (int) ($_SESSION['login_id'] ?? 0) ?: null;
+
+        $ins = $this->db->prepare(
+            "INSERT INTO employee_day_schedule (employee_id, work_date, schedule_id, is_rest_day, created_by, changed_by)
+             VALUES (?,?,?,?,?,?)"
+        );
+        $copied = $skipped = 0;
+
+        $this->db->begin_transaction();
+        try {
+            foreach ($empIds as $eid) {
+                if (empty($src[$eid])) continue;
+                foreach ($dstDays as $i => $dst) {
+                    if (isset($existing[$eid . '|' . $dst])) { $skipped++; continue; }
+                    if (($zones[$eid . '|' . $dst] ?? 'free') === 'locked') { $skipped++; continue; }
+                    $srcDate = $srcDays[$i % count($srcDays)];
+                    if (!isset($src[$eid][$srcDate])) continue;
+                    // bind_param takes references, so the cell is unpacked into
+                    // plain locals rather than passing array elements.
+                    $cSid  = $src[$eid][$srcDate]['s'];
+                    $cRest = $src[$eid][$srcDate]['r'];
+                    $ins->bind_param('isiiii', $eid, $dst, $cSid, $cRest, $uid, $uid);
+                    if (!$ins->execute()) throw new Exception($ins->error);
+                    $copied++;
+                }
+            }
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Copy failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        return [
+            'result'  => true,
+            'copied'  => $copied,
+            'skipped' => $skipped,
+            'message' => "$copied day(s) copied as drafts" . ($skipped ? ", $skipped left alone (already set or locked)" : '') . '. Review, then Publish.',
+        ];
+    }
+
+    /** Discard this cutoff's unpublished drafts. Published days are untouched. */
+    function duty_roster_clear_drafts()
+    {
+        $range = $this->dutyPeriodRange($_POST['period'] ?? '');
+        if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
+        $dept      = (int) ($_POST['department_id'] ?? 0);
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $empIds    = array_column($employees, 'id');
+        if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
+        $ids = implode(',', array_map('intval', $empIds));
+
+        $ok = $this->db->query("DELETE FROM employee_day_schedule
+            WHERE status = 0 AND employee_id IN ($ids)
+              AND work_date BETWEEN '" . $this->db->real_escape_string($range['from']) . "'
+                                AND '" . $this->db->real_escape_string($range['to']) . "'");
+        if (!$ok) return ['result' => false, 'message' => 'Clear failed: ' . $this->db->error];
+
+        $n = $this->db->affected_rows;
+        return ['result' => true, 'deleted' => $n, 'message' => "$n draft day(s) discarded."];
+    }
+
+    /**
+     * Apply roster changes to attendance already recorded in this cutoff.
+     *
+     * Scoped to the cutoff's dates and to open batches — the same force-mode
+     * recompute the DTR page runs, just narrowed so a head nurse fixing one
+     * cutoff never restates another. Locked batches are excluded by the
+     * b.status <> 2 filter, which is also what makes the roster's "locked"
+     * cells honest.
+     */
+    function duty_roster_recompute()
+    {
+        $range = $this->dutyPeriodRange($_POST['period'] ?? '');
+        if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
+
+        $ids = [];
+        $raw = $_POST['employee_ids'] ?? '';
+        if (!is_array($raw)) $raw = explode(',', (string) $raw);
+        foreach ($raw as $v) if ((int) $v) $ids[] = (int) $v;
+        $ids = array_values(array_unique($ids));
+        if (!$ids) return ['result' => false, 'message' => 'No employees to recompute.'];
+        $idList = implode(',', $ids);
+
+        $res = $this->db->query("SELECT d.id, d.employee_id, d.date_time, d.work_hours, d.overtime, d.undertime,
+                                        d.late, d.nsd_hours, d.day_type, d.status, d.logs,
+                                        d.schedule_id, d.day_hours, d.is_rest_day,
+                                        d.sched_start, d.sched_end, d.sched_break, d.sched_graveyard
+                                 FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+                                 WHERE d.employee_id IN ($idList) AND b.status <> 2
+                                   AND DATE(d.date_time) BETWEEN '" . $this->db->real_escape_string($range['from']) . "'
+                                                             AND '" . $this->db->real_escape_string($range['to']) . "'");
+
+        $this->db->begin_transaction();
+        try {
+            [$scanned, $changed, $repending, $affectedEmp] = $this->recomputeDetailRows($res);
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Recompute failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        foreach ($affectedEmp as $eid => $n) {
+            $this->logRecompute(null, $eid, 'duty-roster', $scanned, $changed, $repending);
+            $this->notifyEmployee(
+                $eid,
+                'Attendance recalculated',
+                "$n day(s) of your attendance were recalculated after a duty-roster change. Please review them in your portal.",
+                'ri-refresh-line',
+                'info',
+                'employee-portal.php?tab=attendance'
+            );
+        }
+
+        return [
+            'result'    => true,
+            'scanned'   => $scanned,
+            'changed'   => $changed,
+            'repending' => $repending,
+            'message'   => "$scanned record(s) scanned, $changed updated, $repending sent back to pending.",
+        ];
+    }
+
+    /**
+     * Read a filled-in duty-roster workbook back and say what it WOULD change.
+     *
+     * This writes NOTHING. It returns the list of changed cells, and the page
+     * loads them into the same pending-edit map a click would have filled, so
+     * the planner sees them painted on the grid and still has to press Save and
+     * then Publish. That keeps one write path (duty_roster_save) with one set of
+     * lock rules, instead of a second door into the table that has to remember
+     * the same rules — and an upload that silently rewrote a published cutoff is
+     * exactly the accident worth designing out.
+     *
+     * The sheet is read by its HEADERS, not by fixed coordinates: the "Employee
+     * No" cell is searched for, and the day columns are taken from the numbers
+     * on that row. Someone will insert a column or sort the rows, and the file
+     * should still import.
+     */
+    function duty_roster_import()
+    {
+        $range = $this->dutyPeriodRange($_POST['period'] ?? '');
+        if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
+        $dept = (int) ($_POST['department_id'] ?? 0);
+
+        $f = $_FILES['file'] ?? null;
+        if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
+            return ['result' => false, 'message' => 'No file was received. Pick an .xlsx file and try again.'];
+        }
+        if ($f['size'] > 8 * 1024 * 1024) {
+            return ['result' => false, 'message' => 'That file is over 8 MB — too big for a roster sheet.'];
+        }
+        $ext = strtolower(pathinfo((string) $f['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls'], true)) {
+            return ['result' => false, 'message' => 'Only .xlsx or .xls files can be imported.'];
+        }
+
+        require_once __DIR__ . '/vendor/autoload.php';
+        try {
+            $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($f['tmp_name']);
+            $reader->setReadDataOnly(true);
+            $book = $reader->load($f['tmp_name']);
+        } catch (\Throwable $e) {
+            return ['result' => false, 'message' => 'That file could not be opened as a spreadsheet.'];
+        }
+        /* ── Is this sheet even for the cutoff that is open? ──────────────── */
+        //
+        // Day columns match by DAY NUMBER, and every first-half cutoff in the
+        // year is numbered 1…15 — so last cutoff's file lines up perfectly with
+        // this one and would import into the wrong month silently. The caption
+        // on the Roster tab is only a caption; this reads the stamp instead.
+        $stampPeriod = '';
+        $wrongDept   = 0;
+        $stampSheet  = $book->getSheetByName('Shifts');
+        if ($stampSheet) {
+            $stampPeriod = trim((string) $stampSheet->getCell('G2')->getValue());
+            $stampDept   = trim((string) $stampSheet->getCell('G3')->getValue());
+
+            if ($stampPeriod !== '' && $stampPeriod !== (string) ($_POST['period'] ?? '')) {
+                return ['result' => false, 'message' =>
+                    'This sheet was exported for ' . $this->dutyPeriodLabel($stampPeriod)
+                    . ', but you have ' . $this->dutyPeriodLabel($_POST['period'] ?? '') . ' open. '
+                    . 'Switch the cutoff at the top of the page, or export a fresh sheet for this one.'];
+            }
+            // A department mismatch is a warning, not a refusal: every row is
+            // matched by employee number and anyone outside the current view is
+            // reported as unmatched anyway. Refusing would also block the
+            // legitimate case of pasting two wards into one sheet.
+            if ($stampDept !== '' && (int) $stampDept !== $dept && (int) $stampDept > 0 && $dept > 0) {
+                $wrongDept = (int) $stampDept;
+            }
+        }
+
+        $sheet = $book->getSheetByName('Roster') ?: $book->getSheet(0);
+        // Formulas are NOT evaluated: the only formulas in this workbook are the
+        // coverage counters at the bottom, which no employee row references, and
+        // running PhpSpreadsheet's calculation engine over them would cost time
+        // for a block this parser throws away anyway.
+        $rows = $sheet->toArray(null, false, true, false);
+        // A heading row and one employee is a legitimate sheet — a ward sending
+        // a correction for a single nurse should not be told it is empty. The
+        // real "this is not a roster" answer comes from the header search below,
+        // which can say what is actually missing.
+        if (count($rows) < 2) return ['result' => false, 'message' => 'That sheet is empty.'];
+
+        /* ── Locate the header ────────────────────────────────────────────── */
+        $hdr = $noCol = $nameCol = -1;
+        foreach ($rows as $i => $r) {
+            foreach ($r as $c => $v) {
+                $t = strtolower(trim((string) $v));
+                if ($t === 'employee no' || $t === 'employee no.' || $t === 'employee number') {
+                    $hdr = $i; $noCol = $c; break 2;
+                }
+            }
+        }
+        // Name column second, over the whole header row — looked for separately
+        // because it may sit either side of the number column once someone has
+        // rearranged the sheet.
+        if ($hdr >= 0) {
+            foreach ($rows[$hdr] as $c => $v) {
+                $t = strtolower(trim((string) $v));
+                if ($t === 'employee' || $t === 'name' || $t === 'employee name') { $nameCol = $c; break; }
+            }
+        }
+        if ($hdr < 0) {
+            return ['result' => false, 'message' => 'This does not look like a duty-roster sheet — no "Employee No" heading was found. Export a fresh copy and fill that in.'];
+        }
+
+        /* ── Day columns, from the day numbers on the header row ──────────── */
+        $days = [];
+        for ($t = strtotime($range['from']); $t <= strtotime($range['to']); $t = strtotime('+1 day', $t)) {
+            $days[(int) date('j', $t)] = date('Y-m-d', $t);
+        }
+        $colDate = [];
+        foreach ($rows[$hdr] as $c => $v) {
+            if ($c === $noCol || $c === $nameCol) continue;
+            $n = trim((string) $v);
+            if ($n === '' || !ctype_digit($n)) continue;
+            if (isset($days[(int) $n])) $colDate[$c] = $days[(int) $n];
+        }
+        if (!$colDate) {
+            return ['result' => false, 'message' => 'No day columns in this sheet match ' . date('M j', strtotime($range['from'])) . '–' . date('M j, Y', strtotime($range['to'])) . '. This file is probably for a different cutoff.'];
+        }
+
+        // Second guard: the weekday row. The day NUMBERS repeat every month but
+        // the weekdays under them do not — Sep 1 is a Tuesday and Nov 1 a Sunday
+        // — so a row of weekday names that disagrees with the open cutoff means
+        // the file belongs to a different month.
+        //
+        // Checked even when the stamp already agreed, because a hand-edited
+        // stamp is exactly the case worth catching: someone who retyped the
+        // cutoff cell to make an old sheet go through leaves this row behind.
+        if (isset($rows[$hdr + 1])) {
+            $wd = $rows[$hdr + 1];
+            $DOW = ['mon' => 1, 'tue' => 1, 'wed' => 1, 'thu' => 1, 'fri' => 1, 'sat' => 1, 'sun' => 1];
+            $checked = $wrong = 0;
+            foreach ($colDate as $c => $date) {
+                $t = strtolower(substr(trim((string) ($wd[$c] ?? '')), 0, 3));
+                // Only judge cells that are actually weekday names. On a sheet
+                // typed by hand there is no weekday row at all, and the row
+                // under the heading is the first nurse — reading "OFF" as a
+                // failed weekday rejected a perfectly good file.
+                if (!isset($DOW[$t])) continue;
+                $checked++;
+                if ($t !== strtolower(date('D', strtotime($date)))) $wrong++;
+            }
+            if ($checked >= 3 && $wrong > 0) {
+                return ['result' => false, 'message' =>
+                    'The weekdays in this sheet do not line up with '
+                    . $this->dutyPeriodLabel($_POST['period'] ?? '')
+                    . ' — day 1 is a ' . date('l', strtotime($range['from']))
+                    . ' in this cutoff. The file looks like it is for a different month.'];
+            }
+        }
+
+        /* ── Who we are allowed to touch ──────────────────────────────────── */
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $byNo = $byName = [];
+        foreach ($employees as $e) {
+            if ($e['employee_no'] !== '') $byNo[strtolower(trim($e['employee_no']))] = $e;
+            $byName[$this->dutyNameKey($e['name'])] = $e;
+        }
+        $zones = $this->dutyZoneMap($range['from'], $range['to'], array_column($employees, 'id'));
+
+        // Codes, matched case-insensitively — nobody types NOC in the same case twice.
+        $codeToId = [];
+        foreach ($this->dutyShiftCodes() as $s) $codeToId[strtolower($s['code'])] = $s['id'];
+
+        /* ── What is planned now, to diff against ─────────────────────────── */
+        $current = [];
+        if ($employees) {
+            $ids = implode(',', array_map('intval', array_column($employees, 'id')));
+            $cq = $this->db->query("SELECT employee_id, work_date, schedule_id, is_rest_day
+                                    FROM employee_day_schedule
+                                    WHERE employee_id IN ($ids)
+                                      AND work_date BETWEEN '" . $this->db->real_escape_string($range['from']) . "'
+                                                        AND '" . $this->db->real_escape_string($range['to']) . "'");
+            while ($cq && ($c = $cq->fetch_assoc())) {
+                $current[$c['employee_id'] . '|' . $c['work_date']] = [
+                    's' => $c['schedule_id'] !== null ? (int) $c['schedule_id'] : null,
+                    'r' => (int) $c['is_rest_day'],
+                ];
+            }
+        }
+
+        /* ── Walk the rows ────────────────────────────────────────────────── */
+        $changes = [];
+        $problems = [];
+        $seen = ['rows' => 0, 'blank_rows' => 0, 'unknown' => 0, 'locked' => 0, 'same' => 0, 'recovered' => 0, 'cleared' => 0];
+        $unmatched = [];
+
+        for ($i = $hdr + 1; $i < count($rows); $i++) {
+            $r = $rows[$i];
+            $no = trim((string) ($r[$noCol] ?? ''));
+            $nm = $nameCol >= 0 ? trim((string) ($r[$nameCol] ?? '')) : '';
+            if ($no === '' && $nm === '') continue;
+
+            $emp = $byNo[strtolower($no)] ?? ($nm !== '' ? ($byName[$this->dutyNameKey($nm)] ?? null) : null);
+            if (!$emp) {
+                // The coverage block at the bottom has no employee number, so it
+                // falls out here by itself rather than needing a row count.
+                if ($no !== '') $unmatched[] = $no . ($nm !== '' ? ' (' . $nm . ')' : '');
+                continue;
+            }
+
+            // Two passes over the row: the first decides whether the row was
+            // plotted at all. A blank cell means "clear this day" only in a row
+            // that has entries — otherwise exporting 150 people and filling in
+            // two of them would wipe the other 148.
+            $vals = [];
+            $touched = false;
+            foreach ($colDate as $c => $date) {
+                $raw = $r[$c] ?? null;
+                $vals[$c] = $raw;
+                if (trim((string) $raw) !== '') $touched = true;
+            }
+            $seen['rows']++;
+            if (!$touched) { $seen['blank_rows']++; continue; }
+
+            foreach ($vals as $c => $raw) {
+                $date = $colDate[$c];
+                $txt  = trim((string) $raw);
+                $k    = $emp['id'] . '|' . $date;
+
+                if (($zones[$k] ?? '') === 'locked') { if ($txt !== '') $seen['locked']++; continue; }
+
+                if ($txt === '' || $txt === '-' || $txt === '—') {
+                    $next = ['s' => null, 'r' => 0];
+                    if (!isset($current[$k])) continue;      // already nothing there
+                    $seen['cleared']++;
+                } else {
+                    $lc = strtolower($txt);
+                    if ($lc === 'off' || $lc === 'rest' || $lc === 'rd' || $lc === 'restday') {
+                        $next = ['s' => null, 'r' => 1];
+                    } elseif (isset($codeToId[$lc])) {
+                        $next = ['s' => $codeToId[$lc], 'r' => 0];
+                    } elseif (($rec = $this->dutyRecoverCode($raw, $codeToId)) !== null) {
+                        // Excel turned the code into a date on the way in — see
+                        // the note in export-duty-roster.php. "6-2" comes back as
+                        // 02/06, and reading the month and day back out gives the
+                        // code again. Recovered, not guessed, and reported.
+                        $next = ['s' => $rec, 'r' => 0];
+                        $seen['recovered']++;
+                    } else {
+                        $seen['unknown']++;
+                        if (count($problems) < 12) {
+                            $problems[] = $emp['name'] . ' · ' . date('M j', strtotime($date)) . ' · "' . mb_substr($txt, 0, 12) . '" is not a shift code';
+                        }
+                        continue;
+                    }
+                }
+
+                $cur = $current[$k] ?? ['s' => null, 'r' => 0];
+                if ($cur['s'] === $next['s'] && $cur['r'] === $next['r']) { $seen['same']++; continue; }
+                $changes[] = ['e' => $emp['id'], 'd' => $date, 's' => $next['s'], 'r' => $next['r']];
+            }
+        }
+
+        if (count($changes) > 5000) {
+            return ['result' => false, 'message' => 'That sheet would change ' . count($changes) . ' days at once, which is past the safety limit. Import one department at a time.'];
+        }
+        if ($unmatched) {
+            $show = array_slice(array_unique($unmatched), 0, 6);
+            $problems[] = count(array_unique($unmatched)) . ' row(s) matched nobody in this view: ' . implode(', ', $show);
+        }
+        if ($wrongDept) {
+            $dq = $this->db->query("SELECT name FROM department WHERE id = " . (int) $wrongDept . " LIMIT 1");
+            $dn = ($dq && ($d = $dq->fetch_assoc())) ? $d['name'] : ('department #' . $wrongDept);
+            array_unshift($problems, 'This sheet was exported for ' . $dn . ', not the department you have open.');
+        }
+
+        return [
+            'result'    => true,
+            'changes'   => $changes,
+            'rows'      => $seen['rows'],
+            'blank_rows' => $seen['blank_rows'],
+            'unchanged' => $seen['same'],
+            'cleared'   => $seen['cleared'],
+            'locked'    => $seen['locked'],
+            'unknown'   => $seen['unknown'],
+            'recovered' => $seen['recovered'],
+            'problems'  => $problems,
+            'period'    => $_POST['period'] ?? '',
+        ];
+    }
+
+    // "2026-09-1" → "Sep 1 – Sep 15, 2026", for messages that have to name two
+    // cutoffs and make the difference obvious at a glance.
+    private function dutyPeriodLabel($period): string
+    {
+        $r = $this->dutyPeriodRange($period);
+        if (!$r) return 'an unknown cutoff';
+        return date('M j', strtotime($r['from'])) . ' – ' . date('M j, Y', strtotime($r['to']));
+    }
+
+    // "ABAD, QUERWIN" / "abad querwin" / "Abad,Querwin" all collapse to the same
+    // key, so a sheet retyped by hand still matches when the employee number is
+    // missing. Number is always tried first.
+    private function dutyNameKey(string $s): string
+    {
+        return preg_replace('/[^a-z]/', '', strtolower($s));
+    }
+
+    /**
+     * A shift code Excel swallowed as a date, turned back into a code.
+     *
+     * Only reached when the literal text did not match. "6-2" stored as 2 June
+     * gives month 6, day 2 → "6-2"; a day-first locale gives "2-6", so both
+     * orders are tried and only an exact hit on a real code is accepted.
+     * Returns the schedule id, or null to leave it as an error.
+     */
+    private function dutyRecoverCode($raw, array $codeToId)
+    {
+        if ($raw instanceof \DateTimeInterface) {
+            $m = (int) $raw->format('n'); $d = (int) $raw->format('j');
+        } elseif (is_numeric($raw) && $raw > 1 && $raw < 90000) {
+            try {
+                $dt = \PhpOffice\PhpSpreadsheet\Shared\Date::excelToDateTimeObject((float) $raw);
+            } catch (\Throwable $e) { return null; }
+            $m = (int) $dt->format('n'); $d = (int) $dt->format('j');
+        } elseif (preg_match('#^(\d{4})-(\d{1,2})-(\d{1,2})#', trim((string) $raw), $mm)) {
+            // ISO text, which is what LibreOffice and Numbers write out when
+            // they have already decided the cell was a date.
+            $m = (int) $mm[2]; $d = (int) $mm[3];
+        } elseif (preg_match('#^(\d{1,2})[/-](\d{1,2})(?:[/-]\d{2,4})?$#', trim((string) $raw), $mm)) {
+            $m = (int) $mm[1]; $d = (int) $mm[2];
+        } else {
+            return null;
+        }
+        foreach ([$m . '-' . $d, $d . '-' . $m] as $guess) {
+            if (isset($codeToId[$guess])) return $codeToId[$guess];
+        }
+        return null;
     }
 
     function get_employee_schedule_history()
@@ -3323,6 +4442,8 @@ class Action
                 while ($rrow = $rres->fetch_assoc()) {
                     $restMap[$rrow['employee_id']][] = $rrow;
                 }
+                // Rotating staff answer per DAY, not per weekday — see loadDutyRestMap().
+                $this->loadDutyRestMap($date_from, $date_to);
 
                 // Preload approved PAID leave days per employee overlapping this period.
                 // Paid leave (leave_types.is_paid = 1) is treated as paid-present: it does
@@ -3976,7 +5097,7 @@ class Action
                     if (!empty($leaveMap[$employee_id])) {
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
                             $ymd = date('Y-m-d', $d);
-                            if (isset($leaveMap[$employee_id][$ymd]) && !$this->isRestDay($restMap[$employee_id] ?? [], $ymd)) {
+                            if (isset($leaveMap[$employee_id][$ymd]) && !$this->isRestDay($restMap[$employee_id] ?? [], $ymd, $employee_id)) {
                                 // A day that was PARTLY WORKED can only take leave for the
                                 // remainder of itself. "present" is already a fraction
                                 // (work_hours / day_hours), so without this cap a half-day
@@ -3994,7 +5115,7 @@ class Action
                             $eymd = date('Y-m-d', $d);
                             // Expected work days exclude rest days AND declared holidays
                             // (a holiday is paid non-working — never an absence).
-                            if (!$this->isRestDay($restMap[$employee_id] ?? [], $eymd) && empty($holidayDates[$eymd])) {
+                            if (!$this->isRestDay($restMap[$employee_id] ?? [], $eymd, $employee_id) && empty($holidayDates[$eymd])) {
                                 $expected_days++;
                             }
                         }
@@ -5837,12 +6958,21 @@ class Action
             $sched_en  = $schedule['end_time'] ?? null;
             $sched_bk  = $schedule && isset($schedule['break_minutes']) ? (int) $schedule['break_minutes'] : null;
             $sched_gv  = $schedule && isset($schedule['is_graveyard']) ? (int) $schedule['is_graveyard'] : null;
-            $rest_csv  = (string) ($schedule['rest_days'] ?? '');
-            $is_rest   = ($rest_csv !== '' && in_array(
-                (int) date('w', strtotime($scan_date)),
-                array_map('intval', explode(',', $rest_csv)),
-                true
-            )) ? 1 : 0;
+            // A published duty-roster day states the rest flag outright; the
+            // weekday CSV only describes a FIXED week and cannot answer for a
+            // rotating employee whose day off moves. Same precedence as
+            // dtr_compute_day, so the stamp written here and any later
+            // recompute agree.
+            if (isset($schedule['day_is_rest'])) {
+                $is_rest = (int) $schedule['day_is_rest'];
+            } else {
+                $rest_csv  = (string) ($schedule['rest_days'] ?? '');
+                $is_rest   = ($rest_csv !== '' && in_array(
+                    (int) date('w', strtotime($scan_date)),
+                    array_map('intval', explode(',', $rest_csv)),
+                    true
+                )) ? 1 : 0;
+            }
 
             if (!$detail) {
                 // First scan — time-in only, mark incomplete
@@ -7589,6 +8719,7 @@ class Action
         $rq->execute();
         $rr = $rq->get_result();
         while ($rw = $rr->fetch_assoc()) $restMap[$rw['employee_id']][] = $rw;
+        $this->loadDutyRestMap($pay['date_from'], $pay['date_to']);
 
         // Declared holidays in the period — excluded from expected work days here
         // too, so this sanity check agrees with the generation absent logic.
@@ -7634,7 +8765,7 @@ class Action
                 $expected = 0;
                 for ($d = strtotime($pay['date_from']); $d <= strtotime($pay['date_to']); $d = strtotime('+1 day', $d)) {
                     $symd = date('Y-m-d', $d);
-                    if (!$this->isRestDay($restMap[$eid] ?? [], $symd) && empty($holidayDates[$symd])) $expected++;
+                    if (!$this->isRestDay($restMap[$eid] ?? [], $symd, $eid) && empty($holidayDates[$symd])) $expected++;
                 }
                 $counted = (float) $r['present'] + (float) ($r['paid_leave'] ?? 0) + (float) $r['absent'];
                 $miss = $expected - $counted;

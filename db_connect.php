@@ -129,6 +129,11 @@ if (!defined('LEAVE_APPROVER_ALLOWED_PAGES')) {
         'leave-dashboard',   // landing page: counts + department roster
         'leaves',            // the requests they must act on (already dept-scoped)
         'calendar',          // holiday calendar — READ-ONLY (see calendar.php)
+        'duty-roster',       // their own ward's duty grid — READ-ONLY, and locked
+                             // to their department by dept-scope.php. They approve
+                             // leave against this schedule, so being unable to see
+                             // it made them approve blind; and the Excel export is
+                             // how the ward gets its copy.
         'profile',           // own account
     ]);
 }
@@ -382,6 +387,12 @@ if (!defined('ACTION_PAGE_MAP')) {
         'roster_update_rate_type' => 'schedule-roster', 'plan_add_schedule' => 'schedule-roster',
         'plan_apply_all' => 'schedule-roster', 'plan_clear' => 'schedule-roster',
         'plan_remove' => 'schedule-roster', 'plan_list' => 'schedule-roster',
+        'duty_roster_data' => 'duty-roster', 'duty_roster_save' => 'duty-roster',
+        'duty_roster_publish' => 'duty-roster', 'duty_roster_copy' => 'duty-roster',
+        'duty_roster_clear_drafts' => 'duty-roster', 'duty_roster_recompute' => 'duty-roster',
+        // Import only previews, but it is the front half of a write and is kept
+        // out of READ_ONLY_ACTIONS so a look-but-don't-touch role is refused.
+        'duty_roster_import' => 'duty-roster',
         'save_work_schedule' => 'work-schedules', 'delete_work_schedule' => 'work-schedules',
         // employee records (incl. their pay rows, which live on the detail page)
         'save_employee' => 'employee', 'delete_employee' => 'employee',
@@ -418,7 +429,7 @@ if (!defined('ACTION_PAGE_MAP')) {
 if (!defined('READ_ONLY_ACTIONS')) {
     define('READ_ONLY_ACTIONS', [
         'get_employee_schedule_history', 'employee_quick_view',
-        'loan_history_details', 'plan_list',
+        'loan_history_details', 'plan_list', 'duty_roster_data',
         'get_payroll_rows_data', 'payroll_history_details', 'remittance_breakdown',
         'isLock', 'dtr_review_progress', 'eport_payroll_reviews', 'eport_dtr_reviews',
     ]);
@@ -432,6 +443,27 @@ if (!defined('READONLY_PAGES_BY_ROLE')) {
         ROLE_HR          => HR_READONLY_PAGES,
         ROLE_TIMEKEEPER  => ['employee', 'employee-details'],  // enrols prints, edits nothing else
         7                => ['employee', 'employee-details', 'attendance'],  // Auditor reviews, never edits
+    ]);
+}
+
+/**
+ * Endpoints a role is refused even on a screen it may otherwise edit.
+ *
+ * READONLY_PAGES_BY_ROLE is all-or-nothing per screen, and the duty roster
+ * needs a line drawn INSIDE one screen: a Department Head plans their own ward
+ * — paints, saves, imports, discards their own drafts — but does not publish.
+ * Publishing is the act that notifies every employee named on the sheet and
+ * lets the roster reach DTR figures and the portal, so it stays with whoever
+ * owns the whole cutoff. Recompute rewrites attendance figures and is further
+ * still from a ward's job.
+ *
+ * A draft written by a head is therefore always reviewed by someone else
+ * before it reaches an employee, which is the point of the split.
+ */
+if (!defined('ACTION_DENY_BY_ROLE')) {
+    define('ACTION_DENY_BY_ROLE', [
+        8  => ['duty_roster_publish', 'duty_roster_recompute'],   // Department Head
+        10 => ['duty_roster_publish', 'duty_roster_recompute'],   // Supervisor
     ]);
 }
 
@@ -465,6 +497,10 @@ if (!function_exists('can_edit')) {
         $page = $map[$action];
         if (!page_allowed($page, $role)) return false;
         if (in_array($action, READ_ONLY_ACTIONS, true)) return true;
+
+        // Per-endpoint refusals inside a screen the role may otherwise edit.
+        $deny = ACTION_DENY_BY_ROLE;
+        if (isset($deny[(int) $role]) && in_array($action, $deny[(int) $role], true)) return false;
 
         return can_edit($page, $role);
     }
@@ -1242,8 +1278,65 @@ if (!function_exists('dtr_punch_time')) {
 // Returns null only if the default schedule row itself is missing.
 if (!defined('DEFAULT_WORK_SCHEDULE_ID')) define('DEFAULT_WORK_SCHEDULE_ID', 1);
 
+// The PUBLISHED duty-roster entry for one employee-day, or null.
+//
+// Draft rows (status 0) are deliberately invisible here: a head nurse builds
+// next cutoff's sheet over several days, and a half-painted rotation must never
+// reach DTR figures, payroll or the employee portal. Publishing is the only act
+// that makes a day real.
+if (!function_exists('duty_roster_day')) {
+    function duty_roster_day(mysqli $db, int $employee_id, string $date)
+    {
+        $res = $db->query(
+            "SELECT schedule_id, is_rest_day FROM employee_day_schedule
+             WHERE employee_id = " . (int) $employee_id . "
+               AND work_date = '" . $db->real_escape_string($date) . "'
+               AND status = 1 LIMIT 1"
+        );
+        return $res ? $res->fetch_assoc() : null;
+    }
+}
+
 if (!function_exists('resolve_employee_schedule')) {
     function resolve_employee_schedule(mysqli $db, int $employee_id, string $date)
+    {
+        // 0. Duty roster (rotating staff) wins over the period roster — it is
+        //    the more specific answer, painted for THIS day. Employees who are
+        //    not planned on the day grid have no rows here at all, so fixed
+        //    staff fall straight through to the period logic unchanged.
+        $day = duty_roster_day($db, $employee_id, $date);
+        if ($day) {
+            if ($day['schedule_id'] !== null) {
+                $res = $db->query("SELECT * FROM work_schedules WHERE id = " . (int) $day['schedule_id'] . " LIMIT 1");
+                $row = $res ? $res->fetch_assoc() : null;
+                if ($row) {
+                    // rest_days is emptied on purpose: the weekday CSV describes a
+                    // FIXED week and would contradict the rotation. day_is_rest is
+                    // the authoritative flag for a rostered day.
+                    $row['rest_days']   = '';
+                    $row['day_is_rest'] = (int) $day['is_rest_day'];
+                    return $row;
+                }
+                // Shift row vanished (deleted mid-cutoff) → fall through to the
+                // period roster rather than returning nothing.
+            }
+            // A rest day painted without naming a shift. The day still needs
+            // shift BOUNDARIES — someone who punches on their day off earns
+            // overtime measured against a shift end — so the period roster
+            // supplies the times and only the rest flag is forced.
+            $row = resolve_schedule_period($db, $employee_id, $date);
+            if ($row) $row['day_is_rest'] = (int) $day['is_rest_day'];
+            return $row;
+        }
+
+        return resolve_schedule_period($db, $employee_id, $date);
+    }
+}
+
+// The original period-roster resolution (steps 1-4), unchanged. Split out so
+// the duty-roster layer above can reuse it for shift boundaries.
+if (!function_exists('resolve_schedule_period')) {
+    function resolve_schedule_period(mysqli $db, int $employee_id, string $date)
     {
         $dateEsc = $db->real_escape_string($date);
         $eid     = (int) $employee_id;
@@ -1356,6 +1449,11 @@ if (!function_exists('dtr_compute_day')) {
         // keeps its stamped flag; a re-resolved one gets the roster's answer.
         if (isset($schedule['stamped_is_rest']) && $schedule['stamped_is_rest'] !== null) {
             $is_rest = (int) $schedule['stamped_is_rest'];
+        } elseif (isset($schedule['day_is_rest'])) {
+            // Rostered day: the grid said so explicitly. A rotating employee's
+            // day off moves through the week, so the weekday CSV below cannot
+            // answer for them and must not be consulted.
+            $is_rest = (int) $schedule['day_is_rest'];
         } else {
             $rest_csv = (string) ($schedule['rest_days'] ?? '');
             $is_rest  = ($rest_csv !== '' && in_array(
@@ -1462,29 +1560,57 @@ if (!function_exists('dtr_compute_day')) {
 //      assignment were computed under the system default and that stays the
 //      right answer — flagging them would demand a recompute that restates
 //      history against a shift the employee was not yet on.
+// A published duty-roster day OVERRIDES the period roster for that date, so it
+// is tested first and the period branches are skipped entirely when one exists
+// — mirroring resolve_employee_schedule's own precedence. Testing both would
+// flag every rostered nurse forever, since a rotation always disagrees with the
+// fixed weekly period underneath it.
 if (!function_exists('dtr_schedule_mismatch_where')) {
     function dtr_schedule_mismatch_where(string $alias = 'd'): string
     {
-        $differs = "(es.schedule_id <> $alias.schedule_id
+        // The period roster's answer disagrees with the stamp. $cmp selects
+        // WHAT to compare, because the day-row branch below reuses this same
+        // two-step structure to test the shift alone.
+        $periodStale = function (string $cmp) use ($alias) {
+            $covering = "SELECT 1 FROM employee_schedules es
+                WHERE es.employee_id = $alias.employee_id
+                  AND es.effective_from <= $alias.date_time
+                  AND (es.effective_to IS NULL OR es.effective_to >= $alias.date_time)";
+            return "(EXISTS ($covering AND $cmp)
+                OR (NOT EXISTS ($covering)
+                    AND EXISTS (
+                        SELECT 1 FROM employee_schedules es
+                        WHERE es.employee_id = $alias.employee_id
+                          AND es.effective_from <= $alias.date_time
+                          AND es.effective_from = (
+                              SELECT MAX(es2.effective_from) FROM employee_schedules es2
+                              WHERE es2.employee_id = $alias.employee_id
+                                AND es2.effective_from <= $alias.date_time)
+                          AND $cmp
+                    )))";
+        };
+
+        $shiftDiffers = "es.schedule_id <> $alias.schedule_id";
+        $differs = "($shiftDiffers
                 OR (FIND_IN_SET(DAYOFWEEK($alias.date_time) - 1, COALESCE(es.rest_days, '')) > 0)
                    <> (COALESCE($alias.is_rest_day, 0) = 1))";
-        $covering = "SELECT 1 FROM employee_schedules es
-            WHERE es.employee_id = $alias.employee_id
-              AND es.effective_from <= $alias.date_time
-              AND (es.effective_to IS NULL OR es.effective_to >= $alias.date_time)";
+
+        $dayRow = "SELECT 1 FROM employee_day_schedule eds
+            WHERE eds.employee_id = $alias.employee_id
+              AND eds.work_date = DATE($alias.date_time)
+              AND eds.status = 1";
+        // A rostered day with no shift named is a rest day whose BOUNDARIES
+        // still come from the period roster (resolver step 0's fallback), so a
+        // period shift change restates it too — hence the nested period test.
+        $dayDiffers = "(
+            (eds.schedule_id IS NOT NULL AND eds.schedule_id <> $alias.schedule_id)
+            OR (eds.is_rest_day = 1) <> (COALESCE($alias.is_rest_day, 0) = 1)
+            OR (eds.schedule_id IS NULL AND " . $periodStale($shiftDiffers) . ")
+        )";
+
         return "($alias.schedule_id IS NOT NULL AND (
-            EXISTS ($covering AND $differs)
-            OR (NOT EXISTS ($covering)
-                AND EXISTS (
-                    SELECT 1 FROM employee_schedules es
-                    WHERE es.employee_id = $alias.employee_id
-                      AND es.effective_from <= $alias.date_time
-                      AND es.effective_from = (
-                          SELECT MAX(es2.effective_from) FROM employee_schedules es2
-                          WHERE es2.employee_id = $alias.employee_id
-                            AND es2.effective_from <= $alias.date_time)
-                      AND $differs
-                ))
+            EXISTS ($dayRow AND $dayDiffers)
+            OR (NOT EXISTS ($dayRow) AND " . $periodStale($differs) . ")
         ))";
     }
 }
@@ -1585,6 +1711,22 @@ if (!function_exists('ot_request_limit')) {
             ORDER BY es.effective_from DESC LIMIT 1
         ");
         $sched = $sched ? $sched->fetch_assoc() : null;
+
+        // A published duty-roster day beats the period, exactly as it does in
+        // resolve_employee_schedule — otherwise a nurse rostered onto NOC would
+        // have their OT ceiling measured against the AM shift end the period
+        // roster still names, and the cap would disagree with their own DTR.
+        // A rostered rest day with no shift keeps the period's boundaries.
+        $day = duty_roster_day($db, $employee_id, $ymd);
+        if ($day && $day['schedule_id'] !== null) {
+            $dsq = $db->query("SELECT end_time, break_minutes, is_graveyard, total_hours
+                               FROM work_schedules WHERE id = " . (int) $day['schedule_id'] . " LIMIT 1");
+            if ($dsq && ($drow = $dsq->fetch_assoc())) {
+                $drow['rest_days'] = '';
+                $sched = $drow;
+            }
+        }
+
         if (!$sched) {
             $out['message'] = "You have no work schedule on file for $dateStr, so there are no duty hours to measure overtime against. Ask HR to set your schedule first.";
             return $out;
@@ -1624,10 +1766,14 @@ if (!function_exists('ot_request_limit')) {
         // filed as OT too — that double-paid the same hours. Only time rendered
         // BEYOND the full duty is fileable. Regular day → only the part past the
         // shift end (dtr_compute_day, so this always agrees with the DTR).
-        $rest = array_filter(array_map('intval', explode(',', (string) ($sched['rest_days'] ?? ''))), function ($d) {
-            return $d >= 0 && $d <= 6;
-        });
-        $out['rest_day'] = in_array((int) date('w', $ts), $rest, true);
+        if ($day) {
+            $out['rest_day'] = ((int) $day['is_rest_day'] === 1);
+        } else {
+            $rest = array_filter(array_map('intval', explode(',', (string) ($sched['rest_days'] ?? ''))), function ($d) {
+                return $d >= 0 && $d <= 6;
+            });
+            $out['rest_day'] = in_array((int) date('w', $ts), $rest, true);
+        }
 
         $duty = day_hours_or_default($sched['total_hours'] ?? null);
         if ($out['rest_day']) {

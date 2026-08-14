@@ -225,7 +225,8 @@ switch ($action) {
         // All windows, not just those overlapping the period — the fallback in
         // pick_schedule_window() can only choose among rows it was given, and a
         // period predating the employee's first assignment has none overlapping.
-        $sq = $conn->prepare("SELECT es.effective_from, es.effective_to, ws.description AS sched_name,
+        $sq = $conn->prepare("SELECT es.effective_from, es.effective_to, es.rest_days,
+                                     ws.description AS sched_name,
                                      ws.start_time, ws.end_time, ws.is_graveyard
                               FROM employee_schedules es
                               LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
@@ -236,10 +237,59 @@ switch ($action) {
         $sq->bind_param('i', $emp_id);
         $sq->execute();
         $windows = $sq->get_result()->fetch_all(MYSQLI_ASSOC);
+
+        // Published duty-roster days covering the period. Rotating staff are
+        // planned per day, so for a date with no stamp yet (an absence, a day
+        // still to come) the roster grid is the fact and employee_schedules is
+        // the wrong shape to ask. Keyed Y-m-d.
+        $dutyByDate = [];
+        $dq = $conn->prepare("SELECT eds.work_date, eds.is_rest_day,
+                                     ws.description AS sched_name, ws.start_time, ws.end_time, ws.is_graveyard
+                              FROM employee_day_schedule eds
+                              LEFT JOIN work_schedules ws ON ws.id = eds.schedule_id
+                              WHERE eds.employee_id = ? AND eds.status = 1
+                                AND eds.work_date BETWEEN ? AND ?");
+        if ($dq) {
+            $dq->bind_param('iss', $emp_id, $pFrom, $pTo);
+            $dq->execute();
+            $dres = $dq->get_result();
+            while ($dr = $dres->fetch_assoc()) $dutyByDate[$dr['work_date']] = $dr;
+        }
+        /**
+         * Is this a day off?
+         *
+         * The duty roster answers first. For rotating staff the weekday CSV is
+         * not merely less precise, it is WRONG — their day off moves through
+         * the week, so the CSV would stamp OFF on days they are working and
+         * miss the ones they are not. Same precedence as
+         * resolve_employee_schedule(), which is what the DTR itself computed
+         * against.
+         */
+        $dayOff = function (string $ymd) use (&$dutyByDate, &$windows): bool {
+            if (isset($dutyByDate[$ymd])) return (int) $dutyByDate[$ymd]['is_rest_day'] === 1;
+            foreach ($windows as $w) {
+                if ($w['effective_from'] <= $ymd
+                    && (empty($w['effective_to']) || $w['effective_to'] >= $ymd)) {
+                    $csv = (string) ($w['rest_days'] ?? '');
+                    return $csv !== '' && in_array(
+                        (int) date('w', strtotime($ymd)),
+                        array_map('intval', explode(',', $csv)), true);
+                }
+            }
+            return false;
+        };
+
         for ($t = strtotime($pFrom); $t <= strtotime($pTo); $t = strtotime('+1 day', $t)) {
             $ymd = date('Y-m-d', $t);
             $shift = null;
             $inf   = 0;
+
+            // The employee's own sheet never marked a day off at all: the admin
+            // sheet renders a "DAY OFF" stamp from the same shared template, and
+            // the portal simply never sent the mark. So an employee looking at a
+            // day they were rostered off saw a shift printed against it and
+            // nothing saying they were not due in.
+            if ($dayOff($ymd)) $marks[$ymd][] = ['k' => 'off'];
             // 1. The shift stamped on the DTR row is what the day was recorded
             //    under — it outranks the roster and is never a guess.
             if (!empty($stampByDate[$ymd])) {
@@ -251,6 +301,12 @@ switch ($action) {
             // 2. Otherwise fall back to employee_schedules. A covering period is
             //    a fact; the nearest one is a guess, flagged `inf` so the sheet
             //    never asserts a shift that was never assigned.
+            // 1b. A published duty-roster day is a fact for that date, so it
+            //     outranks the period roster below. A rostered rest day with no
+            //     shift named has nothing to draw and falls through.
+            if (!$shift && isset($dutyByDate[$ymd]) && !empty($dutyByDate[$ymd]['sched_name'])) {
+                $shift = $dutyByDate[$ymd];
+            }
             if (!$shift) {
                 $cover = null;
                 foreach ($windows as $w) {

@@ -516,6 +516,9 @@ if ($action === 'docs') {
                 // the Change Schedule modal show what it's correcting FROM.
                 'schedule_id' => $row['schedule_id'] !== null ? (int)$row['schedule_id'] : null,
                 'is_rest_day' => (int)($row['is_rest_day'] ?? 0),
+                // Backfilled once $reqMap is built, below — whether an approved
+                // 'overtime' attendance_request covers this date.
+                'ot_filed'    => false,
             ];
             unset($E, $D);
         }
@@ -798,7 +801,17 @@ if ($action === 'docs') {
                     : ($rest !== null && $rest !== ''
                        && in_array((int)date('w', $d), array_map('intval', explode(',', $rest)), true));
                 if ($isOff) $m[] = ['k' => 'off'];
-                foreach (($reqMap[$eid][$ymd] ?? []) as $rq) $m[] = ['k' => 'req'] + $rq;
+                $otFiled = false;
+                foreach (($reqMap[$eid][$ymd] ?? []) as $rq) {
+                    $m[] = ['k' => 'req'] + $rq;
+                    if ($rq['t'] === 'overtime' && $rq['s'] === 1) $otFiled = true;
+                }
+                if ($otFiled && isset($E['days'][$ymd]['recs'])) {
+                    foreach ($E['days'][$ymd]['recs'] as &$rc) {
+                        if (in_array('rest_worked', $rc['flags'], true)) $rc['ot_filed'] = true;
+                    }
+                    unset($rc);
+                }
                 if ($m) $marks[$ymd] = $m;
             }
             $E['marks'] = $marks ?: new stdClass();   // {} not [] when empty
@@ -819,6 +832,11 @@ if ($action === 'docs') {
             'ot_hours' => (float)DTR_HIGH_OT_HOURS,
             'min_days' => $minDays,
             'low_pct'  => (int)DTR_LOW_ATTENDANCE_PCT,
+            'rest_auto' => (function () use ($conn) {
+                $r = $conn->query("SELECT setting_value FROM pay_settings WHERE setting_key = 'rest_day_auto_authorize'");
+                $row = $r ? $r->fetch_assoc() : null;
+                return $row !== null && (float)$row['setting_value'] >= 1;
+            })(),
         ],
     ]);
     exit;

@@ -2,7 +2,7 @@
 /* App release shown on the login screen (mobile-app style: v<major>.<minor>.<build>).
  * Bump this on every deploy so users can report which build they are on. */
 if (!defined('APP_VERSION')) {
-    define('APP_VERSION', '2.0.02');
+    define('APP_VERSION', '2.0.03');
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -617,6 +617,18 @@ if (!defined('DTR_HIGH_OT_HOURS')) {
 // bulk-approval so absences can't be waved through silently.
 if (!defined('DTR_LOW_ATTENDANCE_PCT')) {
     define('DTR_LOW_ATTENDANCE_PCT', 60);
+}
+// How many hours before a shift's start a punch is still treated as a
+// legitimate early arrival. A tap earlier than that (wrong badge, stray
+// device retry, leftover from an unrelated errand) must not be paired as
+// the day's time-in — that steals the slot from the real punch, zeroes
+// work_hours, and reports the whole shift as undertime. Applies to every
+// schedule type (day, evening, graveyard alike) in both ingestion
+// (Action::save_biometric_attendance) and recompute (dtr_compute_day) —
+// the two must agree, or a Recompute would restate a row ingestion just
+// paired the other way.
+if (!defined('DTR_EARLY_GRACE_HOURS')) {
+    define('DTR_EARLY_GRACE_HOURS', 4);
 }
 // Default work schedule auto-assigned to every employee that has none —
 // applied to new employees (save_employee) and imports (import_employee).
@@ -1547,6 +1559,23 @@ if (!function_exists('dtr_compute_day')) {
                 array_map('intval', explode(',', $rest_csv)),
                 true
             )) ? 1 : 0;
+        }
+
+        // A tap hours before any plausible arrival for this shift is noise —
+        // pairing it as the day's IN steals the slot from the real punch and
+        // reports the whole shift as undertime instead of leaving the day
+        // correctly open for its actual checkout. Grace covers ordinary early
+        // arrival; must mirror the ingestion-side filter in
+        // Action::save_biometric_attendance, or a Recompute would restate a
+        // row differently than ingestion originally paired it.
+        if ($schedule && $n) {
+            $grace = strtotime($date . ' ' . $schedule['start_time']) - DTR_EARLY_GRACE_HOURS * 3600;
+            $kept  = array_values(array_filter($log_ts, function ($t) use ($grace) { return $t >= $grace; }));
+            if ($kept) {
+                $in_ts  = $kept[0];
+                $out_ts = count($kept) >= 2 ? $kept[count($kept) - 1] : null;
+                if ($in_ts && $out_ts && $out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
+            }
         }
 
         $raw_hours  = ($in_ts && $out_ts) ? ($out_ts - $in_ts) / 3600 : 0;

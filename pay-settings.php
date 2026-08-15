@@ -115,6 +115,29 @@ $payroll_period = isset($period_codes[$pp_code]) ? $period_codes[$pp_code] : 'se
                                         </div>
                                     </div>
 
+                                    <!-- Rest Day / Day-Off Work Authorization -->
+                                    <div class="col-12">
+                                        <hr class="my-1">
+                                        <h6 class="fw-bold text-uppercase text-muted mb-3" style="font-size:11px;letter-spacing:1px;">
+                                            <i class="ri-moon-line me-1"></i>Rest Day / Day-Off Work Authorization
+                                        </h6>
+                                        <div class="row g-3">
+                                            <div class="col-md-6">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" name="rest_day_auto_authorize" id="rest-auto" value="1"
+                                                        <?= ps('rest_day_auto_authorize', $settings) >= 1 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label fw-semibold" for="rest-auto">Auto-authorize rest-day work</label>
+                                                </div>
+                                                <small class="text-muted">
+                                                    Off (default) = base rest-day hours (up to a full duty) are approved and paid automatically as always —
+                                                    no filing needed. A DTR record with <b>overtime beyond that</b> on a rest day <b>cannot be approved</b> —
+                                                    single or bulk — until an approved OT request exists on file for that employee and date.<br>
+                                                    On = the OT portion is approved normally too, no filing required.
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- OT Rates -->
                                     <div class="col-12">
                                         <hr class="my-1">

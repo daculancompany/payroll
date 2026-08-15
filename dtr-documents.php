@@ -96,6 +96,12 @@ $canEdit      = ($login_role !== 6);
 // they can't be recomputed, but the discrepancy must at least be visible.
 $schedMM = dtr_schedule_mismatches($conn, $id);
 
+// Rest-day-work approval gate (pay_settings.rest_day_auto_authorize). Off by
+// default — a record punched on a rest day with no matching approved OT
+// filing warns before approve instead of sliding through silently.
+$restAutoRow = $conn->query("SELECT setting_value FROM pay_settings WHERE setting_key = 'rest_day_auto_authorize'");
+$restAuto    = $restAutoRow && ($r = $restAutoRow->fetch_assoc()) ? ((float)$r['setting_value'] >= 1) : false;
+
 // Active shifts for the per-record "Change schedule" picker (dtr_set_day_schedule).
 $ddvShifts = [];
 $shq = $conn->query("SELECT id, description, start_time, end_time FROM work_schedules WHERE status = 1 ORDER BY start_time ASC");
@@ -606,6 +612,11 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
    one day, so the reviewer should see it before approving. Blue, matching the
    leave marker (.dm-lv) on the Form 48 sheet. */
 .ddv-flag.leave { background:#e3f2fd; color:#1565c0; border:1px solid #a8cff5; }
+/* Whether an approved OT/rest-day filing (attendance_requests) backs a
+   rest_worked flag — sits right after the chip, not a chip of its own. */
+.ddv-flag-sub { font-size:8.5px; font-weight:700; align-self:center; }
+.ddv-flag-sub.filed   { color:#2e7d32; }
+.ddv-flag-sub.unfiled { color:#c98a00; }
 
 /* ── Cross-employee bulk selection ── */
 .ddv-bulk {
@@ -1340,6 +1351,7 @@ const RECOMPUTE_PERIOD = <?= json_encode(
 const LOG_MODE  = <?= json_encode(DTR_LOG_MODE) ?>;      // 'single' | 'ampm'
 const OT_HOURS  = <?= (float)DTR_HIGH_OT_HOURS ?>;
 const MIN_DAYS  = <?= (int)$minDays ?>;
+const REST_AUTO = <?= $restAuto ? 'true' : 'false' ?>;  // pay_settings.rest_day_auto_authorize
 const ME        = <?= json_encode($loginName) ?>;         // for instant audit lines
 
 // picked = employee ids ticked for a cross-employee bulk decision. Scoped to
@@ -1710,8 +1722,19 @@ const FLAG_META = {
     // Same moon glyph as the duty roster grid and the Form 48 "Day off" marker
     // — one icon for "rest day" everywhere in the app.
     rest_worked: { cls: 'info', icon: 'ri-moon-line',          lbl: 'Day off worked',
-                  why: 'This date is marked as the employee\'s rest day, but hours were recorded here — pays base pay + 30% rest-day premium instead of a regular working day (see Change schedule to correct it if this was not intended). Informational only — it does not block bulk approval.' },
+                  why: 'This date is marked as the employee\'s rest day, but hours were recorded here — pays base pay + 30% rest-day premium instead of a regular working day (see Change schedule to correct it if this was not intended). Base hours up to a full duty are paid automatically, no filing needed. Any OT beyond that cannot be approved until an approved OT request is on file for this date (or pay_settings.rest_day_auto_authorize is turned on).' },
 };
+
+// A rest_worked record with OVERTIME (hours beyond a full duty on the rest
+// day) that has no approved 'overtime' attendance_request on file. Base
+// rest-day hours up to a full duty need no filing at all — matches
+// ot_request_limit()'s own rule server-side (db_connect.php), whose filing
+// form actively refuses a request for them ("no filing needed"), so gating
+// on work_hours alone would deadlock: nothing to approve without a filing,
+// and nothing fileable to produce one. The server (decide_dtr_details) is
+// authoritative; this mirrors that same r.ot > 0 rule client-side purely for
+// messaging/exception-counting.
+const isRestUnfiled = r => !REST_AUTO && (r.flags || []).includes('rest_worked') && !r.ot_filed && r.ot > 0;
 
 // ── Right: records & logs ────────────────────────────────────────────────────
 function renderRecords(e) {
@@ -1732,7 +1755,15 @@ function renderRecords(e) {
             const dLbl = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             const flags = (r.flags || []).map(f => {
                 const m = FLAG_META[f];
-                return m ? `<span class="ddv-flag ${m.cls}" title="${esc(m.why)}"><i class="${m.icon}"></i>${m.lbl}</span>` : '';
+                if (!m) return '';
+                // Filing only matters for the OT portion — base rest-day hours
+                // need none, so the tag stays silent when r.ot is 0.
+                const filedTag = (f === 'rest_worked' && r.ot > 0)
+                    ? (r.ot_filed
+                        ? '<span class="ddv-flag-sub filed">· OT filed</span>'
+                        : '<span class="ddv-flag-sub unfiled">· OT not filed</span>')
+                    : '';
+                return `<span class="ddv-flag ${m.cls}" title="${esc(m.why)}"><i class="${m.icon}"></i>${m.lbl}</span>${filedTag}`;
             }).join('');
             // Leave-vs-attendance conflict: this date carries a leave request AND
             // real worked hours. Legitimate (half-day, or leave taken mid-shift),
@@ -1798,7 +1829,10 @@ function recFlags(r) {
     if (r.is_rest_day && r.wh > 0) f.push('rest_worked');
     return f;
 }
-const hasBlocker = r => r.flags.some(f => f !== 'manual' && f !== 'rest_worked');
+// rest_worked only blocks when unfiled — the server refuses to approve it in
+// that state (decide_dtr_details), so the exception count must say so too, or
+// "Approve all clean" leaves it pending with no red marker explaining why.
+const hasBlocker = r => r.flags.some(f => f !== 'manual' && f !== 'rest_worked') || isRestUnfiled(r);
 
 function recomputeEmp(e) {
     e.appr = e.pend = e.disa = e.exc = 0;
@@ -1821,6 +1855,13 @@ function rerenderAll() { renderList(); renderSelected(); refreshBatch(); syncBul
 // ── Actions (same ajax.php endpoints as the old table screen) ────────────────
 function decideRecs(ids, decision, confirmText) {
     const label = decision === 1 ? 'Approve' : 'Disapprove';
+    // Approving rest-day-worked hours with no matching approved OT filing is a
+    // hard stop, not a nudge — the server enforces this too (authoritative;
+    // this is just so the admin isn't surprised by the skip count after the
+    // fact). REST_AUTO (pay_settings.rest_day_auto_authorize) lifts it.
+    const unfiled = decision === 1
+        ? ids.map(id => findRec(id)).filter(hit => hit && isRestUnfiled(hit.r)).length
+        : 0;
     // Disapprovals need a reason: it's stored on the record and shown to the
     // employee side of the dispute, so a blank rejection can't happen.
     const dlg = decision === 2
@@ -1835,10 +1876,12 @@ function decideRecs(ids, decision, confirmText) {
             confirmButtonColor: '#c62828', confirmButtonText: 'Yes, disapprove',
         })
         : Swal.fire({
-            title: 'Approve?',
-            text: confirmText || 'This attendance record will be approved.',
-            icon: 'question', showCancelButton: true,
-            confirmButtonColor: '#0f9d58', confirmButtonText: 'Yes, approve',
+            title: unfiled ? 'Some records will be skipped' : 'Approve?',
+            text: unfiled
+                ? `${unfiled} of ${ids.length} record(s) have overtime on a rest day with no approved OT request on file — they will NOT be approved (stay pending) until one is filed and approved. The rest will proceed. ${confirmText || ''}`
+                : (confirmText || 'This attendance record will be approved.'),
+            icon: unfiled ? 'warning' : 'question', showCancelButton: true,
+            confirmButtonColor: unfiled ? '#c98a00' : '#0f9d58', confirmButtonText: unfiled ? 'Continue' : 'Yes, approve',
         });
     dlg.then(res => {
         if (!res.isConfirmed) return;
@@ -1848,15 +1891,19 @@ function decideRecs(ids, decision, confirmText) {
             data: { ids: ids, decision: decision, note: note },
             success: r => {
                 if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
+                const blocked = new Set(r.blocked_ids || []);
                 const at = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' +
                            new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
                 ids.forEach(id => {
+                    if (blocked.has(id)) return;   // server skipped it — stays pending
                     const hit = findRec(id);
                     if (hit) { hit.r.status = decision; hit.r.note = note; hit.r.by = ME; hit.r.at = at; }
                 });
                 st.emps.forEach(recomputeEmp);
                 rerenderAll();
-                toast((r.affected || ids.length) + ' record(s) ' + (decision === 1 ? 'approved' : 'disapproved'));
+                toast(blocked.size
+                    ? `${r.affected || 0} approved; ${blocked.size} skipped (unfiled rest-day work)`
+                    : (r.affected || ids.length) + ' record(s) ' + (decision === 1 ? 'approved' : 'disapproved'));
                 if (st.advanceAfterApprove) { st.advanceAfterApprove = false; $id('ddv-doc-next').click(); }
             },
             error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),

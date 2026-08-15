@@ -7156,7 +7156,23 @@ class Action
                 $before_today_start = $scan_ts < strtotime($scan_date . ' ' . $schedule['start_time']);
                 if ($is_overnight || $prev_is_overnight || $before_today_start) {
                     if (!$prevRec['is_complete']) {
-                        if ($gap > 0 && $gap <= 16 * 3600) $scan_date = $prev_date;   // case 1: time-out
+                        // "Still looks like one shift" used to mean within 16h of
+                        // the LAST punch on file — but that punch is often an early
+                        // arrival (2h+ before start), and a 12h graveyard shift plus
+                        // a legitimately long OT stretch (still under
+                        // DTR_HIGH_OT_HOURS-ish territory) easily clears 16h total
+                        // elapsed. A real checkout then missed the merge and opened
+                        // a stray next-day row instead. Anchor on the shift's own
+                        // SCHEDULED END instead — fixed regardless of how early
+                        // they arrived — and allow the same 12h OT ceiling
+                        // $spill_window already grants non-overnight shifts above.
+                        // Falls back to the old last-punch-relative rule only when
+                        // yesterday's shift end could not be resolved at all.
+                        $merge_ceiling = $prev_end !== null ? $prev_end + 12 * 3600
+                            : ($lastTs ? $lastTs + 16 * 3600 : null);
+                        if ($gap > 0 && $merge_ceiling !== null && $scan_ts <= $merge_ceiling) {
+                            $scan_date = $prev_date;   // case 1: time-out
+                        }
                     } elseif ($gap >= 0 && $gap < 300) {
                         $scan_date = $prev_date;                                      // case 2: double-tap
                     }
@@ -7388,8 +7404,80 @@ class Action
                 $timestamps = array_map(function ($l) {
                     return strtotime($l['dateTime']);
                 }, $existing_logs);
-                $earliest   = min($timestamps);
-                $latest     = max($timestamps);
+                sort($timestamps);
+
+                // A tap hours before any plausible arrival for this shift is noise
+                // (wrong badge, stray device retry) — pairing it as the day's IN
+                // steals the slot from the real punch, zeroes work_hours, and
+                // reports the whole shift as undertime while the actual checkout
+                // opens a stray new day instead of closing this one. Grace covers
+                // ordinary early arrival; kept out of pairing but the raw tap stays
+                // in $logs for audit. Must mirror dtr_compute_day's identical
+                // filter, or a Recompute would restate this row differently than
+                // ingestion originally paired it.
+                $plausible = $timestamps;
+                if ($schedule) {
+                    $grace = strtotime($scan_date . ' ' . $schedule['start_time']) - DTR_EARLY_GRACE_HOURS * 3600;
+                    $kept  = array_values(array_filter($timestamps, function ($t) use ($grace) { return $t >= $grace; }));
+                    if ($kept) $plausible = $kept;
+                }
+                $earliest = $plausible[0];
+                $latest   = count($plausible) >= 2 ? $plausible[count($plausible) - 1] : null;
+
+                $logs = json_encode($existing_logs);
+
+                if ($latest === null) {
+                    // Every other punch on file is noise relative to this shift —
+                    // this is still just a time-in, not a complete day. Persist the
+                    // logs (nothing is discarded) but leave hours/complete exactly
+                    // as an opening punch would.
+                    $stmt7a = $this->db->prepare(
+                        "UPDATE DTR_details SET logs=?, work_hours=0, overtime=0, late=0, undertime=0,
+                         day_type=?, nsd_hours=0, is_complete=0,
+                         schedule_id=?, day_hours=?, is_rest_day=?,
+                         sched_start=?, sched_end=?, sched_break=?, sched_graveyard=? WHERE id=?"
+                    );
+                    $stmt7a->bind_param(
+                        'ssidissiii',
+                        $logs,
+                        $day_type,
+                        $sched_id,
+                        $sched_dh,
+                        $is_rest,
+                        $sched_st,
+                        $sched_en,
+                        $sched_bk,
+                        $sched_gv,
+                        $detail['id']
+                    );
+                    $stmt7a->execute();
+                    $this->db->commit();
+                    try {
+                        $this->notifyEmployee(
+                            $employee_id,
+                            'Time In recorded',
+                            'Your clock-in at ' . date('g:i A', $scan_ts) . ' on ' . date('M d, Y', strtotime($scan_date)) . ' was captured.',
+                            'ri-login-circle-line',
+                            'info',
+                            'employee-portal.php?tab=attendance'
+                        );
+                    } catch (\Throwable $e) { /* ignore */
+                    }
+                    return [
+                        'result'   => true,
+                        'message'  => 'Scan recorded',
+                        'scan'     => 'in',
+                        'day_type' => $day_type,
+                        'scan_time' => $scan_time,
+                        'dtr_date' => $scan_date,
+                        'schedule' => $schedule ? [
+                            'description' => $schedule['description'],
+                            'start_time'  => $schedule['start_time'],
+                            'end_time'    => $schedule['end_time'],
+                            'label'       => $shift_label,
+                        ] : null,
+                    ];
+                }
 
                 $raw_hours  = ($latest - $earliest) / 3600;
                 $break_hrs  = ($schedule['break_minutes'] ?? 60) / 60;
@@ -7435,7 +7523,6 @@ class Action
                 }
                 $nsd_hours = round($nsd_hours, 2);
 
-                $logs = json_encode($existing_logs);
                 // Re-stamp on the closing punch too: a scan re-dated onto the
                 // previous day resolves its schedule again, so the row must end up
                 // with the shift the completed day was actually computed against.
@@ -10206,7 +10293,7 @@ class Action
         // always posts a value and needs no unchecked-means-zero handling.
         $keys[] = 'tax_method';
         // Checkboxes: absent from POST = unchecked = 0.
-        $flag_keys = ['th13_include_paid_leave', 'th13_include_allowance', 'th13_round_to_peso', 'tax_auto_post'];
+        $flag_keys = ['th13_include_paid_leave', 'th13_include_allowance', 'th13_round_to_peso', 'tax_auto_post', 'rest_day_auto_authorize'];
         foreach ($flag_keys as $fk) {
             $_POST[$fk] = isset($_POST[$fk]) && $_POST[$fk] ? 1 : 0;
         }
@@ -10607,17 +10694,69 @@ class Action
         $decider = (int)($_SESSION['login_id'] ?? 0) ?: null;
         $setSql  = "status = ?, decision_note = ?, decided_by = ?, decided_at = NOW()";
 
+        // Rest-day work beyond the normal duty length (overtime > 0) needs a
+        // filed & approved OT request before it can be approved — matches
+        // ot_request_limit()'s own rule (db_connect.php): base rest-day hours
+        // up to a full duty are paid automatically with the rest-day premium
+        // and the filing form refuses to accept a request for them ("no
+        // filing needed"), so gating on work_hours alone would deadlock —
+        // nothing to approve without a filing, and nothing fileable to
+        // produce one. Only the excess actually needs authorization.
+        // pay_settings.rest_day_auto_authorize off (the default) enforces
+        // this outright rather than just warning. Disapprovals are never
+        // blocked — rejecting a bad record must always stay possible. The
+        // EXISTS subquery is correlated to DTR_details by table name, not an
+        // alias — legal in a single-table UPDATE as long as the subquery
+        // itself selects from a different table.
+        $restAuto = $this->pay_setting('rest_day_auto_authorize', 0) >= 1;
+        $restBlockSql = ($decision === 1 && !$restAuto)
+            ? " AND NOT (is_rest_day = 1 AND overtime > 0 AND NOT EXISTS (
+                    SELECT 1 FROM attendance_requests ar
+                    WHERE ar.employee_id = DTR_details.employee_id
+                      AND ar.request_type = 'overtime' AND ar.status = 1
+                      AND ar.request_date = DATE(DTR_details.date_time)
+                ))"
+            : '';
+
         // Explicit id list (checkbox selection) takes precedence.
         $ids = isset($_POST['ids']) && is_array($_POST['ids']) ? $_POST['ids'] : [];
         $ids = array_values(array_filter(array_map('intval', $ids)));
         if (!empty($ids)) {
+            $blockedIds = [];
+            if ($restBlockSql !== '') {
+                $ph  = implode(',', array_fill(0, count($ids), '?'));
+                $chk = $this->db->prepare(
+                    "SELECT id FROM DTR_details
+                     WHERE id IN ($ph) AND is_rest_day = 1 AND overtime > 0
+                       AND NOT EXISTS (
+                           SELECT 1 FROM attendance_requests ar
+                           WHERE ar.employee_id = DTR_details.employee_id
+                             AND ar.request_type = 'overtime' AND ar.status = 1
+                             AND ar.request_date = DATE(DTR_details.date_time)
+                       )"
+                );
+                $chk->bind_param(str_repeat('i', count($ids)), ...$ids);
+                $chk->execute();
+                $res = $chk->get_result();
+                while ($row = $res->fetch_assoc()) $blockedIds[] = (int) $row['id'];
+            }
             $placeholders = implode(',', array_fill(0, count($ids), '?'));
-            $stmt   = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE id IN ($placeholders)");
+            $stmt   = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE id IN ($placeholders)" . $restBlockSql);
             $types  = 'isi' . str_repeat('i', count($ids));
             $params = array_merge([$decision, $noteSql, $decider], $ids);
             $stmt->bind_param($types, ...$params);
             if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
-            return ['result' => true, 'message' => 'Records updated', 'affected' => $stmt->affected_rows];
+            $msg = 'Records updated';
+            if ($blockedIds) {
+                $msg = $stmt->affected_rows . ' updated; ' . count($blockedIds)
+                     . ' skipped — overtime on a rest day with no approved OT request on file.';
+            }
+            return [
+                'result'      => true,
+                'message'     => $msg,
+                'affected'    => $stmt->affected_rows,
+                'blocked_ids' => $blockedIds,
+            ];
         }
 
         // Whole batch (ddtr_id), optionally a single day — only touches still-pending rows.
@@ -10642,10 +10781,10 @@ class Action
             $cleanSql = dtr_clean_condition_sql($ddtr_id, dtr_min_days($periodDays));
         }
         if ($date !== '') {
-            $stmt = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE ddtr_id = ? AND DATE(date_time) = ? AND status = 0" . $cleanSql);
+            $stmt = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE ddtr_id = ? AND DATE(date_time) = ? AND status = 0" . $cleanSql . $restBlockSql);
             $stmt->bind_param('isiis', $decision, $noteSql, $decider, $ddtr_id, $date);
         } else {
-            $stmt = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE ddtr_id = ? AND status = 0" . $cleanSql);
+            $stmt = $this->db->prepare("UPDATE DTR_details SET $setSql WHERE ddtr_id = ? AND status = 0" . $cleanSql . $restBlockSql);
             $stmt->bind_param('isii', $decision, $noteSql, $decider, $ddtr_id);
         }
         if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];

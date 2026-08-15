@@ -93,21 +93,18 @@ while ($hq && ($h = $hq->fetch_assoc())) {
 $shifts   = $crud->dutyShiftCodes();
 
 /**
- * The SAME colour ramp the on-screen grid uses — DAY_COLORS / NIGHT_COLORS in
- * assets2/js/duty-roster.js, assigned by position exactly as shiftColor() does.
- * A planner who has learned that 6-2 is the pale blue one should not have to
- * learn it twice, and a graveyard block has to read as dark in both places.
+ * The SAME colour ramp the grid and the employee portal use, from
+ * duty_shift_palette() — one definition, so a planner who has learned that 6-2
+ * is the pale blue one never has to learn it twice.
  *
- * Kept in step by hand: they are two languages. If the ramp changes there,
- * change it here.
+ * It is converted to Excel's AARRGGBB here; the palette speaks CSS because two
+ * of its three consumers are web pages.
  */
-$DAY_COLORS   = ['FFD6E4FF', 'FFD9F7BE', 'FFFFF1B8', 'FFFFD8BF', 'FFE4D7FF', 'FFB5F5EC', 'FFFFD6E7', 'FFF4FFB8'];
-$NIGHT_COLORS = ['FF4C4A6B', 'FF3F5C8A', 'FF5C4A7A', 'FF2F4858', 'FF584A3F', 'FF4A5C4A'];
+$palette = duty_shift_palette($conn);
 foreach ($shifts as $i => $s) {
-    $shifts[$i]['bg'] = $s['noc']
-        ? $NIGHT_COLORS[$i % count($NIGHT_COLORS)]
-        : $DAY_COLORS[$i % count($DAY_COLORS)];
-    $shifts[$i]['fg'] = $s['noc'] ? 'FFFFFFFF' : 'FF28223B';
+    $p = $palette[$s['id']] ?? null;
+    $shifts[$i]['bg'] = 'FF' . strtoupper(ltrim($p['bg'] ?? '#f4f1fa', '#'));
+    $shifts[$i]['fg'] = 'FF' . strtoupper(ltrim($p['fg'] ?? '#28223b', '#'));
 }
 
 $codeById = [];

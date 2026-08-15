@@ -107,6 +107,27 @@
                         </div>
                         <div class="col-md-4">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                <i class="ri-node-tree me-1"></i>Area
+                            </label>
+                            <?php /* Ward/section inside the department. Decides who approves this
+                                     employee's leave and whose duty roster they appear on. Left
+                                     blank the employee falls back to department-level scoping. */ ?>
+                            <select id="area-select" class="form-control select2" name="area_id"
+                                data-placeholder="Select area">
+                                <option value="">Select Area</option>
+                                <?php
+                                $__ar = $conn->query("SELECT id, name, department_id FROM area WHERE status = 1 ORDER BY name ASC");
+                                if ($__ar) while ($row = $__ar->fetch_assoc()):
+                                ?>
+                                    <option class="opt" value="<?= (int)$row['id'] ?>" data-did="<?= (int)$row['department_id'] ?>"
+                                        <?= isset($area_id) && $area_id == $row['id'] ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($row['name']) ?>
+                                    </option>
+                                <?php endwhile; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-briefcase-4-line me-1"></i>Position <span class="text-danger">*</span>
                             </label>
                             <select id="position-select" class="form-control select2" name="position_id"
@@ -180,15 +201,10 @@
                                 <input type="password" style="display:none" autocomplete="off">
                             </div>
                             <div class="col-12">
-                                <div style="font-size:11px;color:#57339d;background:#f4f3f8;border:1px dashed #cabede;border-radius:6px;padding:6px 10px;">
-                                    <i class="ri-information-line me-1"></i>
-                                    <?php if (isset($employee_no)): ?>
-                                        Leave both blank to keep the current login. The employee can always sign in with their
-                                        Employee No. as well.
-                                    <?php else: ?>
-                                        Blank email &rarr; one is generated as <b>firstname.lastname@<?= htmlspecialchars(PORTAL_DEFAULT_EMAIL_DOMAIN) ?></b>.
-                                        Blank password &rarr; the default password, which the employee is asked to change.
-                                    <?php endif; ?>
+                                <div id="addemployee-portal-note" style="font-size:11px;color:#57339d;background:#f4f3f8;border:1px dashed #cabede;border-radius:6px;padding:6px 10px;">
+                                    <i class="ri-information-line me-1"></i><span id="addemployee-portal-note-text"><?php if (isset($employee_no)): ?>Leave both blank to keep the current login. The employee can always sign in with their
+                                        Employee No. as well.<?php else: ?>Blank email &rarr; one is generated as <b>firstname.lastname@<?= htmlspecialchars(PORTAL_DEFAULT_EMAIL_DOMAIN) ?></b>.
+                                        Blank password &rarr; the default password, which the employee is asked to change.<?php endif; ?></span>
                                 </div>
                             </div>
                         </div>
@@ -372,7 +388,7 @@
                     </button>
                     <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
                         <i class="fa fa-spinner fa-spin fa-spinner-button"></i>
-                        <i class="ri-save-line me-1"></i><?= isset($employee_no) ? 'Save Changes' : 'Create Employee' ?>
+                        <i class="ri-save-line me-1"></i><span id="addemployee-submit-label"><?= isset($employee_no) ? 'Save Changes' : 'Create Employee' ?></span>
                     </button>
                 </div>
             </div>

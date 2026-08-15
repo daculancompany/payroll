@@ -43,7 +43,7 @@
                     <div class="card-body">
                         <?php
                         // Roles offered in this list (Administrator role 1 is excluded from the table).
-                        $usr_roles = [10, 8, 9, ROLE_TIMEKEEPER];
+                        $usr_roles = [11, 10, 8, 9, ROLE_TIMEKEEPER];
                         $usr_depts = $conn->query("SELECT id, name FROM department ORDER BY name ASC");
                         ?>
                         <!-- Filter / sort controls -->
@@ -95,6 +95,9 @@
                                         SELECT users.*,
                                             employers.employer_name,
                                             department.name AS department_name,
+                                            (SELECT GROUP_CONCAT(DISTINCT ar.name ORDER BY ar.name SEPARATOR ', ')
+                                               FROM area_approver ap JOIN area ar ON ar.id = ap.area_id
+                                              WHERE ap.user_id = users.id) AS area_names,
                                             GROUP_CONCAT(CONCAT(sites.site_code,'|',sites.site_name,'|',sites.site_address) SEPARATOR '||') AS site_data
                                         FROM users
                                         LEFT JOIN employers ON employers.id = users.employer_id
@@ -135,14 +138,22 @@
                                                     </div>
                                                 <?php elseif ($row['role'] == 5): ?>
                                                     <div class="text-muted" style="font-size:11px;margin-top:3px;"><i class="ri-information-line me-1"></i>No site assigned</div>
+                                                <?php elseif (in_array((int)$row['role'], [8, 10, 11], true) && !empty($row['area_names'])): ?>
+                                                    <?php /* Areas are the real scope for an approver; the department
+                                                            below is only what pre-area accounts still carry. */ ?>
+                                                    <div class="mt-1">
+                                                        <div class="usr-site-item">
+                                                            <span class="usr-site-name"><i class="ri-node-tree me-1"></i><?= htmlspecialchars($row['area_names']) ?></span>
+                                                        </div>
+                                                    </div>
                                                 <?php elseif (in_array((int)$row['role'], [8, 10], true) && !empty($row['department_name'])): ?>
                                                     <div class="mt-1">
                                                         <div class="usr-site-item">
                                                             <span class="usr-site-name"><i class="ri-community-line me-1"></i><?= htmlspecialchars($row['department_name']) ?></span>
                                                         </div>
                                                     </div>
-                                                <?php elseif (in_array((int)$row['role'], [8, 10], true)): ?>
-                                                    <div class="text-muted" style="font-size:11px;margin-top:3px;"><i class="ri-information-line me-1"></i>No department assigned</div>
+                                                <?php elseif (in_array((int)$row['role'], [8, 10, 11], true)): ?>
+                                                    <div class="text-muted" style="font-size:11px;margin-top:3px;"><i class="ri-information-line me-1"></i>No area assigned — set it on the Areas page</div>
                                                 <?php endif; ?>
                                             </td>
                                             <td data-order="<?= htmlspecialchars($row['department_name'] ?? '') ?>">
@@ -168,6 +179,7 @@
                                                         employer_id="<?= htmlspecialchars($row['employer_id']) ?>"
                                                         role="<?= htmlspecialchars($row['role']) ?>"
                                                         department_id="<?= htmlspecialchars($row['department_id'] ?? '') ?>"
+                                                        employee_id="<?= htmlspecialchars($row['employee_id'] ?? '') ?>"
                                                         onclick="edit_function(this)"
                                                         data-bs-toggle="tooltip" data-bs-placement="top" title="Edit User">
                                                         <i class="ri-edit-line me-1"></i>Edit

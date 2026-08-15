@@ -118,6 +118,13 @@
                         <i class="ri-building-3-line"></i> <span>Departments</span>
                     </a>
                 </li>
+                <?php if (page_allowed('area')): ?>
+                <li class="nav-item">
+                    <a href="area" class="nav-link menu-link <?= $page === 'area' ? 'active' : '' ?>">
+                        <i class="ri-node-tree"></i> <span>Areas</span>
+                    </a>
+                </li>
+                <?php endif; ?>
                 <li class="nav-item">
                     <a href="position" class="nav-link menu-link <?= $page === 'position' ? 'active' : '' ?>">
                         <i class="ri-briefcase-4-line"></i> <span>Positions</span>

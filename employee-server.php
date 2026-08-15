@@ -10,6 +10,9 @@ if (session_status() === PHP_SESSION_NONE) {
 // never what anyone is paid — the pay cells come back blank regardless of what
 // the browser asks for.
 $tk_hide_pay = is_timekeeper();
+// Same gate employee.php uses to decide whether "Create Employee" renders —
+// computed once, not per row.
+$can_edit_emp = can_edit('employee');
 
 $request = $_REQUEST;
 $status        = isset($request['status'])        && $request['status']        !== '' ? (int)$request['status']        : 2;
@@ -140,6 +143,10 @@ while ($row = mysqli_fetch_array($query)) {
     $subdata[] = '<div class="emp-actions">'
         . '<a href="index.php?page=employee-details&id=' . $row['id'] . '" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" data-bs-placement="top" title="View Employee Details">'
         . '<i class="ri-eye-line me-1"></i>View</a>'
+        . ($can_edit_emp
+            ? ' <button type="button" class="btn btn-sm btn-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Quick Edit" onclick="quick_edit_employee(' . (int) $row['id'] . ')">'
+                . '<i class="ri-edit-line me-1"></i>Edit</button>'
+            : '')
         . '</div>';
     // Rate Type chip (index 10) — Daily / Monthly / Fixed pay basis.
     $rt = in_array($row['rate_type'] ?? 'daily', ['daily', 'monthly', 'fixed'], true) ? $row['rate_type'] : 'daily';

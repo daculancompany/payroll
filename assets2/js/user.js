@@ -47,6 +47,11 @@ $(document).ready(function () {
 // Show the Department picker for a Department Head (role 8) or a Supervisor
 // (role 10) and make it required only while visible, so other roles aren't
 // blocked by validation.
+//
+// A Section/Unit Head (role 11) does NOT get one: they are scoped by area, and
+// an area is assigned on the Areas page rather than here. The Linked Employee
+// picker shows for all three approver roles — that link is what stops someone
+// being handed their own leave request to approve.
 function toggleDepartment() {
     const role = $("#role").val();
     if (role === "8" || role === "10") {
@@ -55,6 +60,13 @@ function toggleDepartment() {
     } else {
         $("#department-wrapper").addClass("d-none");
         $("#department_id").removeAttr("required").val("").trigger("change");
+    }
+
+    if (role === "8" || role === "10" || role === "11" || role === "9") {
+        $("#employee-link-wrapper").removeClass("d-none");
+    } else {
+        $("#employee-link-wrapper").addClass("d-none");
+        $("#employee_id").val("").trigger("change");
     }
 }
 
@@ -150,6 +162,7 @@ function edit_function(e) {
     $("#role").val($(e).attr("role")).trigger("change");
     // Role change toggles the Department field; set its value afterwards.
     $("#department_id").val($(e).attr("department_id") || "").trigger("change");
+    $("#employee_id").val($(e).attr("employee_id") || "").trigger("change");
 }
 
 $(document).on("hide.bs.modal", "#modal", function () {

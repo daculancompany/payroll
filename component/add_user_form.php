@@ -37,6 +37,10 @@
                             <select class="form-control select2" id="role" name="role"
                                 data-placeholder="Select a role"
                                 data-parsley-required-message="Please select role." required>
+                                <?php /* Leave stages, innermost first. Which stage a user
+                                         actually acts on is set per area on the Areas page —
+                                         the role only decides which screens they may open. */ ?>
+                                <option value="11">Section/Unit Head</option>
                                 <option value="10">Supervisor</option>
                                 <option value="8">Department Head</option>
                                 <option value="9">HR</option>
@@ -62,6 +66,29 @@
                                     <option value="<?= $row_dept['id'] ?>"><?= htmlspecialchars($row_dept['name']) ?></option>
                                 <?php endwhile; ?>
                             </select>
+                        </div>
+
+                        <!-- Which employee this login belongs to. Only needed for an approver
+                             who is also on the payroll: it is how the system knows not to let
+                             someone approve their own leave request. Consultants who approve but
+                             are not employed here are left unlinked. -->
+                        <div class="col-md-12 d-none" id="employee-link-wrapper">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                <i class="ri-links-line me-1"></i>Linked Employee
+                            </label>
+                            <select class="form-control select2" id="employee_id" name="employee_id"
+                                data-placeholder="Select employee (optional)" data-live-search="true">
+                                <option value="">— Not an employee —</option>
+                                <?php
+                                $__el = $conn->query("SELECT id, lastname, firstname FROM employee WHERE status = 1 ORDER BY lastname ASC, firstname ASC");
+                                while ($__el && ($__e = $__el->fetch_assoc())):
+                                ?>
+                                    <option value="<?= (int)$__e['id'] ?>"><?= htmlspecialchars($__e['lastname'] . ', ' . $__e['firstname']) ?></option>
+                                <?php endwhile; ?>
+                            </select>
+                            <div class="form-text" style="font-size:11px;">
+                                Used so this person is never offered their own leave request to approve.
+                            </div>
                         </div>
 
                         <div class="col-md-12">

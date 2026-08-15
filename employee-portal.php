@@ -117,9 +117,10 @@ $lrf = $conn->query("
 if ($lrf) while ($r = $lrf->fetch_assoc()) $lv_remaining_filing[(int)$r['id']] = round(max(0, (float)$r['remaining']), 1);
 
 $mlq = $conn->prepare("
-    SELECT lr.*, lt.name AS leave_type_name, su.name AS sup_name, hu.name AS hr_name, au.name AS admin_name
+    SELECT lr.*, lt.name AS leave_type_name, se.name AS sec_name, su.name AS sup_name, hu.name AS hr_name, au.name AS admin_name
     FROM leave_requests lr
     INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+    LEFT JOIN users se ON se.id = lr.sec_by
     LEFT JOIN users su ON su.id = lr.sup_by
     LEFT JOIN users hu ON hu.id = lr.hr_by
     LEFT JOIN users au ON au.id = lr.admin_by
@@ -2304,7 +2305,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             // not their real answer — this is. Only published rows are read:
             // drafts are the planner's working copy and must not reach anyone.
             $duty_days = [];
-            $dq2 = $conn->query("SELECT eds.work_date, eds.is_rest_day, ws.description, ws.start_time, ws.end_time, ws.is_graveyard
+            $dutyPal = duty_shift_palette($conn);
+            $dq2 = $conn->query("SELECT eds.work_date, eds.is_rest_day, eds.schedule_id,
+                                        ws.description, ws.start_time, ws.end_time, ws.is_graveyard
                 FROM employee_day_schedule eds
                 LEFT JOIN work_schedules ws ON ws.id = eds.schedule_id
                 WHERE eds.employee_id = $emp_id AND eds.status = 1
@@ -2365,11 +2368,21 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                              . ($rest ? 'Rest day (off duty)' : ($dd['description']
                                 ? $dd['description'] . ' · ' . date('h:i A', strtotime($dd['start_time'])) . ' – ' . date('h:i A', strtotime($dd['end_time']))
                                 : 'No shift set'));
+                        // The SAME colour the planner's grid and the Excel sheet
+                        // give this shift — from duty_shift_palette(), one ramp
+                        // for the whole app. The chips used to know only "night
+                        // or not", so a dozen different shifts were painted two
+                        // colours and the employee could not match their own
+                        // chip to the roster posted on the ward wall.
+                        $pal = (!$rest && $dd['schedule_id']) ? ($dutyPal[(int) $dd['schedule_id']] ?? null) : null;
+                        $bg  = $rest ? '#f6f6f8' : ($pal ? $pal['bg'] : '#f4f1fa');
+                        $fg  = $rest ? '#a9a5b6' : ($pal ? $pal['fg'] : '#57339d');
+                        $noc = $pal ? $pal['noc'] : 0;
                     ?>
-                    <div title="<?= htmlspecialchars($tip) ?>" style="min-width:58px;text-align:center;border-radius:9px;padding:5px 7px;border:1px solid <?= $today ? '#673bb6' : '#e8e7eb' ?>;background:<?= $rest ? '#f6f6f8' : ($dd['is_graveyard'] ? '#2f3350' : '#f4f1fa') ?>;">
-                        <div style="font-size:9.5px;font-weight:700;letter-spacing:.3px;color:<?= $dd['is_graveyard'] && !$rest ? '#c9c6da' : '#908c9c' ?>;"><?= date('D', strtotime($dd['work_date'])) ?></div>
-                        <div style="font-size:13px;font-weight:800;color:<?= $dd['is_graveyard'] && !$rest ? '#fff' : '#2b2639' ?>;"><?= date('j', strtotime($dd['work_date'])) ?></div>
-                        <div style="font-size:9.5px;font-weight:700;color:<?= $rest ? '#a9a5b6' : ($dd['is_graveyard'] ? '#fff' : '#57339d') ?>;"><?= htmlspecialchars($lbl) ?></div>
+                    <div title="<?= htmlspecialchars($tip) ?>" style="min-width:58px;text-align:center;border-radius:9px;padding:5px 7px;border:1px solid <?= $today ? '#673bb6' : 'rgba(0,0,0,.10)' ?>;background:<?= $bg ?>;<?= $today ? 'box-shadow:0 0 0 2px rgba(103,59,182,.22);' : '' ?>">
+                        <div style="font-size:9.5px;font-weight:700;letter-spacing:.3px;color:<?= $noc ? 'rgba(255,255,255,.72)' : ($rest ? '#b3b0bc' : 'rgba(40,34,59,.55)') ?>;"><?= date('D', strtotime($dd['work_date'])) ?></div>
+                        <div style="font-size:13px;font-weight:800;color:<?= $noc ? '#fff' : ($rest ? '#8f8b9b' : '#28223b') ?>;"><?= date('j', strtotime($dd['work_date'])) ?></div>
+                        <div style="font-size:9.5px;font-weight:800;color:<?= $fg ?>;"><?= htmlspecialchars($lbl) ?></div>
                     </div>
                     <?php endforeach; ?>
                 </div>

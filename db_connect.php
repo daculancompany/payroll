@@ -121,7 +121,11 @@ if (!defined('TIMEKEEPER_ALLOWED_PAGES')) {
 // defined in the HR block further down. Edit these two constants to adjust
 // the Supervisor / Department Head slice app-wide.
 if (!defined('LEAVE_APPROVER_ROLES')) {
-    define('LEAVE_APPROVER_ROLES', [8, 10]);   // 8 = Department Head, 10 = Supervisor
+    // 8 = Department/Division Head, 10 = Supervisor, 11 = Section/Unit Head.
+    // All three approve leave; which STAGE each one acts on is decided per area
+    // by area_approver, not by the role — one person is Section Head of their
+    // own ward and Supervisor of three others.
+    define('LEAVE_APPROVER_ROLES', [8, 10, 11]);
 }
 
 if (!defined('LEAVE_APPROVER_ALLOWED_PAGES')) {
@@ -129,11 +133,12 @@ if (!defined('LEAVE_APPROVER_ALLOWED_PAGES')) {
         'leave-dashboard',   // landing page: counts + department roster
         'leaves',            // the requests they must act on (already dept-scoped)
         'calendar',          // holiday calendar — READ-ONLY (see calendar.php)
-        'duty-roster',       // their own ward's duty grid — READ-ONLY, and locked
-                             // to their department by dept-scope.php. They approve
-                             // leave against this schedule, so being unable to see
-                             // it made them approve blind; and the Excel export is
-                             // how the ward gets its copy.
+        'duty-roster',       // their own ward's duty grid, locked to their areas
+                             // by dept-scope.php. They approve leave against this
+                             // schedule, so being unable to see it made them
+                             // approve blind; and the Excel export is how the
+                             // ward gets its copy. Writable only for role 8 —
+                             // see READONLY_PAGES_BY_ROLE for 10 and 11.
         'profile',           // own account
     ]);
 }
@@ -276,6 +281,9 @@ if (!defined('PAGE_ROLE_RESTRICTIONS')) {
         'pay-settings'        => [1, 8],
         'thirteenth-month'    => [1, 8],
         'users'               => [1, 2, 3, 8],
+        // Areas decide who approves whose leave and who owns which roster, so
+        // the screen that edits them stays with the admin and HR.
+        'area'                => [1, 9],
     ]);
 }
 
@@ -397,6 +405,9 @@ if (!defined('ACTION_PAGE_MAP')) {
         // employee records (incl. their pay rows, which live on the detail page)
         'save_employee' => 'employee', 'delete_employee' => 'employee',
         'import_employee' => 'employee',
+        // Populates the employee-list "Quick Edit" modal — same unmasked
+        // record employee-details.php pre-fills, so it's gated as a write.
+        'get_employee_edit' => 'employee',
         'assign_employee_schedule' => 'employee-details', 'delete_employee_schedule' => 'employee-details',
         'get_employee_schedule_history' => 'employee-details',
         'employee_quick_view' => 'employee-details',
@@ -443,6 +454,11 @@ if (!defined('READONLY_PAGES_BY_ROLE')) {
         ROLE_HR          => HR_READONLY_PAGES,
         ROLE_TIMEKEEPER  => ['employee', 'employee-details'],  // enrols prints, edits nothing else
         7                => ['employee', 'employee-details', 'attendance'],  // Auditor reviews, never edits
+        // The roster is owned by the Department/Division Head (role 8). A
+        // Supervisor and a Section/Unit Head read their ward's grid — they
+        // approve leave against it, so they must see it — but never paint it.
+        10               => ['duty-roster'],
+        11               => ['duty-roster'],
     ]);
 }
 
@@ -462,8 +478,9 @@ if (!defined('READONLY_PAGES_BY_ROLE')) {
  */
 if (!defined('ACTION_DENY_BY_ROLE')) {
     define('ACTION_DENY_BY_ROLE', [
-        8  => ['duty_roster_publish', 'duty_roster_recompute'],   // Department Head
-        10 => ['duty_roster_publish', 'duty_roster_recompute'],   // Supervisor
+        8  => ['duty_roster_publish', 'duty_roster_recompute'],   // Department/Division Head
+        10 => ['duty_roster_publish', 'duty_roster_recompute'],   // Supervisor  (read-only anyway)
+        11 => ['duty_roster_publish', 'duty_roster_recompute'],   // Section Head (read-only anyway)
     ]);
 }
 
@@ -1278,6 +1295,50 @@ if (!function_exists('dtr_punch_time')) {
 // Returns null only if the default schedule row itself is missing.
 if (!defined('DEFAULT_WORK_SCHEDULE_ID')) define('DEFAULT_WORK_SCHEDULE_ID', 1);
 
+/**
+ * The shift colour ramp, keyed by work_schedules.id.
+ *
+ * ONE definition for the whole app. The colour is assigned by the shift's
+ * POSITION in the active list ordered by start time — not stored — so adding a
+ * shift never needs a migration, and the same shift is the same colour on the
+ * planner's grid, in the Excel export and on the employee's own portal.
+ *
+ * It lived in three places before this: as JS constants in duty-roster.js, as
+ * PHP arrays in export-duty-roster.php, and not at all in the portal, which
+ * had only "is it a night shift" and so painted a dozen different shifts two
+ * colours. The JS copy has to stay (it is a different language) and is marked
+ * as needing to match; these two do not.
+ *
+ * Returns [id => ['bg' => '#rrggbb', 'fg' => '#rrggbb', 'idx' => n, 'noc' => 0|1]].
+ */
+if (!function_exists('duty_shift_palette')) {
+    function duty_shift_palette(mysqli $db): array
+    {
+        static $cache = null;
+        if ($cache !== null) return $cache;
+
+        // Must stay in step with DAY_COLORS / NIGHT_COLORS in
+        // assets2/js/duty-roster.js.
+        $day   = ['#d6e4ff', '#d9f7be', '#fff1b8', '#ffd8bf', '#e4d7ff', '#b5f5ec', '#ffd6e7', '#f4ffb8'];
+        $night = ['#4c4a6b', '#3f5c8a', '#5c4a7a', '#2f4858', '#584a3f', '#4a5c4a'];
+
+        $cache = [];
+        $res = $db->query("SELECT id, is_graveyard FROM work_schedules WHERE status = 1 ORDER BY start_time ASC");
+        $i = 0;
+        while ($res && ($r = $res->fetch_assoc())) {
+            $noc = (int) $r['is_graveyard'];
+            $cache[(int) $r['id']] = [
+                'bg'  => $noc ? $night[$i % count($night)] : $day[$i % count($day)],
+                'fg'  => $noc ? '#ffffff' : '#28223b',
+                'idx' => $i,
+                'noc' => $noc,
+            ];
+            $i++;
+        }
+        return $cache;
+    }
+}
+
 // The PUBLISHED duty-roster entry for one employee-day, or null.
 //
 // Draft rows (status 0) are deliberately invisible here: a head nurse builds
@@ -1928,13 +1989,24 @@ if (!function_exists('leave_dates_with_attendance')) {
 // Leave it out (or set false) to make a stage mandatory — a request will then
 // wait indefinitely if no such approver is assigned.
 //
-// Current flow:  Employee → Department Head → Supervisor (skipped when the
-//                department has none) → HR (final).
+// Current flow:  Employee → Section/Unit Head → Supervisor → Department/Division
+//                Head → HR (final).
+//
+// The two middle stages are `optional`: most areas have no Supervisor tier, and
+// small sections have no Section Head, so those stages auto-skip rather than
+// stranding the request. Only the nursing wards use all four — see
+// migrations/2026_08_area_approvers.sql for where the shape came from.
+//
+// WHO may act on a stage is resolved per AREA (area_approver), not from the
+// role alone: one person holds different stages in different areas, so the role
+// here is only a coarse page-access hint and a fallback for employees with no
+// area assigned yet.
 if (!defined('LEAVE_APPROVAL_STAGES')) {
     define('LEAVE_APPROVAL_STAGES', [
-        'admin' => ['label' => 'Department Head', 'role' => 8,  'icon' => 'ri-shield-check-line'],
-        'sup'   => ['label' => 'Supervisor',      'role' => 10, 'icon' => 'ri-user-star-line', 'optional' => true],
-        'hr'    => ['label' => 'HR',              'role' => 9,  'icon' => 'ri-user-settings-line'],
+        'sec'   => ['label' => 'Section/Unit Head', 'role' => 11, 'icon' => 'ri-user-follow-line', 'optional' => true],
+        'sup'   => ['label' => 'Supervisor',        'role' => 10, 'icon' => 'ri-user-star-line',   'optional' => true],
+        'admin' => ['label' => 'Department Head',   'role' => 8,  'icon' => 'ri-shield-check-line'],
+        'hr'    => ['label' => 'HR',                'role' => 9,  'icon' => 'ri-user-settings-line'],
     ]);
 }
 
@@ -1996,33 +2068,142 @@ if (!function_exists('leave_stages')) {
         return implode(' AND ', $conds);
     }
 
+    /** The employee's area id, or 0 when they have not been assigned one. */
+    function leave_area_id(mysqli $db, int $employee_id): int
+    {
+        static $memo = [];
+        if (isset($memo[$employee_id])) return $memo[$employee_id];
+        $r = $db->query("SELECT area_id FROM employee WHERE id = " . (int) $employee_id);
+        $row = $r ? $r->fetch_assoc() : null;
+        return $memo[$employee_id] = (int) ($row['area_id'] ?? 0);
+    }
+
     /**
-     * Does anyone exist who could actually decide $stageKey for this employee?
+     * User ids who may decide $stageKey for this employee's request.
      *
-     * Uses the SAME predicate that decides who gets NOTIFIED for a stage
-     * (notifyRoleForEmployee in admin_class.php): an active user holding the
-     * stage's role, either in the employee's own department or unscoped
-     * (department_id NULL/0 = covers every department). Keeping the two in step
-     * matters — a stage we consider "staffed" but never notify would strand the
-     * request in silence.
+     * Area first: area_approver is the authority, because one approver holds
+     * different stages in different areas (a nurse supervisor is Section Head of
+     * her own ward and Supervisor of three others) and a slot can hold two
+     * co-approvers, either of whom may act. Neither fits a role column.
+     *
+     * Falls back to the old role+department predicate for employees with no area
+     * yet, which is also the predicate notifyRoleForEmployee uses — a stage we
+     * consider "staffed" but never notify would strand the request in silence.
+     *
+     * SELF-APPROVAL IS EXCLUDED. A head does not approve their own leave; the
+     * source hierarchy encodes this by leaving that cell blank on the head's own
+     * row, and dropping them here reproduces it without per-employee data. When
+     * they are the ONLY approver the stage ends up empty and auto-skips upward,
+     * which is exactly what the spreadsheet shows for section heads.
      */
-    function leave_stage_has_approver(mysqli $db, string $stageKey, int $employee_id): bool
+    function leave_stage_approver_ids(mysqli $db, string $stageKey, int $employee_id): array
     {
         $stages = LEAVE_APPROVAL_STAGES;
-        if (!isset($stages[$stageKey])) return false;
+        if (!isset($stages[$stageKey])) return [];
+        $eid  = (int) $employee_id;
+        $area = leave_area_id($db, $eid);
+        $key  = $db->real_escape_string($stageKey);
+
+        $out = [];
+        if ($area > 0) {
+            $r = $db->query(
+                "SELECT u.id FROM area_approver ap
+                 JOIN users u ON u.id = ap.user_id AND u.status = 1
+                 WHERE ap.area_id = $area AND ap.stage = '$key'
+                   AND (u.employee_id IS NULL OR u.employee_id <> $eid)"
+            );
+            while ($r && ($x = $r->fetch_assoc())) $out[] = (int) $x['id'];
+            if ($out !== []) return $out;
+
+            // Nothing on the area for this stage. For an OPTIONAL stage that is
+            // the answer — most areas have no Supervisor tier, and the stage is
+            // meant to skip. A MANDATORY stage means the opposite: HR is one
+            // office for the whole hospital and is deliberately not written onto
+            // 36 area rows, so fall through to the role lookup rather than
+            // skipping the final approver.
+            if (!empty($stages[$stageKey]['optional'])) return [];
+
+            // …but if the area named someone and they are the requester, the
+            // stage really is self-held and must skip, not escalate to the role.
+            $self = $db->query(
+                "SELECT 1 FROM area_approver ap JOIN users u ON u.id = ap.user_id
+                 WHERE ap.area_id = $area AND ap.stage = '$key' AND u.employee_id = $eid LIMIT 1"
+            );
+            if ($self && $self->num_rows) return [];
+        }
+
         $role = (int) $stages[$stageKey]['role'];
-
         $dept = 0;
-        $er = $db->query("SELECT department_id FROM employee WHERE id = " . (int) $employee_id);
+        $er = $db->query("SELECT department_id FROM employee WHERE id = $eid");
         if ($er && ($e = $er->fetch_assoc())) $dept = (int) $e['department_id'];
-
         $r = $db->query(
-            "SELECT 1 FROM users
+            "SELECT id FROM users
              WHERE role = $role AND status = 1
                AND (department_id = $dept OR department_id IS NULL OR department_id = 0)
-             LIMIT 1"
+               AND (employee_id IS NULL OR employee_id <> $eid)"
+        );
+        while ($r && ($x = $r->fetch_assoc())) $out[] = (int) $x['id'];
+        return $out;
+    }
+
+    /** Does anyone (other than the requester) exist to decide $stageKey? */
+    function leave_stage_has_approver(mysqli $db, string $stageKey, int $employee_id): bool
+    {
+        return leave_stage_approver_ids($db, $stageKey, $employee_id) !== [];
+    }
+
+    /**
+     * Is this stage unstaffed ONLY because the requester is the person who
+     * holds it? True when someone occupies the post and it is them.
+     *
+     * The distinction decides whether a MANDATORY stage may be skipped. An
+     * empty post is left pending on purpose — that is a staffing gap someone
+     * must fix, and silently approving past it would hide it. A post held by
+     * the requester is different: it can never be filled for this one request,
+     * so waiting means waiting forever. The HR Director filing her own leave is
+     * the case that forced this; she is the only HR there is.
+     */
+    function leave_stage_blocked_by_self(mysqli $db, string $stageKey, int $employee_id): bool
+    {
+        if (leave_stage_has_approver($db, $stageKey, $employee_id)) return false;
+
+        $stages = LEAVE_APPROVAL_STAGES;
+        if (!isset($stages[$stageKey])) return false;
+        $eid  = (int) $employee_id;
+        $area = leave_area_id($db, $eid);
+        $key  = $db->real_escape_string($stageKey);
+
+        if ($area > 0) {
+            $r = $db->query(
+                "SELECT 1 FROM area_approver ap JOIN users u ON u.id = ap.user_id AND u.status = 1
+                 WHERE ap.area_id = $area AND ap.stage = '$key' AND u.employee_id = $eid LIMIT 1"
+            );
+            if ($r && $r->num_rows) return true;
+        }
+        $role = (int) $stages[$stageKey]['role'];
+        $r = $db->query(
+            "SELECT 1 FROM users WHERE role = $role AND status = 1 AND employee_id = $eid LIMIT 1"
         );
         return (bool) ($r && $r->num_rows);
+    }
+
+    /** May this user act on $stageKey for this employee's request? */
+    function leave_user_can_act(mysqli $db, int $user_id, string $stageKey, int $employee_id): bool
+    {
+        return in_array((int) $user_id, leave_stage_approver_ids($db, $stageKey, $employee_id), true);
+    }
+
+    /**
+     * Stage keys this user may ever act on for this employee — area first, then
+     * the role mapping. Plural because one user can hold several stages.
+     */
+    function leave_stages_for_user(mysqli $db, int $user_id, int $employee_id): array
+    {
+        $out = [];
+        foreach (LEAVE_APPROVAL_STAGES as $key => $_) {
+            if (leave_user_can_act($db, $user_id, $key, $employee_id)) $out[] = $key;
+        }
+        return $out;
     }
 
     /**
@@ -2041,11 +2222,20 @@ if (!function_exists('leave_stages')) {
     {
         $skipped = [];
         foreach (LEAVE_APPROVAL_STAGES as $key => $cfg) {
-            if (empty($cfg['optional'])) continue;
             if (leave_stage_has_approver($db, $key, $employee_id)) continue;
+            // Optional stages skip whenever they are unstaffed. A mandatory one
+            // skips only when the requester is the very person who holds it —
+            // otherwise an empty post stays pending, which is the staffing gap
+            // the original design deliberately refuses to paper over.
+            if (empty($cfg['optional']) && !leave_stage_blocked_by_self($db, $key, $employee_id)) continue;
 
+            // Say WHICH of the two reasons applied. "You are the approver" and
+            // "nobody holds the post" look identical in the timeline otherwise,
+            // and they mean very different things to whoever audits the trail.
             $note = $db->real_escape_string(
-                'Auto-skipped — no ' . $cfg['label'] . ' assigned to this department.'
+                leave_stage_blocked_by_self($db, $key, $employee_id)
+                    ? 'Auto-skipped — the requester holds this post (' . $cfg['label'] . ').'
+                    : 'Auto-skipped — no ' . $cfg['label'] . ' assigned to this area.'
             );
             $db->query(
                 "UPDATE leave_requests

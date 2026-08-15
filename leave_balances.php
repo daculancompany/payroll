@@ -369,9 +369,10 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
                                     <tbody>
                                         <?php
                                         $rq = $conn->query("
-                                            SELECT lr.*, lt.name AS type_name, su.name AS sup_name, hu.name AS hr_name, au.name AS admin_name
+                                            SELECT lr.*, lt.name AS type_name, se.name AS sec_name, su.name AS sup_name, hu.name AS hr_name, au.name AS admin_name
                                             FROM leave_requests lr
                                             INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                                            LEFT JOIN users se ON se.id = lr.sec_by
                                             LEFT JOIN users su ON su.id = lr.sup_by
                                             LEFT JOIN users hu ON hu.id = lr.hr_by
                                             LEFT JOIN users au ON au.id = lr.admin_by

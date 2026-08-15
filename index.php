@@ -81,6 +81,9 @@ function getRole($login_role)
         case 10:
             return "Supervisor";
             break;
+        case 11:
+            return "Section/Unit Head";
+            break;
         default:
             return "Access denied. Unknown role.";
             break;
@@ -908,6 +911,7 @@ function getRole($login_role)
                 'time-logs'            => 'time-logs',
                 'site_settings'        => 'site_settings',
                 'department'           => 'department',
+                'area'                 => 'area',
                 'branch'               => 'branch',
                 'compare-dtr'          => 'compare-dtr',
                 'loans'                => 'loans',

@@ -12,8 +12,13 @@ require_once __DIR__ . '/includes/leave_timeline.php';
 // Current user's role drives which approval actions are available. The workflow
 // itself (order, roles, labels) is defined by LEAVE_APPROVAL_STAGES.
 $my_role = (int) ($_SESSION['login_role'] ?? 0);
+$my_uid  = (int) ($_SESSION['login_id'] ?? 0);
 $leave_stage_defs = leave_stages();
-// The single stage (if any) this user owns; null = cannot act on any stage.
+// A per-role single stage no longer decides button visibility (see the row
+// loop below) — someone can hold two stages across different areas, e.g. a
+// nurse supervisor who is Section Head of her own ward and Supervisor of
+// three others. $my_stage survives only where it is genuinely one-role-one-
+// stage: it is not read anywhere below.
 $my_stage = leave_stage_for_role($my_role);
 // Administrator (role 1) is strictly VIEW-ONLY: no approve, no edit, no delete.
 $is_admin_view = ($my_role === 1);
@@ -186,12 +191,14 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 CONCAT(e.lastname, ', ', e.firstname) AS employee_name,
                                                 e.employee_no,
                                                 lt.name AS leave_type_name,
+                                                se.name AS sec_name,
                                                 su.name AS sup_name,
                                                 hu.name AS hr_name,
                                                 au.name AS admin_name
                                             FROM leave_requests lr
                                             INNER JOIN employee e ON e.id = lr.employee_id
                                             INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                                            LEFT JOIN users se ON se.id = lr.sec_by
                                             LEFT JOIN users su ON su.id = lr.sup_by
                                             LEFT JOIN users hu ON hu.id = lr.hr_by
                                             LEFT JOIN users au ON au.id = lr.admin_by
@@ -211,6 +218,14 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 if ((int) $row[$skey . '_status'] !== 0) { $editable = false; break; }
                                             }
                                             $cur_stage = leave_current_stage($row);         // stage awaiting action now
+                                            // Per-row, per-employee: is THIS user the approver for the stage
+                                            // this specific request is sitting at? Checked here rather than
+                                            // by comparing against a single role-derived stage, because one
+                                            // person can hold different stages in different areas — a fixed
+                                            // "$my_stage" would hide the button on whichever stage did not
+                                            // match their users.role.
+                                            $can_act_now = $cur_stage && !$is_admin_view
+                                                && leave_user_can_act($conn, $my_uid, $cur_stage, (int) $row['employee_id']);
                                             $leave_timelines[$row['id']] = leave_timeline_html($row);
                                             $leave_meta[$row['id']] = [
                                                 'emp'  => $row['employee_name'],
@@ -260,9 +275,9 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                             <?php endforeach; ?>
                                             <td class="text-center"><span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span></td>
                                             <td class="text-center">
-                                                <?php if ($my_stage && $my_stage === $cur_stage && !$is_admin_view): ?>
-                                                    <button class="btn btn-sm btn-success" title="<?= htmlspecialchars($leave_stage_defs[$my_stage]['label']) ?> Approve" onclick="decideLeave(<?= $row['id'] ?>,'<?= $my_stage ?>',1)"><i class="ri-check-double-line"></i></button>
-                                                    <button class="btn btn-sm btn-danger" title="<?= htmlspecialchars($leave_stage_defs[$my_stage]['label']) ?> Reject" onclick="decideLeave(<?= $row['id'] ?>,'<?= $my_stage ?>',2)"><i class="ri-close-line"></i></button>
+                                                <?php if ($can_act_now): ?>
+                                                    <button class="btn btn-sm btn-success" title="<?= htmlspecialchars($leave_stage_defs[$cur_stage]['label']) ?> Approve" onclick="decideLeave(<?= $row['id'] ?>,'<?= $cur_stage ?>',1)"><i class="ri-check-double-line"></i></button>
+                                                    <button class="btn btn-sm btn-danger" title="<?= htmlspecialchars($leave_stage_defs[$cur_stage]['label']) ?> Reject" onclick="decideLeave(<?= $row['id'] ?>,'<?= $cur_stage ?>',2)"><i class="ri-close-line"></i></button>
                                                 <?php endif; ?>
                                                 <button class="btn btn-sm btn-outline-info" title="Approval timeline" onclick="openLeaveTimeline(<?= $row['id'] ?>)"><i class="ri-history-line"></i></button>
                                                 <?php if ($editable && !$is_admin_view): ?>

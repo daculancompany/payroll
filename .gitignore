@@ -8,3 +8,7 @@ logs/*
 
 # Employee face enrollment images — user data, never commit
 uploads/faces/
+
+# DB backup dumps — contain employee TIN/SSS/PhilHealth/bank/salary PII, kept
+# locally as a rollback safety net only, never tracked in git.
+backups/*.sql

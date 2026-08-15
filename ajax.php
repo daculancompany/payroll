@@ -200,6 +200,16 @@ if ($action == "delete_branch") {
 	echo $crud->delete_branch();
 	return;
 }
+// Areas answer in JSON (unlike the older 1/2 integer endpoints next door) so a
+// duplicate name or a missing department can say WHY it refused.
+if ($action == "save_area") {
+	echo json_encode($crud->save_area());
+	return;
+}
+if ($action == "save_area_approvers") {
+	echo json_encode($crud->save_area_approvers());
+	return;
+}
 if ($action == "save_department") {
 	$save = $crud->save_department();
 	if ($save)
@@ -653,6 +663,9 @@ if ($action == 'get_employee_schedule_history') {
 }
 if ($action == 'employee_quick_view') {
     echo json_encode($crud->employee_quick_view());
+}
+if ($action == 'get_employee_edit') {
+    echo json_encode($crud->get_employee_edit());
 }
 
 // ── Attendance Requests (incident reports / OT filing) ──

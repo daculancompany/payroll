@@ -2,49 +2,81 @@
 /* ═══════════════════════════════════════════════════════════════════════
    Leave Dashboard — two audiences, one page.
 
-   SUPERVISOR (10) / DEPARTMENT HEAD (8) — their whole app is this plus the
-   requests screen (see LEAVE_APPROVER_ALLOWED_PAGES in db_connect.php). They
-   are locked to their own department by dept-scope.php and see deliberately
-   LESS than HR: name, number, position and leave counts. No salary, no rate,
-   no personal details, no link into employee-details.
+   SUPERVISOR (10) / DEPARTMENT HEAD (8) / SECTION-UNIT HEAD (11) — their
+   whole app is this plus the requests screen (see LEAVE_APPROVER_ALLOWED_PAGES
+   in db_connect.php). They are locked to their own areas — or, for accounts
+   that predate areas, their own department — by dept-scope.php, and see
+   deliberately LESS than HR: name, number, position and leave counts. No
+   salary, no rate, no personal details, no link into employee-details.
 
    HR (9) / ADMIN (1) — unscoped, so they land on an ORG view instead: a
    per-department breakdown they can drill into with ?dept=. Same page, but a
    300-employee flat list would be useless at that level, so the default view
    aggregates and the roster appears only once a department is chosen.
 
-   Whichever audience: every query is department-scoped, either by the session
-   (dept-scope.php) or by the chosen ?dept=.
+   Whichever audience: every query is scoped, either by the session's areas
+   (dept-scope.php), by its legacy department pin, or by the chosen ?dept=.
    ═══════════════════════════════════════════════════════════════════════ */
 
 require_once __DIR__ . '/dept-scope.php';
 
 $my_role  = (int) ($_SESSION['login_role'] ?? 0);
-$my_stage = leave_stage_for_role($my_role);      // stage this user owns, or null
-$scope_id = dept_scope_id();                      // >0 = locked to one department
+$my_uid   = (int) ($_SESSION['login_id'] ?? 0);
+$my_stage = leave_stage_for_role($my_role);      // stage this user owns by role, or null
+$my_areas = area_scope_ids();                     // [] = no areas — falls back to department
+$scope_id = dept_scope_id();                      // >0 = locked to one department (legacy accounts)
 $year     = leave_current_year();
 
-// Unscoped viewers (HR / Admin) may drill into a department; scoped ones are
-// pinned to theirs and the ?dept= parameter is ignored outright.
-$is_org_view = ($scope_id === 0);
+// Unscoped viewers (HR / Admin) may drill into a department; anyone scoped —
+// by area OR by the older per-department pin — is locked to their own and the
+// ?dept= parameter is ignored outright. Area is checked FIRST and on its own:
+// an area-scoped account typically has no department_id at all, so testing
+// department alone would read it as unscoped and hand it the whole hospital.
+$is_org_view = ($my_areas === [] && $scope_id === 0);
 $view_dept   = $is_org_view ? (int) ($_GET['dept'] ?? 0) : $scope_id;
 
 // One scope fragment used by every query below.
-$w_emp  = $view_dept > 0 ? " AND employee_id IN (SELECT id FROM employee WHERE department_id = $view_dept)" : '';
-$w_dept = $view_dept > 0 ? " AND e.department_id = $view_dept" : '';
+if ($my_areas !== []) {
+    $__ain  = implode(',', array_map('intval', $my_areas));
+    $w_emp  = " AND employee_id IN (SELECT id FROM employee WHERE area_id IN ($__ain))";
+    $w_dept = " AND e.area_id IN ($__ain)";
+} else {
+    $w_emp  = $view_dept > 0 ? " AND employee_id IN (SELECT id FROM employee WHERE department_id = $view_dept)" : '';
+    $w_dept = $view_dept > 0 ? " AND e.department_id = $view_dept" : '';
+}
 
 $dept_name = 'All Departments';
-if ($view_dept > 0) {
+if ($my_areas !== []) {
+    $an = [];
+    $ar = $conn->query("SELECT name FROM area WHERE id IN ($__ain) ORDER BY name ASC");
+    while ($ar && ($a = $ar->fetch_assoc())) $an[] = $a['name'];
+    $dept_name = $an ? implode(', ', $an) : 'My Ward';
+} elseif ($view_dept > 0) {
     $dr = $conn->query("SELECT name FROM department WHERE id = $view_dept");
     if ($dr && ($d = $dr->fetch_assoc())) $dept_name = $d['name'];
 }
 
 /* ── Counters ───────────────────────────────────────────────────────────
-   "Awaiting me" reuses the predicate the leaves page uses to decide whether
-   the action buttons appear, so the number and the buttons cannot disagree. */
+   "Awaiting me" mirrors leave_user_can_act()'s area-first rule: a stage is
+   only counted in the areas this user actually holds it for. A flat
+   "$my_stage across every area I can see" would over- or under-count anyone
+   holding different stages in different wards — e.g. Section Head of one
+   ward and Supervisor of three others, which several real accounts are. */
 $counts = ['awaiting' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];
 
-if ($my_stage) {
+if ($my_areas !== []) {
+    $stageAreas = [];
+    $sr = $conn->query("SELECT stage, area_id FROM area_approver WHERE user_id = $my_uid");
+    while ($sr && ($x = $sr->fetch_assoc())) $stageAreas[$x['stage']][] = (int) $x['area_id'];
+    foreach ($stageAreas as $stage => $areaIds) {
+        if (!isset(leave_stages()[$stage])) continue;
+        $p    = leave_stage_pending_predicate($stage);
+        $sin  = implode(',', $areaIds);
+        $r = $conn->query("SELECT COUNT(*) c FROM leave_requests
+                           WHERE ($p) AND employee_id IN (SELECT id FROM employee WHERE area_id IN ($sin))");
+        if ($r) $counts['awaiting'] += (int) $r->fetch_assoc()['c'];
+    }
+} elseif ($my_stage) {
     $p = leave_stage_pending_predicate($my_stage);
     $r = $conn->query("SELECT COUNT(*) c FROM leave_requests WHERE ($p) $w_emp");
     if ($r) $counts['awaiting'] = (int) $r->fetch_assoc()['c'];

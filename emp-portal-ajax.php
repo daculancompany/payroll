@@ -767,7 +767,7 @@ switch ($action) {
                 'duration' => $dur,
                 'reason' => $lreason,
                 'attachment' => $lv_att,
-                'status' => 0, 'sup_status' => 0, 'hr_status' => 0, 'admin_status' => 0,
+                'status' => 0, 'sec_status' => 0, 'sup_status' => 0, 'hr_status' => 0, 'admin_status' => 0,
             ],
         ]);
         break;

@@ -1,4 +1,115 @@
 // oTable = $("#table-employee").DataTable();
+
+// ── Employee list "Quick Edit" (employee.php row → #addemployee modal) ──
+// employee-details.php pre-fills this same modal server-side for its own
+// "Edit Details" button; the list page has no single employee at render
+// time, so these functions fetch the record and fill the form client-side.
+var addEmployeeCreateDefaults = null;
+
+function quick_edit_employee(id) {
+    id = parseInt(id, 10);
+    if (!id) return;
+    Swal.fire({
+        title: "Loading employee...",
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); },
+    });
+    $.ajax({
+        url: "ajax.php?action=get_employee_edit&id=" + id,
+        method: "GET",
+        dataType: "json",
+        error: function (xhr, status, error) {
+            Swal.close();
+            handleError(error || "");
+        },
+        success: function (res) {
+            Swal.close();
+            if (!res || !res.result) {
+                Swal.fire({
+                    icon: "error",
+                    title: "Could not load employee",
+                    text: (res && res.message) || "Please try again.",
+                });
+                return;
+            }
+            fillAddEmployeeForm(res.employee);
+            setAddEmployeeMode(true);
+            $("#addemployee").modal("show");
+        },
+    });
+}
+
+function fillAddEmployeeForm(e) {
+    var $form = $("#form-add");
+    $form[0].reset(); // clear out any previous quick-edit before filling this one
+
+    $form.find('[name="id"]').val(e.id);
+    $form.find('[name="firstname"]').val(e.firstname || "");
+    $form.find('[name="middlename"]').val(e.middlename || "");
+    $form.find('[name="lastname"]').val(e.lastname || "");
+    $form.find('[name="ext"]').val(e.ext || "");
+    $form.find('[name="bday"]').val(e.bday && e.bday !== "0000-00-00" ? e.bday : "");
+    $form.find('[name="basic_pay"]').val(e.basic_pay ?? "");
+    $form.find('[name="salary"]').val(e.salary ?? "");
+    $form.find('[name="ot_rate"]').val(e.ot_rate ?? "");
+    $form.find('[name="allowance_rate"]').val(e.allowance_rate ?? "");
+    $form.find('[name="sss_fund"]').val(e.sss_fund ?? "0");
+    $form.find('[name="bank_account_no"]').val(e.bank_account_no || "");
+    $form.find('[name="bank_id"]').val(e.bank_id || "");
+    $form.find('input[name="rate_type"][value="' + (e.rate_type || "daily") + '"]').prop("checked", true);
+    $form.find("#sw_status").prop("checked", parseInt(e.status, 10) === 1);
+    $form.find('[name="email"]').val(e.portal_username || "");
+    $form.find("#portal_password").val("");
+
+    // isAutoDeduct has no visible control — save_employee() reads it purely on
+    // whether the field is PRESENT at all, so mirror the stored value with a
+    // hidden input the same way the server-rendered edit form does.
+    $form.find('[name="isAutoDeduct"]').remove();
+    if (parseInt(e.isAutoDeduct, 10) === 1) {
+        $form.append('<input type="hidden" name="isAutoDeduct" value="1">');
+    }
+
+    // Department first — its change handler filters the position list —
+    // then position and classification.
+    $("#position-select option.opt").prop("disabled", false);
+    $("#area-select option.opt").prop("disabled", false);
+    $("#department-select").val(e.department_id || "").trigger("change");
+    // After the department handler has narrowed both lists — setting these
+    // first would have them cleared again by that same handler.
+    $("#area-select").val(e.area_id || "").trigger("change");
+    $("#position-select").val(e.position_id || "").trigger("change");
+    $("#clasification-select").val(e.clasification_id || "").trigger("change");
+}
+
+// Toggle the modal's create-vs-edit chrome (title, submit button, portal note).
+function setAddEmployeeMode(isEdit) {
+    if (isEdit) {
+        $("#create-title").html('<i class="ri-user-add-line me-2" style="color:#673bb6;"></i>Edit Employee');
+        $("#addemployee-submit-label").text("Save Changes");
+        $("#portal_password").attr("placeholder", "Leave blank to keep current");
+        $("#addemployee-portal-note-text").text(
+            "Leave both blank to keep the current login. The employee can always sign in with their Employee No. as well."
+        );
+    } else if (addEmployeeCreateDefaults) {
+        $("#create-title").html(addEmployeeCreateDefaults.title);
+        $("#addemployee-submit-label").text(addEmployeeCreateDefaults.submitLabel);
+        $("#portal_password").attr("placeholder", addEmployeeCreateDefaults.portalPlaceholder);
+        $("#addemployee-portal-note-text").html(addEmployeeCreateDefaults.portalNote);
+    }
+}
+
+// employee.php's "Create Employee" button reuses this same modal — put it
+// back to a blank, create-mode form in case a quick-edit left it populated.
+function resetAddEmployeeForm() {
+    var $form = $("#form-add");
+    $form[0].reset();
+    $form.find('[name="isAutoDeduct"]').remove();
+    $("#position-select option.opt").prop("disabled", false);
+    $("#area-select option.opt").prop("disabled", false);
+    $("#department-select, #area-select, #position-select, #clasification-select").trigger("change");
+    setAddEmployeeMode(false);
+}
+
 document.addEventListener("DOMContentLoaded", function () {
     document.querySelectorAll(".nav.nav-pills").forEach((nav, index) => {
         let tabGroupKey = `activeTabGroup${index}`; // Unique key for each tab group
@@ -261,6 +372,23 @@ $(function () {
             .toggleClass("ri-eye-line", show);
     });
 
+    // Snapshot of how #addemployee rendered at page load — employee.php always
+    // renders it in "Create" mode, so this is what resetAddEmployeeForm()
+    // restores after a quick-edit. (On employee-details.php the form loads
+    // pre-filled for one specific employee and neither function below is ever
+    // called, so that page's own server-rendered text is untouched.)
+    addEmployeeCreateDefaults = {
+        title: $("#create-title").html(),
+        submitLabel: $("#addemployee-submit-label").text(),
+        portalPlaceholder: $("#portal_password").attr("placeholder") || "",
+        portalNote: $("#addemployee-portal-note-text").html(),
+    };
+
+    // employee.php's "Create Employee" button reuses the same #addemployee
+    // modal a row's Edit button just populated — put it back to a blank,
+    // create-mode form before it opens.
+    $("#create-btn").on("click", resetAddEmployeeForm);
+
     $('[name="department_id"]').change(function () {
         var did = $(this).val();
         var $pos = $("#position-select");
@@ -272,6 +400,22 @@ $(function () {
             // every one of them.
             $(this).prop("disabled", !!did && !!pdid && pdid != did);
         });
+        // Areas narrow the same way, but more strictly: every area belongs to
+        // exactly one department, so once a department is chosen the areas of
+        // any other are never valid. Clearing the value matters — silently
+        // keeping an area from the previous department would file the employee
+        // under a ward their department does not contain.
+        var $area = $("#area-select");
+        if ($area.length) {
+            var cur = $area.find("option:selected").attr("data-did") || "";
+            if (did && cur && cur != did) $area.val("");
+            $area.find("option.opt").each(function () {
+                var adid = $(this).attr("data-did") || "";
+                $(this).prop("disabled", !!did && adid != did);
+            });
+            if ($area.data("bs-select") && $area.selectpicker) $area.selectpicker("refresh");
+            $area.trigger("change.select2");
+        }
         // The dropdown widget renders its menu from the option list, so it has to
         // be rebuilt after toggling disabled. Without this the user clicks an item
         // from the stale menu, the widget paints the label, but the underlying

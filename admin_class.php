@@ -730,11 +730,15 @@ class Action
 
                 // Insert new employee
                 $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : null;
+                // Ward/section. NULL is a valid answer — the employee then falls
+                // back to department-level scoping, which is what everyone did
+                // before areas existed.
+                $area_id = $this->normalizeAreaId($_POST['area_id'] ?? null, $department_id);
                 $query = "INSERT INTO employee
-                (employee_no, employee_code, firstname, middlename, lastname, position_id, department_id, salary, basic_pay, rate_type, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, bday, ext, bank_id, bank_account_no)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                (employee_no, employee_code, firstname, middlename, lastname, position_id, department_id, area_id, salary, basic_pay, rate_type, status, ot_rate, isAutoDeduct, weekly_payroll, clasification_id, sss_fund, allowance_rate, bday, ext, bank_id, bank_account_no)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
                 $stmt = $this->db->prepare($query);
-                $stmt->bind_param("sssssssssssssssssssss", $e_num, $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $bank_id, $bank_account_no);
+                $stmt->bind_param("ssssssssssssssssssssss", $e_num, $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $area_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $bank_id, $bank_account_no);
                 $stmt->execute();
 
                 if ($stmt->affected_rows > 0) {
@@ -789,11 +793,12 @@ class Action
             } else {
                 // Update existing employee
                 $department_id = !empty($_POST['department_id']) ? (int)$_POST['department_id'] : null;
+                $area_id = $this->normalizeAreaId($_POST['area_id'] ?? null, $department_id);
                 $query = "UPDATE employee SET
-                employee_code=COALESCE(NULLIF(?, ''), employee_code), firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, salary=?, basic_pay=?, rate_type=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?, bank_id=?, bank_account_no=?
+                employee_code=COALESCE(NULLIF(?, ''), employee_code), firstname=?, middlename=?, lastname=?, position_id=?, department_id=?, area_id=?, salary=?, basic_pay=?, rate_type=?, status=?, ot_rate=?, isAutoDeduct=?, weekly_payroll=?, clasification_id=?, sss_fund=?, allowance_rate=?, bday=?, ext=?, bank_id=?, bank_account_no=?
                 WHERE id=?";
                 $stmt = $this->db->prepare($query);
-                $stmt->bind_param("sssssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $bank_id, $bank_account_no, $id);
+                $stmt->bind_param("ssssssssssssssssssssss", $employee_code, $firstname, $middlename, $lastname, $position_id, $department_id, $area_id, $salary, $basic_pay, $rate_type, $status, $ot_rate, $isAutoDeduct, $weekly_payroll, $clasification_id, $sss_fund, $allowance_rate, $bday, $ext, $bank_id, $bank_account_no, $id);
                 $stmt->execute();
 
                 // Portal login — only an admin gets this far with values set.
@@ -877,6 +882,108 @@ class Action
         $id = (int)($_POST['id'] ?? 0);
         $this->db->query("DELETE FROM branches WHERE id=$id");
         return json_encode(['result' => true]);
+    }
+
+    /**
+     * Create or rename an area (a ward/section inside a department).
+     *
+     * The name is unique because area_approver and the seed migration both
+     * address areas by name; two "STATION 2" rows would make "who approves
+     * here" depend on row order.
+     */
+    /**
+     * An area id that is safe to store: an existing, active area that actually
+     * belongs to the department the employee is being filed under.
+     *
+     * Checked server-side because the form only DISABLES the mismatched options
+     * — disabled options are a hint to the person filling the form, not a
+     * constraint on what a POST can carry. A mismatch would put someone on a
+     * ward their own department does not contain, and every scoping query
+     * downstream reads area first.
+     */
+    private function normalizeAreaId($raw, $department_id)
+    {
+        $aid = (int) $raw;
+        if ($aid <= 0) return null;
+        $r = $this->db->query("SELECT department_id FROM area WHERE id = $aid AND status = 1");
+        $row = $r ? $r->fetch_assoc() : null;
+        if (!$row) return null;
+        if ($department_id !== null && (int) $row['department_id'] !== (int) $department_id) return null;
+        return $aid;
+    }
+
+    function save_area()
+    {
+        $id   = (int) ($_POST['id'] ?? 0);
+        $name = trim((string) ($_POST['name'] ?? ''));
+        $dept = (int) ($_POST['department_id'] ?? 0);
+
+        if ($name === '')  return ['result' => false, 'message' => 'Area name is required.'];
+        if ($dept <= 0)    return ['result' => false, 'message' => 'Pick the department this area belongs to.'];
+
+        $d = $this->db->query("SELECT id FROM department WHERE id = $dept");
+        if (!$d || !$d->num_rows) return ['result' => false, 'message' => 'That department no longer exists.'];
+
+        $stmt = $this->db->prepare("SELECT id FROM area WHERE LOWER(name) = LOWER(?) AND id <> ?");
+        $stmt->bind_param('si', $name, $id);
+        $stmt->execute();
+        if ($stmt->get_result()->fetch_assoc()) {
+            return ['result' => false, 'message' => 'An area named "' . $name . '" already exists.'];
+        }
+
+        if ($id > 0) {
+            $stmt = $this->db->prepare("UPDATE area SET name = ?, department_id = ? WHERE id = ?");
+            $stmt->bind_param('sii', $name, $dept, $id);
+        } else {
+            $stmt = $this->db->prepare("INSERT INTO area (name, department_id) VALUES (?, ?)");
+            $stmt->bind_param('si', $name, $dept);
+        }
+        if (!$stmt->execute()) return ['result' => false, 'message' => 'Could not save: ' . $this->db->error];
+        return ['result' => true, 'id' => $id > 0 ? $id : (int) $this->db->insert_id];
+    }
+
+    /**
+     * Replace an area's approver list, stage by stage.
+     *
+     * Written as delete-then-insert inside a transaction because the form posts
+     * the COMPLETE intended set: anything the user cleared has to disappear, and
+     * diffing row by row would leave a stage half-updated if one insert failed.
+     * 'hr' is refused — HR is one office for the whole hospital and is resolved
+     * by role, not per area; storing it here would create 36 places to forget.
+     */
+    function save_area_approvers()
+    {
+        $area = (int) ($_POST['area_id'] ?? 0);
+        if ($area <= 0) return ['result' => false, 'message' => 'No area given.'];
+        $a = $this->db->query("SELECT id FROM area WHERE id = $area");
+        if (!$a || !$a->num_rows) return ['result' => false, 'message' => 'That area no longer exists.'];
+
+        $allowed = ['sec', 'sup', 'admin'];
+        $posted  = $_POST['stage'] ?? [];
+        if (!is_array($posted)) $posted = [];
+
+        $this->db->begin_transaction();
+        try {
+            $this->db->query("DELETE FROM area_approver WHERE area_id = $area");
+            $ins = $this->db->prepare("INSERT IGNORE INTO area_approver (area_id, stage, user_id) VALUES (?,?,?)");
+            $n = 0;
+            foreach ($allowed as $stage) {
+                foreach ((array) ($posted[$stage] ?? []) as $uid) {
+                    $uid = (int) $uid;
+                    if ($uid <= 0) continue;
+                    $u = $this->db->query("SELECT id FROM users WHERE id = $uid AND status = 1");
+                    if (!$u || !$u->num_rows) continue;
+                    $ins->bind_param('isi', $area, $stage, $uid);
+                    $ins->execute();
+                    $n++;
+                }
+            }
+            $this->db->commit();
+            return ['result' => true, 'saved' => $n];
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Could not save approvers: ' . $e->getMessage()];
+        }
     }
 
     function save_department()
@@ -1798,11 +1905,62 @@ class Action
      */
     public function dutyScopeId(): int
     {
-        if (!function_exists('dept_scope_id')) {
-            $f = __DIR__ . '/dept-scope.php';
-            if (is_file($f)) require_once $f;
-        }
+        $this->loadScopeHelpers();
         return function_exists('dept_scope_id') ? dept_scope_id() : 0;
+    }
+
+    /** dept-scope.php is not loaded on every entry point; pull it in on demand. */
+    private function loadScopeHelpers(): void
+    {
+        if (function_exists('dept_scope_id')) return;
+        $f = __DIR__ . '/dept-scope.php';
+        if (is_file($f)) require_once $f;
+    }
+
+    /**
+     * Area ids this session is pinned to for the roster, or [] when unscoped.
+     * Area is finer than department — four nurse stations share one department,
+     * and a head must not paint a neighbouring ward's sheet.
+     */
+    public function dutyAreaScope(): array
+    {
+        $this->loadScopeHelpers();
+        return function_exists('area_scope_ids') ? area_scope_ids() : [];
+    }
+
+    /** May this session paint (not merely read) the roster for $area_id? */
+    public function dutyCanEditArea(int $area_id): bool
+    {
+        $this->loadScopeHelpers();
+        return function_exists('roster_can_edit_area') ? roster_can_edit_area($area_id) : true;
+    }
+
+    /**
+     * Refuse a write that reaches outside the areas this session may paint.
+     * Returns an error string, or null when every employee is in bounds.
+     *
+     * Read access and write access diverge here: a Section Head and a Supervisor
+     * both SEE their ward's grid, but only the Department/Division Head paints
+     * it. The UI already hides the palette from them; this is the half that a
+     * hand-made POST cannot get around.
+     */
+    private function dutyDenyWrite(array $empIds): ?string
+    {
+        $this->loadScopeHelpers();
+        if (!function_exists('area_scope_ids') || area_scope_ids() === []) return null; // unscoped
+        $empIds = array_values(array_filter(array_map('intval', $empIds)));
+        if ($empIds === []) return null;
+
+        $allowed = roster_editable_area_ids();
+        if ($allowed === []) return 'You have view-only access to this roster.';
+
+        $in = implode(',', $empIds);
+        $ok = implode(',', array_map('intval', $allowed));
+        $r  = $this->db->query("SELECT COUNT(*) c FROM employee
+                                WHERE id IN ($in)
+                                  AND (area_id IS NULL OR area_id NOT IN ($ok))");
+        $out = $r ? (int) ($r->fetch_assoc()['c'] ?? 0) : 0;
+        return $out > 0 ? 'That roster is outside the ward you may edit.' : null;
     }
 
     // Employees shown on the grid: everyone in the chosen department, PLUS
@@ -1823,16 +1981,30 @@ class Action
         $scope = $this->dutyScopeId();
         if ($scope > 0) $dept = $scope;
 
+        // Area beats department when the session has one: four nurse stations
+        // live in the same department, so a department fence would hand a head
+        // three neighbouring wards.
+        $areas = $this->dutyAreaScope();
+
         // 0 = every department. Resigned staff are excluded from the pool, but
         // the "already has a row" clause below still surfaces anyone who left
         // mid-cutoff — their duties are on this sheet and must stay correctable.
-        $where = $dept > 0 ? "(e.department_id = $dept AND e.status = 1)" : "e.status = 1";
+        if ($areas !== []) {
+            $in    = implode(',', array_map('intval', $areas));
+            $where = "(e.area_id IN ($in) AND e.status = 1)";
+        } else {
+            $where = $dept > 0 ? "(e.department_id = $dept AND e.status = 1)" : "e.status = 1";
+        }
         // The "OR they already have a row" arm below is deliberately NOT limited
         // by department — that is how a nurse transferred out mid-cutoff stays
         // correctable. For a scoped viewer that is a hole: it would hand them
         // every ward's transfers. So the whole condition is fenced instead of
         // the first arm only.
-        $fence = $scope > 0 ? " AND e.department_id = $scope" : '';
+        if ($areas !== []) {
+            $fence = ' AND e.area_id IN (' . implode(',', array_map('intval', $areas)) . ')';
+        } else {
+            $fence = $scope > 0 ? " AND e.department_id = $scope" : '';
+        }
         // The fixed shift is a correlated subquery rather than a join + GROUP BY:
         // several periods can overlap one cutoff, and grouping to collapse them
         // would select columns that ONLY_FULL_GROUP_BY rejects on a stricter
@@ -2109,6 +2281,11 @@ class Action
         $uid   = (int) ($_SESSION['login_id'] ?? 0) ?: null;
         $empIds = [];
         foreach ($cells as $c) if (!empty($c['e'])) $empIds[(int) $c['e']] = true;
+
+        if ($deny = $this->dutyDenyWrite(array_keys($empIds))) {
+            return ['result' => false, 'message' => $deny];
+        }
+
         $zones = $this->dutyZoneMap($range['from'], $range['to'], array_keys($empIds));
 
         $validShifts = [];
@@ -2196,6 +2373,7 @@ class Action
         $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
         $empIds    = array_column($employees, 'id');
         if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
+        if ($deny = $this->dutyDenyWrite($empIds)) return ['result' => false, 'message' => $deny];
         $ids   = implode(',', array_map('intval', $empIds));
         $fromE = $this->db->real_escape_string($range['from']);
         $toE   = $this->db->real_escape_string($range['to']);
@@ -2315,6 +2493,7 @@ class Action
         $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
         $empIds    = array_column($employees, 'id');
         if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
+        if ($deny = $this->dutyDenyWrite($empIds)) return ['result' => false, 'message' => $deny];
         $ids = implode(',', array_map('intval', $empIds));
 
         $srcDays = [];
@@ -2393,6 +2572,7 @@ class Action
         $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
         $empIds    = array_column($employees, 'id');
         if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
+        if ($deny = $this->dutyDenyWrite($empIds)) return ['result' => false, 'message' => $deny];
         $ids = implode(',', array_map('intval', $empIds));
 
         $ok = $this->db->query("DELETE FROM employee_day_schedule
@@ -2425,6 +2605,9 @@ class Action
         foreach ($raw as $v) if ((int) $v) $ids[] = (int) $v;
         $ids = array_values(array_unique($ids));
         if (!$ids) return ['result' => false, 'message' => 'No employees to recompute.'];
+        // Employee ids arrive straight from the POST body here, so this guard is
+        // the only thing standing between a view-only head and another ward.
+        if ($deny = $this->dutyDenyWrite($ids)) return ['result' => false, 'message' => $deny];
         $idList = implode(',', $ids);
 
         $res = $this->db->query("SELECT d.id, d.employee_id, d.date_time, d.work_hours, d.overtime, d.undertime,
@@ -2487,6 +2670,13 @@ class Action
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
         $dept = (int) ($_POST['department_id'] ?? 0);
+
+        // Checked before the upload is even opened: an import rewrites a whole
+        // cutoff, so a view-only head must be turned away at the door.
+        $this->loadScopeHelpers();
+        if (function_exists('area_scope_ids') && area_scope_ids() !== [] && roster_editable_area_ids() === []) {
+            return ['result' => false, 'message' => 'You have view-only access to this roster.'];
+        }
 
         $f = $_FILES['file'] ?? null;
         if (!$f || ($f['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($f['tmp_name'])) {
@@ -2899,6 +3089,58 @@ class Action
         unset($emp['salary'], $emp['basic_pay'], $emp['allowance_rate']);
 
         return ['result' => true, 'employee' => $emp, 'shift' => $shift, 'pay' => $pay];
+    }
+
+    /**
+     * Full unmasked employee record for the "Quick Edit" modal on the
+     * employee list (employee.php) — populates component/add_employee_form.php
+     * client-side, the same fields employee-details.php pre-fills server-side
+     * when it renders that form for its own "Edit Details" button.
+     *
+     * Gated as a write endpoint (ACTION_PAGE_MAP → 'employee', not in
+     * READ_ONLY_ACTIONS): only a role that may actually save changes gets the
+     * unmasked record back.
+     */
+    function get_employee_edit()
+    {
+        $id = intval($_REQUEST['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing employee id'];
+
+        $stmt = $this->db->prepare("SELECT * FROM employee WHERE id = ?");
+        $stmt->bind_param('i', $id);
+        $stmt->execute();
+        $emp = $stmt->get_result()->fetch_assoc();
+        if (!$emp) return ['result' => false, 'message' => 'Employee not found'];
+
+        // Approvers may only edit employees inside their own scope — the same
+        // boundary employee-details.php enforces when opening the page.
+        // Area is checked first and on its own: an area-scoped account usually
+        // has no department_id at all, so a department-only test would read as
+        // "unscoped" and wave through every ward in the hospital.
+        require_once __DIR__ . '/dept-scope.php';
+        $areas = area_scope_ids();
+        if ($areas !== []) {
+            if (!in_array((int) $emp['area_id'], $areas, true)) {
+                return ['result' => false, 'message' => "You don't have access to this employee's record."];
+            }
+        } elseif (dept_scope_id() > 0 && (int) $emp['department_id'] !== dept_scope_id()) {
+            return ['result' => false, 'message' => "You don't have access to this employee's record."];
+        }
+
+        // Portal login email — ADMINISTRATOR ONLY, mirrors save_employee() and
+        // the form itself, which only render/accept it for role 1.
+        $emp['portal_username'] = '';
+        if ((int) ($_SESSION['login_role'] ?? 0) === 1) {
+            $pt = $this->db->query("SHOW TABLES LIKE 'employee_portal_accounts'");
+            if ($pt && $pt->num_rows) {
+                $pq = $this->db->prepare("SELECT username FROM employee_portal_accounts WHERE employee_id = ? LIMIT 1");
+                $pq->bind_param('i', $id);
+                $pq->execute();
+                if ($pr = $pq->get_result()->fetch_assoc()) $emp['portal_username'] = $pr['username'];
+            }
+        }
+
+        return ['result' => true, 'employee' => $emp];
     }
 
     function save_attendance_request()
@@ -3738,6 +3980,23 @@ class Action
             // Store the department for a Department Head (8) or Supervisor (10);
             // clear it for any other role.
             $data .= ", department_id = " . (in_array((int)$role, [8, 10], true) && $department_id !== '' ? "'$department_id'" : "NULL");
+
+            // Which employee this login is. Only meaningful for the roles that
+            // approve leave — it is what keeps a head from being offered their
+            // own request. One employee may hold only one login, or the
+            // "is this me?" test downstream would have two answers.
+            $emp_link = 'NULL';
+            if (in_array((int)$role, [8, 9, 10, 11], true) && !empty($_POST['employee_id'])) {
+                $eid  = (int) $_POST['employee_id'];
+                $self = $id !== '' ? " AND id <> '$id'" : '';
+                $ex   = $this->db->query("SELECT id FROM users WHERE employee_id = $eid$self LIMIT 1");
+                if ($ex && $ex->num_rows > 0) {
+                    return ['result' => false, 'message' => 'That employee is already linked to another user account.'];
+                }
+                $ok = $this->db->query("SELECT id FROM employee WHERE id = $eid");
+                if ($ok && $ok->num_rows > 0) $emp_link = (string) $eid;
+            }
+            $data .= ", employee_id = $emp_link";
 
             // Insert or update user
             if (empty($id)) {
@@ -9483,10 +9742,30 @@ class Action
         if (!isset($stages[$stage])) return ['result' => false, 'message' => 'Invalid approval stage.'];
         $cfg = $stages[$stage];
 
-        // Only the role that owns this stage may act on it. Administrator (role 1)
-        // and every other role stay view-only.
-        if ($role !== (int) $cfg['role']) {
+        // TWO checks, doing two different jobs.
+        //
+        // 1) Coarse family gate: must hold SOME approver role at all. This is
+        //    defense in depth against a session that should never have reached
+        //    here — decide_leave has no entry in ACTION_PAGE_MAP, so this
+        //    function is the only thing standing between a signed-in Timekeeper
+        //    and this endpoint.
+        //
+        // 2) leave_user_can_act(): must be THE approver for THIS employee's area
+        //    at THIS stage. This replaced a plain `$role !== $cfg['role']`
+        //    equality check, which broke the moment a person holds two stages —
+        //    e.g. BACONGUIS is Section Head (role 11's stage) of HEAD NURSE and
+        //    Supervisor (role 10's stage) of three wards, but users.role can
+        //    only ever hold one value. Equality against the stage's configured
+        //    role rejected him outright on whichever stage did not match it,
+        //    which meant those requests could never be decided by anyone.
+        //    leave_user_can_act reads area_approver directly instead of
+        //    users.role, so it is correct regardless of how many stages one
+        //    person holds.
+        if (!in_array($role, [8, 9, 10, 11], true)) {
             return ['result' => false, 'message' => 'You are not allowed to act on the ' . $cfg['label'] . ' approval.'];
+        }
+        if (!leave_user_can_act($this->db, (int) $uid, $stage, (int) $row['employee_id'])) {
+            return ['result' => false, 'message' => 'You are not the ' . $cfg['label'] . ' for this employee\'s area.'];
         }
 
         // Enforce the chain order: a stage can only be decided while it is the one

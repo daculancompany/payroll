@@ -45,14 +45,35 @@ for ($i = -12; $i <= 3; $i++) {
 // silently overridden is worse than offering none.
 require_once __DIR__ . '/dept-scope.php';
 $__scope = dept_scope_id();
+$__areas = area_scope_ids();
 
+// An area-scoped viewer is pinned to their wards, and the picker lists those
+// wards rather than the departments containing them — four nurse stations share
+// one department, so a department name would not tell them which sheet is open.
+// The counts come from employee.area_id for the same reason.
 $__depts = [];
-$__dq = $conn->query("SELECT d.id, d.name, COUNT(e.id) AS n
-                      FROM department d LEFT JOIN employee e ON e.department_id = d.id AND e.status = 1
-                      " . ($__scope > 0 ? "WHERE d.id = $__scope " : "") . "
-                      GROUP BY d.id, d.name ORDER BY d.name ASC");
+if ($__areas !== []) {
+    $in = implode(',', array_map('intval', $__areas));
+    $__dq = $conn->query("SELECT a.department_id AS id, a.name, COUNT(e.id) AS n
+                          FROM area a LEFT JOIN employee e ON e.area_id = a.id AND e.status = 1
+                          WHERE a.id IN ($in)
+                          GROUP BY a.id, a.name ORDER BY a.name ASC");
+} else {
+    $__dq = $conn->query("SELECT d.id, d.name, COUNT(e.id) AS n
+                          FROM department d LEFT JOIN employee e ON e.department_id = d.id AND e.status = 1
+                          " . ($__scope > 0 ? "WHERE d.id = $__scope " : "") . "
+                          GROUP BY d.id, d.name ORDER BY d.name ASC");
+}
 while ($__dq && $__d = $__dq->fetch_assoc()) $__depts[] = $__d;
-$__allCount = (int) ($conn->query("SELECT COUNT(*) c FROM employee WHERE status = 1")->fetch_assoc()['c'] ?? 0);
+
+// Scoped viewers see their own headcount, not the hospital's — the "All" total
+// is meaningless to someone who can only ever open one ward.
+if ($__areas !== []) {
+    $in = implode(',', array_map('intval', $__areas));
+    $__allCount = (int) ($conn->query("SELECT COUNT(*) c FROM employee WHERE status = 1 AND area_id IN ($in)")->fetch_assoc()['c'] ?? 0);
+} else {
+    $__allCount = (int) ($conn->query("SELECT COUNT(*) c FROM employee WHERE status = 1")->fetch_assoc()['c'] ?? 0);
+}
 
 // Read-only roles get the grid without the paint palette or the write buttons.
 $__can_edit = function_exists('can_edit') ? can_edit('duty-roster') : true;
@@ -573,13 +594,19 @@ tfoot.collapsed .dr-cov-row { display:none; }
                     <?php /* "" is "nothing chosen yet"; "0" is the real ALL option. They are
                              deliberately different values — collapsing them would make an
                              empty page load fetch every employee in the company. */ ?>
+                    <?php
+                    /* An area-scoped viewer never sees "all departments" — the
+                       widest thing they may open is their own set of wards, so
+                       the label says that instead of promising the hospital. */
+                    $__allLabel = $__areas !== [] ? 'All my wards' : 'All departments';
+                    ?>
                     <?php if ($__scope <= 0): ?>
-                    <option value="">— Select a department —</option>
+                    <option value="">— Select a <?= $__areas !== [] ? 'ward' : 'department' ?> —</option>
                     <option value="0"
-                            data-cs-name="All departments"
+                            data-cs-name="<?= $__allLabel ?>"
                             data-cs-sub="<?= $__allCount ?> employees · slower to load"
                             data-cs-icon="ri-global-line"
-                            data-cs-display="All departments">All departments (<?= $__allCount ?>)</option>
+                            data-cs-display="<?= $__allLabel ?>"><?= $__allLabel ?> (<?= $__allCount ?>)</option>
                     <?php endif; ?>
                     <?php foreach ($__depts as $d): ?>
                         <option value="<?= (int) $d['id'] ?>"

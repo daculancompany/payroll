@@ -96,6 +96,16 @@ $canEdit      = ($login_role !== 6);
 // they can't be recomputed, but the discrepancy must at least be visible.
 $schedMM = dtr_schedule_mismatches($conn, $id);
 
+// Active shifts for the per-record "Change schedule" picker (dtr_set_day_schedule).
+$ddvShifts = [];
+$shq = $conn->query("SELECT id, description, start_time, end_time FROM work_schedules WHERE status = 1 ORDER BY start_time ASC");
+while ($shq && ($s = $shq->fetch_assoc())) {
+    $ddvShifts[] = [
+        'id'    => (int) $s['id'],
+        'label' => $s['description'] . ' (' . date('h:i A', strtotime($s['start_time'])) . '–' . date('h:i A', strtotime($s['end_time'])) . ')',
+    ];
+}
+
 // Last recompute of this batch (dtr_recompute_log audit trail).
 $lastRecompute = null;
 try {
@@ -168,6 +178,9 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
     <script src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Real Bootstrap modals (Edit record / Change schedule) need the bundle's
+         JS component, not just the CSS this page already loaded. -->
+    <script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
 <style>
 :root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent; }
 html, body { height:100%; }
@@ -625,6 +638,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-mini-btn.ok   { background:#eafaf0; color:#0f9d58; border-color:#b7e4c7; }
 .ddv-mini-btn.no   { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
 .ddv-mini-btn.edit { background:#eef2fb; color:#394b7c; border-color:#c3c9e0; }
+.ddv-mini-btn.sch  { background:#f3ecfc; color:#6642aa; border-color:#dbc7f2; }
 .ddv-mini-btn.del  { background:#f3f2f1; color:#605e5c; border-color:#e1dfdd; }
 .ddv-mini-btn.msg  { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
 .ddv-mini-btn.msg.has { box-shadow:0 0 0 1px #ffe082 inset; }
@@ -751,11 +765,6 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .ddv-loader.show { display:flex; }
 .ddv-ring { width:24px; height:24px; border-radius:50%; border:3px solid #e1dcec; border-top-color:var(--brand); animation:ddv-spin .8s linear infinite; }
 @keyframes ddv-spin { to { transform:rotate(360deg); } }
-
-/* Edit dialog inputs */
-.ddv-edit-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; text-align:left; }
-.ddv-edit-grid label { font-size:11px; font-weight:700; color:#635f73; display:block; margin-bottom:2px; }
-.ddv-edit-grid input { width:100%; border:1px solid #ddd9e7; border-radius:7px; padding:6px 8px; font-size:13px; }
 
 /* Print: only the paper sheet — or, in print-all mode, every sheet */
 #ddv-print-all { display:none; }
@@ -976,6 +985,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
                         <button type="button" data-fl="zero_hours"><i class="ri-time-line"></i> Zero hrs</button>
                         <button type="button" data-fl="high_ot"><i class="ri-sun-line"></i> High OT</button>
                         <button type="button" data-fl="manual"><i class="ri-edit-line"></i> Manual</button>
+                        <button type="button" data-fl="rest_worked"><i class="ri-moon-line"></i> Day off worked</button>
                         <button type="button" data-fl="low_att"><i class="ri-calendar-close-line"></i> Low attend.</button>
                     </div>
                     <div class="ddv-fp-lbl">Activity</div>
@@ -1043,10 +1053,10 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
                     <span class="ddv-doc-pos" id="ddv-doc-pos"></span>
                 </div>
                 <div class="ddv-doc-legend dtrf48-legend" title="Day markers on the sheet — hover a marker for details">
-                    <span><span class="dm dm-hol">H</span> Holiday</span>
-                    <span><span class="dm dm-lv">L</span> Leave</span>
-                    <span><span class="dm dm-off">D</span> Day off</span>
-                    <span><span class="dm dm-req">R</span> Request</span>
+                    <span><span class="dm dm-hol"><i class="ri-flag-2-fill"></i></span> Holiday</span>
+                    <span><span class="dm dm-lv"><i class="ri-calendar-check-line"></i></span> Leave</span>
+                    <span><span class="dm dm-off"><i class="ri-moon-line"></i></span> Day off</span>
+                    <span><span class="dm dm-req"><i class="ri-time-line"></i></span> Request</span>
                     <span><span class="dm dm-sch dm-sch-day"><i class="ri-calendar-2-line"></i></span> Day shift</span>
                     <span><span class="dm dm-sch dm-sch-eve"><i class="ri-calendar-2-line"></i></span> Afternoon</span>
                     <span><span class="dm dm-sch dm-sch-noc"><i class="ri-calendar-2-line"></i></span> Night</span>
@@ -1212,10 +1222,91 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
     </div>
 </div>
 
+<!-- Edit record (work hours / OT / UT / late) — same modal markup as
+     employee-details.php's Assign Schedule modal: one shared form, fields
+     re-populated per record right before it opens. -->
+<div class="modal fade" id="modal-edit-rec" tabindex="-1">
+    <div class="modal-dialog">
+        <form id="form-edit-rec">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title"><i class="ri-pencil-line me-2 text-success"></i>Edit record</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="er-rec-id">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Work hours</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="er-wh">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Overtime</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="er-ot">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Undertime</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="er-ut">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label fw-semibold">Late (min)</label>
+                            <input type="number" step="0.01" min="0" class="form-control" id="er-late">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Save changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Change schedule for one DTR day — backs dtr_set_day_schedule(). Same shape
+     as the Edit record modal above. -->
+<div class="modal fade" id="modal-change-sched" tabindex="-1">
+    <div class="modal-dialog">
+        <form id="form-change-sched">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title"><i class="ri-calendar-2-line me-2 text-success"></i>Change schedule</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="cs-rec-id">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Shift</label>
+                        <select class="form-select" id="cs-shift">
+                            <option value="">— No shift —</option>
+                            <?php foreach ($ddvShifts as $s): ?>
+                            <option value="<?= $s['id'] ?>"><?= htmlspecialchars($s['label'], ENT_QUOTES, 'UTF-8') ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input class="form-check-input" type="checkbox" id="cs-rest">
+                        <label class="form-check-label" for="cs-rest">Also mark as rest day</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Note</label>
+                        <input type="text" class="form-control" id="cs-note" maxlength="255" placeholder="Reason for the correction">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Save &amp; recalculate</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- DTR sign-off conversation — what the employee wrote when they confirmed or
      disputed this batch, plus HR's reply. Opened from the Employee Review panel.
-     A hand-rolled overlay, not a Bootstrap modal: this page loads Bootstrap's
-     CSS but not its JS, so bootstrap.Modal does not exist here. -->
+     Left as its own hand-rolled overlay (predates the Bootstrap JS bundle this
+     page now loads for Edit record / Change schedule) rather than converted —
+     not in scope, no functional reason to touch it. -->
 <div class="ddv-rvm" id="modal-emp-review" role="dialog" aria-modal="true" aria-label="DTR review message">
     <div class="ddv-rvm-card">
         <div class="ddv-rvm-head">
@@ -1616,6 +1707,10 @@ const FLAG_META = {
                   why: `Overtime above the ${OT_HOURS}-hr threshold — confirm it was actually rendered and authorized (an approved OT request) before approving.` },
     manual:     { cls: 'info',  icon: 'ri-edit-line',          lbl: 'Manual log',
                   why: 'Has manually-entered punches (not from the biometric device). Informational only — it does not block bulk approval.' },
+    // Same moon glyph as the duty roster grid and the Form 48 "Day off" marker
+    // — one icon for "rest day" everywhere in the app.
+    rest_worked: { cls: 'info', icon: 'ri-moon-line',          lbl: 'Day off worked',
+                  why: 'This date is marked as the employee\'s rest day, but hours were recorded here — pays base pay + 30% rest-day premium instead of a regular working day (see Change schedule to correct it if this was not intended). Informational only — it does not block bulk approval.' },
 };
 
 // ── Right: records & logs ────────────────────────────────────────────────────
@@ -1672,6 +1767,7 @@ function renderRecords(e) {
                     <button class="ddv-mini-btn ok"   onclick="decideRecs([${r.id}], 1)" ${r.status === 1 ? 'disabled' : ''}><i class="ri-check-line"></i> Approve</button>
                     <button class="ddv-mini-btn no"   onclick="decideRecs([${r.id}], 2)" ${r.status === 2 ? 'disabled' : ''}><i class="ri-close-line"></i> Reject</button>
                     <button class="ddv-mini-btn edit" onclick="editRec(${r.id})" title="Edit hours"><i class="ri-pencil-line"></i></button>
+                    <button class="ddv-mini-btn sch" onclick="changeRecSchedule(${r.id})" title="Change schedule for this day"><i class="ri-calendar-2-line"></i></button>
                     ${msgBtn}
                     <button class="ddv-mini-btn del"  onclick="deleteRec(${r.id})" title="Delete record"><i class="ri-delete-bin-6-line"></i></button>
                 </div>` : (msgs.length ? `<div class="ddv-rec-actions">${msgBtn}</div>` : '')}
@@ -1699,9 +1795,10 @@ function recFlags(r) {
     if (r.wh <= 0) f.push('zero_hours');
     if (r.ot > OT_HOURS) f.push('high_ot');
     if ((r.logs || []).some(l => !l.bio)) f.push('manual');
+    if (r.is_rest_day && r.wh > 0) f.push('rest_worked');
     return f;
 }
-const hasBlocker = r => r.flags.some(f => f !== 'manual');
+const hasBlocker = r => r.flags.some(f => f !== 'manual' && f !== 'rest_worked');
 
 function recomputeEmp(e) {
     e.appr = e.pend = e.disa = e.exc = 0;
@@ -1985,46 +2082,108 @@ function editRec(recId) {
     const hit = findRec(recId);
     if (!hit) return;
     const r = hit.r;
-    Swal.fire({
-        title: 'Edit record',
-        html: `<div class="ddv-edit-grid">
-            <div><label>Work hours</label><input id="ed-wh" type="number" step="0.01" min="0" value="${r.wh}"></div>
-            <div><label>Overtime</label><input id="ed-ot" type="number" step="0.01" min="0" value="${r.ot}"></div>
-            <div><label>Undertime</label><input id="ed-ut" type="number" step="0.01" min="0" value="${r.ut}"></div>
-            <div><label>Late (min)</label><input id="ed-late" type="number" step="0.01" min="0" value="${r.late}"></div>
-        </div>`,
-        showCancelButton: true, confirmButtonColor: '#6642aa', confirmButtonText: 'Save changes',
-        preConfirm: () => ({
-            work_hours: parseFloat(document.getElementById('ed-wh').value) || 0,
-            overtime:   parseFloat(document.getElementById('ed-ot').value) || 0,
-            undertime:  parseFloat(document.getElementById('ed-ut').value) || 0,
-            late:       parseFloat(document.getElementById('ed-late').value) || 0,
-        }),
-    }).then(async res => {
-        if (!res.isConfirmed) return;
-        const v = res.value;
-        const current = { work_hours: r.wh, overtime: r.ot, undertime: r.ut, late: r.late };
-        const changed = Object.keys(v).filter(k => v[k] !== current[k]);
-        if (!changed.length) return;
-        try {
-            for (const field of changed) {
-                const resp = await $.ajax({
-                    url: 'ajax.php?action=update_dtr_logs', method: 'POST', dataType: 'JSON',
-                    data: { id: recId, [field]: v[field] },
-                });
-                if (!(resp && resp.result)) throw new Error((resp && resp.message) || 'Update failed');
-            }
-            // Server resets the record to pending on any figure edit — mirror it.
-            r.wh = v.work_hours; r.ot = v.overtime; r.ut = v.undertime; r.late = v.late;
-            r.status = 0; r.note = '';
-            st.emps.forEach(recomputeEmp);
-            rerenderAll();
-            toast('Record updated — set back to Pending for re-approval');
-        } catch (err) {
-            Swal.fire({ icon: 'error', title: 'Error!', text: err.message || 'Update failed.' });
-        }
-    });
+    $id('er-rec-id').value = recId;
+    $id('er-wh').value   = r.wh;
+    $id('er-ot').value   = r.ot;
+    $id('er-ut').value   = r.ut;
+    $id('er-late').value = r.late;
+    bootstrap.Modal.getOrCreateInstance($id('modal-edit-rec')).show();
 }
+
+document.getElementById('form-edit-rec').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const recId = parseInt($id('er-rec-id').value, 10);
+    const hit = findRec(recId);
+    if (!hit) return;
+    const r = hit.r;
+    const v = {
+        work_hours: parseFloat($id('er-wh').value) || 0,
+        overtime:   parseFloat($id('er-ot').value) || 0,
+        undertime:  parseFloat($id('er-ut').value) || 0,
+        late:       parseFloat($id('er-late').value) || 0,
+    };
+    const current = { work_hours: r.wh, overtime: r.ot, undertime: r.ut, late: r.late };
+    const changed = Object.keys(v).filter(k => v[k] !== current[k]);
+    if (!changed.length) { bootstrap.Modal.getInstance($id('modal-edit-rec'))?.hide(); return; }
+    try {
+        for (const field of changed) {
+            const resp = await $.ajax({
+                url: 'ajax.php?action=update_dtr_logs', method: 'POST', dataType: 'JSON',
+                data: { id: recId, [field]: v[field] },
+            });
+            if (!(resp && resp.result)) throw new Error((resp && resp.message) || 'Update failed');
+        }
+        // Server resets the record to pending on any figure edit — mirror it.
+        r.wh = v.work_hours; r.ot = v.overtime; r.ut = v.undertime; r.late = v.late;
+        r.status = 0; r.note = '';
+        st.emps.forEach(recomputeEmp);
+        rerenderAll();
+        bootstrap.Modal.getInstance($id('modal-edit-rec'))?.hide();
+        toast('Record updated — set back to Pending for re-approval');
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Error!', text: err.message || 'Update failed.' });
+    }
+});
+
+// Correct which shift/rest-day a specific date's DTR figures were computed
+// against — without leaving the record for duty-roster.php + a batch Recompute.
+// Writes the duty-roster override for that one employee/date, then re-derives
+// this row's hours/OT/UT/late from its raw logs against the new schedule.
+function changeRecSchedule(recId) {
+    const hit = findRec(recId);
+    if (!hit) return;
+    const r = hit.r;
+    $id('cs-rec-id').value = recId;
+    $id('cs-rest').checked = !!r.is_rest_day;
+    $id('cs-note').value   = '';
+    // Pre-fill with what this row is CURRENTLY stamped with, so the admin can
+    // see what they're correcting from, not just an empty picker.
+    const shiftSel = $id('cs-shift');
+    shiftSel.value = (r.schedule_id != null) ? String(r.schedule_id) : '';
+    // custom-select.js (already loaded on this page) only repaints its label
+    // on a real 'change' event — setting .value alone leaves the old label showing.
+    shiftSel.dispatchEvent(new Event('change', { bubbles: true }));
+    bootstrap.Modal.getOrCreateInstance($id('modal-change-sched')).show();
+}
+
+document.getElementById('form-change-sched').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const recId = parseInt($id('cs-rec-id').value, 10);
+    const hit = findRec(recId);
+    if (!hit) return;
+    const sid  = $id('cs-shift').value;
+    const rest = $id('cs-rest').checked;
+    const note = $id('cs-note').value;
+    if (!sid && !rest) {
+        Swal.fire({ icon: 'warning', title: 'Pick a shift, or tick "Also mark as rest day".' });
+        return;
+    }
+    try {
+        const resp = await $.ajax({
+            url: 'ajax.php?action=dtr_set_day_schedule', method: 'POST', dataType: 'JSON',
+            data: { detail_id: recId, schedule_id: sid, is_rest_day: rest ? 1 : 0, note: note },
+        });
+        if (!(resp && resp.result)) throw new Error((resp && resp.message) || 'Update failed');
+        hit.r.wh = resp.work_hours; hit.r.ot = resp.overtime; hit.r.ut = resp.undertime; hit.r.late = resp.late;
+        hit.r.status = resp.status;
+        hit.r.schedule_id = resp.schedule_id;
+        hit.r.is_rest_day = resp.is_rest_day;
+        if (resp.repending) hit.r.note = '';
+        // The Form 48 sheet's "D" (Day off) badge reads e.marks[date] — a
+        // separate day-level snapshot from the record itself — so it stays
+        // stale on reload unless patched here too.
+        hit.e.marks = hit.e.marks || {};
+        const dayMarks = (hit.e.marks[hit.date] || []).filter(m => m.k !== 'off');
+        if (resp.is_rest_day) dayMarks.push({ k: 'off' });
+        if (dayMarks.length) hit.e.marks[hit.date] = dayMarks; else delete hit.e.marks[hit.date];
+        st.emps.forEach(recomputeEmp);
+        rerenderAll();
+        bootstrap.Modal.getInstance($id('modal-change-sched'))?.hide();
+        toast(resp.message || 'Schedule updated');
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Error!', text: err.message || 'Update failed.' });
+    }
+});
 
 // ── Per-record conversation — a single floating popover (no layout space) ────
 function renderChatBubbles() {

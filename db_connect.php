@@ -383,6 +383,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'delete_dtr_note' => 'dtr', 'delete_dtr_record' => 'dtr', 'edit_dtr_time' => 'dtr',
         'finalize_dtr' => 'dtr', 'finalize_dtr_bulk' => 'dtr', 'message_dtr_record' => 'dtr',
         'recompute_dtr' => 'dtr', 'save_dtr_note' => 'dtr', 'update_dtr_logs' => 'dtr',
+        'dtr_set_day_schedule' => 'dtr',
         // Scoped recompute rides the schedule-assign flow (employee-details
         // modal), so it carries that page's permission, not the DTR screen's.
         'recompute_employee_dtr' => 'employee-details',
@@ -395,7 +396,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'roster_update_rate_type' => 'schedule-roster', 'plan_add_schedule' => 'schedule-roster',
         'plan_apply_all' => 'schedule-roster', 'plan_clear' => 'schedule-roster',
         'plan_remove' => 'schedule-roster', 'plan_list' => 'schedule-roster',
-        'duty_roster_data' => 'duty-roster', 'duty_roster_save' => 'duty-roster',
+        'duty_roster_data' => 'duty-roster', 'duty_roster_areas' => 'duty-roster', 'duty_roster_save' => 'duty-roster',
         'duty_roster_publish' => 'duty-roster', 'duty_roster_copy' => 'duty-roster',
         'duty_roster_clear_drafts' => 'duty-roster', 'duty_roster_recompute' => 'duty-roster',
         // Import only previews, but it is the front half of a write and is kept
@@ -440,7 +441,7 @@ if (!defined('ACTION_PAGE_MAP')) {
 if (!defined('READ_ONLY_ACTIONS')) {
     define('READ_ONLY_ACTIONS', [
         'get_employee_schedule_history', 'employee_quick_view',
-        'loan_history_details', 'plan_list', 'duty_roster_data',
+        'loan_history_details', 'plan_list', 'duty_roster_data', 'duty_roster_areas',
         'get_payroll_rows_data', 'payroll_history_details', 'remittance_breakdown',
         'isLock', 'dtr_review_progress', 'eport_payroll_reviews', 'eport_dtr_reviews',
     ]);
@@ -520,6 +521,30 @@ if (!function_exists('can_edit')) {
         if (isset($deny[(int) $role]) && in_array($action, $deny[(int) $role], true)) return false;
 
         return can_edit($page, $role);
+    }
+}
+
+// Admin-only freeze switch for the duty roster (see duty-roster.php and
+// admin_class.php::dutyRosterLockDeny/duty_roster_set_lock). Stored in
+// pay_settings — a reused key-value table, not a dedicated one — because this
+// is a single boolean-plus-audit-trail row, exactly the shape that table
+// already holds.
+if (!function_exists('duty_roster_lock_info')) {
+    /** @return array{locked: bool, by: string, at: string} */
+    function duty_roster_lock_info(): array
+    {
+        global $conn;
+        $out = ['locked' => false, 'by' => '', 'at' => ''];
+        if (!($conn instanceof mysqli)) return $out;
+        $r = $conn->query("SELECT ps.setting_value, ps.updated_at, u.name
+                            FROM pay_settings ps LEFT JOIN users u ON u.id = ps.updated_by
+                            WHERE ps.setting_key = 'duty_roster_locked' LIMIT 1");
+        $row = $r ? $r->fetch_assoc() : null;
+        if ($row === null) return $out;
+        $out['locked'] = ((float) $row['setting_value']) >= 1;
+        $out['by']     = trim((string) ($row['name'] ?? ''));
+        $out['at']     = $row['updated_at'] ? date('M j, Y g:i A', strtotime($row['updated_at'])) : '';
+        return $out;
     }
 }
 

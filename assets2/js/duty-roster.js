@@ -20,21 +20,27 @@ $(document).ready(function () {
     // dept is kept as a STRING: '' means nothing chosen yet, '0' means every
     // department. Collapsing the two would make a bare page load pull the whole
     // company's grid.
-    var S = { period: '', dept: '', days: [], shifts: [], employees: [], cells: {}, zones: {}, leaves: {}, from: '', to: '' };
+    var S = { period: '', dept: '', area: '', days: [], shifts: [], employees: [], cells: {}, zones: {}, leaves: {}, from: '', to: '' };
     var shiftById = {};
+    // Below this many hours between yesterday's shift end and today's shift
+    // start, the pair is flagged the same way a leave clash is — a planning
+    // mistake, not a valid roster. Not user-configurable yet; a fixed floor
+    // beats no check at all, and hospitals rarely negotiate this number.
+    var MIN_REST_HOURS = 8;
     var dirty = new Map();
     // What the next click writes. kind stays null until the planner picks from
     // the palette — nothing is chosen for them. It used to default to 'clear',
     // so a first click ERASED: invisible on an empty grid, destructive on a
     // planned one, and the only trace was an unsaved-changes prompt later.
     // Now every paint action asks requirePaint() first and says what to do.
-    var paint = { kind: null, s: null };
+    var paint = { kind: null, s: null, alsoRest: false };
     var painting = false;
     var pendingRecompute = [];
 
     var $grid = $('#dr-grid');
     var $period = $('#dr-period');
     var $dept = $('#dr-dept');
+    var $area = $('#dr-area');   // absent (0 length) for an area-scoped session — every $area.* call below already no-ops on an empty jQuery set
     var $search = $('#dr-search');
     var $min = $('#dr-min');
 
@@ -117,6 +123,54 @@ $(document).ready(function () {
     // ignored on the day it matters.
     function leaveOf(e, d) { return (S.leaves && S.leaves[key(e, d)]) || null; }
 
+    /* ── back-to-back rest check ─────────────────────────────────────────── */
+    // "6:00 AM" / "2:00 PM" (the format duty_roster_data sends) → minutes since
+    // midnight. Parsed by hand rather than through Date(): a bare time string
+    // fed to the constructor is a browser-dependent guess, and this runs once
+    // per cell on every render.
+    function timeToMinutes(t) {
+        var m = /^(\d{1,2}):(\d{2})\s*([AP]M)$/i.exec(String(t || '').trim());
+        if (!m) return null;
+        var h = parseInt(m[1], 10) % 12;
+        if (m[3].toUpperCase() === 'PM') h += 12;
+        return h * 60 + parseInt(m[2], 10);
+    }
+
+    function dateIndex(date) {
+        for (var i = 0; i < S.days.length; i++) if (S.days[i].date === date) return i;
+        return -1;
+    }
+    function prevDateOf(date) { var i = dateIndex(date); return i > 0 ? S.days[i - 1].date : null; }
+    function nextDateOf(date) {
+        var i = dateIndex(date);
+        return (i >= 0 && i < S.days.length - 1) ? S.days[i + 1].date : null;
+    }
+
+    // Hours of rest between yesterday's shift end and today's shift start, or
+    // null when either day has no shift to measure from (a plain rest day, an
+    // unplotted day, or the first day on screen). Both ends resolved off the
+    // SAME shift-id lookup cellHtml renders from, so this can never disagree
+    // with what the cell itself is showing.
+    function restGapHours(empId, date, shiftId) {
+        var prevDate = prevDateOf(date);
+        if (!prevDate || !shiftId) return null;
+        var prevV = cellValue(empId, prevDate);
+        var prevShiftId = prevV ? prevV.s : null;
+        if (!prevShiftId) return null;
+        var cur = shiftById[shiftId], prev = shiftById[prevShiftId];
+        var curStart = cur && timeToMinutes(cur.start);
+        var prevEnd = prev && timeToMinutes(prev.end);
+        var prevStart = prev && timeToMinutes(prev.start);
+        if (curStart == null || prevEnd == null || prevStart == null) return null;
+        // An overnight shift's END clock time is numerically before its own
+        // START — it lands on the FOLLOWING calendar day, one day closer to
+        // "today" than a day shift's end is.
+        var prevEndDay = (prevEnd <= prevStart) ? 1 : 0;
+        var prevEndAbs = prevEndDay * 1440 + prevEnd;
+        var curStartAbs = 1 * 1440 + curStart;   // "today" is always day 1 relative to "yesterday"
+        return (curStartAbs - prevEndAbs) / 60;
+    }
+
     function visibleEmployees() {
         var q = ($search.val() || '').toLowerCase().trim();
         if (!q) return S.employees;
@@ -168,12 +222,21 @@ $(document).ready(function () {
             var on = kind === paint.kind && (kind !== 'shift' || String(id) === String(paint.s));
             $(this).toggleClass('on', !!on);
         });
+        // Only a shift swatch reads alsoRest — rest already carries r:1 on its
+        // own, and clear wipes the day outright — so dim it the rest of the time
+        // as a hint, without disabling the checkbox itself.
+        $('#dr-also-rest').toggleClass('dimmed', paint.kind !== 'shift');
     }
 
     $(document).on('click', '#dr-palette .dr-swatch', function () {
         paint.kind = $(this).data('kind');
         paint.s = paint.kind === 'shift' ? parseInt($(this).data('id'), 10) : null;
         syncPalette();
+    });
+
+    $('#dr-also-rest-chk').on('change', function () {
+        paint.alsoRest = this.checked;
+        $('#dr-also-rest').toggleClass('on', paint.alsoRest);
     });
 
     /* ── grid ────────────────────────────────────────────────────────────── */
@@ -210,7 +273,7 @@ $(document).ready(function () {
         // Export and import are per-department, so they mean nothing until one
         // is chosen — and the export would otherwise 400 on an empty period.
         var noDept = S.dept === '';
-        $('#dr-export, #dr-import, #dr-pattern').prop('disabled', noDept);
+        $('#dr-print, #dr-export, #dr-import, #dr-pattern').prop('disabled', noDept);
     }
 
     // What the chosen department is called, for the chips and the confirms.
@@ -329,14 +392,27 @@ $(document).ready(function () {
         var style = '';
         var label = '·';
         var title = [];
+        var curShiftId = null;   // whichever branch below assigns an actual shift
 
         if (v && v.r) {
             cls += ' dr-rest';
-            label = '·';
+            // No text label: the moon glyph is drawn by .dr-cell.dr-rest::before
+            // in CSS, so the grid cell and the legend swatch (a real .dr-cell.dr-rest
+            // wearing the same class) can never show two different icons for "rest".
+            label = '';
             title.push('Rest day');
             if (v.s) {
                 var shr = shiftById[v.s];
-                if (shr) title.push('shift on file: ' + shr.desc);
+                if (shr) {
+                    // Rest day WITH a shift on file (planned duty on a day off) —
+                    // show the shift's own code as the label, same as any shift
+                    // cell, and let the moon become a small corner badge instead
+                    // of the cell's only content (dr-rest-shift moves it in CSS).
+                    cls += ' dr-rest-shift';
+                    label = shortLabel(shr.desc);
+                    title.push('shift on file: ' + shr.desc + ' (' + shr.start + '–' + shr.end + ')');
+                    curShiftId = v.s;
+                }
             }
         } else if (v && v.s) {
             var sh = shiftById[v.s];
@@ -344,12 +420,23 @@ $(document).ready(function () {
                 label = shortLabel(sh.desc);
                 style = 'background:' + shiftColor(sh) + ';color:' + shiftTextColor(sh) + ';';
                 title.push(sh.desc + ' (' + sh.start + '–' + sh.end + ')');
+                curShiftId = v.s;
             } else {
                 label = '?';
             }
         } else {
             cls += ' dr-empty';
+            label = '';   // dash glyph from .dr-cell.dr-empty::before, same reasoning as rest
             title.push('Not on the day grid — falls back to the fixed shift roster');
+        }
+
+        // Too little rest since yesterday's shift ended. Checked against
+        // whichever shift the cell is ACTUALLY showing (curShiftId), so a
+        // combo rest+shift day is measured the same as a plain shift day.
+        var gap = restGapHours(empId, date, curShiftId);
+        if (gap !== null && gap < MIN_REST_HOURS) {
+            cls += ' dr-restclash';
+            title.push('ONLY ' + gap.toFixed(1) + 'h rest since the previous day\'s shift ended (need ' + MIN_REST_HOURS + 'h)');
         }
 
         var lv = leaveOf(empId, date);
@@ -381,8 +468,14 @@ $(document).ready(function () {
             }
         }
 
+        // data-tip (not the native title=) — the same bubble the legend uses,
+        // so hovering a cell gets the identical instant, readable tooltip
+        // instead of the browser's slow plain one. title[0] is always the
+        // day's primary state (Rest day / the shift name), so it becomes the
+        // bubble's bold heading and everything else — shift-on-file, clash
+        // warnings, zone, draft, unsaved — reads as the detail block below it.
         return '<td class="' + cls + '" style="' + style + '" data-emp="' + empId + '" data-date="' + date
-             + '" title="' + esc(title.join(' — ')) + '">' + esc(label) + '</td>';
+             + '" data-tip="' + escAttr(title.join('\n')) + '">' + esc(label) + '</td>';
     }
 
     // Native querySelector scoped to the employee's row, not a jQuery scan of
@@ -392,6 +485,13 @@ $(document).ready(function () {
     function repaintCell(empId, date) {
         var el = $grid[0].querySelector('tr[data-emp="' + empId + '"] > td[data-date="' + date + '"]');
         if (el) el.outerHTML = cellHtml(empId, date);
+        // Tomorrow's rest-gap reading depends on TODAY's shift, so a change here
+        // can flip tomorrow's dr-restclash without tomorrow's own cell changing.
+        var nd = nextDateOf(date);
+        if (nd) {
+            var el2 = $grid[0].querySelector('tr[data-emp="' + empId + '"] > td[data-date="' + nd + '"]');
+            if (el2) el2.outerHTML = cellHtml(empId, nd);
+        }
     }
 
     /* ── coverage ────────────────────────────────────────────────────────── */
@@ -526,7 +626,7 @@ $(document).ready(function () {
         if (zoneOf(empId, date) === 'locked') return false;
 
         var next = paint.kind === 'rest' ? { s: null, r: 1 }
-                 : paint.kind === 'shift' ? { s: paint.s, r: 0 }
+                 : paint.kind === 'shift' ? { s: paint.s, r: paint.alsoRest ? 1 : 0 }
                  : { s: null, r: 0 };
 
         var cur = cellValue(empId, date) || { s: null, r: 0 };
@@ -787,15 +887,38 @@ $(document).ready(function () {
         });
     }
 
+    // Areas (wards) inside the chosen department, for the optional Area filter
+    // — absent entirely for an area-scoped session ($area is a 0-length jQuery
+    // set there, so every call here is a no-op). Rebuilds #dr-area's options
+    // and resets its selection to "All areas" SYNCHRONOUSLY before the AJAX
+    // call resolves, so the load() that follows never reads a stale area_id
+    // left over from the previous department.
+    function loadAreas() {
+        if (!$area.length) return;
+        var deptVal = $dept.val();
+        var dept = (deptVal == null || deptVal === '' || deptVal === '0') ? 0 : parseInt(deptVal, 10);
+        $area.prop('disabled', true).html('<option value="">All areas</option>').trigger('change');
+        if (!dept) return;
+        post('duty_roster_areas', { department_id: dept })
+            .done(function (j) {
+                if (!j.result || $dept.val() != dept) return;   // department may have changed again while this was in flight
+                var opts = '<option value="">All areas</option>' + (j.areas || []).map(function (a) {
+                    return '<option value="' + a.id + '">' + esc(a.name) + '</option>';
+                }).join('');
+                $area.html(opts).prop('disabled', !(j.areas && j.areas.length)).trigger('change');
+            });
+    }
+
     function load() {
         S.period = $period.val();
         S.dept = $dept.val() == null ? '' : String($dept.val());
+        S.area = $area.length ? ($area.val() == null ? '' : String($area.val())) : '';
         if (S.dept === '') {
             S.employees = []; S.days = []; S.cells = {}; S.zones = {}; S.from = ''; S.to = '';
             render();
             return;
         }
-        post('duty_roster_data', { period: S.period, department_id: S.dept })
+        post('duty_roster_data', { period: S.period, department_id: S.dept, area_id: S.area })
             .done(function (j) {
                 if (!j.result) { toast('error', 'Error', j.message); return; }
                 S.days = j.days || [];
@@ -979,6 +1102,42 @@ $(document).ready(function () {
             confirmButtonText: 'Export saved version',
             cancelButtonText: 'Cancel',
         }).then(function (r) { if (r.isConfirmed) go(); });
+    });
+
+    // Same DATABASE-not-screen caveat as Export. Shown in the wide #dr-print-modal
+    // (an iframe), not a new tab — the roster stays open underneath instead of
+    // being replaced by the navigation.
+    function printUrl() {
+        return 'print-duty-roster.php?period=' + encodeURIComponent(S.period)
+             + '&department_id=' + encodeURIComponent(S.dept)
+             + '&area_id=' + encodeURIComponent(S.area || '');
+    }
+    function printOpen() {
+        var url = printUrl();
+        $('#dr-print-open').attr('href', url);
+        $('#dr-print-frame').attr('src', url);
+        $('#dr-print-modal').addClass('show');
+    }
+    function printClose() {
+        $('#dr-print-modal').removeClass('show');
+        $('#dr-print-frame').attr('src', '');   // stop the embedded PDF viewer once hidden
+    }
+    $('#dr-print').on('click', function () {
+        if (S.dept === '') { toast('info', 'Choose a department', 'Pick a department first, then print.'); return; }
+        if (!dirty.size) return printOpen();
+        Swal.fire({
+            icon: 'warning',
+            title: 'You have unsaved days',
+            text: dirty.size + ' day(s) are not saved yet. The PDF is built from what is saved, so those will be missing.',
+            showCancelButton: true,
+            confirmButtonText: 'Print saved version',
+            cancelButtonText: 'Cancel',
+        }).then(function (r) { if (r.isConfirmed) printOpen(); });
+    });
+    $('#dr-print-close').on('click', printClose);
+    $('#dr-print-modal').on('click', function (e) { if (e.target === this) printClose(); });
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $('#dr-print-modal').hasClass('show')) printClose();
     });
 
     // Import is a DRY RUN on the server. What comes back is a list of changed
@@ -1320,6 +1479,14 @@ $(document).ready(function () {
             return;
         }
         dirty.clear();
+        loadAreas();   // resets #dr-area to "All areas" for the new department, synchronously
+        load();
+    });
+    $area.on('change', function () {
+        if (dirty.size && !confirm('You have unsaved changes. Switch area and lose them?')) {
+            return;
+        }
+        dirty.clear();
         load();
     });
     $search.on('input', function () { render(); });
@@ -1343,5 +1510,9 @@ $(document).ready(function () {
         window.CustomSelect.refresh($period[0]);
     }, 0);
 
+    // A department may already be restored from localStorage above — populate
+    // its areas before the initial load() so the Area filter isn't blank for
+    // one refresh on an unscoped session that reopens the page.
+    loadAreas();
     load();
 });

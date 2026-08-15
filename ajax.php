@@ -640,6 +640,9 @@ if ($action == 'plan_apply_all') {
 if ($action == 'duty_roster_data') {
     echo json_encode($crud->duty_roster_data());
 }
+if ($action == 'duty_roster_areas') {
+    echo json_encode($crud->duty_roster_areas());
+}
 if ($action == 'duty_roster_save') {
     echo json_encode($crud->duty_roster_save());
 }
@@ -657,6 +660,9 @@ if ($action == 'duty_roster_recompute') {
 }
 if ($action == 'duty_roster_import') {
     echo json_encode($crud->duty_roster_import());
+}
+if ($action == 'duty_roster_set_lock') {
+    echo json_encode($crud->duty_roster_set_lock());
 }
 if ($action == 'get_employee_schedule_history') {
     echo json_encode($crud->get_employee_schedule_history());
@@ -728,6 +734,9 @@ if ($action == 'recompute_dtr') {
 }
 if ($action == 'recompute_employee_dtr') {
     echo json_encode($crud->recompute_employee_dtr());
+}
+if ($action == 'dtr_set_day_schedule') {
+    echo json_encode($crud->dtr_set_day_schedule());
 }
 if ($action == 'message_dtr_record') {
     echo json_encode($crud->message_dtr_record());

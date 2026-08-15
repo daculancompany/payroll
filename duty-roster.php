@@ -77,6 +77,15 @@ if ($__areas !== []) {
 
 // Read-only roles get the grid without the paint palette or the write buttons.
 $__can_edit = function_exists('can_edit') ? can_edit('duty-roster') : true;
+// The admin freeze switch. Folded straight into $__can_edit so every palette
+// button, dirty bar and hint already gated on it disappears the same way it
+// does for a read-only role — one flag, not a second set of conditionals
+// sprinkled through this template. The server enforces it again on every
+// write endpoint regardless (dutyRosterLockDeny), so a stale page can never
+// slip a change through.
+$__is_admin = current_role() === 1;
+$__lock = function_exists('duty_roster_lock_info') ? duty_roster_lock_info() : ['locked' => false, 'by' => '', 'at' => ''];
+$__can_edit = $__can_edit && !$__lock['locked'];
 // Publishing is a separate permission from planning: a Department Head fills
 // their own ward's sheet, but the cutoff is released by whoever owns all of it.
 // Asked as a question about the ENDPOINT so the button and the server can never
@@ -210,6 +219,17 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .dr-swatch:hover { transform:translateY(-1px); box-shadow:0 3px 9px rgba(40,34,59,.16); }
 .dr-swatch.on { border-color:#28223b; box-shadow:0 0 0 2.5px rgba(102,66,170,.30); }
 .dr-swatch.dr-sw-clear { background:#fff; color:#a9a5b5; border-style:dashed; border-color:#cfcada; }
+
+/* Combine-with-shift toggle — only meaningful while a shift swatch is picked
+   (rest and clear already carry their own r value), so it dims otherwise
+   rather than disabling outright: still checkable ahead of picking a shift. */
+.dr-also-rest { display:inline-flex; align-items:center; gap:5px; flex-shrink:0;
+    height:27px; padding:0 10px; margin-left:2px; border-radius:7px; font-size:11px; font-weight:700;
+    color:#8c8998; border:1px dashed #cfcada; cursor:pointer; user-select:none;
+    transition:background .12s, color .12s, border-color .12s; }
+.dr-also-rest input { margin:0; accent-color:var(--brand); }
+.dr-also-rest.dimmed { opacity:.5; }
+.dr-also-rest.on { color:#4f3288; border-style:solid; border-color:#c9bce8; background:#f4f1fa; }
 /* Flashed when a paint action is attempted with nothing selected — the toast
    says what to do, this says where. */
 @keyframes dr-flash { 0%,100% { background:transparent; } 35% { background:#ede4ff; } }
@@ -239,6 +259,12 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .dr-modal-body { padding:14px 16px; overflow:auto; }
 .dr-modal-foot { display:flex; align-items:center; gap:8px; padding:12px 16px; border-top:1px solid var(--line);
                  background:#faf9fc; }
+
+/* ── Print preview modal — same shell as the rotation-pattern dialog above,
+   just wide and tall enough to hold a full-page PDF instead of a form. ── */
+.dr-modal-wide { max-width:96vw; width:1400px; height:92vh; }
+.dr-modal-body-pdf { flex:1; display:flex; padding:0; background:#5c5670; }
+.dr-modal-body-pdf iframe { flex:1; width:100%; height:100%; border:0; }
 .dr-pat-lbl { font-size:11px; font-weight:600; letter-spacing:.3px; text-transform:uppercase; color:#9895a3;
               margin-bottom:5px; }
 .dr-pat-steps { display:flex; flex-direction:column; gap:6px; }
@@ -333,15 +359,41 @@ table.dr-grid tbody tr:hover td { border-bottom-color:#d9d2ea; }
 .dr-cell:hover { outline:2px solid var(--brand); outline-offset:-2px; }
 .dr-cell.dr-empty { color:#d5d2de; }
 .dr-cell.dr-rest  { background:#f4f4f6; color:#a9a5b6; }
+/* Rest/empty read as icons, not a bare dot — restores the icon this grid used
+   to drop (see the legend comment below) but this time drawn from the SAME
+   rule the legend swatch inherits, so the two can never show different marks.
+   Coloured (not inherited) because dr-rest's own background is always the
+   same flat grey — a fixed colour is safe here, unlike the punched marker
+   below, which sits on whatever colour the shift underneath it happens to be. */
+.dr-cell.dr-rest::before  { content:"\ef75"; font-family:"remixicon"; font-size:13px; color:#7c5cbf; }
+.dr-cell.dr-empty::before { content:"\f1af"; font-family:"remixicon"; font-size:10px; }
+/* Rest day WITH a shift on file: the shift code is the label, centered same
+   as any other cell, and the moon sits as a small badge pinned to the right
+   edge rather than displacing the text. Hovering still gives the full shift
+   name and time range (see the "shift on file" tooltip line in duty-roster.js).
+   Orange, not the plain rest grey — a day that is BOTH off and worked is its
+   own state, and needs to read as one at a glance, not as a shift cell that
+   happens to also carry a moon. Same orange the Shifts export tab uses for
+   this combo, so the web grid and the sheet agree on what it looks like. */
+.dr-cell.dr-rest.dr-rest-shift { background:#ffe0b2; color:#7a3c00; }
+.dr-cell.dr-rest.dr-rest-shift::before {
+    position:absolute; right:2px; top:50%; transform:translateY(-50%); font-size:11px; color:#b8580a;
+}
 /* Zone styling. These are not decoration — they are the whole answer to
    "can I still change this day", so they must read at a glance. */
 .dr-cell.dr-locked { cursor:not-allowed; background:#f0f0f2 !important; color:#bdbac6 !important; }
 .dr-cell.dr-locked::after { content:"\f0221"; font-family:"remixicon"; position:absolute; right:2px; bottom:0;
                             font-size:9px; color:#a9a5b6; }
 /* A punched day is still editable, but its DTR figures were frozen under the
-   old shift — the corner dot warns that a Recompute is coming if you touch it. */
-.dr-cell.dr-punched::before { content:""; position:absolute; left:2px; top:2px; width:5px; height:5px;
-                              border-radius:50%; background:#8c8998; }
+   old shift — the corner fingerprint warns that a Recompute is coming if you
+   touch it. ::after (not ::before, which .dr-rest's icon now owns) — a rest
+   day that already has a punch on it needs both icons at once.
+   White + dark halo instead of a flat colour: this marker can land on ANY
+   shift's own background (pastel day colours through near-black night ones),
+   and no single flat colour reads on both ends of that range. */
+.dr-cell.dr-punched::after { content:"\ed31"; font-family:"remixicon"; position:absolute; left:1px; top:1px;
+                             font-size:13px; color:#fff;
+                             text-shadow:0 0 2px rgba(20,16,32,.9), 0 0 4px rgba(20,16,32,.6); }
 .dr-cell.dr-draft::after { content:""; position:absolute; right:2px; top:2px; width:0; height:0;
                            border-top:6px solid #faad14; border-left:6px solid transparent; }
 .dr-cell.dr-dirty { box-shadow:inset 0 0 0 2px var(--brand); }
@@ -360,6 +412,19 @@ table.dr-grid tbody tr:hover td { border-bottom-color:#d9d2ea; }
 }
 .dr-cell.dr-leaveclash::after { content:"\eb97"; font-family:"remixicon"; position:absolute; right:1px; top:0;
                                 font-size:10px; color:#c62828; border:0; width:auto; height:auto; }
+
+/* Less than MIN_REST_HOURS between yesterday's shift end and today's shift
+   start (duty-roster.js restGapHours) — a fatigue risk, not a data problem,
+   so it gets the same loud hatch+corner treatment as a leave clash but in
+   the file's existing "soft warning" amber rather than leave's red, and at
+   the one corner nothing else claims (top-left punched, top-right draft/
+   leave, bottom-right locked, so bottom-left is free). */
+.dr-cell.dr-restclash {
+    background-image:repeating-linear-gradient(45deg,rgba(201,138,0,.22) 0 4px,transparent 4px 8px);
+    box-shadow:inset 0 0 0 2px #c98a00;
+}
+.dr-cell.dr-restclash::after { content:"\ea1d"; font-family:"remixicon"; position:absolute; left:1px; bottom:1px;
+                               font-size:13px; color:#c98a00; }
 
 /* The clash banner above the grid — a cell marker is only found by someone
    already looking at the right cell. */
@@ -459,6 +524,10 @@ tfoot.collapsed .dr-cov-row { display:none; }
    like something you could click and paint. Appearance is borrowed here;
    behaviour is not. */
 .dr-legend .lg-sw:hover { outline:none; }
+/* The rest+shift swatch is the one legend item carrying BOTH a text label and
+   a badge icon — wider than the shared 30px so "6-2" and the moon badge each
+   get their own room instead of fighting for it, at the normal 11px size. */
+.lg-sw.dr-rest-shift { width:60px; }
 
 /* The instructions, not the key. Only useful the first few times, so it steps
    back rather than sitting at the same weight as everything else. */
@@ -558,6 +627,20 @@ tfoot.collapsed .dr-cov-row { display:none; }
             </span>
             <?php endif; ?>
         <?php endif; ?>
+        <?php if ($__is_admin): ?>
+            <span class="dr-h-sep"></span>
+            <?php /* Admin-only, always rendered regardless of $__can_edit — this
+                     is the one control that has to survive the lock it sets, or
+                     an admin who locks the page could never reach Unlock again. */ ?>
+            <button class="dr-btn <?= $__lock['locked'] ? 'warn' : '' ?>" id="dr-lock-toggle"
+                    data-lock="<?= $__lock['locked'] ? '0' : '1' ?>"
+                    data-tip="<?= $__lock['locked']
+                        ? 'Unlock the roster so heads and the scheduling office can edit it again.'
+                        : 'Freeze this screen for everyone, including you, until you unlock it again.' ?>">
+                <i class="ri-<?= $__lock['locked'] ? 'lock-unlock-line' : 'lock-line' ?>"></i>
+                <?= $__lock['locked'] ? 'Unlock roster' : 'Lock roster' ?>
+            </button>
+        <?php endif; ?>
     </div>
 </div>
 
@@ -571,7 +654,7 @@ tfoot.collapsed .dr-cov-row { display:none; }
     <!-- Filters -->
     <div class="dr-toolbar">
         <div class="row g-2 align-items-end">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <div class="lbl"><i class="ri-calendar-2-line me-1"></i>Cutoff</div>
                 <?php /* Plain <select> — the global custom-select control renders it.
                          data-cs-* only tune the menu; the native element stays the
@@ -587,7 +670,7 @@ tfoot.collapsed .dr-cov-row { display:none; }
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="<?= $__areas === [] ? 'col-md-3' : 'col-md-6' ?>">
                 <div class="lbl"><i class="ri-building-line me-1"></i>Department</div>
                 <select class="form-select form-select-sm" id="dr-dept" autocomplete="off"
                         data-cs-title="Department" data-cs-icon="ri-building-line" data-cs-search="true">
@@ -616,7 +699,20 @@ tfoot.collapsed .dr-cov-row { display:none; }
                     <?php endforeach; ?>
                 </select>
             </div>
-            <div class="col-md-5">
+            <?php if ($__areas === []): ?>
+            <!-- Area (ward) within the chosen department — populated by duty_roster_areas
+                 on department change. Only for unscoped viewers: an area-scoped session
+                 already sees its own wards as the "Department" picker above (relabeled),
+                 so a second area filter here would just repeat that choice. -->
+            <div class="col-md-3">
+                <div class="lbl"><i class="ri-map-pin-line me-1"></i>Area</div>
+                <select class="form-select form-select-sm" id="dr-area" autocomplete="off" disabled
+                        data-cs-title="Area" data-cs-icon="ri-map-pin-line" data-cs-search="true">
+                    <option value="">All areas</option>
+                </select>
+            </div>
+            <?php endif; ?>
+            <div class="col-md-4">
                 <div class="lbl"><i class="ri-search-line me-1"></i>Find employee</div>
                 <input type="text" class="form-control form-control-sm" id="dr-search" placeholder="Name or ID">
             </div>
@@ -649,7 +745,16 @@ tfoot.collapsed .dr-cov-row { display:none; }
     <div class="dr-palette-row">
         <span class="dr-palette-label"><i class="ri-brush-line"></i>Paint</span>
         <div class="dr-palette" id="dr-palette"></div>
+        <label class="dr-also-rest" id="dr-also-rest" data-tip="Also mark as rest day
+Combine with a shift swatch: the day keeps its rest flag even though a specific shift is painted — for planned duty on someone's day off.">
+            <input type="checkbox" id="dr-also-rest-chk"><i class="ri-moon-line"></i> Rest day too
+        </label>
         <div class="dr-tools">
+            <button type="button" class="dr-tool" id="dr-print"
+                    data-tip="Print / PDF
+Opens a formatted sheet in a new tab, ready for Ctrl+P — same colours and codes as the grid, plus a coverage summary.">
+                <i class="ri-printer-line"></i>
+            </button>
             <button type="button" class="dr-tool" id="dr-export"
                     data-tip="Export to Excel
 One row per employee, one column per day — with shift dropdowns and live coverage counts.">
@@ -672,6 +777,21 @@ Nothing is saved on upload. You are shown what would change, then it is painted 
     <?php endif; ?>
 
     </div><!-- /.dr-controls -->
+
+    <?php if ($__lock['locked']): ?>
+    <!-- The admin freeze. Shown to every role, not just the ones who'd
+         otherwise see edit buttons — a Supervisor with view-only access has
+         no other way to learn why a head's request to fix a day is stuck. -->
+    <div class="dr-recompute" style="margin:0 0 8px;border-color:#f0cfcc;background:linear-gradient(90deg,#fdefee,#fff7f6);">
+        <i class="ri-lock-2-line" style="color:#a5322d;font-size:18px;"></i>
+        <div class="t" style="color:#8a2c28;">
+            <b>Locked by the administrator.</b> No changes can be made on this screen right now.
+            <?php if ($__lock['by']): ?>
+                Locked by <?= htmlspecialchars($__lock['by']) ?><?= $__lock['at'] ? ' on ' . htmlspecialchars($__lock['at']) : '' ?>.
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Shown when this cutoff is empty but the same people have days elsewhere -->
     <div class="dr-elsewhere d-none" id="dr-elsewhere">
@@ -712,11 +832,14 @@ Nothing is saved on upload. You are shown what would change, then it is painted 
     <div class="dr-legend">
         <span class="dr-legend-title">Key</span>
         <span data-tip="Rest day
-Their day off. It is a plotted day, not a blank — the roster is saying they are off, rather than saying nothing.">
-            <span class="lg-sw dr-cell dr-rest">&middot;</span> Rest day</span>
+Their day off. It is a plotted day, not a blank — the roster is saying they are off, rather than saying nothing. Tick &quot;Rest day too&quot; while painting a shift to keep the rest flag AND assign a shift — for planned duty on someone's day off.">
+            <span class="lg-sw dr-cell dr-rest"></span> Rest day</span>
+        <span data-tip="Rest day + shift
+Both at once — a shift is on file for a day that is still marked as their rest day, e.g. planned duty on someone's day off. Painted with the &quot;Rest day too&quot; toggle.">
+            <span class="lg-sw dr-cell dr-rest dr-rest-shift">6-2</span> + Shift</span>
         <span data-tip="Not planned
 No entry on the day grid for this date, so their fixed shift from the Shift Roster applies.">
-            <span class="lg-sw dr-cell dr-empty">&middot;</span> Not planned</span>
+            <span class="lg-sw dr-cell dr-empty"></span> Not planned</span>
         <span data-tip="Already punched
 Attendance is recorded on this day. You can still change it, but the DTR figures were frozen under the old shift and will need a Recompute.">
             <span class="lg-sw dr-cell dr-punched"></span> Punched</span>
@@ -729,6 +852,9 @@ Saved but not published. Employees cannot see it, and it does not reach DTR figu
         <span data-tip="On approved leave
 This person has approved leave that day. A rest day agrees with it; a shift planned on it is flagged as a clash.">
             <span class="lg-sw dr-cell dr-leaveclash"></span> Leave clash</span>
+        <span data-tip="Rest clash
+Less than 8 hours between the end of the previous day's shift and the start of this one — a fatigue risk, not just a scheduling oddity.">
+            <span class="lg-sw dr-cell dr-restclash"></span> Rest clash</span>
     </div>
     <?php if ($__can_edit): ?>
     <div class="dr-hint ms-auto">
@@ -799,6 +925,25 @@ This person has approved leave that day. A rest day agrees with it; a shift plan
         </div>
     </div>
 </div>
+
+<!-- Print preview — the same PDF print-duty-roster.php would open in a new
+     tab, shown here in a full-width modal instead so the roster stays open
+     underneath. -->
+<div class="dr-modal" id="dr-print-modal">
+    <div class="dr-modal-box dr-modal-wide">
+        <div class="dr-modal-head">
+            <div>
+                <div class="t"><i class="ri-printer-line"></i> Print Preview</div>
+                <div class="s">Ready for Ctrl+P — the roster's own copy, colours and all.</div>
+            </div>
+            <a href="#" id="dr-print-open" target="_blank" class="dr-modal-x" title="Open in a new tab"><i class="ri-external-link-line"></i></a>
+            <button type="button" class="dr-modal-x" id="dr-print-close" title="Close"><i class="ri-close-line"></i></button>
+        </div>
+        <div class="dr-modal-body dr-modal-body-pdf">
+            <iframe id="dr-print-frame" src="" title="Duty roster print preview"></iframe>
+        </div>
+    </div>
+</div>
 <?php endif; ?>
 
 <div class="dr-dirtybar" id="dr-dirtybar">
@@ -825,6 +970,44 @@ include 'component/employee_quick_view.php';
     // allowed to read salaries, so the link is only rendered when the endpoint
     // behind it would actually answer.
     window.DR_CAN_QUICKVIEW = <?= (function_exists('action_allowed') && action_allowed('employee_quick_view')) ? 'true' : 'false' ?>;
+
+    <?php if ($__is_admin): ?>
+    // Admin lock/unlock. A full reload afterward is deliberate: locking (or
+    // unlocking) changes which buttons this page even renders server-side —
+    // patching the DOM in place would have to duplicate that logic here.
+    jQuery(function ($) {
+        $('#dr-lock-toggle').on('click', function () {
+            var $b = $(this), lock = $b.data('lock');
+            Swal.fire({
+                icon: lock ? 'warning' : 'question',
+                title: lock ? 'Lock the duty roster?' : 'Unlock the duty roster?',
+                text: lock
+                    ? 'No one — including you — will be able to paint, save, publish, copy, import or recompute until you unlock it again.'
+                    : 'Heads and the scheduling office will be able to edit this cutoff again.',
+                showCancelButton: true,
+                confirmButtonText: lock ? 'Lock it' : 'Unlock it',
+            }).then(function (r) {
+                if (!r.isConfirmed) return;
+                $b.prop('disabled', true);
+                $.post('ajax.php?action=duty_roster_set_lock', { lock: lock })
+                    .done(function (res) {
+                        var j = res;
+                        try { if (typeof res === 'string') j = JSON.parse(res); } catch (e) { j = null; }
+                        if (!j || !j.result) {
+                            Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Request failed.' });
+                            $b.prop('disabled', false);
+                            return;
+                        }
+                        window.location.reload();
+                    })
+                    .fail(function () {
+                        Swal.fire({ icon: 'error', title: 'Error', text: 'Request failed.' });
+                        $b.prop('disabled', false);
+                    });
+            });
+        });
+    });
+    <?php endif; ?>
 </script>
 <script src="<?= av('assets2/js/custom-select.js') ?>"></script>
 <script src="<?= av('assets2/js/duty-roster.js') ?>"></script>

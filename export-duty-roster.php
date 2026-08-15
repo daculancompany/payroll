@@ -155,6 +155,24 @@ foreach ($shifts as $s) {
     $ref->getStyle('E' . $r)->getFont()->setBold(true)->getColor()->setARGB($s['fg']);
     $ref->getStyle('E' . $r)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
     $r++;
+
+    // Combo variant — this shift PLUS a rest day (employee_day_schedule can
+    // hold schedule_id and is_rest_day=1 together; the web grid calls this
+    // "Rest day too", for planned duty on someone's day off). Listed right
+    // under its plain shift so the pair stays together in the dropdown.
+    // Orange, not the shift's own colour — a day that is BOTH off and worked
+    // is its own state and gets one fixed colour regardless of which shift,
+    // same as the web grid's .dr-rest-shift cells (#ffe0b2 / #7a3c00).
+    $comboCode = $s['code'] . '+OFF';
+    $ref->setCellValueExplicit('A' . $r, $comboCode, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+    $ref->setCellValue('B' . $r, $s['desc'] . ' + Rest day');
+    $ref->setCellValue('C' . $r, $s['start'] . ' – ' . $s['end']);
+    $ref->setCellValue('D' . $r, $s['hours']);
+    $ref->setCellValueExplicit('E' . $r, $comboCode, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+    $ref->getStyle('E' . $r)->getFill()->setFillType(Fill::FILL_SOLID)->getStartColor()->setARGB('FFFFE0B2');
+    $ref->getStyle('E' . $r)->getFont()->setBold(true)->getColor()->setARGB('FF7A3C00');
+    $ref->getStyle('E' . $r)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+    $r++;
 }
 $ref->setCellValueExplicit('A' . $r, 'OFF', \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
 $ref->setCellValue('B' . $r, 'Rest day (off duty)');
@@ -218,6 +236,7 @@ $sh->getStyle('A2')->getFont()->setSize(10)->getColor()->setARGB('FF6B6878');
 
 $sh->setCellValue('A3',
     'Pick a CODE from the dropdown (see the Shifts tab) — OFF = rest day, and the colours follow what you type.   '
+  . 'PLANNED DUTY ON A DAY OFF: pick the "CODE+OFF" combo entry (orange, listed right under its plain shift on the Shifts tab) — keeps the day marked as rest AND on file for that shift.   '
   . 'MANY CELLS AT ONCE: select them, type the code, then press Ctrl+Enter (Cmd+Enter on Mac). Or drag the little square at a cell\'s bottom-right corner. '
   . 'Do NOT paste in from another workbook — that overwrites the Text format these cells need, and Excel then reads codes like 2-10 as a date.   '
   . 'A cell with a GREY HEAVY BORDER is locked (its DTR is approved) and changes there are ignored. '
@@ -284,7 +303,16 @@ foreach ($employees as $emp) {
         $val = '';
         if (isset($cells[$k])) {
             $c = $cells[$k];
-            $val = ((int) $c['is_rest_day'] === 1) ? 'OFF' : ($codeById[$c['schedule_id']] ?? '');
+            if ((int) $c['is_rest_day'] === 1) {
+                // Rest day WITH a shift on file (the combo state) exports as
+                // "CODE+OFF", not a bare "OFF" — otherwise the shift silently
+                // disappears from the file the moment a day carries both.
+                $val = ($c['schedule_id'] !== null && isset($codeById[$c['schedule_id']]))
+                    ? $codeById[$c['schedule_id']] . '+OFF'
+                    : 'OFF';
+            } else {
+                $val = $codeById[$c['schedule_id']] ?? '';
+            }
         }
         if ($val !== '') {
             $sh->setCellValueExplicit($col . $row, $val, \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
@@ -293,11 +321,15 @@ foreach ($employees as $emp) {
             // detail. Budgeted: a comment is a whole XML part each, and a fully
             // plotted 368-person cutoff is 5,500 cells.
             if ($val !== 'OFF' && $comments < $COMMENT_BUDGET) {
-                $s = $shiftMeta[$val] ?? null;
+                // Combo codes ("6-2+OFF") are not themselves in $shiftMeta —
+                // strip the suffix to find the shift they're built from.
+                $baseCode = preg_replace('/\+OFF$/i', '', $val);
+                $s = $shiftMeta[$baseCode] ?? null;
                 if ($s) {
                     $sh->getComment($col . $row)->getText()->createTextRun(
                         $s['desc'] . "\n" . $s['start'] . ' – ' . $s['end'] . "\n" . $s['hours'] . ' hrs'
                         . ($s['noc'] ? "\nNight differential" : '')
+                        . ($baseCode !== $val ? "\n\nALSO marked as a rest day — planned duty on a day off." : '')
                     );
                     $sh->getComment($col . $row)->setWidth('180pt')->setHeight('60pt');
                     $comments++;
@@ -422,8 +454,10 @@ for ($i = 0; $i < count($days); $i++) {
  * A rule travels with the value instead: Excel recolours as they type, so the
  * sheet stays as legible as the grid it came from.
  *
- * There is a practical ceiling of 64 rules on a range; a dozen shifts is
- * nowhere near it, but a hospital that grows past ~60 will need banding.
+ * There is a practical ceiling of 64 rules on a range. Each shift now costs
+ * TWO — its own colour plus its "+OFF" combo — so a dozen shifts is 25 rules
+ * with the OFF row; comfortable, but a hospital past ~30 shifts will need
+ * banding sooner than the old one-rule-per-shift math suggested.
  */
 $dayRange = 'D' . $FIRST . ':' . $lastCol . $lastRow;
 $conds = [];
@@ -443,6 +477,20 @@ foreach ($shifts as $s) {
     $c->getStyle()->getFont()->getColor()->setARGB($s['fg']);
     $c->getStyle()->getFont()->setBold(true);
     $conds[] = $c;
+
+    // Combo ("CODE+OFF"): one fixed orange regardless of which shift, same as
+    // the web grid's .dr-rest-shift cells — a day that is both off AND worked
+    // is its own state, not a variant of the shift's own colour.
+    $cc = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
+    $cc->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS);
+    $cc->setOperatorType(\PhpOffice\PhpSpreadsheet\Style\Conditional::OPERATOR_EQUAL);
+    $cc->addCondition('"' . $s['code'] . '+OFF"');
+    $cc->getStyle()->getFill()->setFillType(Fill::FILL_SOLID);
+    $cc->getStyle()->getFill()->getStartColor()->setARGB('FFFFE0B2');
+    $cc->getStyle()->getFill()->getEndColor()->setARGB('FFFFE0B2');
+    $cc->getStyle()->getFont()->getColor()->setARGB('FF7A3C00');
+    $cc->getStyle()->getFont()->setBold(true);
+    $conds[] = $cc;
 }
 $cOff = new \PhpOffice\PhpSpreadsheet\Style\Conditional();
 $cOff->setConditionType(\PhpOffice\PhpSpreadsheet\Style\Conditional::CONDITION_CELLIS);

@@ -97,18 +97,26 @@
                     + (inferred ? '\n⚠ No schedule assigned for this date — nearest shown' : '')
             };
         }
+        // Icon-only, like the 'sched' chip above — the letter used to be the only
+        // cue, but colour already tells the marker types apart at a glance, and
+        // print doesn't use .dm at all (see the .dm-note rows below), so there is
+        // nothing screen-only icons could break there.
         if (m.k === 'holiday') return {
-            cls: m.t === 'legal' ? 'dm-hol' : 'dm-spc', ltr: 'H',
+            cls: m.t === 'legal' ? 'dm-hol' : 'dm-spc', ltr: '<i class="ri-flag-2-fill"></i>',
             note: (m.t === 'legal' ? 'LEGAL HOLIDAY' : 'SPECIAL HOLIDAY') + (m.lbl ? ' — ' + m.lbl : '')
         };
         if (m.k === 'leave') return {
-            cls: 'dm-lv', ltr: 'L',
+            // Same icon as the "Also on leave" flag elsewhere on this page
+            // (dtr-documents.php lvFlag) — one glyph means "leave" everywhere.
+            cls: 'dm-lv', ltr: '<i class="ri-calendar-check-line"></i>',
             note: String(m.lbl || 'LEAVE').toUpperCase()
                 + (m.half ? ' (HALF DAY)' : '') + (m.s === 0 ? ' (PENDING)' : '')
         };
-        if (m.k === 'off') return { cls: 'dm-off', ltr: 'D', note: 'DAY OFF' };
+        // Same moon glyph the duty roster grid uses for a rest day — one icon
+        // means "day off" everywhere in the app, not a different mark per screen.
+        if (m.k === 'off') return { cls: 'dm-off', ltr: '<i class="ri-moon-line"></i>', note: 'DAY OFF' };
         return {
-            cls: 'dm-req', ltr: 'R',
+            cls: 'dm-req', ltr: '<i class="ri-time-line"></i>',
             note: (m.t === 'overtime' ? 'OT REQUEST' : 'INCIDENT REPORT')
                 + (m.s === 0 ? ' (PENDING)' : ' (APPROVED)')
         };

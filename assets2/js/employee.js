@@ -39,6 +39,27 @@ function quick_edit_employee(id) {
     });
 }
 
+// A select's owning widget has to be told explicitly after its value (or
+// option list) changes programmatically:
+//   - bootstrap-select (from the .select2() shim): a plain .trigger('change')
+//     does reach its 'change.bsshim' handler, but that handler calls
+//     .selectpicker('render') — and 'render' turned out (tested directly
+//     against bootstrap-select 1.14.0-beta3) to repaint from the widget's own
+//     cached selection, NOT from the native <select>'s current value. Only
+//     'refresh' actually re-reads the DOM, which is also why the shim's own
+//     .select2('val', x) method path already uses 'refresh', not 'render'.
+//   - CustomSelect: a plain .trigger('change') isn't seen at all, since it
+//     listens with a native addEventListener, not a jQuery-bound one.
+// Area never gets select2()'d (see fillAddEmployeeForm below), so it's always
+// the CustomSelect case; department/position/classification are normally
+// bootstrap-select, so it's the 'refresh' case.
+function refreshSelectDisplay($el) {
+    var el = $el[0];
+    if (!el) return;
+    if ($el.data("bs-select") && $el.selectpicker) $el.selectpicker("refresh");
+    if (window.CustomSelect) window.CustomSelect.refresh(el);
+}
+
 function fillAddEmployeeForm(e) {
     var $form = $("#form-add");
     $form[0].reset(); // clear out any previous quick-edit before filling this one
@@ -74,11 +95,15 @@ function fillAddEmployeeForm(e) {
     $("#position-select option.opt").prop("disabled", false);
     $("#area-select option.opt").prop("disabled", false);
     $("#department-select").val(e.department_id || "").trigger("change");
+    refreshSelectDisplay($("#department-select"));
     // After the department handler has narrowed both lists — setting these
     // first would have them cleared again by that same handler.
     $("#area-select").val(e.area_id || "").trigger("change");
+    refreshSelectDisplay($("#area-select"));
     $("#position-select").val(e.position_id || "").trigger("change");
+    refreshSelectDisplay($("#position-select"));
     $("#clasification-select").val(e.clasification_id || "").trigger("change");
+    refreshSelectDisplay($("#clasification-select"));
 }
 
 // Toggle the modal's create-vs-edit chrome (title, submit button, portal note).
@@ -106,7 +131,9 @@ function resetAddEmployeeForm() {
     $form.find('[name="isAutoDeduct"]').remove();
     $("#position-select option.opt").prop("disabled", false);
     $("#area-select option.opt").prop("disabled", false);
-    $("#department-select, #area-select, #position-select, #clasification-select").trigger("change");
+    var $resetSelects = $("#department-select, #area-select, #position-select, #clasification-select");
+    $resetSelects.trigger("change");
+    $resetSelects.each(function () { refreshSelectDisplay($(this)); });
     setAddEmployeeMode(false);
 }
 
@@ -413,17 +440,14 @@ $(function () {
                 var adid = $(this).attr("data-did") || "";
                 $(this).prop("disabled", !!did && adid != did);
             });
-            if ($area.data("bs-select") && $area.selectpicker) $area.selectpicker("refresh");
-            $area.trigger("change.select2");
+            refreshSelectDisplay($area);
         }
         // The dropdown widget renders its menu from the option list, so it has to
         // be rebuilt after toggling disabled. Without this the user clicks an item
         // from the stale menu, the widget paints the label, but the underlying
         // <select> refuses the now-disabled option and keeps an empty value —
         // which is why Parsley kept failing "Please select position."
-        if ($pos.data("bs-select") && $pos.selectpicker) {
-            $pos.selectpicker("refresh");
-        }
+        refreshSelectDisplay($pos);
     });
 });
 

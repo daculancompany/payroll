@@ -322,10 +322,11 @@ if ($action === 'docs') {
     if ($flagF !== '') {
         $otMax = (float)DTR_HIGH_OT_HOURS;
         $flagConds = [
-            'no_out'     => "NOT (JSON_VALID(logs) AND JSON_LENGTH(logs) >= 2)",
-            'zero_hours' => "work_hours <= 0",
-            'high_ot'    => "overtime > $otMax",
-            'manual'     => "(logs LIKE '%\"manual\"%' OR logs LIKE '%\"incident\"%')",
+            'no_out'      => "NOT (JSON_VALID(logs) AND JSON_LENGTH(logs) >= 2)",
+            'zero_hours'  => "work_hours <= 0",
+            'high_ot'     => "overtime > $otMax",
+            'manual'      => "(logs LIKE '%\"manual\"%' OR logs LIKE '%\"incident\"%')",
+            'rest_worked' => "is_rest_day = 1 AND work_hours > 0",
         ];
         if (isset($flagConds[$flagF])) {
             $where .= " AND e.id IN (SELECT employee_id FROM DTR_details
@@ -484,30 +485,37 @@ if ($action === 'docs') {
             }
 
             // Exception flags. The first three block clean bulk-approval (rule
-            // shared with dtr_clean_condition_sql); 'manual' is informational.
+            // shared with dtr_clean_condition_sql); 'manual' and 'rest_worked'
+            // are informational — a rest day with hours on it is an expected,
+            // priced outcome (base + 30% premium), not a data problem.
             $wh = (float)$row['work_hours'];
             $ot = (float)$row['overtime'];
             $flags = [];
-            if (count($recLogs) < 2)        $flags[] = 'no_out';
-            if ($wh <= 0)                   $flags[] = 'zero_hours';
-            if ($ot > DTR_HIGH_OT_HOURS)    $flags[] = 'high_ot';
-            if ($hasManual)                 $flags[] = 'manual';
+            if (count($recLogs) < 2)                        $flags[] = 'no_out';
+            if ($wh <= 0)                                   $flags[] = 'zero_hours';
+            if ($ot > DTR_HIGH_OT_HOURS)                     $flags[] = 'high_ot';
+            if ($hasManual)                                 $flags[] = 'manual';
+            if ((int)($row['is_rest_day'] ?? 0) === 1 && $wh > 0) $flags[] = 'rest_worked';
             $isException = (count($recLogs) < 2 || $wh <= 0 || $ot > DTR_HIGH_OT_HOURS);
             if ($isException && $s !== 1 && $s !== 2) $E['exc']++;
 
             $D['recs'][] = [
-                'id'     => (int)$row['id'],
-                'status' => $s,
-                'wh'     => $wh,
-                'ot'     => $ot,
-                'ut'     => (float)$row['undertime'],
-                'late'   => (float)$row['late'],
-                'logs'   => $recLogs,
-                'flags'  => $flags,
-                'note'   => $row['decision_note'] ?? '',
-                'by'     => $row['decided_by_name'] ?? '',
-                'at'     => !empty($row['decided_at']) ? date('M j, g:i A', strtotime($row['decided_at'])) : '',
-                'msgs'   => $msgMap[(int)$row['id']] ?? [],
+                'id'          => (int)$row['id'],
+                'status'      => $s,
+                'wh'          => $wh,
+                'ot'          => $ot,
+                'ut'          => (float)$row['undertime'],
+                'late'        => (float)$row['late'],
+                'logs'        => $recLogs,
+                'flags'       => $flags,
+                'note'        => $row['decision_note'] ?? '',
+                'by'          => $row['decided_by_name'] ?? '',
+                'at'          => !empty($row['decided_at']) ? date('M j, g:i A', strtotime($row['decided_at'])) : '',
+                'msgs'        => $msgMap[(int)$row['id']] ?? [],
+                // The shift/rest-day this row is currently stamped with — lets
+                // the Change Schedule modal show what it's correcting FROM.
+                'schedule_id' => $row['schedule_id'] !== null ? (int)$row['schedule_id'] : null,
+                'is_rest_day' => (int)($row['is_rest_day'] ?? 0),
             ];
             unset($E, $D);
         }

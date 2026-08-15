@@ -1944,6 +1944,18 @@ class Action
      * it. The UI already hides the palette from them; this is the half that a
      * hand-made POST cannot get around.
      */
+    /**
+     * The admin-only freeze switch: while set, every write on this screen is
+     * refused for EVERY role, admin included — the point is a cutoff nobody
+     * can touch until the admin deliberately unlocks it again, not a role
+     * check the admin quietly bypasses.
+     */
+    private function dutyRosterLockDeny(): ?string
+    {
+        if ($this->pay_setting('duty_roster_locked', 0) < 1) return null;
+        return 'The duty roster is locked by the administrator. Ask them to unlock it before making changes.';
+    }
+
     private function dutyDenyWrite(array $empIds): ?string
     {
         $this->loadScopeHelpers();
@@ -1967,9 +1979,14 @@ class Action
     // anyone who already has a row in this cutoff. The second half matters —
     // a nurse transferred out mid-cutoff still has duties on this sheet, and
     // dropping them from the grid would hide days nobody can then correct.
-    public function dutyRosterEmployees($department_id, $from, $to): array
+    // $areaId narrows further, inside whichever department/scope the caller
+    // already resolved — a view-only refinement for the roster's optional
+    // Area filter, never a way to widen past a session's area scope (it is
+    // ANDed onto $fence below, alongside whatever that already restricts).
+    public function dutyRosterEmployees($department_id, $from, $to, $areaId = 0): array
     {
         $dept = (int) $department_id;
+        $areaId = (int) $areaId;
         $fromE = $this->db->real_escape_string($from);
         $toE   = $this->db->real_escape_string($to);
 
@@ -2005,6 +2022,7 @@ class Action
         } else {
             $fence = $scope > 0 ? " AND e.department_id = $scope" : '';
         }
+        if ($areaId > 0) $fence .= " AND e.area_id = $areaId";
         // The fixed shift is a correlated subquery rather than a join + GROUP BY:
         // several periods can overlap one cutoff, and grouping to collapse them
         // would select columns that ONLY_FULL_GROUP_BY rejects on a stricter
@@ -2041,6 +2059,26 @@ class Action
             ];
         }
         return $out;
+    }
+
+    /**
+     * Areas (wards) inside one department, for the roster's optional Area
+     * filter — a department can hold several wards, and this is the piece
+     * that lets an unscoped viewer narrow the grid to one instead of always
+     * seeing the whole department at once. Read-only; area_scope_ids() is
+     * what actually restricts a scoped session, not this list.
+     */
+    function duty_roster_areas()
+    {
+        $dept = (int) ($_POST['department_id'] ?? 0);
+        if (!$dept) return ['result' => true, 'areas' => []];
+        $stmt = $this->db->prepare("SELECT id, name FROM area WHERE department_id = ? AND status = 1 ORDER BY name ASC");
+        $stmt->bind_param('i', $dept);
+        $stmt->execute();
+        $res  = $stmt->get_result();
+        $out  = [];
+        while ($r = $res->fetch_assoc()) $out[] = ['id' => (int) $r['id'], 'name' => $r['name']];
+        return ['result' => true, 'areas' => $out];
     }
 
     /**
@@ -2142,9 +2180,10 @@ class Action
     {
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
-        $dept = (int) ($_POST['department_id'] ?? 0);
+        $dept   = (int) ($_POST['department_id'] ?? 0);
+        $areaId = (int) ($_POST['area_id'] ?? 0);
 
-        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to'], $areaId);
         $empIds    = array_column($employees, 'id');
 
         $days = [];
@@ -2271,6 +2310,7 @@ class Action
      */
     function duty_roster_save()
     {
+        if ($deny = $this->dutyRosterLockDeny()) return ['result' => false, 'message' => $deny];
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
 
@@ -2366,6 +2406,7 @@ class Action
      */
     function duty_roster_publish()
     {
+        if ($deny = $this->dutyRosterLockDeny()) return ['result' => false, 'message' => $deny];
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
         $dept = (int) ($_POST['department_id'] ?? 0);
@@ -2484,6 +2525,7 @@ class Action
      */
     function duty_roster_copy()
     {
+        if ($deny = $this->dutyRosterLockDeny()) return ['result' => false, 'message' => $deny];
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         $prev  = $this->dutyPrevPeriod($_POST['period'] ?? '');
         $prevRange = $prev ? $this->dutyPeriodRange($prev) : null;
@@ -2566,6 +2608,7 @@ class Action
     /** Discard this cutoff's unpublished drafts. Published days are untouched. */
     function duty_roster_clear_drafts()
     {
+        if ($deny = $this->dutyRosterLockDeny()) return ['result' => false, 'message' => $deny];
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
         $dept      = (int) ($_POST['department_id'] ?? 0);
@@ -2596,6 +2639,7 @@ class Action
      */
     function duty_roster_recompute()
     {
+        if ($deny = $this->dutyRosterLockDeny()) return ['result' => false, 'message' => $deny];
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
 
@@ -2667,6 +2711,7 @@ class Action
      */
     function duty_roster_import()
     {
+        if ($deny = $this->dutyRosterLockDeny()) return ['result' => false, 'message' => $deny];
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
         $dept = (int) ($_POST['department_id'] ?? 0);
@@ -2889,6 +2934,11 @@ class Action
                         $next = ['s' => null, 'r' => 1];
                     } elseif (isset($codeToId[$lc])) {
                         $next = ['s' => $codeToId[$lc], 'r' => 0];
+                    } elseif (preg_match('/^(.*?)\+(off|rest|rd|restday)$/i', $lc, $mm) && isset($codeToId[trim($mm[1])])) {
+                        // Combo: "CODE+OFF" (see export-duty-roster.php) — a shift
+                        // stays on file for the day's hours, but the day is ALSO a
+                        // rest day. Mirrors the web grid's "Rest day too" toggle.
+                        $next = ['s' => $codeToId[trim($mm[1])], 'r' => 1];
                     } elseif (($rec = $this->dutyRecoverCode($raw, $codeToId)) !== null) {
                         // Excel turned the code into a date on the way in — see
                         // the note in export-duty-roster.php. "6-2" comes back as
@@ -2936,6 +2986,36 @@ class Action
             'recovered' => $seen['recovered'],
             'problems'  => $problems,
             'period'    => $_POST['period'] ?? '',
+        ];
+    }
+
+    /**
+     * Flip the whole-page freeze. Deliberately a hard role check rather than
+     * page_allowed()/can_edit() — those answer "can this role plan a ward",
+     * which several roles can; this answers "is this person the administrator
+     * account", which only role 1 is, so it stays out of ACTION_PAGE_MAP.
+     */
+    function duty_roster_set_lock()
+    {
+        if ((int) ($_SESSION['login_role'] ?? 0) !== 1) {
+            return ['result' => false, 'message' => 'Only an administrator may lock or unlock the duty roster.'];
+        }
+        $lock = ((int) ($_POST['lock'] ?? 0)) ? 1.0 : 0.0;
+        $uid  = $_SESSION['login_id'] ?? null;
+        $key  = 'duty_roster_locked';
+        $stmt = $this->db->prepare(
+            "INSERT INTO pay_settings (setting_key, setting_value, updated_by) VALUES (?,?,?)
+             ON DUPLICATE KEY UPDATE setting_value=?, updated_by=?"
+        );
+        $stmt->bind_param('sdidi', $key, $lock, $uid, $lock, $uid);
+        $stmt->execute();
+
+        return [
+            'result'  => true,
+            'locked'  => (bool) $lock,
+            'message' => $lock
+                ? 'Duty roster locked. No one — including you — can make changes until you unlock it.'
+                : 'Duty roster unlocked. Editing is open again.',
         ];
     }
 
@@ -3064,15 +3144,9 @@ class Action
             unset($shift['rest_days']);
         }
 
-        // Everything but the last 4 characters becomes dots; the full numbers
-        // live only on the employee-details page.
-        $mask = function ($v) {
-            $v = trim((string) $v);
-            if ($v === '') return null;
-            return strlen($v) <= 4 ? $v : '•••• ' . substr($v, -4);
-        };
         foreach (['sss_no', 'ph_no', 'hdmf_no', 'tin_no', 'bank_account_no'] as $k) {
-            $emp[$k] = $mask($emp[$k]);
+            $v = trim((string) $emp[$k]);
+            $emp[$k] = $v === '' ? null : $v;
         }
 
         // Compensation is a glance for roles that may see pay elsewhere; the
@@ -7037,14 +7111,31 @@ class Action
         // past yesterday's scheduled end. Case 3 re-anchors on the scheduled end
         // and stays overnight-only.
         $prev_date = date('Y-m-d', strtotime('-1 day', strtotime($scan_date)));
-        $prev_end  = null;
-        if ($schedule) {
-            $prev_end = strtotime($prev_date . ' ' . $schedule['end_time']);
-            if ($schedule['end_time'] <= $schedule['start_time']) {
+
+        // Resolve YESTERDAY's own schedule too, and use IT (not today's) for
+        // prev_end and the overnight test below.
+        //
+        // Both used to come from today's $schedule alone, on the assumption
+        // that "today" and "yesterday" run the same recurring shift — true
+        // for fixed staff, false the moment a rotating employee's overnight
+        // shift is followed by an explicit REST DAY with no shift on file:
+        // that resolves today to an unrelated (non-overnight) fixed/period
+        // fallback, $is_overnight comes back false, prev_end is computed off
+        // the WRONG shift's end time, the spill window never opens, and the
+        // punch that should have closed out yesterday's graveyard shift
+        // instead opens a stray same-clock-time row on the rest day —
+        // leaving yesterday's DTR_details permanently open with no time-out
+        // and the hours never paid.
+        $prev_schedule     = resolve_employee_schedule($this->db, $employee_id, $prev_date);
+        $prev_is_overnight = $prev_schedule && ($prev_schedule['is_graveyard'] || $prev_schedule['end_time'] <= $prev_schedule['start_time']);
+        $prev_end = null;
+        if ($prev_schedule) {
+            $prev_end = strtotime($prev_date . ' ' . $prev_schedule['end_time']);
+            if ($prev_schedule['end_time'] <= $prev_schedule['start_time']) {
                 $prev_end = strtotime('+1 day', $prev_end); // wraps → ends today
             }
         }
-        $spill_window = $is_overnight
+        $spill_window = $is_overnight || $prev_is_overnight
             || ($prev_end !== null && $scan_ts <= $prev_end + 12 * 3600);
         if ($schedule && $spill_window) {
             $chk_prev = $this->db->prepare(
@@ -7063,14 +7154,14 @@ class Action
                 // drift back to yesterday — once today's start has passed, the
                 // scan is today's (possibly late) time-in, not yesterday's out.
                 $before_today_start = $scan_ts < strtotime($scan_date . ' ' . $schedule['start_time']);
-                if ($is_overnight || $before_today_start) {
+                if ($is_overnight || $prev_is_overnight || $before_today_start) {
                     if (!$prevRec['is_complete']) {
                         if ($gap > 0 && $gap <= 16 * 3600) $scan_date = $prev_date;   // case 1: time-out
                     } elseif ($gap >= 0 && $gap < 300) {
                         $scan_date = $prev_date;                                      // case 2: double-tap
                     }
                 }
-            } elseif ($is_overnight) {
+            } elseif ($is_overnight || $prev_is_overnight) {
                 // Was `<`: an out-punch at EXACTLY the scheduled end (06:00:00 on a
                 // 10PM–6AM shift) failed the strict compare and opened a next-day —
                 // next-cutoff — orphan row. `<=` keeps it on the shift's own day.
@@ -10635,6 +10726,105 @@ class Action
             'changed'   => $changed,
             'repending' => $repending,
             'message'   => "$scanned record(s) scanned, $changed updated, $repending sent back to pending.",
+        ];
+    }
+
+    /**
+     * Quick single-day schedule correction from the DTR review screen — set
+     * (or clear to a plain rest day) the duty-roster override for one
+     * employee/date and immediately re-derive that one DTR_details row's
+     * figures, so fixing "wrong shift used for OT" doesn't require a trip to
+     * duty-roster.php plus a batch Recompute. Reuses recomputeDetailRows(),
+     * the same engine the batch/scoped Recompute buttons run.
+     */
+    function dtr_set_day_schedule()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $detailId = (int) ($_POST['detail_id'] ?? 0);
+        if (!$detailId) return ['result' => false, 'message' => 'Missing record id'];
+
+        $row = $this->db->query(
+            "SELECT d.employee_id, d.date_time, b.status AS batch_status
+             FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+             WHERE d.id = $detailId LIMIT 1"
+        );
+        $row = $row ? $row->fetch_assoc() : null;
+        if (!$row) return ['result' => false, 'message' => 'Record not found.'];
+        if ((int) $row['batch_status'] === 2) {
+            return ['result' => false, 'message' => 'This DTR batch is already final-approved and locked — reopen it before changing the schedule.'];
+        }
+
+        $employee_id = (int) $row['employee_id'];
+        $date        = date('Y-m-d', strtotime($row['date_time']));
+
+        if ($deny = $this->dutyRosterLockDeny())          return ['result' => false, 'message' => $deny];
+        if ($deny = $this->dutyDenyWrite([$employee_id])) return ['result' => false, 'message' => $deny];
+
+        $sid  = isset($_POST['schedule_id']) && $_POST['schedule_id'] !== '' ? (int) $_POST['schedule_id'] : null;
+        $rest = !empty($_POST['is_rest_day']) ? 1 : 0;
+        if ($sid === null && !$rest) return ['result' => false, 'message' => 'Pick a shift, or mark the day as rest.'];
+        if ($sid !== null) {
+            $chk = $this->db->query("SELECT id FROM work_schedules WHERE id = $sid AND status = 1 LIMIT 1");
+            if (!$chk || !$chk->fetch_assoc()) return ['result' => false, 'message' => 'Invalid shift.'];
+        }
+
+        $uid  = (int) ($_SESSION['login_id'] ?? 0) ?: null;
+        $note = mb_substr(trim((string) ($_POST['note'] ?? '')), 0, 255);
+
+        $this->db->begin_transaction();
+        try {
+            // Same upsert duty_roster_save() uses — published immediately (status=1)
+            // rather than left as a draft, since this is a direct correction of an
+            // already-recorded day, not a future cutoff awaiting Publish.
+            $ins = $this->db->prepare(
+                "INSERT INTO employee_day_schedule
+                    (employee_id, work_date, schedule_id, is_rest_day, note, created_by, changed_by,
+                     status, published_at, planned_schedule_id, planned_is_rest_day)
+                 VALUES (?,?,?,?,?,?,?,1,NOW(),?,?)
+                 ON DUPLICATE KEY UPDATE schedule_id = VALUES(schedule_id), is_rest_day = VALUES(is_rest_day),
+                                         note = VALUES(note), changed_by = VALUES(changed_by), status = 1,
+                                         published_at = COALESCE(published_at, NOW())"
+            );
+            $ins->bind_param('isiisiiii', $employee_id, $date, $sid, $rest, $note, $uid, $uid, $sid, $rest);
+            if (!$ins->execute()) throw new Exception($ins->error);
+
+            $res = $this->db->query(
+                "SELECT d.id, d.employee_id, d.date_time, d.work_hours, d.overtime, d.undertime,
+                        d.late, d.nsd_hours, d.day_type, d.status, d.logs,
+                        d.schedule_id, d.day_hours, d.is_rest_day,
+                        d.sched_start, d.sched_end, d.sched_break, d.sched_graveyard
+                 FROM DTR_details d WHERE d.id = $detailId LIMIT 1"
+            );
+            [, $changed, $repending] = $this->recomputeDetailRows($res);
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Save failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        $fresh = $this->db->query(
+            "SELECT work_hours, overtime, undertime, late, is_rest_day, status, schedule_id
+             FROM DTR_details WHERE id = $detailId LIMIT 1"
+        )->fetch_assoc();
+
+        return [
+            'result'      => true,
+            'changed'     => (bool) $changed,
+            'repending'   => (bool) $repending,
+            'work_hours'  => (float) $fresh['work_hours'],
+            'overtime'    => (float) $fresh['overtime'],
+            'undertime'   => (float) $fresh['undertime'],
+            'late'        => (float) $fresh['late'],
+            'is_rest_day' => (int) $fresh['is_rest_day'],
+            'schedule_id' => $fresh['schedule_id'] !== null ? (int) $fresh['schedule_id'] : null,
+            'status'      => (int) $fresh['status'],
+            'message'     => !$changed
+                ? 'Schedule saved — figures were already correct, nothing to recalculate.'
+                : ($repending
+                    ? 'Schedule updated and recalculated — sent back to Pending for re-approval.'
+                    : 'Schedule updated and recalculated.'),
         ];
     }
 

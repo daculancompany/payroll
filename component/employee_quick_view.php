@@ -7,12 +7,12 @@
  *     data-emp-quickview="<employee id>"
  * on any element — a delegated listener does the rest. Clicking it opens the
  * drawer with the essentials first — identity, org, today's shift, pay glance,
- * masked IDs — and a "Full details" button that goes to the employee-details
+ * government IDs — and a "Full details" button that goes to the employee-details
  * page. The point is that a click on a name shows THIS first, not the full page.
  *
  * Data comes from ajax.php?action=employee_quick_view (read-only, gated to
- * whoever may open employee-details; IDs/bank arrive masked, pay only for
- * roles that may see it — see admin_class.php).
+ * whoever may open employee-details; pay is shown only for roles that may
+ * see it — see admin_class.php).
  *
  * Self-contained on purpose: no bootstrap JS, no jQuery — some standalone
  * pages (dtr-documents.php) load bootstrap's CSS but not its bundle.
@@ -117,8 +117,7 @@ $eqv_full_target = isset($eqv_full_target) ? $eqv_full_target : '';
             bday = isNaN(d) ? e.bday : d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
         }
 
-        // Compensation only arrives for roles that may see pay elsewhere;
-        // government IDs and the bank account come pre-masked from the server.
+        // Compensation only arrives for roles that may see pay elsewhere.
         var payRows = '';
         if (pay) {
             payRows =

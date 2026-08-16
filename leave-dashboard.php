@@ -91,12 +91,12 @@ if ($r) while ($x = $r->fetch_assoc()) {
 
 /* ── Paid leave types — the credit model matches
       includes/leave_balances_report.php: a missing employee_leave_credits row
-      falls back to the type's days_allowed. ── */
+      means 0 credits (not the type's days_allowed) until HR/Admin sets one.
+      no_limit types (e.g. Sick Leave) never block filing regardless. ── */
 $types = [];
-$tq = $conn->query("SELECT id, name, days_allowed FROM leave_types
+$tq = $conn->query("SELECT id, name, days_allowed, no_limit FROM leave_types
                     WHERE is_paid = 1 AND status = 1 ORDER BY name");
 if ($tq) while ($t = $tq->fetch_assoc()) $types[(int) $t['id']] = $t;
-$default_credits = array_sum(array_column($types, 'days_allowed'));
 
 $nice = function ($v) { return rtrim(rtrim(number_format((float) $v, 1), '0'), '.'); };
 
@@ -162,7 +162,7 @@ if (!$is_org_view || $view_dept > 0) {
     ");
     if ($eq) while ($e = $eq->fetch_assoc()) {
         $e['eligible'] = leave_eligibility_from($e['classification'], $e['leave_override']);
-        $e['credits']  = $e['eligible'] ? (float) $default_credits : 0.0;
+        $e['credits']  = 0.0;   // 0 until HR/Admin sets a credit row for the year
         $e['used']     = $e['pending'] = 0.0;
         $emps[(int) $e['id']] = $e;
     }
@@ -170,7 +170,7 @@ if (!$is_org_view || $view_dept > 0) {
     if ($emps) {
         $ids = implode(',', array_map('intval', array_keys($emps)));
 
-        // Explicit per-employee credit lines override the days_allowed default.
+        // Explicit per-employee credit lines add on top of the 0 baseline.
         $cq = $conn->query("SELECT employee_id, leave_type_id, credits
                             FROM employee_leave_credits
                             WHERE year = $year AND employee_id IN ($ids)");
@@ -178,7 +178,7 @@ if (!$is_org_view || $view_dept > 0) {
             $eid = (int) $c['employee_id'];
             $tid = (int) $c['leave_type_id'];
             if (!isset($emps[$eid]) || !$emps[$eid]['eligible'] || !isset($types[$tid])) continue;
-            $emps[$eid]['credits'] += (float) $c['credits'] - (float) $types[$tid]['days_allowed'];
+            $emps[$eid]['credits'] += (float) $c['credits'];
         }
 
         $uq = $conn->query("SELECT employee_id, status, SUM(duration) d

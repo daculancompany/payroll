@@ -331,6 +331,34 @@ $payroll_period = isset($period_codes[$pp_code]) ? $period_codes[$pp_code] : 'se
                                         </div>
                                     </div>
 
+                                    <!-- Attendance pairing -->
+                                    <div class="col-12">
+                                        <hr class="my-1">
+                                        <h6 class="fw-bold text-uppercase text-muted mb-3" style="font-size:11px;letter-spacing:1px;">
+                                            <i class="ri-fingerprint-line me-1"></i>Attendance Scan Pairing
+                                        </h6>
+                                        <div class="row g-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-semibold">Early-arrival grace window</label>
+                                                <div class="input-group">
+                                                    <input type="number" class="form-control" name="dtr_early_grace_hours"
+                                                           value="<?= ps('dtr_early_grace_hours', $settings) ?: 4 ?>"
+                                                           min="0.5" max="24" step="0.5" required>
+                                                    <span class="input-group-text">hrs</span>
+                                                </div>
+                                                <small class="text-muted">A scan earlier than this before the shift start is discarded as a stray tap, so it cannot be paired as the day&rsquo;s time-in.</small>
+                                            </div>
+                                            <div class="col-md-8">
+                                                <div class="alert alert-warning py-2 px-3 mb-0" style="font-size:12px;">
+                                                    <i class="ri-alert-line me-1"></i>
+                                                    <b>This does not change anyone&rsquo;s pay.</b> Time before the shift start is never paid, whatever this is set to &mdash; it only decides <i>which</i> scan becomes the time-in.
+                                                    <b>Lowering</b> it discards more scans, which can leave a day with no time-out and zero hours.
+                                                    Existing records keep their stored figures until a <b>Recompute</b> is run, and that recompute re-pairs them against the new value.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- Summary -->
                                     <div class="col-12">
                                         <hr class="my-1">

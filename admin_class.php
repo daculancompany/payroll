@@ -4783,18 +4783,44 @@ class Action
                 // NOT count as an absence (monthly) and IS paid (daily). Unpaid (LWOP) leave
                 // needs no handling — with no DTR row it already falls into the absent tally.
                 // Keyed [employee_id][Y-m-d] => day fraction (0.5 for the half-day date).
+                // ── Paid leave, capped at the employee's EARNED credits ──────────
+                // A `no_limit` type (e.g. Sick Leave) may be FILED without limit, but
+                // only the days covered by that year's credits are PAID; anything past
+                // the balance falls through as an unpaid absence. Credits are consumed
+                // chronologically, so the earliest approved leave is paid first.
+                //
+                // This needs the WHOLE year's approved leave, not just the days inside
+                // this payroll period — a day in August is only payable if the running
+                // total since January still has credits left when it is reached.
+                //
+                // For capped types the filing guard already prevents approved days from
+                // exceeding credits, so this is a no-op for them in normal operation and
+                // only bites if credits were later reduced below what was already approved.
                 $leaveMap = [];
+                $pf = date('Y-m-d', strtotime($date_from));
+                $pt = date('Y-m-d', strtotime($date_to));
+                $yr_from = (int) date('Y', strtotime($date_from));
+                $yr_to   = (int) date('Y', strtotime($date_to));
+
                 $lvq = $this->db->prepare(
-                    "SELECT lr.employee_id, lr.dates, lr.date_from, lr.date_to, lr.is_half_day, lr.half_date
+                    "SELECT lr.employee_id, lr.leave_type_id, YEAR(lr.date_from) AS lyear,
+                            lr.dates, lr.date_from, lr.date_to, lr.is_half_day, lr.half_date
                      FROM leave_requests lr
                      INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
-                     WHERE lr.status = 1 AND lt.is_paid = 1 AND lr.date_from <= ? AND lr.date_to >= ?"
+                     WHERE lr.status = 1 AND lt.is_paid = 1
+                       AND YEAR(lr.date_from) BETWEEN ? AND ?
+                     ORDER BY lr.date_from ASC, lr.id ASC"
                 );
-                $lvq->bind_param('ss', $date_to, $date_from);
+                $lvq->bind_param('ii', $yr_from, $yr_to);
                 $lvq->execute();
                 $lvres = $lvq->get_result();
+
+                // Flatten every approved paid-leave day into one list per
+                // employee + leave type + leave year.
+                $lvDays = [];
                 while ($lv = $lvres->fetch_assoc()) {
                     $eid  = $lv['employee_id'];
+                    $key  = $eid . '|' . (int) $lv['leave_type_id'] . '|' . (int) $lv['lyear'];
                     $days = [];
                     if (!empty($lv['dates'])) {
                         $decoded = json_decode($lv['dates'], true);
@@ -4809,8 +4835,33 @@ class Action
                         $ymd  = date('Y-m-d', strtotime($dy));
                         $frac = ((int) $lv['is_half_day'] === 1 && !empty($lv['half_date'])
                                  && date('Y-m-d', strtotime($lv['half_date'])) === $ymd) ? 0.5 : 1.0;
-                        if (!isset($leaveMap[$eid][$ymd]) || $leaveMap[$eid][$ymd] < $frac) {
-                            $leaveMap[$eid][$ymd] = $frac;   // overlapping leaves → keep larger fraction
+                        $lvDays[$key][] = ['ymd' => $ymd, 'frac' => $frac, 'eid' => $eid];
+                    }
+                }
+
+                // Credits available per employee + type + year (0 when never set).
+                $lvCredits = [];
+                $ccq = $this->db->query("SELECT employee_id, leave_type_id, year, credits
+                                         FROM employee_leave_credits WHERE year BETWEEN $yr_from AND $yr_to");
+                if ($ccq) while ($cc = $ccq->fetch_assoc()) {
+                    $lvCredits[$cc['employee_id'] . '|' . (int) $cc['leave_type_id'] . '|' . (int) $cc['year']]
+                        = (float) $cc['credits'];
+                }
+
+                // Walk the year chronologically, spending credits; only the covered
+                // portion of each day is paid, and only days inside THIS payroll
+                // period are written to the map this run.
+                foreach ($lvDays as $key => $rows) {
+                    usort($rows, function ($a, $b) { return strcmp($a['ymd'], $b['ymd']); });
+                    $left = $lvCredits[$key] ?? 0.0;
+                    foreach ($rows as $r) {
+                        if ($left <= 0) break;                    // credits spent — rest is unpaid
+                        $paidFrac = min($r['frac'], $left);       // may pay a half of a whole day
+                        $left    -= $paidFrac;
+                        if ($r['ymd'] < $pf || $r['ymd'] > $pt) continue;   // outside this cutoff
+                        $eid = $r['eid'];
+                        if (!isset($leaveMap[$eid][$r['ymd']]) || $leaveMap[$eid][$r['ymd']] < $paidFrac) {
+                            $leaveMap[$eid][$r['ymd']] = $paidFrac;   // overlapping leaves → keep larger fraction
                         }
                     }
                 }
@@ -7417,7 +7468,7 @@ class Action
                 // ingestion originally paired it.
                 $plausible = $timestamps;
                 if ($schedule) {
-                    $grace = strtotime($scan_date . ' ' . $schedule['start_time']) - DTR_EARLY_GRACE_HOURS * 3600;
+                    $grace = strtotime($scan_date . ' ' . $schedule['start_time']) - dtr_early_grace_hours() * 3600;
                     $kept  = array_values(array_filter($timestamps, function ($t) use ($grace) { return $t >= $grace; }));
                     if ($kept) $plausible = $kept;
                 }
@@ -9669,6 +9720,9 @@ class Action
         $carryover    = ($is_paid === 1 && (int) ($_POST['carryover'] ?? 0) === 1) ? 1 : 0;
         $cap_raw      = trim($_POST['carryover_cap'] ?? '');
         $carry_cap    = ($carryover === 1 && $cap_raw !== '') ? max(0.0, (float) $cap_raw) : null;
+        // No balance limit (paid types only): filing is never blocked by an
+        // insufficient or unset balance — days are still tracked and reported.
+        $no_limit     = ($is_paid === 1 && (int) ($_POST['no_limit'] ?? 0) === 1) ? 1 : 0;
 
         if ($name === '') {
             return ['result' => false, 'message' => 'Leave type name is required.'];
@@ -9678,11 +9732,11 @@ class Action
         }
 
         if ($id === 0) {
-            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, is_paid, description, status, carryover, carryover_cap) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param('siisiid', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap);
+            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, is_paid, description, status, carryover, carryover_cap, no_limit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param('siisiidi', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $no_limit);
         } else {
-            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, is_paid = ?, description = ?, status = ?, carryover = ?, carryover_cap = ? WHERE id = ?");
-            $stmt->bind_param('siisiidi', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $id);
+            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, is_paid = ?, description = ?, status = ?, carryover = ?, carryover_cap = ?, no_limit = ? WHERE id = ?");
+            $stmt->bind_param('siisiidii', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $no_limit, $id);
         }
 
         if ($stmt->execute()) {
@@ -9785,11 +9839,15 @@ class Action
         // filing can't overbook an employee past their credits and drive the
         // portal balance negative. Remaining counts approved AND still-pending
         // requests; when editing, the request being edited is excluded.
-        $lt_row = $this->db->query("SELECT is_paid FROM leave_types WHERE id = $leave_type_id LIMIT 1")->fetch_assoc();
-        if ($lt_row && (int) $lt_row['is_paid'] === 1) {
+        // Credits with no explicit HR-set row for the year default to 0 (not
+        // the type's days_allowed) — an employee isn't entitled to a balance
+        // until HR sets one. `no_limit` types (e.g. Sick Leave) skip this guard
+        // entirely so filing is never blocked by a missing/zero balance.
+        $lt_row = $this->db->query("SELECT is_paid, no_limit FROM leave_types WHERE id = $leave_type_id LIMIT 1")->fetch_assoc();
+        if ($lt_row && (int) $lt_row['is_paid'] === 1 && (int) $lt_row['no_limit'] === 0) {
             $ly = leave_current_year();
             $balq = $this->db->query("
-                SELECT COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+                SELECT COALESCE(c.credits, 0) - COALESCE(u.used, 0) AS remaining
                 FROM leave_types lt
                 LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id AND c.year = $ly
                 LEFT JOIN (
@@ -9861,8 +9919,8 @@ class Action
         $ly = leave_current_year();
         $remain = [];
         $rq = $this->db->query("
-            SELECT lt.id, lt.is_paid,
-                   COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+            SELECT lt.id, lt.is_paid, lt.no_limit,
+                   COALESCE(c.credits, 0) - COALESCE(u.used, 0) AS remaining
             FROM leave_types lt
             LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id AND c.year = $ly
             LEFT JOIN (
@@ -9873,8 +9931,10 @@ class Action
             ) u ON u.leave_type_id = lt.id
             WHERE lt.status = 1");
         if ($rq) while ($r = $rq->fetch_assoc()) {
-            // Unpaid (LWOP) types consume no credits — null = no cap to show.
-            $remain[(int) $r['id']] = ((int) $r['is_paid'] === 1) ? (float) $r['remaining'] : null;
+            // Unpaid (LWOP) and no_limit (e.g. Sick Leave) types have no hard
+            // cap to show — null means "don't block on balance".
+            $capped = ((int) $r['is_paid'] === 1) && ((int) $r['no_limit'] === 0);
+            $remain[(int) $r['id']] = $capped ? (float) $r['remaining'] : null;
         }
         $taken = [];
         $tq = $this->db->query("SELECT dates, date_from, date_to FROM leave_requests
@@ -10086,9 +10146,9 @@ class Action
         $changer = $_SESSION['login_id'] ?? null;
         $year    = leave_current_year();
 
-        // Current value for this year (defaults to the type's standard entitlement when unset).
+        // Current value for this year (0 when HR hasn't set one yet).
         $cur = $this->db->query("
-            SELECT COALESCE(c.credits, lt.days_allowed) AS credits
+            SELECT COALESCE(c.credits, 0) AS credits
             FROM leave_types lt
             LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id AND c.year = $year
             WHERE lt.id = $leave_type_id
@@ -10121,10 +10181,9 @@ class Action
 
             // Build a readable message.
             $meta = $this->db->query("
-                SELECT CONCAT(e.firstname,' ',e.lastname) AS emp, lt.name AS type
-                FROM employee e JOIN leave_types lt ON lt.id = $leave_type_id WHERE e.id = $employee_id
+                SELECT lt.name AS type
+                FROM leave_types lt WHERE lt.id = $leave_type_id
             ")->fetch_assoc();
-            $emp  = $meta['emp'] ?? 'Employee';
             $type = $meta['type'] ?? 'leave';
             $who  = 'Someone';
             if ($changer) {
@@ -10132,13 +10191,16 @@ class Action
                 $who = $wq['name'] ?? 'A user';
             }
             $fmt  = fn($n) => rtrim(rtrim(number_format($n, 1), '0'), '.');
-            $verb = $mode === 'add' ? 'added ' . $fmt($amount) . ' to' : ($mode === 'deduct' ? 'deducted ' . $fmt($amount) . ' from' : 'set');
-            $msg  = "$who $verb $emp's $type balance: " . $fmt($old_credits) . " → " . $fmt($new_credits) . " day(s)."
-                  . ($reason !== '' ? " Reason: $reason" : '');
+            $verb = $mode === 'add' ? 'added ' . $fmt($amount) . ' day(s) to' : ($mode === 'deduct' ? 'deducted ' . $fmt($amount) . ' day(s) from' : 'updated');
+            $emp_msg = "$who $verb your $type balance: " . $fmt($old_credits) . " → " . $fmt($new_credits) . " day(s)."
+                     . ($reason !== '' ? " Reason: $reason" : '');
 
-            // Notify HR + Admins (so any balance change is visible/auditable).
-            $this->notifyRole(1, 'Leave balance updated', $msg, 'ri-coins-line', 'info', 'index.php?page=leave_balances&emp=' . $employee_id);
-            $this->notifyRole(9, 'Leave balance updated', $msg, 'ri-coins-line', 'info', 'index.php?page=leave_balances&emp=' . $employee_id);
+            // Notify only the employee whose balance changed — portal bell + FCM
+            // push — so they see it even with the site closed. HR/Admin are the
+            // ones making the change, so they don't need a self-notification;
+            // the leave_credit_history + Balance Change History panel already
+            // cover the audit trail for reviewers.
+            $this->notifyEmployee($employee_id, 'Leave balance updated', $emp_msg, 'ri-coins-line', 'info', 'employee-portal.php?tab=leave');
         }
 
         $labels = ['set' => 'Balance updated', 'add' => 'Credits added', 'deduct' => 'Credits deducted'];
@@ -10185,7 +10247,7 @@ class Action
     function run_leave_rollover()
     {
         $role = (int) ($_SESSION['login_role'] ?? 0);
-        if (!in_array($role, [1, 9], true)) {   // Admin + HR only
+        if (!can_run_leave_rollover($role)) {   // LEAVE_ROLLOVER_ROLES
             return ['result' => false, 'message' => 'Only Admin/HR can run the year-end rollover.'];
         }
         $from_year = (int) ($_POST['from_year'] ?? 0);
@@ -10225,9 +10287,9 @@ class Action
                 $tid       = (int) $t['id'];
                 $allowance = (float) $t['days_allowed'];
 
-                // Source-year balance (defaults to the allowance if never set).
+                // Source-year balance (0 if HR never set one that year).
                 $src = $this->db->query("SELECT credits FROM employee_leave_credits WHERE employee_id=$eid AND leave_type_id=$tid AND year=$from_year")->fetch_assoc();
-                $src_credits = $src ? (float) $src['credits'] : $allowance;
+                $src_credits = $src ? (float) $src['credits'] : 0.0;
 
                 // Days used in the source year.
                 $u = $this->db->query("SELECT COALESCE(SUM(duration),0) AS used FROM leave_requests WHERE employee_id=$eid AND leave_type_id=$tid AND status=1 AND YEAR(date_from)=$from_year")->fetch_assoc();
@@ -10244,9 +10306,9 @@ class Action
                     $new_credits = $allowance;
                 }
 
-                // Existing target value (for the old→new audit line; defaults to allowance).
+                // Existing target value (for the old→new audit line; 0 if unset).
                 $tgt = $this->db->query("SELECT credits FROM employee_leave_credits WHERE employee_id=$eid AND leave_type_id=$tid AND year=$to_year")->fetch_assoc();
-                $old_target = $tgt ? (float) $tgt['credits'] : $allowance;
+                $old_target = $tgt ? (float) $tgt['credits'] : 0.0;
 
                 if (count($rows) < 500) {   // cap the preview payload; counts below are exact
                     $rows[] = [
@@ -10281,6 +10343,72 @@ class Action
                 'message' => "Rollover {$from_year}→{$to_year} complete: $emp_count employee(s), $changed balance change(s)."];
     }
 
+    // Seed missing employee_leave_credits rows to each leave type's reference
+    // days_allowed for a given year — a bulk companion to save_leave_credit()
+    // now that unset credits default to 0 (blocking filing). ONLY fills gaps:
+    // an employee/type that already has a row for the year is left untouched,
+    // so this is safe to run repeatedly (e.g. after adding a new hire).
+    // Every seeded row is logged to leave_credit_history like a manual "set".
+    function bulk_init_leave_credits()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!can_edit_leave_credits($role)) {
+            return ['result' => false, 'message' => 'Only Admin/HR can initialize leave credits.'];
+        }
+        require_once __DIR__ . '/dept-scope.php';
+        $year = leave_current_year();
+
+        $types = [];
+        $tq = $this->db->query("SELECT id, days_allowed FROM leave_types WHERE status = 1 AND is_paid = 1");
+        if ($tq) while ($t = $tq->fetch_assoc()) $types[(int) $t['id']] = (float) $t['days_allowed'];
+        if (!$types) return ['result' => false, 'message' => 'No paid leave types configured.'];
+
+        $emps = $this->db->query("
+            SELECT e.id, UPPER(COALESCE(cl.clasification,'')) AS clasif, e.leave_override
+            FROM employee e
+            LEFT JOIN clasification cl ON cl.id = e.clasification_id
+            WHERE e.status = 1" . dept_scope_sql('e.department_id')
+        );
+        if (!$emps) return ['result' => false, 'message' => 'Could not read employees.'];
+
+        $eligible_ids = [];
+        while ($e = $emps->fetch_assoc()) {
+            if (leave_eligibility_from($e['clasif'], $e['leave_override'])) $eligible_ids[] = (int) $e['id'];
+        }
+        if (!$eligible_ids) return ['result' => true, 'seeded' => 0, 'message' => 'No eligible employees to initialize.'];
+
+        // Existing rows for the year — skip anything already set.
+        $ids_sql = implode(',', $eligible_ids);
+        $have = [];
+        $hq = $this->db->query("SELECT employee_id, leave_type_id FROM employee_leave_credits
+                                 WHERE year = $year AND employee_id IN ($ids_sql)");
+        if ($hq) while ($h = $hq->fetch_assoc()) $have[(int) $h['employee_id']][(int) $h['leave_type_id']] = true;
+
+        $changer  = $_SESSION['login_id'] ?? null;
+        $cb_sql   = $changer ? (int) $changer : 'NULL';
+        $reason   = $this->db->real_escape_string('Bulk initialized to leave type default');
+        $cred_ins = $this->db->prepare("INSERT INTO employee_leave_credits (employee_id, leave_type_id, year, credits) VALUES (?, ?, ?, ?)");
+        $hist_ins = $this->db->prepare("INSERT INTO leave_credit_history (employee_id, leave_type_id, old_credits, new_credits, change_type, reason, changed_by)
+                                         VALUES (?, ?, 0, ?, 'set', '$reason', $cb_sql)");
+
+        $seeded = 0;
+        foreach ($eligible_ids as $eid) {
+            foreach ($types as $tid => $allowance) {
+                if (!empty($have[$eid][$tid])) continue;   // already set — leave it alone
+                $cred_ins->bind_param('iiid', $eid, $tid, $year, $allowance);
+                $cred_ins->execute();
+                $hist_ins->bind_param('iid', $eid, $tid, $allowance);
+                $hist_ins->execute();
+                $seeded++;
+            }
+        }
+
+        return ['result' => true, 'seeded' => $seeded,
+                'message' => $seeded > 0
+                    ? "Initialized $seeded leave credit balance(s) to their type's default for $year."
+                    : 'Everyone already has credits set for this year — nothing to initialize.'];
+    }
+
     /* ──────────────────────────────────────────────────────────────
      * Calendar / Holidays
      * ────────────────────────────────────────────────────────────── */
@@ -10289,6 +10417,10 @@ class Action
     {
         $uid  = $_SESSION['login_id'] ?? null;
         $keys = ['legal_holiday_rate', 'special_holiday_rate', 'ot_regular_rate', 'ot_holiday_multiplier', 'nsd_rate', 'rest_day_rate', 'sanity_net_swing_pct'];
+        // Attendance pairing, not a pay rate: how early a punch may be and still
+        // count as the day's time-in. dtr_early_grace_hours() clamps it to 0–24
+        // on read, so a hand-edited row can't break ingestion either.
+        $keys[] = 'dtr_early_grace_hours';
         // Withholding method is a radio (1 = per-cutoff, 2 = cumulative), so it
         // always posts a value and needs no unchecked-means-zero handling.
         $keys[] = 'tax_method';

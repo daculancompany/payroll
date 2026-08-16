@@ -1,7 +1,7 @@
 <?php
 // Editable by Admin + HR — see LEAVE_CREDIT_EDIT_ROLES in db_connect.php.
 $can_edit_credits = can_edit_leave_credits();
-$can_rollover     = in_array((int)($_SESSION['login_role'] ?? 0), [1, 9]);   // Admin + HR
+$can_rollover     = can_run_leave_rollover();   // see LEAVE_ROLLOVER_ROLES in db_connect.php
 $sel_emp = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;
 $leave_year = leave_current_year();   // credits are tracked per calendar year
 
@@ -128,6 +128,25 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
                 </div>
                 <?php endif; ?>
 
+                <?php if ($can_edit_credits): ?>
+                <!-- Bulk initialize: fill in credits for anyone not set up yet -->
+                <div class="col-12">
+                    <div class="card border-info">
+                        <div class="card-body d-flex flex-wrap align-items-center gap-2">
+                            <div class="flex-grow-1">
+                                <b><i class="ri-magic-line me-1 text-info"></i>Initialize Missing Credits (<?= $leave_year ?>)</b>
+                                <div class="text-muted" style="font-size:12px;">
+                                    Employees with no credits set for the year have <b>0 days</b> and can't file capped leave.
+                                    This gives every eligible employee their leave type's default — <b>only where nothing is set yet</b>;
+                                    balances you've already set are never overwritten.
+                                </div>
+                            </div>
+                            <button id="bulk-init-credits" class="btn btn-sm btn-info text-white"><i class="ri-play-circle-line me-1"></i>Initialize</button>
+                        </div>
+                    </div>
+                </div>
+                <?php endif; ?>
+
                 <?php if ($sel_emp_row): ?>
                 <!-- Selected employee header -->
                 <div class="col-12">
@@ -239,8 +258,8 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
                                 <tbody>
                                     <?php
                                     $cr = $conn->query("
-                                        SELECT lt.id, lt.name, lt.days_allowed, lt.carryover, lt.carryover_cap,
-                                            COALESCE(c.credits, lt.days_allowed) AS credits,
+                                        SELECT lt.id, lt.name, lt.days_allowed, lt.carryover, lt.carryover_cap, lt.no_limit,
+                                            COALESCE(c.credits, 0) AS credits,
                                             COALESCE(u.used, 0) AS used
                                         FROM leave_types lt
                                         LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = " . $sel_emp . " AND c.year = " . $leave_year . "
@@ -254,12 +273,16 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
                                     if ($cr) while ($c = $cr->fetch_assoc()):
                                         $avail = (float)$c['credits']; $used = (float)$c['used']; $rem = $avail - $used;
                                         $pend  = (float)($lb_row['cells'][(int)$c['id']]['pending'] ?? 0);
+                                        $unlimited = (int)$c['no_limit'] === 1;
                                     ?>
                                     <tr>
                                         <td>
                                             <b><i class="ri-calendar-event-line me-1 text-success"></i><?= htmlspecialchars($c['name']) ?></b>
+                                            <?php if ($unlimited): ?>
+                                                <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size:9.5px;" title="Filing is never blocked by balance for this type">No limit</span>
+                                            <?php endif; ?>
                                             <div class="text-muted" style="font-size:10.5px;">
-                                                <?= $fmt($c['days_allowed']) ?> day default ·
+                                                <?= $fmt($c['days_allowed']) ?> day reference ·
                                                 <?= (int)$c['carryover']
                                                     ? 'Carries over' . ($c['carryover_cap'] !== null ? ' (cap ' . $fmt($c['carryover_cap']) . ')' : '')
                                                     : 'Resets each year' ?>
@@ -544,6 +567,30 @@ document.getElementById('form-adjust-credit').addEventListener('submit', functio
             }
         })
         .catch(() => { submit.disabled = false; });
+});
+
+// ── Bulk initialize missing credits ─────────────────────────────────────────
+document.getElementById('bulk-init-credits')?.addEventListener('click', async function () {
+    const btn = this;
+    const c = await Swal.fire({
+        title: 'Initialize missing credits?',
+        html: 'Every eligible employee with <b>no credits set</b> for <?= $leave_year ?> gets their leave type\'s default. '
+            + 'Balances you already set are left untouched. All changes are logged.',
+        icon: 'question', showCancelButton: true, confirmButtonText: 'Initialize', confirmButtonColor: '#0dcaf0'
+    });
+    if (!c.isConfirmed) return;
+    btn.disabled = true;
+    fetch('ajax.php?action=bulk_init_leave_credits', { method: 'POST', body: new URLSearchParams({}) })
+        .then(r => r.json())
+        .then(j => {
+            btn.disabled = false;
+            if (j && j.result) {
+                Swal.fire({ icon: 'success', title: 'Done', text: j.message }).then(() => location.reload());
+            } else {
+                Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Failed to initialize.' });
+            }
+        })
+        .catch(() => { btn.disabled = false; });
 });
 
 // ── Year-End Rollover ────────────────────────────────────────────────────────

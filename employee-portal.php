@@ -83,28 +83,50 @@ if ($ltq) while ($r = $ltq->fetch_assoc()) {
 }
 
 $leave_year = leave_current_year();   // credits are tracked per calendar year
+// `used` counts APPROVED days only; `pending` counts filed-but-not-yet-approved
+// days separately. Both are needed: the filing guard below rejects against
+// used + pending, so a card showing only `used` would promise more days than
+// the server will actually accept.
 $leave_balance = [];
 $lbq = $conn->query("
-    SELECT lt.id, lt.name,
-        COALESCE(c.credits, lt.days_allowed) AS credits,
-        COALESCE(u.used, 0) AS used
+    SELECT lt.id, lt.name, lt.no_limit,
+        COALESCE(c.credits, 0) AS credits,
+        COALESCE(u.used, 0) AS used,
+        COALESCE(p.pending, 0) AS pending
     FROM leave_types lt
     LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id AND c.year = $leave_year
     LEFT JOIN (
         SELECT leave_type_id, SUM(duration) AS used
         FROM leave_requests WHERE employee_id = $emp_id AND status = 1 AND YEAR(date_from) = $leave_year GROUP BY leave_type_id
     ) u ON u.leave_type_id = lt.id
+    LEFT JOIN (
+        SELECT leave_type_id, SUM(duration) AS pending
+        FROM leave_requests WHERE employee_id = $emp_id AND status = 0 AND YEAR(date_from) = $leave_year GROUP BY leave_type_id
+    ) p ON p.leave_type_id = lt.id
     WHERE lt.status = 1 AND lt.is_paid = 1
     ORDER BY lt.name ASC
 ");
 if ($lbq) while ($r = $lbq->fetch_assoc()) $leave_balance[] = $r;
 
-// Remaining credits available for FILING (paid types): counts approved AND
+// Header stat strip: total leave days this employee can still file. Only capped
+// types add up — no_limit types (Sick Leave) have no number to sum, so they're
+// listed in the tooltip instead of inflating the count. Pending days are
+// subtracted like the filing guard does, so the tile never promises days the
+// server would reject.
+$leave_free_days = 0.0; $leave_unlimited = [];
+foreach ($leave_balance as $b) {
+    if ((int)($b['no_limit'] ?? 0) === 1) { $leave_unlimited[] = $b['name']; continue; }
+    $leave_free_days += max(0, (float)$b['credits'] - (float)$b['used'] - (float)($b['pending'] ?? 0));
+}
+
+// Remaining credits available for FILING (paid, capped types only — no_limit
+// types like Sick Leave are never blocked, so they're left out of this map;
+// JS treats "not in LV_REMAIN" as uncapped, same as LWOP). Counts approved AND
 // still-pending requests so stacked filings can't exceed the balance. Mirrors
 // the server-side guard in emp-portal-ajax.php (submit_leave_request).
 $lv_remaining_filing = [];
 $lrf = $conn->query("
-    SELECT lt.id, COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+    SELECT lt.id, COALESCE(c.credits, 0) - COALESCE(u.used, 0) AS remaining
     FROM leave_types lt
     LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id AND c.year = $leave_year
     LEFT JOIN (
@@ -112,7 +134,7 @@ $lrf = $conn->query("
         FROM leave_requests WHERE employee_id = $emp_id AND status IN (0,1) AND YEAR(date_from) = $leave_year
         GROUP BY leave_type_id
     ) u ON u.leave_type_id = lt.id
-    WHERE lt.status = 1 AND lt.is_paid = 1
+    WHERE lt.status = 1 AND lt.is_paid = 1 AND lt.no_limit = 0
 ");
 if ($lrf) while ($r = $lrf->fetch_assoc()) $lv_remaining_filing[(int)$r['id']] = round(max(0, (float)$r['remaining']), 1);
 
@@ -714,6 +736,8 @@ body{
     .drev-mini{justify-content:space-between;}
 }
 .emp-stats{display:grid;grid-template-columns:repeat(5,1fr);}
+.emp-stats.cols-6{grid-template-columns:repeat(6,1fr);}
+.est-inf{font-size:10px;font-weight:700;opacity:.65;margin-left:1px;vertical-align:top;}
 .est{padding:12px 14px;border-right:1px solid #f0eff3;text-align:center;}
 .est:last-child{border-right:none;}
 .est-v{font-size:16px;font-weight:800;color:#6642aa;line-height:1;}
@@ -1833,7 +1857,7 @@ clock-timepicker{
     .emp-av{width:46px;height:46px;font-size:18px;}
     .emp-nm{font-size:15px;}
     .emp-no-badge{padding:4px 8px;font-size:10px;}
-    .emp-stats{grid-template-columns:repeat(3,1fr);}
+    .emp-stats, .emp-stats.cols-6{grid-template-columns:repeat(3,1fr);}
     .est:nth-child(n+4){border-top:1px solid #f0eff3;}
     .ps-body{grid-template-columns:1fr;}
     .ps-col:first-child{border-right:none;border-bottom:1px solid #f2f1f5;}
@@ -2153,7 +2177,18 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </div>
             </div>
 
-            <div class="emp-stats">
+            <?php
+            // Leave tile only exists for leave-eligible employees, so the strip
+            // is 5 or 6 wide — the class keeps the mobile 3-col rule winning.
+            $lv_tile = $portal_leave_eligible && count($leave_balance) > 0;
+            $lv_tip  = [];
+            foreach ($leave_balance as $b) {
+                $lv_tip[] = $b['name'] . ': ' . ((int)($b['no_limit'] ?? 0) === 1
+                    ? 'unlimited'
+                    : nd(max(0, (float)$b['credits'] - (float)$b['used'] - (float)($b['pending'] ?? 0))) . ' day(s) left');
+            }
+            ?>
+            <div class="emp-stats <?= $lv_tile ? 'cols-6' : '' ?>">
                 <div class="est">
                     <div class="est-v"><?= count($payslips) ?></div>
                     <div class="est-l">Payrolls</div>
@@ -2170,6 +2205,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="est-v" style="color:#fd7e14;"><?= n0($total_ot) ?></div>
                     <div class="est-l">OT Hours</div>
                 </div>
+                <?php if ($lv_tile): ?>
+                <div class="est" title="<?= htmlspecialchars(implode(' · ', $lv_tip)) ?>">
+                    <div class="est-v" style="color:#12b886;"><?= nd($leave_free_days) ?><?php if ($leave_unlimited): ?><span class="est-inf">+∞</span><?php endif; ?></div>
+                    <div class="est-l">Leave Days</div>
+                </div>
+                <?php endif; ?>
                 <div class="est">
                     <div class="est-v" style="color:#e83e8c;">₱<?= number_format($total_loan_balance, 0) ?></div>
                     <div class="est-l">Loan Balance</div>
@@ -2573,16 +2614,20 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <a href="javascript:void(0)" onclick="switchTab('leave',null)" style="font-size:10px;color:#6642aa;font-weight:700;text-decoration:none;">Request →</a>
                 </div>
                 <?php foreach ($leave_balance as $b):
-                    $avail = (float)$b['credits']; $used = (float)$b['used']; $rem = max(0, $avail - $used);
-                    $pct = $avail > 0 ? round($rem / $avail * 100) : 0;
+                    $avail = (float)$b['credits']; $used = (float)$b['used']; $pend = (float)($b['pending'] ?? 0);
+                    // Free = what he can still file — matches the server-side guard,
+                    // which counts approved AND pending against the balance.
+                    $free = max(0, $avail - $used - $pend);
+                    $pct = $avail > 0 ? round($free / $avail * 100) : 0;
                     $fmtn = function ($n) { return rtrim(rtrim(number_format($n, 1), '0'), '.'); };
+                    $unlimited = (int)($b['no_limit'] ?? 0) === 1;
                 ?>
-                <div class="lvc-row <?= $rem <= 0 ? 'spent' : '' ?>">
+                <div class="lvc-row <?= (!$unlimited && $free <= 0) ? 'spent' : '' ?>">
                     <div class="lvc-top">
-                        <span class="lvc-name"><?= htmlspecialchars($b['name']) ?></span>
-                        <span class="lvc-num"><?= $fmtn($rem) ?> <span class="dim2">/ <?= $fmtn($avail) ?> days left</span></span>
+                        <span class="lvc-name"><?= htmlspecialchars($b['name']) ?><?php if (!$unlimited && $pend > 0): ?><span class="dim2" style="font-weight:600;"> · <?= $fmtn($pend) ?> pending</span><?php endif; ?></span>
+                        <span class="lvc-num"><?= $unlimited ? 'Unlimited' : ($fmtn($free) . ' <span class="dim2">/ ' . $fmtn($avail) . ' days left</span>') ?></span>
                     </div>
-                    <div class="lvc-bar"><div class="lvc-fill" style="width:<?= $pct ?>%;"></div></div>
+                    <div class="lvc-bar"><div class="lvc-fill" style="width:<?= $unlimited ? 100 : $pct ?>%;"></div></div>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -3056,13 +3101,19 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <?php if (count($leave_balance)): ?>
         <div class="ytd-strip" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr));">
             <?php foreach ($leave_balance as $b):
-                $avail = (float)$b['credits']; $used = (float)$b['used']; $rem = $avail - $used;
+                $avail = (float)$b['credits']; $used = (float)$b['used']; $pend = (float)($b['pending'] ?? 0);
+                // Free = what he can still file — matches the server-side guard,
+                // which counts approved AND pending against the balance.
+                $free = max(0, $avail - $used - $pend);
                 $fmt = function ($n) { return rtrim(rtrim(number_format($n, 1), '0'), '.'); };
+                $unlimited = (int)($b['no_limit'] ?? 0) === 1;
             ?>
-            <div class="ytd-box <?= $rem <= 0 ? 'd' : 'g' ?>">
-                <div class="ytd-val"><?= $fmt($rem) ?><span style="font-size:11px;color:#aaa;font-weight:600;"> / <?= $fmt($avail) ?></span></div>
+            <div class="ytd-box <?= (!$unlimited && $free <= 0) ? 'd' : 'g' ?>">
+                <div class="ytd-val"><?= $unlimited ? 'Unlimited' : ($fmt($free) . '<span style="font-size:11px;color:#aaa;font-weight:600;"> / ' . $fmt($avail) . '</span>') ?></div>
                 <div class="ytd-lbl"><?= htmlspecialchars($b['name']) ?></div>
-                <div style="font-size:10px;color:#bbb;margin-top:3px;">Used <?= $fmt($used) ?> day(s)</div>
+                <div style="font-size:10px;color:#bbb;margin-top:3px;">
+                    Used <?= $fmt($used) ?> day(s)<?php if ($pend > 0): ?> · <span style="color:#f5a623;font-weight:700;"><?= $fmt($pend) ?> pending</span><?php endif; ?>
+                </div>
             </div>
             <?php endforeach; ?>
         </div>
@@ -3842,7 +3893,46 @@ function openLeaveDetail(id) {
         + '<div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;margin-bottom:2px;">Approval Timeline</div>'
         + d.timeline;
     document.getElementById('leave-detail-body').innerHTML = h;
+    // Cancel is offered only while the request is still pending — once approved
+    // it counts in payroll and only an approver can reverse it.
+    var cbtn = document.getElementById('lv-cancel-btn');
+    if (cbtn) {
+        cbtn.style.display = (d.status === 0) ? '' : 'none';
+        cbtn.dataset.id = id;
+    }
     new bootstrap.Modal(document.getElementById('modal-leave-detail')).show();
+}
+
+// Withdraw a still-pending leave request. The server re-checks ownership and
+// status, so this button is a convenience, not the security boundary.
+function cancelLeaveRequest(btn) {
+    var id = parseInt(btn.dataset.id, 10);
+    if (!id) return;
+    Swal.fire({
+        title: 'Cancel this leave request?',
+        text: 'It will be withdrawn and the days become available again.',
+        icon: 'warning', showCancelButton: true,
+        confirmButtonText: 'Yes, cancel it', confirmButtonColor: '#dc3545',
+        cancelButtonText: 'Keep it'
+    }).then(function (res) {
+        if (!res.isConfirmed) return;
+        btn.disabled = true;
+        var body = new URLSearchParams({ action: 'cancel_leave_request', id: String(id) });
+        fetch('emp-portal-ajax.php', { method: 'POST', body: body })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                btn.disabled = false;
+                if (j && j.result) {
+                    var m = bootstrap.Modal.getInstance(document.getElementById('modal-leave-detail'));
+                    if (m) m.hide();
+                    Swal.fire({ icon: 'success', title: 'Cancelled', text: j.message, timer: 1400, showConfirmButton: false })
+                        .then(function () { location.reload(); });
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Could not cancel.' });
+                }
+            })
+            .catch(function () { btn.disabled = false; });
+    });
 }
 
 function prependLeaveRow(req) {
@@ -4584,6 +4674,9 @@ function renderDtrReview(res) {
             in: d.time_in, out: d.time_out,
             in_off: d.in_off || 0, out_off: d.out_off || 0,
             in_tip: d.in_tip || '', out_tip: d.out_tip || '',
+            // Scans the grace window set aside — marked on the Arrival cell so the
+            // employee sees the same "!N" the timekeeper does.
+            drop: d.drop || 0, drop_tip: d.drop_tip || '',
             // DTR_details.notes — 'note' here, not d.note, which the endpoint
             // uses for the rejection reason shown elsewhere in this view.
             note: d.dtr_note || '',
@@ -6060,6 +6153,10 @@ jQuery(function ($) {
             </div>
             <div class="modal-body" id="leave-detail-body"></div>
             <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-danger" id="lv-cancel-btn"
+                        style="display:none;" onclick="cancelLeaveRequest(this)">
+                    <i class="ri-close-circle-line me-1"></i>Cancel Request
+                </button>
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>

@@ -1,3 +1,14 @@
+<?php
+/**
+ * Departments — the payroll unit. Areas (the operating unit) sit under it and
+ * carry the approvers, so the columns below roll the area assignments up rather
+ * than reading users.department_id, which nothing has written since the leave
+ * chain moved to area_approver.
+ */
+$__stages = function_exists('leave_stages') ? leave_stages() : [];
+// HR approves for the whole hospital and is never stored per area/department.
+$__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin']));
+?>
 <div class="main-content">
     <div class="page-content">
         <div class="container-fluid">
@@ -24,48 +35,83 @@
                         </button>
                     </div>
                     <div class="card-body">
+                        <div class="alert alert-light border d-flex align-items-start" style="font-size:12px;">
+                            <i class="ri-information-line me-2 mt-1 text-primary"></i>
+                            <div>
+                                Approvers are assigned per <strong>area</strong>, not per department — the names below are
+                                every approver across this department's areas. Change them in
+                                <a href="area">Areas</a>.
+                            </div>
+                        </div>
                         <div class="table-responsive">
                             <table id="dept-table" class="table table-hover table-bordered align-middle">
                                 <thead class="table-dark">
                                     <tr>
                                         <th>Department Name</th>
-                                        <th class="text-center">Employees</th>
-                                        <th><i class="ri-shield-check-line me-1"></i>Head</th>
-                                        <th><i class="ri-user-star-line me-1"></i>Supervisor</th>
+                                        <th class="text-center" style="width:80px;">Areas</th>
+                                        <th class="text-center" style="width:90px;">Employees</th>
+                                        <?php foreach ($__assignable as $k => $s): ?>
+                                            <th><i class="<?= htmlspecialchars($s['icon']) ?> me-1"></i><?= htmlspecialchars($s['label']) ?></th>
+                                        <?php endforeach; ?>
                                         <th class="text-center" style="width:110px;">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php
+                                    $depts = [];
                                     $q = $conn->query("
-                                        SELECT d.*, COUNT(e.id) AS emp_count,
-                                            (SELECT GROUP_CONCAT(u.name SEPARATOR ', ') FROM users u WHERE u.department_id = d.id AND u.role = 8  AND u.status = 1) AS heads,
-                                            (SELECT GROUP_CONCAT(u.name SEPARATOR ', ') FROM users u WHERE u.department_id = d.id AND u.role = 10 AND u.status = 1) AS supervisors
+                                        SELECT d.id, d.name,
+                                               (SELECT COUNT(*) FROM area a WHERE a.department_id = d.id) AS area_count,
+                                               (SELECT GROUP_CONCAT(a.name ORDER BY a.name SEPARATOR ', ') FROM area a WHERE a.department_id = d.id) AS area_names,
+                                               (SELECT COUNT(*) FROM employee e WHERE e.department_id = d.id AND e.status = 1) AS emp_count
                                         FROM department d
-                                        LEFT JOIN employee e ON e.department_id = d.id AND e.status = 1
-                                        GROUP BY d.id ORDER BY d.name ASC
+                                        ORDER BY d.name ASC
                                     ");
-                                    if ($q) while ($row = $q->fetch_assoc()):
+                                    while ($q && ($row = $q->fetch_assoc())) $depts[(int)$row['id']] = $row;
+
+                                    // One query for every approver in the hospital, rolled up department →
+                                    // stage → distinct people. A head of three wards in the same department
+                                    // is one name here, not three.
+                                    $byDept = [];
+                                    $aq = $conn->query("
+                                        SELECT a.department_id, ap.stage, u.name
+                                        FROM area_approver ap
+                                        JOIN area a ON a.id = ap.area_id
+                                        JOIN users u ON u.id = ap.user_id AND u.status = 1
+                                        ORDER BY u.name ASC
+                                    ");
+                                    while ($aq && ($r = $aq->fetch_assoc())) {
+                                        $d = (int)$r['department_id'];
+                                        if (!in_array($r['name'], $byDept[$d][$r['stage']] ?? [], true)) {
+                                            $byDept[$d][$r['stage']][] = $r['name'];
+                                        }
+                                    }
+
+                                    foreach ($depts as $did => $row):
+                                        $mine = $byDept[$did] ?? [];
                                     ?>
                                     <tr>
-                                        <td><?= htmlspecialchars($row['name']) ?></td>
+                                        <td class="fw-semibold"><?= htmlspecialchars($row['name']) ?></td>
                                         <td class="text-center">
-                                            <span class="badge bg-success rounded-pill"><?= $row['emp_count'] ?></span>
+                                            <span class="badge bg-primary-subtle text-primary rounded-pill"
+                                                  title="<?= htmlspecialchars($row['area_names'] ?? 'No areas yet') ?>"><?= (int)$row['area_count'] ?></span>
                                         </td>
-                                        <td>
-                                            <?php if (!empty($row['heads'])): ?>
-                                                <span class="fw-semibold"><i class="ri-shield-check-line me-1 text-success"></i><?= htmlspecialchars($row['heads']) ?></span>
-                                            <?php else: ?>
-                                                <span class="text-muted" style="font-size:12px;"><i class="ri-user-unfollow-line me-1"></i>Not assigned</span>
-                                            <?php endif; ?>
+                                        <td class="text-center">
+                                            <span class="badge bg-success rounded-pill"><?= (int)$row['emp_count'] ?></span>
                                         </td>
-                                        <td>
-                                            <?php if (!empty($row['supervisors'])): ?>
-                                                <span class="fw-semibold"><i class="ri-user-star-line me-1 text-success"></i><?= htmlspecialchars($row['supervisors']) ?></span>
-                                            <?php else: ?>
-                                                <span class="text-muted" style="font-size:12px;"><i class="ri-user-unfollow-line me-1"></i>Not assigned</span>
-                                            <?php endif; ?>
-                                        </td>
+                                        <?php foreach ($__assignable as $k => $s):
+                                            $people = $mine[$k] ?? [];
+                                            // Long lists are trimmed in the cell; the full roll-up stays in the tooltip.
+                                            $shown  = array_slice($people, 0, 3);
+                                            $extra  = count($people) - count($shown); ?>
+                                            <td style="font-size:12px;" title="<?= htmlspecialchars(implode(', ', $people)) ?>">
+                                                <?php if ($people): ?>
+                                                    <i class="<?= htmlspecialchars($s['icon']) ?> me-1 text-success"></i><?= htmlspecialchars(implode(' / ', $shown)) ?><?php if ($extra > 0): ?><span class="text-muted"> +<?= $extra ?> more</span><?php endif; ?>
+                                                <?php else: ?>
+                                                    <span class="text-muted"><i class="ri-subtract-line me-1"></i><?= empty($s['optional']) ? 'Not assigned' : 'Skipped' ?></span>
+                                                <?php endif; ?>
+                                            </td>
+                                        <?php endforeach; ?>
                                         <td class="text-center">
                                             <button class="btn btn-sm btn-outline-primary"
                                                 onclick="editDept(<?= $row['id'] ?>, '<?= htmlspecialchars(addslashes($row['name'])) ?>')">
@@ -77,7 +123,7 @@
                                             </button> -->
                                         </td>
                                     </tr>
-                                    <?php endwhile; ?>
+                                    <?php endforeach; ?>
                                 </tbody>
                             </table>
                         </div>
@@ -122,7 +168,7 @@ document.addEventListener('DOMContentLoaded', function () {
         jQuery('#dept-table').DataTable({
             order: [[0, 'asc']],
             pageLength: 10,
-            columnDefs: [{ orderable: false, targets: 4 }],
+            columnDefs: [{ orderable: false, targets: -1 }],
             language: { search: '', searchPlaceholder: 'Search department…' }
         });
     }

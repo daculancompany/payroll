@@ -1377,7 +1377,11 @@ async function loadPage(keepSel) {
             + (st.has ? '&has=' + st.has : '')
             + (st.act ? '&act=' + st.act : '')
             + (st.erv !== '' ? '&erv=' + st.erv : '');
-        const r = await fetch(u);
+        // no-store: the URL is stable per filter set, so without it the browser
+        // could replay a payload captured before the last recompute — the sheet
+        // would keep showing the old shift's Arrival/Departure after a schedule
+        // change had already been applied in the database.
+        const r = await fetch(u, { cache: 'no-store' });
         const j = await r.json();
         if (seq !== st.seq) return;
         if (!j.result) throw new Error(j.message || 'Failed');
@@ -1393,7 +1397,7 @@ async function loadPage(keepSel) {
 
 async function refreshBatch() {
     try {
-        const r = await fetch(`dtr-employee-server.php?action=summary&id=${DDTR_ID}`);
+        const r = await fetch(`dtr-employee-server.php?action=summary&id=${DDTR_ID}`, { cache: 'no-store' });
         const j = await r.json();
         if (!j.result) return 0;
         const s = j.summary;
@@ -2211,21 +2215,19 @@ document.getElementById('form-change-sched').addEventListener('submit', async fu
             data: { detail_id: recId, schedule_id: sid, is_rest_day: rest ? 1 : 0, note: note },
         });
         if (!(resp && resp.result)) throw new Error((resp && resp.message) || 'Update failed');
-        hit.r.wh = resp.work_hours; hit.r.ot = resp.overtime; hit.r.ut = resp.undertime; hit.r.late = resp.late;
-        hit.r.status = resp.status;
-        hit.r.schedule_id = resp.schedule_id;
-        hit.r.is_rest_day = resp.is_rest_day;
-        if (resp.repending) hit.r.note = '';
-        // The Form 48 sheet's "D" (Day off) badge reads e.marks[date] — a
-        // separate day-level snapshot from the record itself — so it stays
-        // stale on reload unless patched here too.
-        hit.e.marks = hit.e.marks || {};
-        const dayMarks = (hit.e.marks[hit.date] || []).filter(m => m.k !== 'off');
-        if (resp.is_rest_day) dayMarks.push({ k: 'off' });
-        if (dayMarks.length) hit.e.marks[hit.date] = dayMarks; else delete hit.e.marks[hit.date];
-        st.emps.forEach(recomputeEmp);
-        rerenderAll();
         bootstrap.Modal.getInstance($id('modal-change-sched'))?.hide();
+        // Refetch instead of hand-patching the loaded record. The previous code
+        // updated the figures (wh/ot/ut/late) and the rest-day badge, but never
+        // e.days[date] — the Form 48 cells — so Arrival/Departure went on naming
+        // the punches paired under the PREVIOUS shift while the hours printed
+        // beside them came from the new one: 5:40 AM shown next to a 4.68 late
+        // that was measured from 5:40 PM. The schedule chip drifted the same way,
+        // since only 'off' marks were patched and the 'sched' mark was left alone.
+        // Those cells are derived server-side (including the early-punch filter
+        // and the day-offset markers), so re-deriving them here would duplicate
+        // exactly the logic that drifted out of step in the first place.
+        await loadPage(st.sel);
+        refreshBatch();          // status may have flipped back to Pending
         toast(resp.message || 'Schedule updated');
     } catch (err) {
         Swal.fire({ icon: 'error', title: 'Error!', text: err.message || 'Update failed.' });
@@ -2315,7 +2317,7 @@ function refreshChat() {
     if (!hit) return;
     const icon = $id('ddv-chat-refresh');
     icon.classList.add('spin');
-    fetch(`dtr-employee-server.php?action=rec_msgs&id=${DDTR_ID}&rec=${st.chatRec}`)
+    fetch(`dtr-employee-server.php?action=rec_msgs&id=${DDTR_ID}&rec=${st.chatRec}`, { cache: 'no-store' })
         .then(r => r.json())
         .then(j => {
             if (j && j.result) {
@@ -2455,7 +2457,7 @@ if (ervChips) ervChips.addEventListener('click', ev => {
 // Options only contain values present in this batch (action=filter_opts)
 async function loadFilterOpts() {
     try {
-        const r = await fetch(`dtr-employee-server.php?action=filter_opts&id=${DDTR_ID}`);
+        const r = await fetch(`dtr-employee-server.php?action=filter_opts&id=${DDTR_ID}`, { cache: 'no-store' });
         const j = await r.json();
         if (!j.result) return;
         const fill = (id, rows, label) => {
@@ -2499,7 +2501,7 @@ async function printAll() {
         const all = [];
         let total = Infinity;
         for (let off = 0; off < total; off += 100) {
-            const r = await fetch(`dtr-employee-server.php?action=docs&id=${DDTR_ID}&offset=${off}&limit=100`);
+            const r = await fetch(`dtr-employee-server.php?action=docs&id=${DDTR_ID}&offset=${off}&limit=100`, { cache: 'no-store' });
             const j = await r.json();
             if (!j.result) throw new Error(j.message || 'Failed');
             total = j.total;

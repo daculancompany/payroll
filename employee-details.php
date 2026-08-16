@@ -16,11 +16,12 @@ $emp_readonly = !can_edit('employee-details');
 
 // Prepare the SQL statement to prevent SQL injection
 $stmt = $conn->prepare("
-    SELECT e.*, p.name AS pname, c.clasification, d.name AS dept_name
+    SELECT e.*, p.name AS pname, c.clasification, d.name AS dept_name, a.name AS area_name
     FROM employee e
     INNER JOIN position p ON e.position_id = p.id
     INNER JOIN clasification c ON e.clasification_id = c.id
     LEFT JOIN department d ON e.department_id = d.id
+    LEFT JOIN area a ON e.area_id = a.id
     WHERE e.id = ?
 ");
 
@@ -446,12 +447,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             <div class="detail-value"><?= !empty($dept_name) ? esc($dept_name) : '<span class="text-muted">—</span>' ?></div>
                                         </div>
                                         <div class="detail-item">
-                                            <div class="detail-label">Classification</div>
-                                            <div class="detail-value">
-                                                <span class="badge" style="display:inline-flex;align-items:center;gap:2px;<?= clasif_badge_style($clasification) ?>">
-                                                    <i class="mdi mdi-circle-medium"></i><?= esc($clasification) ?>
-                                                </span>
-                                            </div>
+                                            <div class="detail-label">Area</div>
+                                            <div class="detail-value"><?= !empty($area_name) ? esc($area_name) : '<span class="text-muted">—</span>' ?></div>
                                         </div>
                                     </div>
                                 </div>
@@ -1431,8 +1428,8 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <?php
                                                 $leave_year = leave_current_year();
                                                 $cr = $conn->query("
-                                                    SELECT lt.id, lt.name, lt.days_allowed,
-                                                        COALESCE(c.credits, lt.days_allowed) AS credits,
+                                                    SELECT lt.id, lt.name, lt.days_allowed, lt.no_limit,
+                                                        COALESCE(c.credits, 0) AS credits,
                                                         COALESCE(u.used, 0) AS used
                                                     FROM leave_types lt
                                                     LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = " . $emp_id . " AND c.year = " . $leave_year . "
@@ -1451,7 +1448,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     $rem   = $avail - $used;
                                                 ?>
                                                 <tr>
-                                                    <td><b><i class="ri-calendar-event-line me-1 text-success"></i><?= esc($c['name']) ?></b></td>
+                                                    <td><b><i class="ri-calendar-event-line me-1 text-success"></i><?= esc($c['name']) ?></b>
+                                                        <?php if ((int)$c['no_limit'] === 1): ?>
+                                                            <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size:9.5px;" title="Filing is never blocked by balance for this type">No limit</span>
+                                                        <?php endif; ?>
+                                                    </td>
                                                     <td class="text-center">
                                                         <?php if ($can_edit_credits && $emp_leave_eligible): ?>
                                                             <div class="input-group input-group-sm" style="max-width:220px;margin:0 auto;">

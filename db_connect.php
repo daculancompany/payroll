@@ -627,8 +627,38 @@ if (!defined('DTR_LOW_ATTENDANCE_PCT')) {
 // (Action::save_biometric_attendance) and recompute (dtr_compute_day) —
 // the two must agree, or a Recompute would restate a row ingestion just
 // paired the other way.
+// Since 2026-08-16 this is only the FALLBACK: the live value comes from
+// pay_settings via dtr_early_grace_hours() below, so it can be tuned without a
+// code edit. The constant still answers when the row is missing (fresh install,
+// PHP deployed before migrations/2026_08_dtr_early_grace_setting.sql).
 if (!defined('DTR_EARLY_GRACE_HOURS')) {
     define('DTR_EARLY_GRACE_HOURS', 4);
+}
+// Live grace window, read once per request. Every caller MUST use this rather
+// than the constant, or ingestion and recompute would pair the same punches
+// differently the moment an admin changes the setting.
+//
+// Clamped to 0–24: a negative window would discard punches made AFTER the shift
+// started (leaving days with no time-in at all), and beyond 24h the filter can
+// no longer distinguish today's early arrival from yesterday's punches.
+// A missing, non-numeric, or out-of-range value falls back to the constant.
+if (!function_exists('dtr_early_grace_hours')) {
+    function dtr_early_grace_hours(): float
+    {
+        static $hrs = null;
+        if ($hrs !== null) return $hrs;
+        $hrs = (float) DTR_EARLY_GRACE_HOURS;
+        global $conn;
+        if (!($conn instanceof mysqli)) return $hrs;
+        $r = $conn->query("SELECT setting_value FROM pay_settings
+                            WHERE setting_key = 'dtr_early_grace_hours' LIMIT 1");
+        $row = $r ? $r->fetch_assoc() : null;
+        if ($row !== null && is_numeric($row['setting_value'])) {
+            $v = (float) $row['setting_value'];
+            if ($v >= 0 && $v <= 24) $hrs = $v;
+        }
+        return $hrs;
+    }
 }
 // Default work schedule auto-assigned to every employee that has none —
 // applied to new employees (save_employee) and imports (import_employee).
@@ -1569,7 +1599,7 @@ if (!function_exists('dtr_compute_day')) {
         // Action::save_biometric_attendance, or a Recompute would restate a
         // row differently than ingestion originally paired it.
         if ($schedule && $n) {
-            $grace = strtotime($date . ' ' . $schedule['start_time']) - DTR_EARLY_GRACE_HOURS * 3600;
+            $grace = strtotime($date . ' ' . $schedule['start_time']) - dtr_early_grace_hours() * 3600;
             $kept  = array_values(array_filter($log_ts, function ($t) use ($grace) { return $t >= $grace; }));
             if ($kept) {
                 $in_ts  = $kept[0];
@@ -1975,6 +2005,21 @@ if (!function_exists('can_edit_leave_credits')) {
     }
 }
 
+// Roles allowed to run the year-end rollover — a bulk, all-employee operation,
+// so it's kept separate from the per-employee credit edit right above.
+if (!defined('LEAVE_ROLLOVER_ROLES')) {
+    define('LEAVE_ROLLOVER_ROLES', [1, 9]);   // Admin + HR
+}
+
+if (!function_exists('can_run_leave_rollover')) {
+    /** May this role run the year-end rollover? Defaults to the logged-in user. */
+    function can_run_leave_rollover($role = null): bool
+    {
+        $role = (int) ($role !== null ? $role : ($_SESSION['login_role'] ?? 0));
+        return in_array($role, LEAVE_ROLLOVER_ROLES, true);
+    }
+}
+
 if (!function_exists('leave_eligibility_from')) {
     function leave_eligibility_from($classification, $override): bool
     {
@@ -2198,6 +2243,37 @@ if (!function_exists('leave_stages')) {
         );
         while ($r && ($x = $r->fetch_assoc())) $out[] = (int) $x['id'];
         return $out;
+    }
+
+    /**
+     * Display names of the people who may decide $stageKey for this employee —
+     * the same set leave_stage_approver_ids resolves, turned into labels so a
+     * request still in the queue can say WHO it is waiting on instead of just
+     * "pending". A slot may hold two co-approvers; both names come back and
+     * either of them may act, so the caller shows them side by side.
+     *
+     * Memoised per (stage, employee): the timeline renders one of these for
+     * every pending stage of every row on the leaves list, and the underlying
+     * lookup costs up to three queries each time.
+     */
+    function leave_stage_approver_names(mysqli $db, string $stageKey, int $employee_id): array
+    {
+        static $memo = [];
+        $mk = $stageKey . '|' . (int) $employee_id;
+        if (isset($memo[$mk])) return $memo[$mk];
+
+        $ids = leave_stage_approver_ids($db, $stageKey, (int) $employee_id);
+        if ($ids === []) return $memo[$mk] = [];
+
+        $names = [];
+        $r = $db->query(
+            "SELECT name FROM users WHERE id IN (" . implode(',', array_map('intval', $ids)) . ") ORDER BY name"
+        );
+        while ($r && ($x = $r->fetch_assoc())) {
+            $n = trim((string) $x['name']);
+            if ($n !== '') $names[] = $n;
+        }
+        return $memo[$mk] = $names;
     }
 
     /** Does anyone (other than the requester) exist to decide $stageKey? */

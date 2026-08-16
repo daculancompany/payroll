@@ -155,13 +155,37 @@ switch ($action) {
 
         $days = [];
         $stampByDate = [];   // 'Y-m-d' => DTR_details.schedule_id
-        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes, schedule_id
+        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes, schedule_id, sched_start
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
         $st->bind_param('ii', $ddtr_id, $emp_id);
         $st->execute();
         $res = $st->get_result();
         while ($d = $res->fetch_assoc()) {
             $logs = json_decode($d['logs'], true) ?: [];
+            // The stored JSON is in insertion order, not clock order (a repaired or
+            // back-filled punch lands at the end), so the "first" entry is not
+            // necessarily the earliest. dtr_compute_day sorts before pairing; this
+            // must too, or the portal names a different IN than the hours were
+            // computed from.
+            usort($logs, function ($a, $b) {
+                return strtotime($a['dateTime']) <=> strtotime($b['dateTime']);
+            });
+            // Same early-punch filter as dtr_compute_day and the admin sheet, against
+            // the shift stamped on the row. Without it the portal showed an employee a
+            // time-in that their own hours were never computed from.
+            $dropped  = 0;
+            $allLogs  = $logs;
+            if (!empty($d['sched_start']) && $logs) {
+                $cut  = strtotime(date('Y-m-d', strtotime($d['date_time'])) . ' ' . $d['sched_start'])
+                      - dtr_early_grace_hours() * 3600;
+                $kept = array_values(array_filter($logs, function ($lg) use ($cut) {
+                    return strtotime($lg['dateTime']) >= $cut;
+                }));
+                if ($kept) {                       // mirrors dtr_compute_day's own fallback
+                    $dropped = count($logs) - count($kept);
+                    $logs    = $kept;
+                }
+            }
             $tIn = $tOut = '';
             // Day offsets: a night shift's out is filed under the day the shift
             // STARTED, so the sheet flags it "+1" rather than showing a bare
@@ -179,13 +203,24 @@ switch ($action) {
             }
             // Full punch list so the detail view can mirror the admin DTR card
             // (IN / OUT / #n chips + biometric-vs-manual marker per punch).
+            // Every scan stays listed — this is the employee's own audit trail, so a
+            // punch that was set aside must still be visible, just not labelled IN.
+            // IN/OUT come from the KEPT set, so the labels name the two punches the
+            // hours were actually computed from.
             $punches = [];
-            $lc = count($logs);
-            foreach ($logs as $li => $lg) {
+            $keptDt  = array_column($logs, 'dateTime');
+            $lc      = count($keptDt);
+            foreach ($allLogs as $lg) {
+                $ki = array_search($lg['dateTime'], $keptDt, true);
+                if ($ki === false)         $label = '—';
+                elseif ($ki === 0)         $label = 'IN';
+                elseif ($ki === $lc - 1)   $label = 'OUT';
+                else                       $label = '#' . ($ki + 1);
                 $punches[] = [
-                    'label' => ($li === 0) ? 'IN' : (($li === $lc - 1) ? 'OUT' : '#' . ($li + 1)),
-                    'time'  => date('g:i A', strtotime($lg['dateTime'])),
-                    'bio'   => (($lg['type'] ?? '') === 'bio'),
+                    'label'    => $label,
+                    'time'     => date('g:i A', strtotime($lg['dateTime'])),
+                    'bio'      => (($lg['type'] ?? '') === 'bio'),
+                    'excluded' => $ki === false,
                 ];
             }
             $days[] = [
@@ -199,6 +234,12 @@ switch ($action) {
                 'out_off'    => $outOff,
                 'in_tip'     => $inOff  > 0 ? date('D, M j, Y · g:i A', strtotime($logs[0]['dateTime'])) : '',
                 'out_tip'    => $outOff > 0 ? date('D, M j, Y · g:i A', strtotime(end($logs)['dateTime'])) : '',
+                'drop'       => $dropped,
+                'drop_tip'   => $dropped > 0
+                    ? $dropped . ' earlier scan' . ($dropped > 1 ? 's' : '') . ' excluded — more than '
+                      . rtrim(rtrim(number_format(dtr_early_grace_hours(), 1), '0'), '.')
+                      . ' hrs before the ' . date('g:i A', strtotime($d['sched_start'])) . ' shift start.'
+                    : '',
                 'work_hours' => (float) $d['work_hours'],
                 'overtime'   => (float) $d['overtime'],
                 'undertime'  => (float) $d['undertime'],
@@ -600,8 +641,9 @@ switch ($action) {
         $half_on    = in_array($_POST['half_on'] ?? '', ['first', 'last'], true) ? $_POST['half_on'] : 'first';
         $dates_raw  = trim($_POST['dates'] ?? '');
 
-        $lt_check = $lt_id > 0 ? $conn->query("SELECT is_paid FROM leave_types WHERE id = $lt_id LIMIT 1")->fetch_assoc() : null;
+        $lt_check = $lt_id > 0 ? $conn->query("SELECT is_paid, no_limit FROM leave_types WHERE id = $lt_id LIMIT 1")->fetch_assoc() : null;
         $is_lwop_req = $lt_check && $lt_check['is_paid'] == 0;
+        $is_uncapped_req = $lt_check && $lt_check['no_limit'] == 1;
 
         $elig = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c, e.leave_override FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = $emp_id")->fetch_assoc();
         $eligible = $elig && leave_eligibility_from($elig['c'], $elig['leave_override']);
@@ -662,13 +704,15 @@ switch ($action) {
             break;
         }
 
-        // Balance guard (paid leave only — LWOP consumes no credits): remaining
-        // counts approved AND still-pending requests so filings can't stack past
-        // the employee's credits.
-        if (!$is_lwop_req) {
+        // Balance guard (paid leave only — LWOP and no_limit types, e.g. Sick
+        // Leave, consume no credits / are never blocked): remaining counts
+        // approved AND still-pending requests so filings can't stack past the
+        // employee's credits. Credits with no explicit HR-set row for the year
+        // default to 0 — an employee isn't entitled to a balance until HR sets one.
+        if (!$is_lwop_req && !$is_uncapped_req) {
             $ly = leave_current_year();
             $balq = $conn->query("
-                SELECT COALESCE(c.credits, lt.days_allowed) - COALESCE(u.used, 0) AS remaining
+                SELECT COALESCE(c.credits, 0) - COALESCE(u.used, 0) AS remaining
                 FROM leave_types lt
                 LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id AND c.year = $ly
                 LEFT JOIN (
@@ -769,6 +813,53 @@ switch ($action) {
                 'attachment' => $lv_att,
                 'status' => 0, 'sec_status' => 0, 'sup_status' => 0, 'hr_status' => 0, 'admin_status' => 0,
             ],
+        ]);
+        break;
+    }
+
+    // ── Leave: employee withdraws their OWN still-pending request ──
+    // Mirrors the admin's delete_leave_request rule: only a request that is not
+    // yet fully approved may be removed. An APPROVED leave already counts toward
+    // balances and payroll, so deleting it would silently rewrite history — that
+    // one has to be rejected by an approver instead. Cancelling frees the days
+    // back immediately, since the filing guard counts pending against the balance.
+    case 'cancel_leave_request': {
+        $cid = (int) ($_POST['id'] ?? 0);
+        if ($cid <= 0) { echo json_encode(['result' => false, 'message' => 'Invalid request.']); break; }
+
+        // Ownership check — an employee may only ever cancel their own request.
+        $crow = $conn->query("SELECT id, employee_id, status, leave_type_id, duration
+                              FROM leave_requests WHERE id = $cid LIMIT 1");
+        $crow = $crow ? $crow->fetch_assoc() : null;
+        if (!$crow || (int) $crow['employee_id'] !== (int) $emp_id) {
+            echo json_encode(['result' => false, 'message' => 'Leave request not found.']);
+            break;
+        }
+        if ((int) $crow['status'] === 1) {
+            echo json_encode(['result' => false, 'message' => 'This leave is already approved and counted in payroll. Ask HR to reject it instead.']);
+            break;
+        }
+        if ((int) $crow['status'] === 2) {
+            echo json_encode(['result' => false, 'message' => 'This leave was already rejected.']);
+            break;
+        }
+
+        if (!$conn->query("DELETE FROM leave_requests WHERE id = $cid AND employee_id = " . (int) $emp_id . " AND status = 0")) {
+            echo json_encode(['result' => false, 'message' => 'Could not cancel this request.']);
+            break;
+        }
+
+        // Recount the pending badge the same way the page load does.
+        $lpc = 0;
+        $pq = $conn->query("SELECT COUNT(*) c FROM leave_requests WHERE employee_id = " . (int) $emp_id . " AND status = 0");
+        if ($pq) $lpc = (int) $pq->fetch_assoc()['c'];
+
+        echo json_encode([
+            'result' => true,
+            'message' => 'Leave request cancelled. The days are available again.',
+            'leave_pending_count' => $lpc,
+            'leave_type_id' => (int) $crow['leave_type_id'],
+            'duration' => (float) $crow['duration'],
         ]);
         break;
     }

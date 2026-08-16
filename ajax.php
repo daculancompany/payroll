@@ -569,6 +569,9 @@ if ($action == "save_leave_override") {
 if ($action == "run_leave_rollover") {
 	echo json_encode($crud->run_leave_rollover());
 }
+if ($action == "bulk_init_leave_credits") {
+	echo json_encode($crud->bulk_init_leave_credits());
+}
 
 // ── Calendar / Holidays ──
 if ($action == "save_calendar_event") {

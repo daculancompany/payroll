@@ -7,8 +7,11 @@
  * the same filters.
  *
  * Credits are tracked per calendar year in employee_leave_credits; a missing
- * row means the employee is simply on the leave type's default entitlement
- * (leave_types.days_allowed), which is what the balances editor assumes too.
+ * row means the employee has not been set up yet by HR/Admin for that type
+ * and year, so their credits default to 0 — leave_types.days_allowed is only
+ * shown as a reference figure, never assumed. `no_limit` types (e.g. Sick
+ * Leave) are flagged separately so the UI can show "Unlimited" instead of a
+ * hard 0 — filing is never blocked for those regardless of the credits figure.
  */
 require_once __DIR__ . '/../dept-scope.php';
 
@@ -53,7 +56,7 @@ if (!function_exists('lbr_data')) {
 
         // ── Leave types in scope (paid + active; credits only exist for these) ──
         $types = [];
-        $typeSql = "SELECT id, name, days_allowed, carryover, carryover_cap
+        $typeSql = "SELECT id, name, days_allowed, carryover, carryover_cap, no_limit
                     FROM leave_types WHERE status = 1 AND is_paid = 1"
                  . ($f['type'] ? " AND id = " . (int) $f['type'] : "")
                  . " ORDER BY name ASC";
@@ -65,6 +68,7 @@ if (!function_exists('lbr_data')) {
                 'days_allowed'  => (float) $t['days_allowed'],
                 'carryover'     => (int) $t['carryover'],
                 'carryover_cap' => $t['carryover_cap'] === null ? null : (float) $t['carryover_cap'],
+                'no_limit'      => (int) $t['no_limit'] === 1,
             ];
         }
 
@@ -128,7 +132,7 @@ if (!function_exists('lbr_data')) {
             $cells = [];
             $rowTot = ['credits' => 0.0, 'used' => 0.0, 'pending' => 0.0, 'remaining' => 0.0];
             foreach ($types as $tid => $t) {
-                $cr  = $credits[$eid][$tid] ?? $t['days_allowed'];
+                $cr  = $credits[$eid][$tid] ?? 0.0;
                 if (!$eligible) $cr = 0.0;                       // shown for context only
                 $us  = $used[$eid][$tid] ?? 0.0;
                 $pd  = $pending[$eid][$tid] ?? 0.0;

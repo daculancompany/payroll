@@ -216,6 +216,25 @@
     border-top-color: #223330;
 }
 
+/* "!N" on an Arrival whose earlier scans were excluded by the grace window.
+   Red rather than the "+1" amber: "+1" explains a punch that IS shown, this
+   one warns that punches are NOT. Shares the nextday tooltip geometry. */
+.dtrf48-table sup.dropped {
+    position: relative; top: -.4em; margin-left: 2px; padding: 0 3px; border-radius: 4px;
+    background: #fee2e2; color: #b91c1c; border: 1px solid #f3bcbc;
+    font-family: Arial, sans-serif; font-size: 8px; font-weight: 700; cursor: help;
+    vertical-align: baseline;
+}
+.dtrf48-table sup.dropped[data-tip]:hover::after,
+.dtrf48-table sup.dropped[data-tip]:focus::after {
+    left: 50%; bottom: calc(100% + 7px); transform: translateX(-50%);
+}
+.dtrf48-table sup.dropped[data-tip]:hover::before,
+.dtrf48-table sup.dropped[data-tip]:focus::before {
+    left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%);
+    border-top-color: #223330;
+}
+
 /* ── Shift summary strip (under the table) ─────────────────────────────
    Days actually worked per shift. Prints too — on paper it is the quickest
    answer to "what pattern did this person work this cutoff?" — but the chips

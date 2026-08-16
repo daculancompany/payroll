@@ -27,6 +27,17 @@ if (empty($_SESSION['is_login'])) {
 
 include 'db_connect.php';
 require_page_access('dtr-details', 'json');   // same boundary as the DTR screens
+
+// Every action here is a GET with a stable URL (action + batch id + filters), and
+// the responses carried no cache headers at all — so a browser was free to apply
+// heuristic caching and replay an old payload. That is how a schedule change plus
+// a Recompute could leave the sheet still showing the previous shift's Arrival and
+// Departure: the figures had already been rewritten in the database, but the page
+// was reading a JSON response captured before the change.
+// This data is per-user, permission-scoped and rewritten by every recompute, edit
+// and approval, so it must never be served from a cache.
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
 include_once 'component/dtr_employee_card.php';
 
 $login_role = (int)($_SESSION['login_role'] ?? 0);
@@ -437,7 +448,7 @@ if ($action === 'docs') {
             $E = &$byEmp[$eid];
             $date = $row['attendance_date'];
             if (!isset($E['days'][$date])) {
-                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => '', 'sched_id' => null];
+                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => '', 'sched_id' => null, 'sched_start' => null];
                 $E['_logs'][$date] = [];
             }
             $D = &$E['days'][$date];
@@ -453,6 +464,12 @@ if ($action === 'docs') {
             // the roster says now — see the marks loop below.
             if ($D['sched_id'] === null && !empty($row['schedule_id'])) {
                 $D['sched_id'] = (int) $row['schedule_id'];
+            }
+            // Stamped shift start, needed below to reproduce the SAME early-punch
+            // filter dtr_compute_day used, so the Arrival/Departure cells name the
+            // punches the figures were actually computed from.
+            if ($D['sched_start'] === null && !empty($row['sched_start'])) {
+                $D['sched_start'] = $row['sched_start'];
             }
             $D['wh']   += (float)$row['work_hours'];
             $D['ot']   += (float)$row['overtime'];
@@ -664,6 +681,27 @@ if ($action === 'docs') {
             foreach ($E['days'] as $date => $d) {
                 $logs = $E['_logs'][$date];
                 sort($logs);
+                // Mirror dtr_compute_day's early-punch filter EXACTLY, against the
+                // shift STAMPED on the row (never the live roster — the figures are
+                // frozen, so the live shift may have moved on since). Without this the
+                // sheet printed a discarded tap as the Arrival: a 1PM–9PM day whose
+                // 5:40 AM punch was dropped still showed "5:40 AM" while `late` was
+                // measured from the 5:40 PM punch that actually paired. That row
+                // contradicted itself and survived every Recompute, because these
+                // cells are rendered from raw logs at display time and are never
+                // stored — nothing for a recompute to correct.
+                // The `if ($kept)` guard reproduces dtr_compute_day's own fallback:
+                // when EVERY punch precedes the cutoff the filter is skipped and all
+                // punches stand, so the two sides agree in that case too.
+                $dropped = 0;
+                if (!empty($d['sched_start']) && $logs) {
+                    $cut  = strtotime($date . ' ' . $d['sched_start']) - dtr_early_grace_hours() * 3600;
+                    $kept = array_values(array_filter($logs, function ($t) use ($cut) { return $t >= $cut; }));
+                    if ($kept) {
+                        $dropped = count($logs) - count($kept);
+                        $logs    = $kept;
+                    }
+                }
                 $f = function ($ts) { return date('g:i', $ts); };
                 // Single-mode columns are just Arrival/Departure, so unlike the
                 // positional A.M./P.M. grid the cell itself must say which half
@@ -689,6 +727,15 @@ if ($action === 'docs') {
                 $tip = function ($ts) { return date('D, M j, Y · g:i A', $ts); };
                 if ($cells['in_off']  > 0) $cells['in_tip']  = $tip($logs[0]);
                 if ($cells['out_off'] > 0) $cells['out_tip'] = $tip($logs[$n - 1]);
+                // Excluded early taps are NOT hidden — the sheet is an audit
+                // document, so it has to admit the punches exist and say why they
+                // were left out, rather than silently printing a shorter day.
+                if ($dropped > 0) {
+                    $cells['drop']     = $dropped;
+                    $cells['drop_tip'] = $dropped . ' earlier scan' . ($dropped > 1 ? 's' : '')
+                        . ' excluded — more than ' . rtrim(rtrim(number_format(dtr_early_grace_hours(), 1), '0'), '.')
+                        . ' hrs before the ' . date('g:i A', strtotime($d['sched_start'])) . ' shift start.';
+                }
                 // Positional mapping, the way the paper form is filled:
                 // in / lunch-out / lunch-in / out. Odd counts fall back on the
                 // clock: a middle log before 1 PM is the lunch-out, after is the

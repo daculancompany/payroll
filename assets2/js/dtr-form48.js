@@ -37,19 +37,31 @@
     // belongs to. An overnight shift's out is filed under the day the shift
     // STARTED, so an unmarked "6:10" on the 29th looks like the employee left
     // twelve hours before arriving. The marker carries the real date on hover.
-    function punch(txt, off, iso, tip) {
+    function punch(txt, off, iso, tip, drop, dropTip) {
         if (!txt) return '';
         off = Number(off || 0);
-        if (off <= 0) return esc(txt);
-        // Line 1 states the fact, line 2 gives the full stamp the cell can't show
-        // — the sheet prints "6:10" with no AM/PM, which is the whole ambiguity.
-        var day = off === 1 ? 'Next day' : off + ' days later';
-        // tabindex: on a phone there is no hover, so the marker has to be
-        // focusable for a tap to reveal the tooltip.
-        return esc(txt)
-            + '<sup class="nextday" tabindex="0" role="note" data-tip="'
-            + esc(day + ' — punched after midnight') + '\n'
-            + esc(tip || fmtDay(iso, off) + ' · ' + txt) + '">+' + off + '</sup>';
+        var out = esc(txt);
+        if (off > 0) {
+            // Line 1 states the fact, line 2 gives the full stamp the cell can't show
+            // — the sheet prints "6:10" with no AM/PM, which is the whole ambiguity.
+            var day = off === 1 ? 'Next day' : off + ' days later';
+            // tabindex: on a phone there is no hover, so the marker has to be
+            // focusable for a tap to reveal the tooltip.
+            out += '<sup class="nextday" tabindex="0" role="note" data-tip="'
+                 + esc(day + ' — punched after midnight') + '\n'
+                 + esc(tip || fmtDay(iso, off) + ' · ' + txt) + '">+' + off + '</sup>';
+        }
+        // Scans excluded by the early-arrival grace ride on the Arrival cell. The
+        // figures were computed without them, so the sheet must show they were set
+        // aside — otherwise a day that silently lost its real time-in reads as if
+        // the remaining punch were the whole story.
+        drop = Number(drop || 0);
+        if (drop > 0) {
+            out += '<sup class="dropped" tabindex="0" role="note" data-tip="'
+                 + esc(dropTip || (drop + ' earlier scan' + (drop > 1 ? 's' : '') + ' excluded'))
+                 + '">!' + drop + '</sup>';
+        }
+        return out;
     }
     var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     var DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -217,10 +229,11 @@
             });
             if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
             var times = ampm
-                ? '<td class="t-col">' + esc(d.am_in) + '</td><td class="t-col">' + esc(d.am_out) + '</td>'
+                ? '<td class="t-col">' + punch(d.am_in, 0, iso, '', d.drop, d.drop_tip) + '</td>'
+                  + '<td class="t-col">' + esc(d.am_out) + '</td>'
                   + '<td class="t-col">' + esc(d.pm_in) + '</td>'
                   + '<td class="t-col">' + punch(d.pm_out, d.out_off, iso, d.out_tip) + '</td>'
-                : '<td class="t-col">' + punch(d.in, d.in_off, iso, d.in_tip) + '</td>'
+                : '<td class="t-col">' + punch(d.in, d.in_off, iso, d.in_tip, d.drop, d.drop_tip) + '</td>'
                   + '<td class="t-col">' + punch(d.out, d.out_off, iso, d.out_tip) + '</td>';
             // Hovering the day number of a worked day tells the whole story of
             // that day: the shift it ran on, then whatever was written into

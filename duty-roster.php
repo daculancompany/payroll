@@ -403,9 +403,34 @@ table.dr-grid tbody tr:hover td { border-bottom-color:#d9d2ea; }
    dr-leaveclash — a SHIFT is planned on a day they are on approved leave.
    That nurse will not come in, the day reads as an absence against a shift
    nobody was ever going to work, and it surfaces in payroll weeks later. It
-   gets the loud treatment: hatching plus a corner flag. */
-.dr-cell.dr-onleave::before { content:""; position:absolute; left:0; bottom:0; width:100%; height:3px;
-                              background:repeating-linear-gradient(90deg,#b9a3e8 0 3px,transparent 3px 6px); }
+   gets the loud treatment: hatching plus a corner flag.
+
+   The on-leave mark is drawn by a real child <i class="dr-lv"> element rather
+   than a pseudo on the cell, because BOTH cell pseudos are already spoken for
+   on exactly the cells that can carry it: ::before is the centred rest moon /
+   empty dash, and ::after is the punched, locked, draft and rest-clash corner
+   markers. Owning its own element gives the leave stripe AND the suitcase a
+   pseudo each, and — the reason it changed — stops the old
+   `.dr-onleave::before` stripe from overwriting the moon on a rest day taken
+   during leave, which silently erased the rest marker on every such cell.
+   The glyph is defined once here, so the grid cell and the legend swatch (an
+   empty <i class="dr-lv"> in the same markup) cannot drift apart. */
+/* Tint only the otherwise-blank cell. A rest day (grey) and a rest+shift day
+   (orange) already say something with their background, and leave must not
+   repaint a state the planner reads colour-first. */
+.dr-cell.dr-empty.dr-onleave { background-color:#f7f4fd; }
+.dr-lv { position:absolute; inset:0; pointer-events:none; }
+/* Suitcase, top-centre: the one spot on the cell nothing else claims — the
+   corners are the punched print, the draft triangle, the lock and the rest
+   clash, the middle is the label (shift code / rest moon / empty dash) and the
+   bottom edge is the leave stripe below. The white halo is there for the same
+   reason the punched marker has one: on a rest+shift day this lands on that
+   state's orange, not on white. */
+.dr-lv::before { content:"\f1b9"; font-family:"remixicon"; position:absolute; left:50%; top:0;
+                 transform:translateX(-50%); font-size:9.5px; line-height:1; color:#6f4fbb;
+                 text-shadow:0 0 2px #fff, 0 0 3px #fff; }
+.dr-lv::after { content:""; position:absolute; left:0; bottom:0; width:100%; height:3px;
+                background:repeating-linear-gradient(90deg,#b9a3e8 0 3px,transparent 3px 6px); }
 .dr-cell.dr-leaveclash {
     background-image:repeating-linear-gradient(45deg,rgba(198,40,40,.20) 0 4px,transparent 4px 8px);
     box-shadow:inset 0 0 0 2px #c62828;
@@ -850,7 +875,10 @@ The DTR batch covering this day is approved. Changes here are refused — by the
 Saved but not published. Employees cannot see it, and it does not reach DTR figures until you press Publish.">
             <span class="lg-sw dr-cell dr-draft"></span> Draft</span>
         <span data-tip="On approved leave
-This person has approved leave that day. A rest day agrees with it; a shift planned on it is flagged as a clash.">
+Approved leave on this day, with nothing rostered against it — a free day or a rest day. Nothing to fix; it is here so a planner filling the column can see who is already away.">
+            <span class="lg-sw dr-cell dr-empty dr-onleave"><i class="dr-lv"></i></span> On leave</span>
+        <span data-tip="Leave clash
+A SHIFT is planned on a day this person already has approved leave. They will not come in, so the day lands in the DTR as an absence against a shift nobody was going to work. Change the shift to OFF, or cancel the leave.">
             <span class="lg-sw dr-cell dr-leaveclash"></span> Leave clash</span>
         <span data-tip="Rest clash
 Less than 8 hours between the end of the previous day's shift and the start of this one — a fatigue risk, not just a scheduling oddity.">

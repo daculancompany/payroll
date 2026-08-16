@@ -440,6 +440,7 @@ $(document).ready(function () {
         }
 
         var lv = leaveOf(empId, date);
+        var lvMark = '';   // suitcase marker, drawn as a child element (see .dr-lv in the CSS)
         if (lv) {
             if (v && v.s && !v.r) {
                 // A shift planned on approved leave — the one that costs money.
@@ -447,6 +448,7 @@ $(document).ready(function () {
                 title.push('CLASH: on ' + lv.name + (lv.half ? ' (half day)' : '') + ' this day');
             } else {
                 cls += ' dr-onleave';
+                lvMark = '<i class="dr-lv"></i>';
                 title.push('On ' + lv.name + (lv.half ? ' (half day)' : ''));
             }
         }
@@ -475,7 +477,7 @@ $(document).ready(function () {
         // bubble's bold heading and everything else — shift-on-file, clash
         // warnings, zone, draft, unsaved — reads as the detail block below it.
         return '<td class="' + cls + '" style="' + style + '" data-emp="' + empId + '" data-date="' + date
-             + '" data-tip="' + escAttr(title.join('\n')) + '">' + esc(label) + '</td>';
+             + '" data-tip="' + escAttr(title.join('\n')) + '">' + esc(label) + lvMark + '</td>';
     }
 
     // Native querySelector scoped to the employee's row, not a jQuery scan of

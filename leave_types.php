@@ -49,6 +49,9 @@
                                                 <span class="badge bg-secondary-subtle text-secondary border">Unlimited</span>
                                             <?php else: ?>
                                                 <span class="badge bg-success-subtle text-success border border-success-subtle fs-12"><?= (int)$row['days_allowed'] ?> day<?= (int)$row['days_allowed'] == 1 ? '' : 's' ?></span>
+                                                <?php if ((int)($row['no_limit'] ?? 0) === 1): ?>
+                                                    <div><span class="badge bg-info-subtle text-info border border-info-subtle mt-1" style="font-size:9.5px;" title="Filing is never blocked by balance">No limit</span></div>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-center">
@@ -129,7 +132,14 @@
                     <div class="mb-3" id="ltype-days-group">
                         <label class="form-label">Days Allowed (per year) <span class="text-danger">*</span></label>
                         <input type="number" min="0" step="1" class="form-control" id="ltype-days" name="days_allowed" placeholder="e.g. 15">
-                        <small class="text-muted">Set 0 for unlimited</small>
+                        <small class="text-muted">Reference figure used when initializing a new employee's balance. Each employee's actual credits are set per-employee in Leave Balances.</small>
+                    </div>
+                    <div class="mb-3" id="ltype-nolimit-group">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="ltype-nolimit" name="no_limit" value="1">
+                            <label class="form-check-label" for="ltype-nolimit"><b>No balance limit</b></label>
+                        </div>
+                        <small class="text-muted">Employees can always file this type even with 0 or unset credits (e.g. Sick Leave). Days are still tracked and reported — filing is just never blocked.</small>
                     </div>
                     <div class="mb-3" id="ltype-rollover-group">
                         <label class="form-label"><i class="ri-calendar-todo-line me-1"></i>Year-End Policy</label>
@@ -174,8 +184,9 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function toggleDaysAllowed(isPaid) {
-    // Days-allowed and the year-end policy only apply to PAID leave types.
+    // Days-allowed, the no-limit switch and the year-end policy only apply to PAID leave types.
     document.getElementById('ltype-days-group').style.display = isPaid ? '' : 'none';
+    document.getElementById('ltype-nolimit-group').style.display = isPaid ? '' : 'none';
     document.getElementById('ltype-rollover-group').style.display = isPaid ? '' : 'none';
 }
 
@@ -189,6 +200,7 @@ function resetLeaveTypeModal() {
     document.getElementById('form-leave-type').reset();
     document.getElementById('ltype-status').checked = true;
     document.getElementById('ltype-paid-yes').checked = true;
+    document.getElementById('ltype-nolimit').checked = false;
     document.getElementById('ltype-carryover').value = '0';
     toggleDaysAllowed(1);
     toggleCap();
@@ -201,6 +213,7 @@ function editLeaveType(row) {
     document.getElementById('ltype-days').value  = row.days_allowed;
     document.getElementById('ltype-desc').value  = row.description || '';
     document.getElementById('ltype-status').checked = (row.status == 1);
+    document.getElementById('ltype-nolimit').checked = (parseInt(row.no_limit ?? 0) === 1);
     document.getElementById('ltype-carryover').value = String(parseInt(row.carryover ?? 0));
     document.getElementById('ltype-cap').value = (row.carryover_cap === null || row.carryover_cap === undefined) ? '' : row.carryover_cap;
     const isPaid = parseInt(row.is_paid ?? 1);

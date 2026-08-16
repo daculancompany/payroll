@@ -218,8 +218,11 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
                                 <tr>
                                     <td>
                                         <b style="color:#4f3288;"><?= htmlspecialchars($t['name']) ?></b>
+                                        <?php if (!empty($t['no_limit'])): ?>
+                                            <span class="badge bg-info-subtle text-info border border-info-subtle" style="font-size:9px;">No limit</span>
+                                        <?php endif; ?>
                                         <div class="text-muted" style="font-size:10.5px;">
-                                            <?= lbr_fmt($t['days_allowed']) ?> day default ·
+                                            <?= lbr_fmt($t['days_allowed']) ?> day reference ·
                                             <?= $t['carryover'] ? 'Carry-over' . ($t['carryover_cap'] !== null ? ' (cap ' . lbr_fmt($t['carryover_cap']) . ')' : '') : 'Resets yearly' ?>
                                         </div>
                                     </td>
@@ -349,14 +352,15 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
                                 <td><?= htmlspecialchars($r['dept']) ?><div class="text-muted" style="font-size:10.5px;"><?= htmlspecialchars($r['clasif']) ?></div></td>
                                 <?php foreach ($types as $tid => $t):
                                     $c   = $r['cells'][$tid];
-                                    $pil = $c['remaining'] <= 0 ? 'lb-pill-none' : ($c['credits'] > 0 && $c['remaining'] / max($c['credits'], .01) <= .25 ? 'lb-pill-low' : 'lb-pill-ok');
+                                    $unl = !empty($t['no_limit']);
+                                    $pil = $unl ? 'lb-pill-ok' : ($c['remaining'] <= 0 ? 'lb-pill-none' : ($c['credits'] > 0 && $c['remaining'] / max($c['credits'], .01) <= .25 ? 'lb-pill-low' : 'lb-pill-ok'));
                                 ?>
-                                    <td class="rpt-num lb-sep <?= $c['credits'] <= 0 ? 'lb-zero' : '' ?>"><?= lbr_fmt($c['credits']) ?></td>
+                                    <td class="rpt-num lb-sep <?= (!$unl && $c['credits'] <= 0) ? 'lb-zero' : '' ?>" title="<?= $unl ? 'No credit limit — filing never blocked' : '' ?>"><?= $unl ? '∞' : lbr_fmt($c['credits']) ?></td>
                                     <td class="rpt-num <?= $c['used'] <= 0 ? 'lb-zero' : '' ?>">
                                         <?= $c['used'] > 0 ? lbr_fmt($c['used']) : '—' ?>
                                         <?php if ($c['pending'] > 0): ?><i class="ri-time-line text-warning" title="<?= lbr_fmt($c['pending']) ?> day(s) pending"></i><?php endif; ?>
                                     </td>
-                                    <td class="rpt-num"><span class="lb-pill <?= $pil ?>"><?= lbr_fmt($c['remaining']) ?></span></td>
+                                    <td class="rpt-num"><span class="lb-pill <?= $pil ?>"><?= $unl ? '∞' : lbr_fmt($c['remaining']) ?></span></td>
                                 <?php endforeach; ?>
                                 <td class="rpt-num rpt-net"><?= lbr_fmt($r['tot']['credits']) ?></td>
                                 <td class="rpt-num rpt-net"><?= lbr_fmt($r['tot']['used']) ?></td>

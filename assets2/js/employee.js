@@ -221,35 +221,19 @@ $(document).ready(function () {
         oTable.search($(this).val()).draw();
     });
 
-    $("#filter-status").select2({
-        allowClear: true,
-        width: "resolve",
-        dropdownParent: $("body"),
-    }).on("change", function () {
+    $("#filter-status").on("change", function () {
         oTable.draw();
     });
 
-    $("#filter-position").select2({
-        allowClear: true,
-        width: "resolve",
-        dropdownParent: $("body"),
-    }).on("change", function () {
+    $("#filter-position").on("change", function () {
         oTable.draw();
     });
 
-    $("#filter-department").select2({
-        allowClear: true,
-        width: "resolve",
-        dropdownParent: $("body"),
-    }).on("change", function () {
+    $("#filter-department").on("change", function () {
         oTable.draw();
     });
 
-    $("#filter-fingerprint").select2({
-        allowClear: true,
-        width: "resolve",
-        dropdownParent: $("body"),
-    }).on("change", function () {
+    $("#filter-fingerprint").on("change", function () {
         oTable.draw();
     });
 });

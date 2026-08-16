@@ -131,7 +131,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                     <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                         <i class="ri-calendar-2-line me-1"></i>Payroll Period
                     </label>
-                    <select name="id" id="rr-period" class="selectpicker form-control" data-live-search="true" data-size="10" data-width="100%" title="Search a payroll period…" onchange="this.form.submit()">
+                    <select name="id" id="rr-period" class="form-control" data-cs-icon="ri-calendar-2-line" onchange="this.form.submit()">
                         <?php foreach ($payrolls as $p): ?>
                         <option value="<?= $p['id'] ?>" <?= $sel_id == $p['id'] ? 'selected' : '' ?>>
                             <?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?>
@@ -251,12 +251,3 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
     <?php endif; ?>
 
 </div></div></div>
-
-<script>
-// Searchable bootstrap-select for the payroll period picker
-document.addEventListener('DOMContentLoaded', function () {
-    if (window.jQuery && jQuery.fn.selectpicker) {
-        jQuery('#rr-period').selectpicker();
-    }
-});
-</script>

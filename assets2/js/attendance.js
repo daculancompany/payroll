@@ -45,12 +45,6 @@
 
 $(function () {
 
-    $('#employee-select').select2({
-        placeholder: 'Select one or more employees...',
-        allowClear: true,
-        width: '100%',
-    });
-
     $('#date-picker').select2({
         dropdownParent: $('#form-add'),
     });

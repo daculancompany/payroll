@@ -891,7 +891,7 @@ function getRole($login_role)
                 'home'                 => 'home',
                 'employee'             => 'employee',
                 'employee-details'     => 'employee-details',
-                'payroll'              => 'payroll',
+                'payroll'              => 'payroll-list',
                 'payroll_calculations' => 'payroll_calculations',
                 'dtr'                  => 'dtr',
                 'dtr-details'          => 'dtr-details',
@@ -940,6 +940,11 @@ function getRole($login_role)
             ];
 
             $page = isset($_GET['page']) ? trim($_GET['page']) : 'home';
+
+            // 'payroll-list' is the URL the nav links use; every permission
+            // check, route lookup and title lookup in the app still keys off
+            // 'payroll', so normalize here rather than touching all of them.
+            if ($page === 'payroll-list') $page = 'payroll';
 
             if (!array_key_exists($page, $routes)) {
                 $page = 'home';
@@ -1356,7 +1361,7 @@ function getRole($login_role)
         <script src="assets2/js/schedule-roster.js?v=1"></script>
     <?php } ?>
     <?php if ($page == 'daily-board') { ?>
-        <script src="assets2/js/daily-board.js?v=2"></script>
+        <script src="assets2/js/daily-board.js?v=3"></script>
     <?php } ?>
     <?php if ($page == 'department') { ?>
         <script src="assets2/js/department.js"></script>

@@ -75,7 +75,7 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
             <div class="row g-3 align-items-end">
                 <div class="col-md-5">
                     <label class="pc-flabel"><i class="ri-calendar-line me-1"></i>Period A</label>
-                    <select id="sel-a" class="selectpicker form-control" data-live-search="true" data-size="10" data-width="100%" title="Search payroll…">
+                    <select id="sel-a" class="form-control" data-cs-icon="ri-calendar-line">
                         <?php foreach ($payrolls as $p): ?>
                         <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?></option>
                         <?php endforeach; ?>
@@ -86,7 +86,7 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
                 </div>
                 <div class="col-md-5">
                     <label class="pc-flabel"><i class="ri-calendar-line me-1"></i>Period B</label>
-                    <select id="sel-b" class="selectpicker form-control" data-live-search="true" data-size="10" data-width="100%" title="Search payroll…">
+                    <select id="sel-b" class="form-control" data-cs-icon="ri-calendar-line">
                         <?php foreach ($payrolls as $p): ?>
                         <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?></option>
                         <?php endforeach; ?>
@@ -347,10 +347,4 @@ function applyFilters(){
 ['cmp-emp','cmp-mode'].forEach(function(id){ document.addEventListener('change',function(e){ if(e.target.id===id) applyFilters(); }); });
 document.getElementById('cmp-search').addEventListener('input', applyFilters);
 
-// Searchable bootstrap-select for the two period pickers
-document.addEventListener('DOMContentLoaded', function () {
-    if (window.jQuery && jQuery.fn.selectpicker) {
-        jQuery('#sel-a, #sel-b').selectpicker();
-    }
-});
 </script>

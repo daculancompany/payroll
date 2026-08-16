@@ -163,4 +163,77 @@ $(document).ready(function () {
     try { saved = localStorage.getItem("daily-board-group") || "dept"; } catch (e) {}
     loadCollapsed();
     setGrouping(saved);
+
+    // ---- Duty-roster quick adjust --------------------------------------
+    // Reuses the same duty_roster_save / duty_roster_recompute endpoints the
+    // full grid (duty-roster.js) posts to — this is one cell, not a sheet.
+    var $adjustModalEl = document.getElementById("db-adjust-modal");
+    var adjustModal = $adjustModalEl && window.bootstrap ? new bootstrap.Modal($adjustModalEl) : null;
+    var $adjustName = $("#db-adjust-name");
+    var $adjustShift = $("#db-adjust-shift");
+    var $adjustRest = $("#db-adjust-rest");
+    var adjustEmpId = null;
+
+    function toast(icon, title, text) {
+        if (window.Swal) Swal.fire({ icon: icon, title: title, text: text, timer: icon === "success" ? 1800 : undefined, showConfirmButton: icon !== "success" });
+        else alert(text || title);
+    }
+
+    function post(action, data) {
+        return $.post("ajax.php?action=" + action, data).then(function (res) {
+            var j = res;
+            try { if (typeof res === "string") j = JSON.parse(res); } catch (e) { j = null; }
+            if (!j) return $.Deferred().reject("Bad response from server.");
+            return j;
+        });
+    }
+
+    $(document).on("click", ".db-adjust-btn", function () {
+        var $b = $(this);
+        adjustEmpId = parseInt($b.data("adjust-emp"), 10);
+        $adjustName.text($b.data("adjust-name") || "");
+        var shiftId = parseInt($b.data("adjust-shift"), 10);
+        $adjustShift.val(shiftId ? String(shiftId) : "");
+        $adjustRest.prop("checked", !!parseInt($b.data("adjust-rest"), 10));
+        if (adjustModal) adjustModal.show();
+    });
+
+    $("#db-adjust-save").on("click", function () {
+        if (!adjustEmpId || !window.DB_ADJUST) return;
+        var sidVal = $adjustShift.val();
+        var cell = {
+            e: adjustEmpId,
+            d: window.DB_ADJUST.date,
+            s: sidVal ? parseInt(sidVal, 10) : null,
+            r: $adjustRest.prop("checked") ? 1 : 0,
+        };
+        var $btn = $(this).prop("disabled", true);
+        post("duty_roster_save", { period: window.DB_ADJUST.period, cells: JSON.stringify([cell]) })
+            .done(function (j) {
+                $btn.prop("disabled", false);
+                if (!j.result) { toast("error", "Error", j.message); return; }
+                if (adjustModal) adjustModal.hide();
+                // Group membership (Shift view) and the status badge both depend
+                // on server-computed fields, so a reload is the reliable way to
+                // reflect the change — grouping/collapsed state survives it via
+                // the localStorage keys read above.
+                if (j.needs_recompute && j.needs_recompute.length) {
+                    Swal.fire({
+                        icon: "question",
+                        title: "Recompute attendance?",
+                        text: "This employee already has attendance logged under the old shift for this cutoff. Recompute it now so the figures match?",
+                        showCancelButton: true,
+                        confirmButtonText: "Recompute",
+                    }).then(function (r) {
+                        if (!r.isConfirmed) { window.location.reload(); return; }
+                        post("duty_roster_recompute", { period: window.DB_ADJUST.period, employee_ids: j.needs_recompute.join(",") })
+                            .always(function () { window.location.reload(); });
+                    });
+                    return;
+                }
+                toast("success", "Saved", j.message);
+                setTimeout(function () { window.location.reload(); }, 900);
+            })
+            .fail(function () { $btn.prop("disabled", false); toast("error", "Error", "Save failed."); });
+    });
 });

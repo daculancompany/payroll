@@ -1,5 +1,5 @@
 <?php
-// Editable by HR only — see LEAVE_CREDIT_EDIT_ROLES in db_connect.php.
+// Editable by Admin + HR — see LEAVE_CREDIT_EDIT_ROLES in db_connect.php.
 $can_edit_credits = can_edit_leave_credits();
 $can_rollover     = in_array((int)($_SESSION['login_role'] ?? 0), [1, 9]);   // Admin + HR
 $sel_emp = isset($_GET['emp']) ? (int)$_GET['emp'] : 0;

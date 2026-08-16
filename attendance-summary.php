@@ -10,6 +10,12 @@ $f_from = isset($_GET['from']) && $_GET['from'] ? $_GET['from'] : date('Y/m/d', 
 $f_to   = isset($_GET['to'])   && $_GET['to']   ? $_GET['to']   : date('Y/m/d', strtotime('last day of this month'));
 $f_site = isset($_GET['site']) ? (int)$_GET['site'] : 0;
 
+$as_this_month_first = date('Y/m/d', strtotime('first day of this month'));
+$as_this_month_last  = date('Y/m/d', strtotime('last day of this month'));
+$as_range_label = ($f_from === $as_this_month_first && $f_to === $as_this_month_last)
+    ? 'This Month'
+    : date('M j, Y', strtotime($f_from)) . ' – ' . date('M j, Y', strtotime($f_to));
+
 // Normalise the picker's YYYY/MM/DD to a MySQL date for the query.
 $from = $conn->real_escape_string(date('Y-m-d', strtotime($f_from)));
 $to   = $conn->real_escape_string(date('Y-m-d', strtotime($f_to)));
@@ -43,7 +49,6 @@ if ($q) while ($r = $q->fetch_assoc()) {
 }
 function as_num($v, $d = 2){ return number_format((float)$v, $d); }
 ?>
-
 <div class="main-content">
 <div class="page-content">
 <div class="container-fluid">
@@ -62,23 +67,19 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
         <div class="card-body py-3">
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="attendance-summary">
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">From</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="ri-calendar-2-line"></i></span>
-                        <input type="text" name="from" value="<?= htmlspecialchars($f_from) ?>" class="form-control datetimepicker" autocomplete="off" placeholder="YYYY/MM/DD">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
+                    <div id="as-daterange" class="att-range-picker">
+                        <i class="ri-calendar-2-line"></i>
+                        <span id="as-range-label"><?= htmlspecialchars($as_range_label) ?></span>
+                        <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
                     </div>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">To</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="ri-calendar-2-line"></i></span>
-                        <input type="text" name="to" value="<?= htmlspecialchars($f_to) ?>" class="form-control datetimepicker" autocomplete="off" placeholder="YYYY/MM/DD">
-                    </div>
+                    <input type="hidden" name="from" id="from" value="<?= htmlspecialchars($f_from) ?>">
+                    <input type="hidden" name="to" id="to" value="<?= htmlspecialchars($f_to) ?>">
                 </div>
                 <div class="col-md-3">
                     <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Site</label>
-                    <select name="site" class="form-control report-select2" data-placeholder="All sites">
+                    <select name="site" class="form-control" data-placeholder="All sites">
                         <option value="0">All sites</option>
                         <?php foreach ($sites as $s): ?>
                         <option value="<?= $s['id'] ?>" <?= $f_site==$s['id']?'selected':'' ?>><?= htmlspecialchars($s['site_name']) ?></option>
@@ -140,6 +141,42 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
 </div>
 
 <script>
+    // Date range picker — mirrors attendance.php's #att-daterange
+    // jQuery/daterangepicker load in index.php's footer, AFTER this inline
+    // block runs — defer to DOMContentLoaded so both are ready by then.
+    document.addEventListener('DOMContentLoaded', function () {
+        var $ = window.jQuery;
+        if (!$) return;
+        var $picker = $('#as-daterange');
+        if (!$picker.length || !$.fn.daterangepicker) return;
+        $picker.daterangepicker({
+            autoUpdateInput: false,
+            opens: 'right',
+            showDropdowns: true,
+            startDate: moment('<?= date('Y-m-d', strtotime($f_from)) ?>'),
+            endDate: moment('<?= date('Y-m-d', strtotime($f_to)) ?>'),
+            locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },
+            ranges: {
+                'Today':        [moment(), moment()],
+                'Yesterday':    [moment().subtract(1, 'days'), moment().subtract(1, 'days')],
+                'Last 7 Days':  [moment().subtract(6, 'days'), moment()],
+                'Last 30 Days': [moment().subtract(29, 'days'), moment()],
+                'This Month':   [moment().startOf('month'), moment().endOf('month')],
+                'Last Month':   [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+            }
+        });
+        $picker.on('apply.daterangepicker', function (ev, picker) {
+            $('#as-range-label').text(picker.startDate.format('MMM D, YYYY') + ' – ' + picker.endDate.format('MMM D, YYYY'));
+            $('#from').val(picker.startDate.format('YYYY-MM-DD'));
+            $('#to').val(picker.endDate.format('YYYY-MM-DD'));
+        });
+        $picker.on('cancel.daterangepicker', function () {
+            $('#as-range-label').text('Select date range…');
+            $('#from').val('');
+            $('#to').val('');
+        });
+    });
+
     function repExportCSV(tableId, filename) {
         var t = document.getElementById(tableId);
         if (!t) return;

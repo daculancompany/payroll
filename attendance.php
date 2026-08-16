@@ -19,11 +19,8 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
     .att-stats-row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
     .att-filter-panel { background:#f8f6fb; border:1px solid #dbd5e7; border-left:3px solid #673bb6; border-radius:6px; padding:12px 14px; margin-bottom:14px; }
     .att-filter-panel .att-flabel { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.4px; color:#673bb6; margin-bottom:4px; display:block; }
-    /* date-range trigger — mirrors employee-portal.php */
-    .att-range-picker { display:flex; align-items:center; gap:6px; width:100%; padding:6px 11px; border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:13px; font-weight:600; color:#0c5460; cursor:pointer; transition:border-color .15s,box-shadow .15s; }
-    .att-range-picker:hover { border-color:#673bb6; }
-    .att-range-picker i:first-child { color:#673bb6; }
-    /* daterangepicker theme now lives globally in assets2/css/custom-select.css */
+    /* .att-range-picker (date-range trigger) + daterangepicker theme now live
+       globally in assets2/css/custom-select.css */
     .att-filter-bar { background:#673bb6; color:#fff; border-radius:4px; padding:10px 16px; margin-bottom:10px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
     .att-filter-bar .lbl { font-size:12px; opacity:.8; }
     .att-filter-bar .val { font-weight:700; font-size:13px; }
@@ -94,7 +91,8 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
                                     <label class="att-flabel"><i class="ri-user-line me-1"></i>Employee</label>
                                     <select id="employee-select" name="employee_id[]" class="form-control form-control-sm" multiple
                                         data-placeholder="Select one or more employees…" required
-                                        data-parsley-required-message="Please select at least one employee.">
+                                        data-parsley-required-message="Please select at least one employee."
+                                        data-cs-multi="true" data-cs-title="Employee" data-cs-icon="ri-user-line" data-cs-search="true">
                                         <?php
                                         $employee = $conn->query("SELECT id, employee_no, CONCAT(lastname,', ',firstname,' ',middlename) AS ename FROM employee WHERE status=1 ORDER BY lastname, firstname ASC");
                                         while ($row = $employee->fetch_assoc()):

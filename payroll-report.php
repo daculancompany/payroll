@@ -166,26 +166,20 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
                         <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                             <i class="ri-calendar-range-line me-1"></i>Date Range <span class="text-muted fw-normal">(optional)</span>
                         </label>
-                        <div class="row g-2">
-                            <div class="col-6">
-                                <label class="form-label small text-muted mb-1">From</label>
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text"><i class="ri-calendar-2-line"></i></span>
-                                    <input name="from" class="form-control datetimepicker" autocomplete="off" placeholder="YYYY/MM/DD" value="<?= htmlspecialchars($f_from) ?>">
-                                </div>
-                            </div>
-                            <div class="col-6">
-                                <label class="form-label small text-muted mb-1">To</label>
-                                <div class="input-group input-group-sm">
-                                    <span class="input-group-text"><i class="ri-calendar-2-line"></i></span>
-                                    <input name="to" class="form-control datetimepicker" autocomplete="off" placeholder="YYYY/MM/DD" value="<?= htmlspecialchars($f_to) ?>">
-                                </div>
-                            </div>
+                        <div id="plr-daterange" class="att-range-picker">
+                            <i class="ri-calendar-2-line"></i>
+                            <?php $plr_has_range = ($f_from !== '' && $f_to !== ''); ?>
+                            <span id="plr-range-label" style="<?= $plr_has_range ? '' : 'color:#888;font-weight:500;' ?>"><?= $plr_has_range
+                                ? htmlspecialchars(date('M j, Y', strtotime($f_from)) . ' – ' . date('M j, Y', strtotime($f_to)))
+                                : 'Any date…' ?></span>
+                            <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
                         </div>
+                        <input type="hidden" name="from" id="plr-from" value="<?= htmlspecialchars($f_from) ?>">
+                        <input type="hidden" name="to" id="plr-to" value="<?= htmlspecialchars($f_to) ?>">
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-pulse-line me-1"></i>Status</label>
-                        <select name="status" class="form-control report-select2" data-placeholder="— All Statuses —">
+                        <select name="status" class="form-control" data-cs-icon="ri-pulse-line">
                             <option value="" <?= $f_status===-1?'selected':'' ?>>— All Statuses —</option>
                             <option value="0" <?= $f_status===0?'selected':'' ?>>New</option>
                             <option value="1" <?= $f_status===1?'selected':'' ?>>Calculated</option>
@@ -195,7 +189,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
                     </div>
                     <div class="mb-1">
                         <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-building-2-line me-1"></i>Employer <span class="text-muted fw-normal">(optional)</span></label>
-                        <select name="employer_id" class="form-control report-select2" data-placeholder="— All Employers —">
+                        <select name="employer_id" class="form-control" data-cs-icon="ri-building-2-line">
                             <option value="" <?= !$f_employer?'selected':'' ?>>— All Employers —</option>
                             <?php foreach ($employers as $e): ?>
                             <option value="<?= $e['id'] ?>" <?= $f_employer==$e['id']?'selected':'' ?>><?= htmlspecialchars($e['employer_name']) ?></option>
@@ -213,6 +207,45 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
 </div>
 
 <script>
+    // Date range picker — mirrors the Create Payroll modal's #payroll-daterange
+    // jQuery/daterangepicker load in index.php's footer, AFTER this inline
+    // block runs — defer to DOMContentLoaded so both are ready by then.
+    document.addEventListener('DOMContentLoaded', function () {
+        var $ = window.jQuery;
+        if (!$) return;
+        var $picker = $('#plr-daterange');
+        if (!$picker.length || !$.fn.daterangepicker) return;
+        var opts = {
+            autoUpdateInput: false,
+            parentEl: '#modal-filter-add',
+            opens: 'center',
+            showDropdowns: true,
+            locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },
+            ranges: {
+                'This Week':  [moment().startOf('week'), moment().endOf('week')],
+                'Last Week':  [moment().subtract(1, 'week').startOf('week'), moment().subtract(1, 'week').endOf('week')],
+                'This Month': [moment().startOf('month'), moment().endOf('month')],
+                'Last Month': [moment().subtract(1, 'month').startOf('month'), moment().subtract(1, 'month').endOf('month')]
+            }
+        };
+        <?php if ($f_from !== '' && $f_to !== ''): ?>
+        opts.startDate = moment('<?= date('Y-m-d', strtotime($f_from)) ?>');
+        opts.endDate   = moment('<?= date('Y-m-d', strtotime($f_to)) ?>');
+        <?php endif; ?>
+        $picker.daterangepicker(opts);
+        $picker.on('apply.daterangepicker', function (ev, picker) {
+            $('#plr-range-label').css({ color: '', fontWeight: '' })
+                .text(picker.startDate.format('MMM D, YYYY') + ' – ' + picker.endDate.format('MMM D, YYYY'));
+            $('#plr-from').val(picker.startDate.format('YYYY-MM-DD'));
+            $('#plr-to').val(picker.endDate.format('YYYY-MM-DD'));
+        });
+        $picker.on('cancel.daterangepicker', function () {
+            $('#plr-range-label').css({ color: '#888', fontWeight: 500 }).text('Any date…');
+            $('#plr-from').val('');
+            $('#plr-to').val('');
+        });
+    });
+
     function repExportCSV(tableId, filename) {
         var t = document.getElementById(tableId);
         if (!t) return;

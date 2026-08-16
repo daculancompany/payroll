@@ -71,7 +71,7 @@ function pr_money($v){ return '₱' . number_format((float)$v, 2); }
                 <input type="hidden" name="page" value="payroll-register">
                 <div class="col-md-6">
                     <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Payroll Period</label>
-                    <select name="id" class="form-control report-select2" onchange="this.form.submit()">
+                    <select name="id" class="form-control" data-cs-icon="ri-calendar-2-line" onchange="this.form.submit()">
                         <option value="">Select a payroll period…</option>
                         <?php foreach ($payrolls as $p): ?>
                         <option value="<?= $p['id'] ?>" <?= $sel_id==$p['id']?'selected':'' ?>>

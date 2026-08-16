@@ -110,7 +110,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 						<div class="row g-2 mb-3">
 							<div class="col-sm-2">
 								<div class="filter-label"><i class="ri-pulse-line me-1"></i>Status</div>
-								<select class="form-control form-control-sm" id="filter-status" data-placeholder="All Status">
+								<select class="form-control form-control-sm" id="filter-status" data-placeholder="All Status" data-cs-title="Status" data-cs-icon="ri-pulse-line">
 									<option value="">ALL</option>
 									<option value="0">Inactive</option>
 									<option value="1">Active</option>
@@ -118,7 +118,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 							</div>
 							<div class="col-sm-3">
 								<div class="filter-label"><i class="ri-briefcase-4-line me-1"></i>Position</div>
-								<select class="form-control form-control-sm" id="filter-position" data-placeholder="All Positions">
+								<select class="form-control form-control-sm" id="filter-position" data-placeholder="All Positions" data-cs-title="Position" data-cs-icon="ri-briefcase-4-line">
 									<option value="">ALL</option>
 									<?php
 									$pos = $conn->query("SELECT * from position order by name asc");
@@ -130,7 +130,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 							<div class="col-sm-3">
 								<div class="filter-label"><i class="ri-building-3-line me-1"></i>Department</div>
 								<?php require_once 'dept-scope.php'; $dept_lock = dept_scope_id(); ?>
-								<select class="form-control form-control-sm" id="filter-department" data-placeholder="All Departments" <?= $dept_lock ? 'disabled' : '' ?>>
+								<select class="form-control form-control-sm" id="filter-department" data-placeholder="All Departments" data-cs-title="Department" data-cs-icon="ri-building-3-line" <?= $dept_lock ? 'disabled' : '' ?>>
 									<?php if (!$dept_lock): ?><option value="">ALL</option><?php endif; ?>
 									<?php
 									$depts = $conn->query("SELECT * FROM department " . ($dept_lock ? "WHERE id = $dept_lock " : "") . "ORDER BY name ASC");

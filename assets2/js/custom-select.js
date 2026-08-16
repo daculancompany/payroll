@@ -27,6 +27,8 @@
      data-cs-title="Shift"    menu header title
      data-cs-icon="ri-x-line" leading icon on the trigger
      data-cs-search="true"    force the filter box on/off (auto: >8 options)
+     data-cs-multi="true"     opt a <select multiple> into this UI (default:
+                               multi-selects are left native — see isEligible)
 
    Per-<option> options (all optional — plain selects need none of this):
      data-cs-name="8-5"                  row title (defaults to option text)
@@ -82,7 +84,10 @@
 
     function isEligible(sel) {
         if (!sel || sel.tagName !== 'SELECT') return false;
-        if (sel.multiple) return false;                       // multi-select: leave native
+        // Multi-selects are left native UNLESS the page explicitly opts in
+        // (data-cs-multi) — most <select multiple> in this app (e.g. area.php's
+        // size="5" listbox) want the browser's own UI, not this dropdown.
+        if (sel.multiple && !sel.hasAttribute('data-cs-multi')) return false;
         if (sel.dataset.csDone) return false;                 // already ours
         if (sel.hasAttribute('data-no-cs')) return false;     // explicit opt-out
         if (sel.classList.contains('no-cs')) return false;
@@ -98,6 +103,12 @@
         // NB: an ancestor being display:none does NOT make the child compute to
         // none, so selects inside closed modals / inactive tabs still enhance.
         if (sel.classList.contains('swal2-select')) return false;
+        // DataTables' page-size select lives inside a "Show [ ] entries"
+        // sentence — wrapping it in this control's block-level trigger breaks
+        // that inline flow (the label wraps onto three lines). It's styled to
+        // match natively instead — see the .dataTables_length rules in
+        // custom-select.css.
+        if (sel.closest('.dataTables_length')) return false;
         if (window.getComputedStyle(sel).display === 'none') return false;
         return true;
     }
@@ -175,6 +186,7 @@
     function syncLabel(sel) {
         var st = sel._cs;
         if (!st) return;
+        if (sel.multiple) { syncLabelMulti(sel); return; }
         var opt = sel.options[sel.selectedIndex];
         var val = opt ? opt.value : '';
         var row = null;
@@ -193,12 +205,66 @@
         st.trigger.disabled = !!sel.disabled;
     }
 
+    /* Multi-select variant: every matching row gets checked (not just one),
+       and the trigger shows a name list or a "N selected" count instead of a
+       single value. */
+    function syncLabelMulti(sel) {
+        var st = sel._cs;
+        var names = [];
+        st.rows.forEach(function (r) {
+            var on = false;
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === r.dataset.value) { on = sel.options[i].selected; break; }
+            }
+            r.classList.toggle('sel', on);
+            r.setAttribute('aria-selected', on ? 'true' : 'false');
+            if (on) names.push(r.dataset.display);
+        });
+
+        var display = !names.length ? (sel.dataset.placeholder || sel.getAttribute('placeholder') || '')
+            : names.length <= 2 ? names.join(', ')
+            : names.length + ' selected';
+        st.label.textContent = display || '';
+        st.label.classList.toggle('cs-empty', !names.length);
+        st.wrap.classList.toggle('cs-disabled', !!sel.disabled);
+        st.trigger.disabled = !!sel.disabled;
+        if (st.clearBtn) st.clearBtn.hidden = !names.length;
+    }
+
     function pick(sel, value) {
+        if (sel.multiple) { pickMulti(sel, value); return; }
         if (sel.value === value) { close(); return; }
         sel.value = value;
         close();
         syncLabel(sel);
         // Native + jQuery listeners both — this app mixes the two freely.
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        if (window.jQuery) window.jQuery(sel).trigger('change');
+    }
+
+    /* Toggle one option and keep the menu open — picking is cumulative here,
+       unlike the single-select case which closes on the first choice. */
+    function pickMulti(sel, value) {
+        var opt = null;
+        for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value === value) { opt = sel.options[i]; break; }
+        }
+        if (!opt) return;
+        opt.selected = !opt.selected;
+        syncLabel(sel);
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        if (window.jQuery) window.jQuery(sel).trigger('change');
+    }
+
+    /* "Clear all" button — multi-select only. Deselects everything without
+       closing the menu, so the user can immediately pick something else. */
+    function clearAll(sel) {
+        var changed = false;
+        Array.prototype.forEach.call(sel.options, function (o) {
+            if (o.selected) { o.selected = false; changed = true; }
+        });
+        if (!changed) return;
+        syncLabel(sel);
         sel.dispatchEvent(new Event('change', { bubbles: true }));
         if (window.jQuery) window.jQuery(sel).trigger('change');
     }
@@ -326,6 +392,13 @@
         if (title) top.appendChild(el('span', 'cs-title', (icon ? '<i class="' + esc(icon) + '"></i>' : '') + esc(title)));
         var searchWrap = el('div', 'cs-search', '<i class="ri-search-line"></i><input type="text" placeholder="Filter…" autocomplete="off">');
         top.appendChild(searchWrap);
+        var clearBtn = null;
+        if (sel.multiple) {
+            clearBtn = el('button', 'cs-clear-all', 'Clear all');
+            clearBtn.type = 'button';
+            clearBtn.hidden = true;   // shown once something is selected
+            top.appendChild(clearBtn);
+        }
         var closeBtn = el('button', 'cs-close', '<i class="ri-close-line"></i>');
         closeBtn.type = 'button';
         closeBtn.title = 'Close';
@@ -355,7 +428,8 @@
         sel._cs = {
             sel: sel, wrap: wrap, trigger: trigger, menu: menu, top: top, opts: opts,
             none: none, searchWrap: searchWrap, search: searchWrap.querySelector('input'),
-            label: trigger.querySelector('.cs-value'), title: title, rows: [], activeIdx: -1
+            label: trigger.querySelector('.cs-value'), title: title, rows: [], activeIdx: -1,
+            clearBtn: clearBtn
         };
         wrap._csSel = sel;
 
@@ -364,6 +438,9 @@
             if (openWrap === wrap) close(); else open(sel);
         });
         closeBtn.addEventListener('click', function (e) { e.stopPropagation(); close(); trigger.focus(); });
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function (e) { e.stopPropagation(); clearAll(sel); });
+        }
 
         sel._cs.search.addEventListener('input', function () { filter(sel, this.value); });
         sel._cs.search.addEventListener('keydown', function (e) {

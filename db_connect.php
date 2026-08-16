@@ -1960,10 +1960,10 @@ if (!function_exists('leave_current_year')) {
 }
 
 // Roles allowed to change leave credits / balances and the eligibility override.
-// HR (9) only — Admin (1) and Department Heads (8) get a read-only view.
+// Admin (1) + HR (9) — Department Heads (8) get a read-only view.
 // Add a role id here to grant it back; every page and the AJAX handlers follow this.
 if (!defined('LEAVE_CREDIT_EDIT_ROLES')) {
-    define('LEAVE_CREDIT_EDIT_ROLES', [9]);
+    define('LEAVE_CREDIT_EDIT_ROLES', [1, 9]);
 }
 
 if (!function_exists('can_edit_leave_credits')) {

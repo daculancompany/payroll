@@ -560,7 +560,7 @@ $recent_dtr = $conn->query("
                 <?php endif; ?>
                 <?php if ($show_finance && $pay_review): ?>
                 <div class="col-md-4">
-                    <a href="payroll" class="action-card" style="--ac:#e6a817;">
+                    <a href="payroll-list" class="action-card" style="--ac:#e6a817;">
                         <div class="ac-ic"><i class="ri-eye-line"></i></div>
                         <div>
                             <div class="ac-val"><?= $pay_review ?></div>
@@ -572,7 +572,7 @@ $recent_dtr = $conn->query("
                 <?php endif; ?>
                 <?php if ($show_finance && $open_payroll_disputes): ?>
                 <div class="col-md-4">
-                    <a href="index.php?page=payroll" class="action-card" style="--ac:#dc3545;">
+                    <a href="payroll-list" class="action-card" style="--ac:#dc3545;">
                         <div class="ac-ic"><i class="ri-error-warning-line"></i></div>
                         <div>
                             <div class="ac-val" data-stat="open_payroll_disputes"><?= $open_payroll_disputes ?></div>
@@ -1248,7 +1248,7 @@ $recent_dtr = $conn->query("
                             <h6 class="card-title mb-0 flex-grow-1">
                                 <i class="ri-money-dollar-circle-line me-2" style="color:#673bb6;"></i>Recent Payrolls
                             </h6>
-                            <a href="payroll" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">View All <i class="ri-arrow-right-line ms-1"></i></a>
+                            <a href="payroll-list" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">View All <i class="ri-arrow-right-line ms-1"></i></a>
                         </div>
                         <div class="card-body p-0">
                             <div class="table-responsive">
@@ -1385,7 +1385,7 @@ $recent_dtr = $conn->query("
                                 <a href="employee" class="btn btn-sm" style="background:#eef0f8;color:#673bb6;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-group-line me-1"></i>Employees</a>
                                 <?php endif; ?>
                                 <?php if ($show_finance): ?>
-                                <a href="payroll"  class="btn btn-sm" style="background:#eef0f8;color:#673bb6;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-money-dollar-circle-line me-1"></i>Payroll</a>
+                                <a href="payroll-list" class="btn btn-sm" style="background:#eef0f8;color:#673bb6;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-money-dollar-circle-line me-1"></i>Payroll</a>
                                 <?php endif; ?>
                                 <a href="dtr"      class="btn btn-sm" style="background:#eef0f8;color:#673bb6;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-time-line me-1"></i>DTR</a>
                                 <a href="attendance" class="btn btn-sm" style="background:#eef0f8;color:#673bb6;border:1px solid #d0d7ee;font-weight:600;"><i class="ri-calendar-check-line me-1"></i>Attendance</a>

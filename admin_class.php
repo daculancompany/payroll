@@ -185,7 +185,7 @@ class Action
             1 => 'index.php?page=home',        // Administrator
             2 => 'index.php?page=home',        // Staff
             3 => 'index.php?page=reports',     // Auditor
-            4 => 'index.php?page=payroll',     // Payroll Clerk
+            4 => 'index.php?page=payroll-list', // Payroll Clerk
             5 => 'index.php?page=attendance-summary', // Timekeeper
             6 => 'index.php?page=daily-board', // PIC
             7 => 'index.php?page=reports',     // Auditor

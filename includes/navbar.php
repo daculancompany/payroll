@@ -34,8 +34,8 @@
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="payroll?p2=false" class="nav-link menu-link <?= in_array($page, ['payroll','payroll_items','payroll_calculations']) ? 'active' : '' ?>">
-                        <i class="ri-calculator-line"></i> <span>Payroll</span>
+                    <a href="payroll-list" class="nav-link menu-link <?= in_array($page, ['payroll','payroll_items','payroll_calculations']) ? 'active' : '' ?>">
+                        <i class="ri-calculator-line"></i> <span>Payroll List</span>
                     </a>
                 </li>
 
@@ -271,8 +271,8 @@
                 <?php if (page_allowed('payroll')): ?>
                 <li class="nav-item">
                     <a class="nav-link menu-link <?= (in_array($page, ['payroll','payroll_items','payroll_calculations']) && (!isset($_GET['p2']) || $_GET['p2'] === 'false')) ? 'active' : '' ?>"
-                        href="payroll?p2=false">
-                        <i class="ri-calculator-line"></i> <span>Payroll</span>
+                        href="payroll-list">
+                        <i class="ri-calculator-line"></i> <span>Payroll List</span>
                     </a>
                 </li>
                 <?php endif; ?>

@@ -26,7 +26,7 @@ if (!isset($conn)) include 'db_connect.php';
 require_page_access('payroll_calculations');
 
 if (!isset($_GET['id'])) {
-    header('Location: index.php?page=payroll');
+    header('Location: payroll-list');
     exit;
 }
 $id = (int) $_GET['id'];
@@ -507,7 +507,7 @@ $refund_names = [];   // refund id => display name
                 <!-- ── Top bar ── -->
                 <div class="pcw-header">
                     <div class="pcw-h-left">
-                        <a class="pcw-back-btn" href="index.php?page=payroll"><i class="ri-arrow-left-line"></i> Back</a>
+                        <a class="pcw-back-btn" href="payroll-list"><i class="ri-arrow-left-line"></i> Back</a>
                         <div class="pcw-title-icon"><i class="ri-file-excel-2-line"></i></div>
                         <div>
                             <div class="pcw-h-title">

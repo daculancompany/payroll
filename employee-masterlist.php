@@ -59,7 +59,7 @@ $active = 0; foreach ($rows as $r) if ((int)$r['status'] === 1) $active++;
                 </div>
                 <div class="col-md-3">
                     <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Department</label>
-                    <select name="dept" class="form-control report-select2">
+                    <select name="dept" class="form-control">
                         <option value="0">All departments</option>
                         <?php foreach ($depts as $d): ?>
                         <option value="<?= $d['id'] ?>" <?= $f_dept==$d['id']?'selected':'' ?>><?= htmlspecialchars($d['name']) ?></option>

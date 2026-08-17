@@ -158,11 +158,13 @@ foreach ($my_leaves as $ml) if ($ml['status'] == 0) $leave_pending_count++;
 $s = $conn->prepare("
     SELECT e.*, COALESCE(d.name,'—') AS dept_name, COALESCE(p.name,'—') AS pos_name,
            COALESCE(cl.clasification,'—') AS clasification_name,
+           ar.name AS area_name,
            b.bank_name
     FROM employee e
     LEFT JOIN department   d  ON e.department_id   = d.id
     LEFT JOIN position     p  ON e.position_id     = p.id
     LEFT JOIN clasification cl ON e.clasification_id = cl.id
+    LEFT JOIN area         ar ON e.area_id         = ar.id
     LEFT JOIN banks        b  ON e.bank_id         = b.id
     WHERE e.id = ?
 ");
@@ -415,6 +417,166 @@ $s3 = $conn->prepare("SELECT COUNT(*) AS c FROM DTR_details WHERE employee_id = 
 $s3->bind_param('i', $emp_id); $s3->execute();
 $attendance_count = (int)($s3->get_result()->fetch_assoc()['c'] ?? 0);
 
+// ── DTR exceptions for the last 7 days (Attendance tab "needs attention") ──
+// The point is lead time: once HR closes the period and generates payroll,
+// a missing time-out or an unfiled OT is already priced in. The same flag
+// vocabulary the timekeeper sees in dtr-employee-server.php is surfaced to the
+// employee here, while a correction request can still change the outcome.
+$dtr_flag_from = date('Y-m-d', strtotime('-6 days'));   // 7 days inclusive of today
+$dtr_flag_to   = date('Y-m-d');
+$dtr_flag_days = [];
+$dfq = $conn->prepare("
+    SELECT DATE(date_time) AS d, work_hours, overtime, undertime, late, logs,
+           is_rest_day, attendance_type, day_type, status, notes
+    FROM DTR_details
+    WHERE employee_id = ? AND DATE(date_time) BETWEEN ? AND ?
+    ORDER BY date_time DESC");
+$dfq->bind_param('iss', $emp_id, $dtr_flag_from, $dtr_flag_to);
+$dfq->execute();
+$dtr_flag_rows = $dfq->get_result()->fetch_all(MYSQLI_ASSOC);
+
+// OT / incident requests already filed in the window — a day the employee has
+// acted on is not an open item, so it must not be flagged again.
+$dtr_req_dates = [];
+$drq = $conn->prepare("
+    SELECT request_date, request_type FROM attendance_requests
+    WHERE employee_id = ? AND request_date BETWEEN ? AND ? AND status IN (0, 1)");
+$drq->bind_param('iss', $emp_id, $dtr_flag_from, $dtr_flag_to);
+$drq->execute();
+foreach ($drq->get_result()->fetch_all(MYSQLI_ASSOC) as $__r) {
+    $dtr_req_dates[$__r['request_date']][$__r['request_type']] = true;
+}
+
+foreach ($dtr_flag_rows as $__row) {
+    $__d    = $__row['d'];
+    $__logs = json_decode($__row['logs']) ?: [];
+    if (!is_array($__logs)) $__logs = [];
+    $__wh   = (float)$__row['work_hours'];
+    $__ot   = (float)$__row['overtime'];
+    $__lt   = (float)$__row['late'];
+    $__ut   = (float)$__row['undertime'];
+    $__rest = ((int)($__row['is_rest_day'] ?? 0) === 1);
+    $__f    = [];
+
+    // Blocking problems first — these change the paid figure outright.
+    if (count($__logs) < 2)  $__f[] = ['k' => 'no_out',   'sev' => 'bad',  'txt' => 'No time out recorded'];
+    if ($__wh <= 0)          $__f[] = ['k' => 'zero',     'sev' => 'bad',  'txt' => 'No work hours credited'];
+    // OT worked but never filed: without an approved request the hours are
+    // logged yet unpaid, and this is the flag with the shortest fuse.
+    if ($__ot > 0 && empty($dtr_req_dates[$__d]['overtime'])) {
+        $__f[] = ['k' => 'ot_unfiled', 'sev' => 'bad', 'txt' => nd($__ot) . ' OT hour(s) not yet filed'];
+    }
+    if ($__lt > 0)           $__f[] = ['k' => 'late',     'sev' => 'warn', 'txt' => 'Late ' . nd($__lt) . ' min'];
+    if ($__ut > 0)           $__f[] = ['k' => 'ut',       'sev' => 'warn', 'txt' => 'Undertime ' . nd($__ut) . ' min'];
+    if ($__rest && $__wh > 0) $__f[] = ['k' => 'rest',    'sev' => 'info', 'txt' => 'Worked on a rest day'];
+    if ($__ot > DTR_HIGH_OT_HOURS) $__f[] = ['k' => 'high_ot', 'sev' => 'info', 'txt' => 'Unusually high OT (' . nd($__ot) . ' hrs)'];
+
+    if ($__f) {
+        $dtr_flag_days[] = [
+            'date'  => $__d,
+            'flags' => $__f,
+            // Pending means the timekeeper has not decided yet, so a correction
+            // filed now still lands before the figure is locked.
+            'pending' => ((int)$__row['status'] === 0),
+            'filed'   => !empty($dtr_req_dates[$__d]),
+        ];
+    }
+}
+
+// Absences inside the window — a working day with no DTR row at all. This is
+// the "low attendance" case, and the employee is usually the last to know,
+// because nothing appears in the attendance list to look at.
+//
+// Whether a date was a working day has two answers and the roster wins: for
+// rotating staff the published employee_day_schedule row IS the plan, and their
+// fixed weekday rest_days pattern says nothing useful. Only status = 1 rows are
+// read — drafts are the planner's working copy.
+$dtr_have_dates = array_column($dtr_flag_rows, 'd');
+$dtr_roster_rest = [];
+$rrq = $conn->prepare("SELECT work_date, is_rest_day FROM employee_day_schedule
+                       WHERE employee_id = ? AND status = 1 AND work_date BETWEEN ? AND ?");
+$rrq->bind_param('iss', $emp_id, $dtr_flag_from, $dtr_flag_to);
+$rrq->execute();
+foreach ($rrq->get_result()->fetch_all(MYSQLI_ASSOC) as $__r) {
+    $dtr_roster_rest[$__r['work_date']] = ((int)$__r['is_rest_day'] === 1);
+}
+// Fallback for non-rotating staff: the weekday rest-day pattern of the shift
+// that was in force during the window.
+$__fixed_rest = [];
+$frq = $conn->query("SELECT rest_days FROM employee_schedules
+                     WHERE employee_id = $emp_id AND effective_from <= '$dtr_flag_to'
+                       AND (effective_to IS NULL OR effective_to >= '$dtr_flag_from')
+                     ORDER BY effective_from DESC LIMIT 1");
+if ($frq && ($__fr = $frq->fetch_assoc())) {
+    $__csv = (string)($__fr['rest_days'] ?? '');
+    if ($__csv !== '') $__fixed_rest = array_map('intval', explode(',', $__csv));
+}
+
+$dtr_missing_days = [];
+for ($i = 1; $i < 7; $i++) {          // skip today — the shift is still running
+    $__day = date('Y-m-d', strtotime("-$i days"));
+    if (in_array($__day, $dtr_have_dates, true)) continue;
+    if (!empty($dtr_req_dates[$__day])) continue;   // already explained by a request
+    if (array_key_exists($__day, $dtr_roster_rest)) {
+        if ($dtr_roster_rest[$__day]) continue;     // rostered day off
+    } elseif (in_array((int)date('w', strtotime($__day)), $__fixed_rest, true)) {
+        continue;                                   // weekday day off
+    }
+    $dtr_missing_days[] = $__day;
+}
+// One chronological feed, newest first — the same order as the record list
+// below. Kept as separate loops above because the two cases come from
+// different sources: a flagged day has a DTR row, a missing day is the absence
+// of one.
+foreach ($dtr_missing_days as $__md) {
+    $dtr_flag_days[] = [
+        'date'    => $__md,
+        'flags'   => [['k' => 'absent', 'sev' => 'bad', 'txt' => 'No attendance recorded']],
+        'pending' => true,
+        'filed'   => false,
+    ];
+}
+usort($dtr_flag_days, fn($a, $b) => strcmp($b['date'], $a['date']));
+$dtr_flag_total = count($dtr_flag_days);
+
+// ── Schedule changes the employee has not necessarily been told about ──
+// A shift reassignment or a re-published duty day changes when they are
+// expected to show up; finding out from a late deduction is too late.
+$sched_changes = [];
+$scc = $conn->prepare("
+    SELECT ws.description, es.effective_from, es.rest_days, es.created_at
+    FROM employee_schedules es INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+    WHERE es.employee_id = ? AND es.created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+    ORDER BY es.created_at DESC LIMIT 3");
+$scc->bind_param('i', $emp_id); $scc->execute();
+foreach ($scc->get_result()->fetch_all(MYSQLI_ASSOC) as $__s) {
+    $__starts = strtotime($__s['effective_from']) > time();
+    $sched_changes[] = [
+        'kind' => 'shift',
+        'txt'  => 'New shift assigned: ' . $__s['description'],
+        'sub'  => ($__starts ? 'Starts ' : 'Effective ') . date('M j, Y', strtotime($__s['effective_from'])),
+        'when' => $__s['created_at'],
+    ];
+}
+// Duty-roster days re-published or edited in the last week, counted only for
+// dates still ahead — a changed past day is history, not something to plan for.
+$rcq = $conn->prepare("
+    SELECT COUNT(*) AS c, MIN(work_date) AS first_date, MAX(work_date) AS last_date
+    FROM employee_day_schedule
+    WHERE employee_id = ? AND status = 1 AND work_date >= CURDATE()
+      AND COALESCE(changed_at, published_at, created_at) >= DATE_SUB(NOW(), INTERVAL 7 DAY)");
+$rcq->bind_param('i', $emp_id); $rcq->execute();
+$__rc = $rcq->get_result()->fetch_assoc();
+if ($__rc && (int)$__rc['c'] > 0) {
+    $__n = (int)$__rc['c'];
+    $sched_changes[] = [
+        'kind' => 'roster',
+        'txt'  => 'Duty schedule updated — ' . $__n . ' day' . ($__n == 1 ? '' : 's') . ' changed',
+        'sub'  => date('M j', strtotime($__rc['first_date'])) . ' – ' . date('M j, Y', strtotime($__rc['last_date'])),
+        'when' => null,
+    ];
+}
+
 // ── This-month attendance summary (Overview stat strip) ─────────
 $mo_from = date('Y-m-01'); $mo_to = date('Y-m-t');
 $asq = $conn->prepare("
@@ -628,7 +790,9 @@ body{
 .emp-hdr-top{background:linear-gradient(135deg,#6642aa,#4e3483);padding:20px 22px;display:flex;align-items:center;gap:16px;}
 .emp-av{width:58px;height:58px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;color:#fff;flex-shrink:0;border:2px solid rgba(255,255,255,.4);}
 .emp-nm{font-size:17px;font-weight:900;color:#fff;line-height:1.2;}
-.emp-sub{font-size:11px;color:rgba(255,255,255,.78);margin-top:3px;}
+/* Position • Department. Long department names have no breakable spaces, so
+   without this the line ran past the card instead of ending in an ellipsis. */
+.emp-sub{font-size:11px;color:rgba(255,255,255,.78);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .emp-hdr-right{margin-left:auto;display:flex;align-items:center;gap:10px;}
 .emp-no-badge{background:rgba(0,0,0,.18);color:#fff;border-radius:8px;padding:5px 13px;font-size:11px;font-family:monospace;font-weight:800;white-space:nowrap;}
 /* Notification bell */
@@ -1766,9 +1930,41 @@ clock-timepicker{
 .info-item{padding:10px 16px;border-bottom:1px solid #f2f1f5;border-right:1px solid #f2f1f5;}
 .info-item:last-child{border-right:none;}
 .info-lbl{font-size:10px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;}
-.info-val{font-size:13px;font-weight:600;color:#222;}
+/* Department names here are slash-joined and unbroken
+   ("ADMINISTRATION/FINANCE/HR/BILLING/PHILHEALTH/RECORDS"), which no normal
+   word-wrap can break — the value ran under the card edge and its tail was
+   clipped. anywhere lets it break mid-token rather than disappear. */
+.info-val{font-size:13px;font-weight:600;color:#222;overflow-wrap:anywhere;}
 .info-val.mono{font-family:monospace;font-size:12px;}
 .info-val.accent{color:#6642aa;}
+/* Footnote directly under an .info-grid. It is a child of .info-section, which
+   carries no padding of its own (the grid cells supply it) and clips with
+   overflow:hidden — so an unpadded note ran flush to the card edge and had its
+   last line cut off by the rounded corner. */
+.info-note{font-size:11px;color:#98a2ad;padding:8px 16px 10px;line-height:1.45;}
+
+/* ── "Needs Your Attention" — DTR exceptions from the last 7 days ── */
+.dtrf-card{background:#fff;border:1px solid #e8e7eb;border-radius:14px;overflow:hidden;margin-bottom:14px;box-shadow:0 1px 4px rgba(0,0,0,.04);}
+.dtrf-row{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid #f4f3f7;}
+.dtrf-row:last-of-type{border-bottom:none;}
+.dtrf-row.sched{background:#f7f4fd;}
+.dtrf-ic{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:none;font-size:15px;}
+.dtrf-ic.bad{background:#fdecec;color:#d64545;}
+.dtrf-ic.warn{background:#fff4e2;color:#c9760a;}
+.dtrf-ic.info{background:#eef4fd;color:#3a71c4;}
+.dtrf-ic.sched{background:#ece4fb;color:#673bb6;}
+.dtrf-main{flex:1;min-width:0;}
+.dtrf-date{font-size:13px;font-weight:700;color:#2b2639;}
+.dtrf-sub{font-size:11px;color:#8f8c98;margin-top:2px;}
+.dtrf-locked{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;background:#eef1f5;color:#8b93a0;padding:2px 6px;border-radius:6px;margin-left:5px;vertical-align:middle;}
+.dtrf-chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;}
+.dtrf-chip{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:7px;}
+.dtrf-chip.bad{background:#fdecec;color:#c23434;}
+.dtrf-chip.warn{background:#fff4e2;color:#a86206;}
+.dtrf-chip.info{background:#eef4fd;color:#2f62b0;}
+.dtrf-act{flex:none;align-self:center;background:#6642aa;color:#fff;border:none;border-radius:8px;padding:6px 13px;font-size:11.5px;font-weight:700;cursor:pointer;}
+.dtrf-act:hover{background:#54368c;}
+.dtrf-foot{background:#faf9fc;font-size:11px;color:#8f8c98;padding:9px 14px;line-height:1.45;border-top:1px solid #f4f3f7;}
 
 /* Login & Security — change-password form (My Info tab) */
 .pw-warn{display:flex;align-items:flex-start;gap:8px;background:#fff6e5;border:1px solid #ffd591;color:#8a5a00;border-radius:10px;padding:9px 11px;font-size:12px;font-weight:600;line-height:1.35;margin:12px 0 4px;}
@@ -2126,7 +2322,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
     <div class="tab-panel active" id="tab-overview">
 
         <!-- Needs Your Action -->
-        <?php $needs_total = $payroll_review_pending_count + $dtr_review_pending_count + $leave_pending_count + $att_req_pending_count; ?>
+        <?php $needs_total = $payroll_review_pending_count + $dtr_review_pending_count + $leave_pending_count + $att_req_pending_count + $dtr_flag_total + count($sched_changes); ?>
         <?php if ($needs_total): ?>
         <div class="needs-action">
             <div class="na-head"><i class="ri-alarm-warning-line"></i> Needs Your Action</div>
@@ -2156,6 +2352,23 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <button type="button" class="na-item" data-na-key="req" onclick="switchTab('att-requests',null)">
                     <span class="na-ic req"><i class="ri-timer-flash-line"></i></span>
                     <span class="na-txt"><b><?= $att_req_pending_count ?></b> OT / incident request<?= $att_req_pending_count == 1 ? '' : 's' ?> pending</span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
+                <?php if ($dtr_flag_total): ?>
+                <!-- Same last-7-days exceptions the Attendance tab lists. Repeated
+                     here because the whole point is lead time: the employee has to
+                     see it without going looking for it. -->
+                <button type="button" class="na-item" data-na-key="dtrflag" onclick="switchTab('attendance',null)">
+                    <span class="na-ic req"><i class="ri-error-warning-line"></i></span>
+                    <span class="na-txt"><b><?= $dtr_flag_total ?></b> attendance day<?= $dtr_flag_total == 1 ? '' : 's' ?> to check this week</span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
+                <?php if ($sched_changes): ?>
+                <button type="button" class="na-item" data-na-key="sched" onclick="switchTab('attendance',null)">
+                    <span class="na-ic leave"><i class="ri-calendar-schedule-line"></i></span>
+                    <span class="na-txt"><?= htmlspecialchars($sched_changes[0]['txt']) ?></span>
                     <i class="ri-arrow-right-s-line na-go"></i>
                 </button>
                 <?php endif; ?>
@@ -2854,6 +3067,56 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 
     <!-- ── Tab: Attendance ── -->
     <div class="tab-panel" id="tab-attendance">
+
+        <?php if ($dtr_flag_total > 0 || $sched_changes): ?>
+        <!-- Open items from the last 7 days. Shown before the record list
+             because the list itself is a log — it does not tell the employee
+             which of those days still needs something from them, and after HR
+             generates payroll none of it can be corrected. -->
+        <div class="sec"><i class="ri-error-warning-line"></i>Needs Your Attention
+            <span style="font-weight:600;color:#8f8c98;font-size:12px;">(last 7 days)</span>
+        </div>
+        <div class="dtrf-card">
+            <?php foreach ($sched_changes as $sc): ?>
+            <div class="dtrf-row sched">
+                <div class="dtrf-ic sched"><i class="ri-calendar-schedule-line"></i></div>
+                <div class="dtrf-main">
+                    <div class="dtrf-date"><?= htmlspecialchars($sc['txt']) ?></div>
+                    <div class="dtrf-sub"><?= htmlspecialchars($sc['sub']) ?></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+
+            <?php foreach ($dtr_flag_days as $fd): ?>
+            <div class="dtrf-row">
+                <?php $__worst = 'info'; $__keys = array_column($fd['flags'], 'k');
+                      foreach ($fd['flags'] as $__fl) { if ($__fl['sev'] === 'bad') { $__worst = 'bad'; break; }
+                                                        if ($__fl['sev'] === 'warn') $__worst = 'warn'; }
+                      $__absent = in_array('absent', $__keys, true); ?>
+                <div class="dtrf-ic <?= $__worst ?>"><i class="<?= $__absent ? 'ri-calendar-close-line' : 'ri-time-line' ?>"></i></div>
+                <div class="dtrf-main">
+                    <div class="dtrf-date"><?= date('D, M j', strtotime($fd['date'])) ?>
+                        <?php if (!$fd['pending']): ?><span class="dtrf-locked" title="Already decided by your timekeeper">reviewed</span><?php endif; ?>
+                    </div>
+                    <div class="dtrf-chips">
+                        <?php foreach ($fd['flags'] as $fl): ?>
+                        <span class="dtrf-chip <?= $fl['sev'] ?>"><?= htmlspecialchars($fl['txt']) ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                    <?php if ($fd['filed']): ?><div class="dtrf-sub"><i class="ri-check-line"></i> You already filed a request for this day</div><?php endif; ?>
+                </div>
+                <?php if (!$fd['filed']): ?>
+                <button type="button" class="dtrf-act" onclick="openAttRequestForDate('<?= $fd['date'] ?>','<?= in_array('ot_unfiled', $__keys, true) ? 'overtime' : 'incident' ?>')">File</button>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+
+            <div class="dtrf-foot">
+                <i class="ri-information-line me-1"></i>File a correction before HR generates the payroll — once the period is closed these figures are final.
+            </div>
+        </div>
+        <?php endif; ?>
+
         <div class="sec"><i class="ri-calendar-check-line"></i>Attendance Records</div>
         <div class="paper" style="border-radius:14px;overflow:hidden;">
             <div style="padding:10px 14px;border-bottom:1px solid #f2f1f5;display:flex;justify-content:space-between;align-items:center;">
@@ -3285,6 +3548,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="info-val"><?= htmlspecialchars($emp['dept_name']) ?></div>
                 </div>
                 <div class="info-item">
+                    <div class="info-lbl">Area</div>
+                    <div class="info-val"><?= !empty($emp['area_name']) ? htmlspecialchars($emp['area_name']) : '<span style="color:#ccc;">Not set</span>' ?></div>
+                </div>
+                <div class="info-item">
                     <div class="info-lbl">Position</div>
                     <div class="info-val"><?= htmlspecialchars($emp['pos_name']) ?></div>
                 </div>
@@ -3335,7 +3602,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="info-val mono"><?= !empty($emp['bank_account_no']) ? htmlspecialchars($emp['bank_account_no']) : '<span style="color:#ccc;">Not set</span>' ?></div>
                 </div>
             </div>
-            <div style="font-size:11px;color:#98a2ad;margin-top:6px;"><i class="ri-information-line me-1"></i>Your salary is deposited to this account. If anything is wrong, contact HR.</div>
+            <div class="info-note"><i class="ri-information-line me-1"></i>Your salary is deposited to this account. If anything is wrong, contact HR.</div>
         </div>
 
         <!-- Compensation -->
@@ -4019,6 +4286,40 @@ function openLwopModal() {
 function openAttRequestModal() {
     var m = new bootstrap.Modal(document.getElementById('modal-att-request'));
     m.show();
+}
+
+// "File" straight from a flagged day in the Needs Your Attention card. The
+// modal is the same one the Requests tab opens — this only pre-fills the date
+// and the request type so the employee does not re-key what we already know.
+// Both date fields are set: the readonly text input is what they see, the
+// hidden one is what submit_attendance_request reads.
+function openAttRequestForDate(ymd, type) {
+    var m = new bootstrap.Modal(document.getElementById('modal-att-request'));
+    var sel = document.getElementById('att-req-type');
+    if (sel) {
+        sel.value = type || 'incident';
+        // Dispatch rather than call toggleAttFields directly: the select is
+        // wrapped by the custom-select enhancement, which only repaints its
+        // visible label on a 'change' event. Assigning .value alone left the
+        // control reading "— Select type —" over a set value.
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    document.getElementById('att-req-date-hidden').value = ymd;
+    var $rd = window.jQuery ? jQuery('#att-req-date') : null;
+    if ($rd && $rd.length) {
+        $rd.val(moment(ymd, 'YYYY-MM-DD').format('MMM D, YYYY'));
+        var dp = $rd.data('daterangepicker');
+        if (dp) dp.setStartDate(moment(ymd, 'YYYY-MM-DD'));
+    }
+    // setStartDate makes the picker fire apply, whose handler runs a full
+    // parsley().validate() — so an untouched form opened with every "required"
+    // error already showing. Clear it: nothing has been submitted yet.
+    if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().reset();
+    m.show();
+    // The OT ceiling and the rostered in/out both depend on the date, and the
+    // picker's apply event — which normally triggers them — never fires here.
+    if (typeof refreshOtLimit === 'function') refreshOtLimit();
+    if (typeof attPrefillSched === 'function') attPrefillSched();
 }
 
 var _lvPicker = null;
@@ -5755,7 +6056,10 @@ $(function () {
     $rd.on('apply.daterangepicker', function (ev, picker) {
         $rd.val(picker.startDate.format('MMM D, YYYY'));
         $('#att-req-date-hidden').val(picker.startDate.format('YYYY-MM-DD'));
-        if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().validate();
+        // Validate the date field only. Validating the whole form here lit up
+        // "Please select a reason." and both claimed-time errors the instant a
+        // date was picked — on a form the employee had not filled in yet.
+        if (window.jQuery && jQuery.fn.parsley) $rd.parsley().validate();
         refreshOtLimit();               // OT ceiling is per-date — re-check it
         attPrefillSched();              // claimed in/out from the rostered shift
     });
@@ -5784,7 +6088,13 @@ $(function () {
                 disp.value = '';
             }
             wrap.classList.toggle('has-val', !!v);
-            if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().validate();
+            // Clear this field's own error once a time is set. It used to
+            // validate the whole form, which meant the schedule prefill (which
+            // calls sync() for the employee) painted "Please select a reason."
+            // onto a form nobody had touched yet.
+            if (window.jQuery && jQuery.fn.parsley && disp.hasAttribute('required')) {
+                jQuery(disp).parsley().validate();
+            }
         }
         ctp.addEventListener('input', sync);         // live while the popup is open
         ctp.addEventListener('change', sync);

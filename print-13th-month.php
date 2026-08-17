@@ -27,6 +27,7 @@ function n13($v) { return number_format((float) $v, 2); }
 <head>
 <meta charset="UTF-8">
 <title>13th Month Pay Register <?= $year ?></title>
+<?php include __DIR__ . "/includes/favicon.php"; ?>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 @page { size: legal landscape; margin: 8mm 10mm; }

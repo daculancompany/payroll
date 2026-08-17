@@ -85,6 +85,7 @@ function n2($v){ return number_format((float)$v, 2); }
 <head>
 <meta charset="UTF-8">
 <title>Payroll Dept Summary</title>
+<?php include __DIR__ . "/includes/favicon.php"; ?>
 <style>
 * { box-sizing:border-box; margin:0; padding:0; }
 @page { size: legal landscape; margin: 8mm 10mm; }

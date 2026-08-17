@@ -97,6 +97,7 @@ $__can_publish = function_exists('action_allowed') ? action_allowed('duty_roster
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Duty Roster</title>
+    <?php include __DIR__ . "/includes/favicon.php"; ?>
     <meta name="robots" content="noindex, nofollow">
     <!-- This page renders its own <head> rather than includes/header.php, so the
          CSRF token has to be published here too — every save/publish call hits
@@ -112,10 +113,18 @@ $__can_publish = function_exists('action_allowed') ? action_allowed('duty_roster
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
-:root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; }
+:root { --brand:#6642aa; --brand-dark:#4e3483; --brand-soft:#f2effa; --brand-line:#ddd6ee;
+        --ink:#28223b; --ink-2:#5d5870; --ink-3:#9895a3; --line:#e4e1ea; --sb-thumb:#cfc4e6;
+        --card:#fff; --radius:12px; --shadow-1:0 1px 2px rgba(40,34,59,.05), 0 0 0 1px rgba(40,34,59,.02);
+        --today:#6642aa; --we-tint:#faf8fd; --hol-tint:#fff6ea; }
 html, body { height:100%; }
-body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans-serif; overflow:hidden;
-       display:flex; flex-direction:column; }
+body { margin:0; font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif; overflow:hidden;
+       display:flex; flex-direction:column; color:var(--ink);
+       background:#f1f0f4;
+       background-image:radial-gradient(900px 300px at 0% -10%, rgba(102,66,170,.07), transparent 60%),
+                        radial-gradient(700px 260px at 100% 0%, rgba(102,66,170,.05), transparent 60%);
+       -webkit-font-smoothing:antialiased; }
+:focus-visible { outline:2px solid var(--brand); outline-offset:2px; }
 /* Soft purple scrollbars — standalone page, no theme.css to inherit from. */
 * { scrollbar-width:thin; scrollbar-color:var(--sb-thumb) transparent; }
 *::-webkit-scrollbar { width:10px; height:10px; }
@@ -125,10 +134,16 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 
 /* ── Top bar ── */
 .dr-header {
+    position:relative;
     flex-shrink:0; display:flex; align-items:center; justify-content:space-between; gap:12px;
-    padding:10px 16px; background:#fff; border-bottom:1px solid var(--line);
-    box-shadow:0 1px 6px rgba(0,0,0,.06); z-index:20; flex-wrap:wrap;
+    padding:10px 18px; background:rgba(255,255,255,.92); backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--line);
+    box-shadow:0 1px 8px rgba(40,34,59,.06); z-index:20; flex-wrap:wrap;
 }
+/* A 3px brand ribbon along the very top — the one place the page says which
+   app it belongs to, since it renders without the shared navbar. */
+.dr-header::before { content:""; position:absolute; left:0; right:0; top:0; height:3px;
+    background:linear-gradient(90deg,#4e3483,#6642aa 45%,#9d7fd8); }
 .dr-h-left { display:flex; align-items:center; gap:12px; min-width:0; }
 .dr-back-btn {
     display:inline-flex; align-items:center; gap:6px; flex-shrink:0;
@@ -137,25 +152,34 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 }
 .dr-back-btn:hover { background:#e5e1ef; color:var(--brand-dark); }
 .dr-title-icon {
-    width:38px; height:38px; border-radius:11px; flex-shrink:0;
-    background:linear-gradient(135deg,#6642aa,#7654b8); color:#fff;
-    display:flex; align-items:center; justify-content:center; font-size:18px;
-    box-shadow:0 3px 8px rgba(102,66,170,.30);
+    width:40px; height:40px; border-radius:12px; flex-shrink:0;
+    background:linear-gradient(135deg,#5b3a9e,#7a5cc4); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-size:19px;
+    box-shadow:0 4px 12px rgba(102,66,170,.32), inset 0 1px 0 rgba(255,255,255,.18);
 }
-.dr-h-title { font-size:15px; font-weight:800; color:#2b2639; display:flex; align-items:center; gap:8px; }
+.dr-h-title { font-size:16px; font-weight:800; color:var(--ink); display:flex; align-items:center; gap:8px;
+              letter-spacing:-.01em; line-height:1.15; }
+.dr-h-eyebrow { font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:#a08fce;
+                line-height:1; margin-bottom:2px; }
 .dr-meta-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:3px; }
 .dr-meta-chip {
-    display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600; color:#5d5870;
-    background:#f2f0f7; border:1px solid #ddd9e7; border-radius:20px; padding:2px 9px;
+    display:inline-flex; align-items:center; gap:5px; font-size:10.5px; font-weight:600; color:var(--ink-2);
+    background:#f4f2f9; border:1px solid #e2ddef; border-radius:20px; padding:2px 9px; line-height:1.6;
 }
+.dr-meta-chip i { color:#8b74c2; font-size:11.5px; }
+#chip-drafts { background:#fff7e0; border-color:#f5dfa0; color:#8a6100; }
+#chip-drafts i { color:#c98a00; }
 .dr-h-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .dr-btn {
     display:inline-flex; align-items:center; gap:6px; cursor:pointer;
-    padding:7px 13px; border-radius:8px; font-size:12.5px; font-weight:700;
-    color:var(--brand-dark); background:#f2f0f7; border:1px solid #ddd9e7; transition:background .12s;
-    text-decoration:none;
+    padding:7px 13px; border-radius:9px; font-size:12.5px; font-weight:700; line-height:1.3;
+    color:var(--brand-dark); background:#f2f0f7; border:1px solid #ddd9e7;
+    transition:background .12s, border-color .12s, box-shadow .12s, transform .08s;
+    text-decoration:none; white-space:nowrap;
 }
 .dr-btn:hover:not(:disabled) { background:#e5e1ef; border-color:#c0b5d5; }
+.dr-btn:active:not(:disabled) { transform:translateY(1px); }
+.dr-btn i { font-size:14px; }
 .dr-btn:disabled { opacity:.5; cursor:not-allowed; }
 /* Publish is the only irreversible act on this page — it notifies every
    employee named on the sheet. It used to be a pale lavender indistinguishable
@@ -178,13 +202,27 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 .dr-body { flex:1; min-height:0; display:flex; flex-direction:column; padding:12px 16px 0; gap:9px; }
 /* The filters and the palette are one surface, divided by a hairline rather
    than by a gap of page background. */
-.dr-controls { flex-shrink:0; background:#fff; border:1px solid var(--line); border-radius:12px;
-               box-shadow:0 1px 2px rgba(40,34,59,.05); overflow:hidden; }
-.dr-toolbar { flex-shrink:0; background:transparent; border:0; border-radius:0; padding:10px 12px; }
+.dr-controls { flex-shrink:0; background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+               box-shadow:var(--shadow-1); overflow:hidden; }
+.dr-toolbar { flex-shrink:0; background:transparent; border:0; border-radius:0; padding:11px 14px 12px; }
 .dr-controls .dr-palette-row { border:0; border-top:1px solid #eeebf4; border-radius:0;
-                               box-shadow:none; background:#fcfbfe; }
-.dr-toolbar .lbl { font-size:10.5px; font-weight:700; color:#7a7688; margin-bottom:3px; text-transform:uppercase; letter-spacing:.3px; }
-.dr-toolbar .form-select, .dr-toolbar .form-control { font-size:13px; }
+                               box-shadow:none; background:linear-gradient(180deg,#fcfbfe,#f8f6fc); }
+.dr-toolbar .lbl { font-size:10.5px; font-weight:700; color:#7a7688; margin-bottom:4px; text-transform:uppercase; letter-spacing:.06em;
+                   display:flex; align-items:center; }
+.dr-toolbar .lbl i { color:#9b86cf; font-size:12px; }
+.dr-toolbar .form-select, .dr-toolbar .form-control { font-size:13px; border-radius:9px; border-color:#dcd8e6;
+                   background-color:#fff; color:var(--ink); min-height:34px; transition:border-color .12s, box-shadow .12s; }
+.dr-toolbar .form-control::placeholder { color:#b3aec0; }
+.dr-toolbar .form-select:hover, .dr-toolbar .form-control:hover { border-color:#c4b9dd; }
+.dr-toolbar .form-select:focus, .dr-toolbar .form-control:focus { border-color:var(--brand); box-shadow:0 0 0 3px rgba(102,66,170,.16); }
+/* Search box carries its own glyph so it reads as a search, not a text field. */
+.dr-search-wrap { position:relative; }
+.dr-search-wrap > i { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#a79fc0; font-size:14px; pointer-events:none; }
+.dr-search-wrap .form-control { padding-left:30px; }
+.dr-search-wrap .dr-search-clear { position:absolute; right:6px; top:50%; transform:translateY(-50%); border:0; background:transparent;
+                   color:#a9a5b6; font-size:15px; line-height:1; padding:2px 4px; border-radius:6px; cursor:pointer; display:none; }
+.dr-search-wrap .dr-search-clear:hover { background:#f2f0f7; color:var(--brand-dark); }
+.dr-search-wrap.has-value .dr-search-clear { display:inline-flex; }
 
 /* ── Shift palette ── */
 /* Painting beats typing on a 40 x 15 grid: pick once, then click or drag.
@@ -198,8 +236,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
                   background:#fff; border:1px solid var(--line); border-radius:11px;
                   padding:6px 8px; box-shadow:0 1px 2px rgba(40,34,59,.05); }
 .dr-palette-label { display:inline-flex; align-items:center; gap:5px; flex-shrink:0;
-                    font-size:11px; font-weight:600; letter-spacing:.3px; text-transform:uppercase;
-                    color:#9895a3; padding-right:2px; }
+                    font-size:10.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+                    color:#8f8aa0; padding:0 6px 0 4px; }
+.dr-palette-label i { color:#9b86cf; font-size:13px; }
 .dr-palette { display:flex; flex-wrap:nowrap; gap:5px; align-items:center; overflow-x:auto; min-width:0; flex:1;
               padding:1px; scrollbar-width:thin; }
 .dr-palette::-webkit-scrollbar { height:5px; }
@@ -217,7 +256,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
              cursor:pointer; user-select:none; white-space:nowrap;
              transition:transform .1s, box-shadow .12s, border-color .12s; }
 .dr-swatch:hover { transform:translateY(-1px); box-shadow:0 3px 9px rgba(40,34,59,.16); }
-.dr-swatch.on { border-color:#28223b; box-shadow:0 0 0 2.5px rgba(102,66,170,.30); }
+.dr-swatch.on { border-color:#28223b; box-shadow:0 0 0 2px #fff, 0 0 0 4px var(--brand); transform:translateY(-1px); }
 .dr-swatch.dr-sw-clear { background:#fff; color:#a9a5b5; border-style:dashed; border-color:#cfcada; }
 
 /* Combine-with-shift toggle — only meaningful while a shift swatch is picked
@@ -309,7 +348,7 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
    than a short list. It still shrinks (and scrolls) when the roster is longer
    than the space, which is the case that actually needed the flex. */
 .dr-scroll { flex:0 1 auto; min-height:0; overflow:auto; border:1px solid var(--line);
-             border-radius:12px; background:#fff; box-shadow:0 1px 2px rgba(40,34,59,.05); }
+             border-radius:var(--radius); background:#fff; box-shadow:var(--shadow-1); overscroll-behavior:contain; }
 /* table-layout:fixed so the name column is exactly 210px and the day columns
    split whatever is left EVENLY. Under the default `auto` algorithm the
    browser treats per-cell min/max-width as suggestions and hands the surplus
@@ -320,8 +359,8 @@ table.dr-grid { border-collapse:separate; border-spacing:0; font-size:12px; marg
 table.dr-grid th, table.dr-grid td { border-right:1px solid #eef0f4; border-bottom:1px solid #eef0f4; padding:0; }
 /* The name column and the date header both stay put while the other axis
    scrolls — without this you lose track of whose row you are painting. */
-table.dr-grid thead th { position:sticky; top:0; z-index:3; background:#f4f2f9;
-                         box-shadow:inset 0 -1px 0 #ded9ea; }
+table.dr-grid thead th { position:sticky; top:0; z-index:3; background:#f6f4fa;
+                         box-shadow:inset 0 -1px 0 #ded9ea, 0 2px 4px -2px rgba(40,34,59,.10); }
 table.dr-grid .dr-emp { position:sticky; left:0; z-index:2; background:#fff; width:210px;
                         padding:4px 8px; text-align:left; }
 table.dr-grid thead .dr-emp { z-index:4; background:#f4f2f9; }
@@ -337,8 +376,10 @@ table.dr-grid tbody tr:nth-child(even) .dr-emp { background:#fbfaFd; }
 table.dr-grid tbody tr:nth-child(even) td.dr-cell:not([style*="background"]) { background:#fcfbfe; }
 table.dr-grid tbody tr:hover .dr-emp { background:#f3effc; }
 table.dr-grid tbody tr:hover td { border-bottom-color:#d9d2ea; }
-.dr-emp-name { font-weight:600; font-size:11.5px; color:#28223b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.dr-emp-sub  { font-size:9.5px; color:#9895a3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.dr-emp-name { font-weight:700; font-size:11.5px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:-.005em; }
+.dr-emp-sub  { font-size:9.5px; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px; }
+table.dr-grid thead .dr-emp .dr-emp-name { font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#7a7688; }
+table.dr-grid thead .dr-emp .dr-emp-sub { color:#a79fc0; font-weight:600; }
 /* Name opens the shared quick-view drawer. Kept as a real <a> so it still
    middle-clicks / opens in a new tab to the full detail page. */
 .dr-emp-link, .dr-emp-plain { display:block; min-width:0; flex:1; text-decoration:none; }
@@ -346,17 +387,35 @@ table.dr-grid tbody tr:hover td { border-bottom-color:#d9d2ea; }
 .dr-emp-fill { border:0; background:transparent; color:#a9a5b6; cursor:pointer; font-size:11px; padding:0 2px; }
 .dr-emp-fill:hover { color:var(--brand); }
 
-.dr-dayhead { text-align:center; padding:4px 2px; cursor:pointer; }
+.dr-dayhead { text-align:center; padding:5px 2px 4px; cursor:pointer; transition:background .12s; }
 .dr-dayhead:hover { background:#ede9f5; }
-.dr-dom { font-size:12px; font-weight:700; color:#28223b; line-height:1.1; }
-.dr-dow { font-size:9.5px; color:#9895a3; text-transform:uppercase; }
+.dr-dom { font-size:12.5px; font-weight:800; color:var(--ink); line-height:1.1; }
+.dr-dow { font-size:9px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:1px; }
+table.dr-grid thead th.dr-we { background:#f8f4fb; }
 .dr-dayhead.dr-we .dr-dom, .dr-dayhead.dr-we .dr-dow { color:#c1544f; }
-.dr-dayhead.dr-hol { background:#fff4e6; }
+table.dr-grid thead th.dr-hol { background:#fff1de; }
 .dr-dayhead.dr-hol .dr-dom { color:#d46b08; }
+/* Today: the number becomes a solid brand disc and the whole column carries a
+   faint tint down through the body and footer, so the eye finds "now" on a
+   16-day sheet without reading the header. */
+.dr-dayhead.dr-today .dr-dom { display:inline-flex; align-items:center; justify-content:center;
+                               min-width:20px; height:20px; padding:0 4px; border-radius:20px;
+                               background:var(--today); color:#fff; box-shadow:0 2px 6px rgba(102,66,170,.35); }
+.dr-dayhead.dr-today .dr-dow { color:var(--brand); font-weight:800; }
+table.dr-grid thead th.dr-today { box-shadow:inset 0 -2px 0 var(--today), 0 2px 4px -2px rgba(40,34,59,.10); }
+/* Weekend / holiday / today bands only tint cells that carry no colour of
+   their own — a painted shift keeps its own fill (inline style), and the
+   rest-grey and rest+shift orange already say something. */
+table.dr-grid tbody td.dr-cell.dr-empty.dr-we { background:var(--we-tint); }
+table.dr-grid tbody td.dr-cell.dr-empty.dr-hol { background:var(--hol-tint); }
+table.dr-grid tbody td.dr-cell.dr-today:not([style*="background"]):not(.dr-rest):not(.dr-locked) { background:#f4effd; }
+table.dr-grid tbody td.dr-cell.dr-today { border-right-color:#d9cdf1; }
+table.dr-grid tbody td.dr-cell.dr-today + td { border-left:1px solid #d9cdf1; }
+table.dr-grid tfoot td.dr-cov.dr-today { background:#efe8fb !important; }
 
-.dr-cell { height:30px; text-align:center; cursor:pointer; position:relative;
-           font-size:10.5px; font-weight:700; color:#28223b; user-select:none; }
-.dr-cell:hover { outline:2px solid var(--brand); outline-offset:-2px; }
+.dr-cell { height:31px; text-align:center; cursor:pointer; position:relative;
+           font-size:10.5px; font-weight:700; color:#28223b; user-select:none; letter-spacing:.01em; }
+.dr-cell:hover { outline:2px solid var(--brand); outline-offset:-2px; z-index:1; }
 .dr-cell.dr-empty { color:#d5d2de; }
 .dr-cell.dr-rest  { background:#f4f4f6; color:#a9a5b6; }
 /* Rest/empty read as icons, not a bare dot — restores the icon this grid used
@@ -477,9 +536,14 @@ table.dr-grid tbody tr:hover td { border-bottom-color:#d9d2ea; }
    stack and reads as the panel's header. */
 table.dr-grid tfoot th, table.dr-grid tfoot td { position:sticky; bottom:0; background:#f7f6fa; z-index:2; }
 table.dr-grid tfoot .dr-emp { z-index:3; background:#f7f6fa; }
-.dr-cov { text-align:center; font-size:11px; font-weight:700; color:var(--brand-dark); padding:3px 2px; }
+.dr-cov { text-align:center; font-size:11px; font-weight:700; color:var(--brand-dark); padding:0 2px; font-variant-numeric:tabular-nums; }
+/* Whole-pixel row heights. Each footer row is sticky at its own offset (see
+   stackFooter in the JS); a fractional row height leaves a hairline between
+   two rows through which the body row underneath shows. */
+table.dr-grid tfoot tr.dr-cov-row th, table.dr-grid tfoot tr.dr-cov-row td { height:26px; line-height:25px; }
+table.dr-grid tfoot tr.dr-cov-head th, table.dr-grid tfoot tr.dr-cov-head td { height:30px; }
 .dr-cov.dr-cov-low { background:#fff1f0; color:#cf1322; }
-.dr-cov-label { font-size:10.5px; font-weight:700; color:var(--brand-dark); padding:3px 4px 3px 22px;
+.dr-cov-label { font-size:10.5px; font-weight:700; color:var(--brand-dark); padding:0 4px 0 22px; line-height:1;
                 display:flex; align-items:center; gap:5px; }
 .dr-cov-label .dr-chip { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
 .dr-cov-time { font-weight:500; color:#9895a3; }
@@ -512,7 +576,7 @@ tfoot.collapsed .dr-cov-row { display:none; }
 /* margin-top:auto pins the key to the bottom of the viewport now that the grid
    card hugs its content — otherwise a short roster left it floating in the
    middle of the page attached to nothing. */
-.dr-foot { flex-shrink:0; display:flex; align-items:center; gap:10px; padding:10px 16px 12px;
+.dr-foot { flex-shrink:0; display:flex; align-items:center; gap:10px; padding:9px 16px 11px;
            flex-wrap:wrap; margin-top:auto; }
 
 /* The key is ONE pill holding five items, not five separate pills.
@@ -581,7 +645,21 @@ tfoot.collapsed .dr-cov-row { display:none; }
    shift painted on it", and a layout rule landing on 2,000 table cells turned
    every one of them into a flex box with rounded corners. */
 .dr-placeholder { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
-            color:#9895a3; font-size:13px; background:#fff; border:1px solid var(--line); border-radius:10px; }
+            color:var(--ink-3); font-size:13px; background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+            box-shadow:var(--shadow-1); padding:28px 20px; text-align:center;
+            background-image:radial-gradient(#e9e4f4 1px, transparent 1px); background-size:18px 18px; }
+.dr-empty-art { width:72px; height:72px; border-radius:22px; display:flex; align-items:center; justify-content:center;
+                background:linear-gradient(135deg,#f1ecfb,#e6def7); color:var(--brand); font-size:34px;
+                box-shadow:inset 0 0 0 1px rgba(102,66,170,.12), 0 8px 24px -12px rgba(102,66,170,.45); margin-bottom:14px; }
+.dr-empty-h { font-size:16px; font-weight:800; color:var(--ink); letter-spacing:-.01em; }
+.dr-empty-p { font-size:12.5px; color:var(--ink-2); margin-top:4px; max-width:420px; line-height:1.55; }
+.dr-empty-steps { display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; justify-content:center; }
+.dr-empty-step { display:flex; align-items:center; gap:9px; background:#fff; border:1px solid #e6e2ee; border-radius:12px;
+                 padding:9px 13px 9px 9px; text-align:left; min-width:190px; box-shadow:0 1px 2px rgba(40,34,59,.04); }
+.dr-empty-step .n { width:26px; height:26px; border-radius:9px; display:inline-flex; align-items:center; justify-content:center;
+                    font-size:12px; font-weight:800; color:#fff; background:linear-gradient(135deg,#6642aa,#8a6bd0); flex-shrink:0; }
+.dr-empty-step .t { font-size:12px; font-weight:700; color:var(--ink); line-height:1.2; }
+.dr-empty-step .s { font-size:10.5px; color:var(--ink-3); margin-top:1px; }
 
 @media (max-width:820px) {
     .dr-meta-chips { display:none; }
@@ -607,6 +685,7 @@ tfoot.collapsed .dr-cov-row { display:none; }
         <a class="dr-back-btn" href="<?= htmlspecialchars($__back) ?>"><i class="ri-arrow-left-line"></i> Back</a>
         <div class="dr-title-icon"><i class="ri-calendar-schedule-line"></i></div>
         <div>
+            <div class="dr-h-eyebrow">Scheduling</div>
             <div class="dr-h-title">Duty Roster</div>
             <div class="dr-meta-chips">
                 <span class="dr-meta-chip" id="chip-period"><i class="ri-calendar-2-line"></i>—</span>
@@ -739,7 +818,11 @@ tfoot.collapsed .dr-cov-row { display:none; }
             <?php endif; ?>
             <div class="col-md-4">
                 <div class="lbl"><i class="ri-search-line me-1"></i>Find employee</div>
-                <input type="text" class="form-control form-control-sm" id="dr-search" placeholder="Name or ID">
+                <div class="dr-search-wrap" id="dr-search-wrap">
+                    <i class="ri-search-line"></i>
+                    <input type="text" class="form-control form-control-sm" id="dr-search" placeholder="Name or employee no." autocomplete="off">
+                    <button type="button" class="dr-search-clear" id="dr-search-clear" title="Clear search"><i class="ri-close-line"></i></button>
+                </div>
             </div>
 
             <?php /* ── "Min per shift" — HIDDEN, not removed ────────────────────────
@@ -848,8 +931,19 @@ Nothing is saved on upload. You are shown what would change, then it is painted 
         </table>
     </div>
     <div class="dr-placeholder d-none" id="dr-placeholder">
-        <i class="ri-inbox-line d-block mb-2" style="font-size:28px;"></i>
-        Choose a department to start planning this cutoff.
+        <div class="dr-empty-art"><i class="ri-calendar-schedule-line"></i></div>
+        <div class="dr-empty-h">Choose a <?= $__areas !== [] ? 'ward' : 'department' ?> to start planning</div>
+        <div class="dr-empty-p">The grid shows one row per employee and one column per day of the cutoff.
+            <?php if ($__can_edit): ?>Pick a shift from the palette, then click or drag across the days to paint it.<?php else: ?>You have read-only access to this screen.<?php endif; ?></div>
+        <div class="dr-empty-steps">
+            <div class="dr-empty-step"><span class="n">1</span><div><div class="t">Pick the cutoff</div><div class="s">Which pay period to plan</div></div></div>
+            <div class="dr-empty-step"><span class="n">2</span><div><div class="t">Choose a <?= $__areas !== [] ? 'ward' : 'department' ?></div><div class="s">Loads its people onto the grid</div></div></div>
+            <?php if ($__can_edit): ?>
+            <div class="dr-empty-step"><span class="n">3</span><div><div class="t">Paint, save, publish</div><div class="s">Drafts stay private until published</div></div></div>
+            <?php else: ?>
+            <div class="dr-empty-step"><span class="n">3</span><div><div class="t">Review the sheet</div><div class="s">Coverage per shift sits at the bottom</div></div></div>
+            <?php endif; ?>
+        </div>
     </div>
 </div>
 
@@ -998,6 +1092,16 @@ include 'component/employee_quick_view.php';
     // allowed to read salaries, so the link is only rendered when the endpoint
     // behind it would actually answer.
     window.DR_CAN_QUICKVIEW = <?= (function_exists('action_allowed') && action_allowed('employee_quick_view')) ? 'true' : 'false' ?>;
+
+    // Search box chrome: show the clear button while there is text, and clear
+    // + refilter on click. Filtering itself is duty-roster.js's, driven by the
+    // same input event it already listens for.
+    jQuery(function ($) {
+        var $w = $('#dr-search-wrap'), $s = $('#dr-search');
+        function sync() { $w.toggleClass('has-value', $s.val() !== ''); }
+        $s.on('input change', sync); sync();
+        $('#dr-search-clear').on('click', function () { $s.val('').trigger('input').focus(); });
+    });
 
     <?php if ($__is_admin): ?>
     // Admin lock/unlock. A full reload afterward is deliberate: locking (or

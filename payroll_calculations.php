@@ -386,6 +386,27 @@ $dept_q = $conn->query("SELECT DISTINCT d.name FROM payroll_items a
     WHERE a.payroll_id = $id ORDER BY d.name ASC");
 if ($dept_q) while ($dq = $dept_q->fetch_assoc()) $pay_departments[] = $dq['name'];
 
+// Areas (wards) present in this payroll, keyed by the DEPARTMENT NAME the
+// employees in them are filed under — the Area filter narrows to the picked
+// department, so the map has to be built off e.department_id (what the row
+// filter actually compares) rather than area.department_id. Those normally
+// agree; when they have drifted, this way the list still only ever offers
+// areas that will return rows.
+$pay_areas         = [];   // flat, for "All Departments"
+$pay_areas_by_dept = [];   // department name => [area name, …]
+$area_q = $conn->query("SELECT DISTINCT COALESCE(d.name, '') AS dept, ar.name AS area
+    FROM payroll_items a
+    INNER JOIN employee e ON a.employee_id = e.id
+    INNER JOIN area ar ON ar.id = e.area_id
+    LEFT JOIN department d ON d.id = e.department_id
+    WHERE a.payroll_id = $id ORDER BY ar.name ASC");
+if ($area_q) while ($aq = $area_q->fetch_assoc()) {
+    $pay_areas_by_dept[$aq['dept']][] = $aq['area'];
+    $pay_areas[] = $aq['area'];
+}
+$pay_areas = array_values(array_unique($pay_areas));
+sort($pay_areas, SORT_NATURAL | SORT_FLAG_CASE);
+
 // Positions present in this payroll — feeds the position filters (table + card view).
 $pay_positions = [];
 $pos_q = $conn->query("SELECT DISTINCT p.name FROM payroll_items a
@@ -420,12 +441,13 @@ $pay_schedules = array_values(array_unique(array_values($schedByEmp)));
 sort($pay_schedules, SORT_NATURAL | SORT_FLAG_CASE);
 
 $i = 0;
-$query = $conn->query("SELECT  a.*, f.site_code,f.site_name,f.site_address, e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay, d.name as department, p.name as position
-FROM payroll_items a 
-INNER JOIN employee e ON a.employee_id = e.id 
-LEFT JOIN department d ON e.department_id = d.id 
-LEFT JOIN position p ON e.position_id = p.id 
-LEFT JOIN sites f ON f.id = a.site_id 
+$query = $conn->query("SELECT  a.*, f.site_code,f.site_name,f.site_address, e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay, d.name as department, p.name as position, ar.name as area
+FROM payroll_items a
+INNER JOIN employee e ON a.employee_id = e.id
+LEFT JOIN department d ON e.department_id = d.id
+LEFT JOIN position p ON e.position_id = p.id
+LEFT JOIN area ar ON ar.id = e.area_id
+LEFT JOIN sites f ON f.id = a.site_id
 WHERE  a.payroll_id = $id $filter_query  ORDER BY lastname ASC ");
 
 // ── Summary stats (pre-aggregated) ──
@@ -463,6 +485,7 @@ $refund_names = [];   // refund id => display name
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Payroll Details &mdash; <?= date('M d', strtotime($payroll['date_from'])) ?>&ndash;<?= date('M d, Y', strtotime($payroll['date_to'])) ?></title>
+    <?php include __DIR__ . "/includes/favicon.php"; ?>
     <meta name="robots" content="noindex, nofollow">
     <!-- Standalone <head> (not includes/header.php), so publish the CSRF token
          here as well — this page's $.ajax calls write payroll items. -->
@@ -595,7 +618,10 @@ $refund_names = [];   // refund id => display name
                             <div class="pcw-filter-pop" id="pcw-filter-pop">
                                 <div class="pcw-fp-head">
                                     <span><i class="ri-filter-3-line"></i> Filters</span>
-                                    <button type="button" class="pcw-fp-reset" onclick="pcwResetFilters()"><i class="ri-restart-line"></i> Reset all</button>
+                                    <span class="pcw-fp-head-act">
+                                        <button type="button" class="pcw-fp-reset" onclick="pcwResetFilters()"><i class="ri-restart-line"></i> Reset all</button>
+                                        <button type="button" class="pcw-fp-close" onclick="pcwCloseFilter()" title="Close filters"><i class="ri-close-line"></i></button>
+                                    </span>
                                 </div>
                                 <div class="pcw-fp-lbl">Review mark</div>
                                 <div class="pcw-rv-chips" id="pcw-rv-chips">
@@ -635,6 +661,19 @@ $refund_names = [];   // refund id => display name
                                         <option value="<?= htmlspecialchars($pd, ENT_QUOTES) ?>"><?= htmlspecialchars($pd) ?></option>
                                     <?php endforeach; ?>
                                 </select>
+                                <?php /* Area (ward) inside the chosen department. The options are
+                                         rebuilt by the JS from PCW_AREAS whenever Department
+                                         changes — picking a department that owns no areas leaves
+                                         this disabled rather than offering dead choices. */ ?>
+                                <?php if ($pay_areas): ?>
+                                <div class="pcw-fp-lbl">Area</div>
+                                <select id="pcw-area-filter" class="pcw-select">
+                                    <option value="">All Areas</option>
+                                    <?php foreach ($pay_areas as $pa): ?>
+                                        <option value="<?= htmlspecialchars($pa, ENT_QUOTES) ?>"><?= htmlspecialchars($pa) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <?php endif; ?>
                                 <div class="pcw-fp-lbl">Position</div>
                                 <select id="pcw-pos-filter" class="pcw-select">
                                     <option value="">All Positions</option>
@@ -942,32 +981,66 @@ $refund_names = [];   // refund id => display name
                             </div>
                         </div> -->
 
-                        <!-- ── Search / department filter / anomaly flags ── -->
+                        <?php /* ── Search + filters ──────────────────────────────────────────
+                                 Same shape as the card view's left panel: the search box stays
+                                 out in the open and everything else lives behind the filter
+                                 button, so the table starts higher up the modal. The filter
+                                 SET is deliberately identical to the card view's — department,
+                                 area (cascading off department), position, rate type — plus
+                                 this view's own anomaly chips. */ ?>
                         <div class="pay-toolbar">
                             <div class="pay-search-box">
                                 <i class="ri-search-line"></i>
                                 <input type="text" id="pay-search" placeholder="Search name or employee no.&hellip;" autocomplete="off">
                                 <button type="button" id="pay-search-clear" title="Clear search" style="display:none;"><i class="ri-close-line"></i></button>
                             </div>
-                            <select id="pay-dept-filter" title="Filter by department">
-                                <option value="">All Departments</option>
-                                <?php foreach ($pay_departments as $pd): ?>
-                                    <option value="<?= htmlspecialchars($pd, ENT_QUOTES) ?>"><?= htmlspecialchars($pd) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <select id="pay-pos-filter" title="Filter by position">
-                                <option value="">All Positions</option>
-                                <?php foreach ($pay_positions as $pp): ?>
-                                    <option value="<?= htmlspecialchars($pp, ENT_QUOTES) ?>"><?= htmlspecialchars($pp) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <select id="pay-rate-filter" title="Filter by rate type">
-                                <option value="">All Rate Types</option>
-                                <?php foreach ($pay_rate_types as $prt): ?>
-                                    <option value="<?= htmlspecialchars($prt, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($prt)) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div class="pay-anomaly-chips" id="pay-anomaly-chips"></div>
+                            <div class="pay-filter-host">
+                                <button type="button" class="pay-filter-btn" id="pay-filter-btn" title="Filters">
+                                    <i class="ri-filter-3-line"></i> Filters
+                                    <span class="pay-filter-badge" id="pay-filter-badge" style="display:none;">0</span>
+                                </button>
+                                <div class="pay-filter-pop" id="pay-filter-pop">
+                                    <div class="pay-fp-head">
+                                        <span><i class="ri-filter-3-line"></i> Filters</span>
+                                        <span class="pay-fp-head-act">
+                                            <button type="button" class="pay-fp-reset" id="pay-fp-reset"><i class="ri-restart-line"></i> Reset all</button>
+                                            <button type="button" class="pay-fp-close" id="pay-fp-close" title="Close filters"><i class="ri-close-line"></i></button>
+                                        </span>
+                                    </div>
+                                    <div class="pay-fp-lbl">Department</div>
+                                    <select id="pay-dept-filter" title="Filter by department">
+                                        <option value="">All Departments</option>
+                                        <?php foreach ($pay_departments as $pd): ?>
+                                            <option value="<?= htmlspecialchars($pd, ENT_QUOTES) ?>"><?= htmlspecialchars($pd) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <?php if ($pay_areas): ?>
+                                    <div class="pay-fp-lbl">Area</div>
+                                    <select id="pay-area-filter" title="Filter by area">
+                                        <option value="">All Areas</option>
+                                        <?php foreach ($pay_areas as $pa): ?>
+                                            <option value="<?= htmlspecialchars($pa, ENT_QUOTES) ?>"><?= htmlspecialchars($pa) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <?php endif; ?>
+                                    <div class="pay-fp-lbl">Position</div>
+                                    <select id="pay-pos-filter" title="Filter by position">
+                                        <option value="">All Positions</option>
+                                        <?php foreach ($pay_positions as $pp): ?>
+                                            <option value="<?= htmlspecialchars($pp, ENT_QUOTES) ?>"><?= htmlspecialchars($pp) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <div class="pay-fp-lbl">Rate type</div>
+                                    <select id="pay-rate-filter" title="Filter by rate type">
+                                        <option value="">All Rate Types</option>
+                                        <?php foreach ($pay_rate_types as $prt): ?>
+                                            <option value="<?= htmlspecialchars($prt, ENT_QUOTES) ?>"><?= htmlspecialchars(ucfirst($prt)) ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <div class="pay-fp-lbl">Anomalies</div>
+                                    <div class="pay-anomaly-chips" id="pay-anomaly-chips"></div>
+                                </div>
+                            </div>
                             <span class="pay-filter-count" id="pay-filter-count"></span>
                         </div>
 
@@ -1231,6 +1304,7 @@ $refund_names = [];   // refund id => display name
                                                     data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
                                                     data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>"
                                                     data-pos="<?= htmlspecialchars($row['position'] ?? '', ENT_QUOTES) ?>"
+                                                    data-area="<?= htmlspecialchars($row['area'] ?? '', ENT_QUOTES) ?>"
                                                     data-days="<?= count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) ?>">
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
                                                     <td style="min-width:220px;">
@@ -1613,6 +1687,7 @@ $refund_names = [];   // refund id => display name
                                                         'name' => $row['lastname'] . ', ' . $row['firstname'],
                                                         'first' => $row['firstname'], 'last' => $row['lastname'],
                                                         'no' => (string)$row['employee_no'], 'pos' => (string)($row['position'] ?? ''), 'dept' => (string)($row['department'] ?? ''),
+                                                        'area' => (string)($row['area'] ?? ''),
                                                         'rate_type' => (string)($row['rate_type'] ?? 'monthly'),
                                                         'monthly' => (float)$row['basic_pay'], 'quinsena' => (float)$row['basic_pay'] / 2, 'per_day' => (float)$perDay,
                                                         'present' => (float)$row['present'], 'absent' => (float)$row['absent'], 'absent_amt' => (float)$absent_amount,
@@ -1980,6 +2055,7 @@ $refund_names = [];   // refund id => display name
                                                     data-name="<?= htmlspecialchars(strtolower($row['lastname'] . ', ' . $row['firstname'] . ' ' . $row['employee_no']), ENT_QUOTES) ?>"
                                                     data-dept="<?= htmlspecialchars($row['department'] ?? '', ENT_QUOTES) ?>"
                                                     data-pos="<?= htmlspecialchars($row['position'] ?? '', ENT_QUOTES) ?>"
+                                                    data-area="<?= htmlspecialchars($row['area'] ?? '', ENT_QUOTES) ?>"
                                                     data-days="<?= count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) ?>">
                                                     <td class="text-center" style="min-width: 40px;"><b><?= $i ?></b></td>
                                                     <td style="min-width:220px;">
@@ -2327,6 +2403,7 @@ $refund_names = [];   // refund id => display name
                                                         'name' => $row['lastname'] . ', ' . $row['firstname'],
                                                         'first' => $row['firstname'], 'last' => $row['lastname'],
                                                         'no' => (string)$row['employee_no'], 'pos' => (string)($row['position'] ?? ''), 'dept' => (string)($row['department'] ?? ''),
+                                                        'area' => (string)($row['area'] ?? ''),
                                                         'rate_type' => $rate_type,
                                                         'monthly' => (float)$row['basic_pay'], 'quinsena' => null, 'per_day' => (float)$perDay,
                                                         'present' => (float)$row['present'], 'absent' => (float)$row['absent'], 'absent_amt' => (float)$absent_amount,
@@ -3215,7 +3292,7 @@ function printPayslipPreview() {
         if (deduct && sDeduct) sDeduct.textContent = '₱ ' + deduct.textContent.trim();
 
         // ── Search / department / anomaly-flag filtering ──
-        var payFilter = { q: '', dept: '', pos: '', rate: '', chip: '' };
+        var payFilter = { q: '', dept: '', area: '', pos: '', rate: '', chip: '' };
         var payAnom = {};
         var CHIP_DEFS = [
             { key: 'negative', cls: 'negative', icon: 'ri-error-warning-line',  label: 'negative net' },
@@ -3265,19 +3342,64 @@ function printPayslipPreview() {
                 total++;
                 var okQ = !payFilter.q || (tr.getAttribute('data-name') || '').indexOf(payFilter.q) !== -1;
                 var okD = !payFilter.dept || tr.getAttribute('data-dept') === payFilter.dept;
+                var okA = !payFilter.area || tr.getAttribute('data-area') === payFilter.area;
                 var okP = !payFilter.pos || tr.getAttribute('data-pos') === payFilter.pos;
                 var okR = !payFilter.rate || tr.getAttribute('data-rate-type') === payFilter.rate;
                 var okC = !payFilter.chip || payAnom[payFilter.chip].indexOf(tr) !== -1;
-                var show = okQ && okD && okP && okR && okC;
+                var show = okQ && okD && okA && okP && okR && okC;
                 tr.style.display = show ? '' : 'none';
                 tr.classList.toggle('pay-row-hit', show && !!payFilter.chip);
                 if (show) shown++;
             });
             var counter = document.getElementById('pay-filter-count');
-            if (counter) counter.textContent = (payFilter.q || payFilter.dept || payFilter.pos || payFilter.rate || payFilter.chip)
+            if (counter) counter.textContent = (payFilter.q || payFilter.dept || payFilter.area || payFilter.pos || payFilter.rate || payFilter.chip)
                 ? shown + ' of ' + total + ' employees' : '';
             var clearBtn = document.getElementById('pay-search-clear');
             if (clearBtn) clearBtn.style.display = payFilter.q ? '' : 'none';
+            payUpdBadge();
+        }
+
+        // Count of filters set inside the popover (the search box is its own
+        // control out front, so it isn't counted here).
+        function payUpdBadge() {
+            var n = (payFilter.dept ? 1 : 0) + (payFilter.area ? 1 : 0) + (payFilter.pos ? 1 : 0)
+                  + (payFilter.rate ? 1 : 0) + (payFilter.chip ? 1 : 0);
+            var badge = document.getElementById('pay-filter-badge');
+            var btn = document.getElementById('pay-filter-btn');
+            if (!badge || !btn) return;
+            badge.textContent = n;
+            badge.style.display = n ? 'inline-flex' : 'none';
+            btn.classList.toggle('on', n > 0 || document.getElementById('pay-filter-pop').classList.contains('open'));
+        }
+
+        /* Area follows Department — same rule as the card view's pcwSyncAreas():
+           narrow the ward list to the picked department and drop a selection the
+           new department doesn't contain. */
+        function paySyncAreas() {
+            var sel = document.getElementById('pay-area-filter');
+            if (!sel) return;
+            var src  = window.PCW_AREAS || { all: [], by_dept: {} };
+            var list = payFilter.dept ? (src.by_dept[payFilter.dept] || []) : (src.all || []);
+            var keep = payFilter.area && list.indexOf(payFilter.area) !== -1;
+            var html = '<option value="">All Areas</option>';
+            list.forEach(function (a) {
+                var e = String(a).replace(/[&<>"]/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+                });
+                html += '<option value="' + e + '">' + e + '</option>';
+            });
+            sel.innerHTML = html;
+            sel.disabled = list.length === 0;
+            if (!keep) payFilter.area = '';
+            sel.value = payFilter.area;
+            payCsRefresh(sel);
+        }
+
+        /* The custom-select skin re-reads the native <select> only on a real
+           'change' event, so a scripted .value / option rewrite has to hand it
+           back explicitly or the visible control keeps the stale list. */
+        function payCsRefresh(el) {
+            if (el && window.CustomSelect && CustomSelect.refresh) CustomSelect.refresh(el);
         }
 
         var paySearchEl = document.getElementById('pay-search');
@@ -3294,6 +3416,12 @@ function printPayslipPreview() {
             });
             document.getElementById('pay-dept-filter').addEventListener('change', function () {
                 payFilter.dept = this.value;
+                paySyncAreas();
+                payApplyFilter();
+            });
+            var payAreaSel = document.getElementById('pay-area-filter');
+            if (payAreaSel) payAreaSel.addEventListener('change', function () {
+                payFilter.area = this.value;
                 payApplyFilter();
             });
             document.getElementById('pay-pos-filter').addEventListener('change', function () {
@@ -3312,8 +3440,52 @@ function printPayslipPreview() {
                 payRenderChips();
                 payApplyFilter();
             });
+            /* ── Popover open / close ──────────────────────────────────────
+               Same rules as the card view: the X button closes it, an outside
+               click closes it, but working the filters never does. The select
+               menus are appended to <body> (custom-select), so a click on one
+               of their options is outside .pay-filter-pop in the DOM even
+               though the user is plainly still filtering. */
+            var payPop = document.getElementById('pay-filter-pop');
+            var payBtn = document.getElementById('pay-filter-btn');
+            function payCloseFilter() {
+                payPop.classList.remove('open');
+                payUpdBadge();
+            }
+            payBtn.addEventListener('click', function (ev) {
+                ev.stopPropagation();
+                payPop.classList.toggle('open');
+                payUpdBadge();
+            });
+            document.getElementById('pay-fp-close').addEventListener('click', payCloseFilter);
+            document.getElementById('pay-fp-reset').addEventListener('click', function () {
+                payFilter.dept = ''; payFilter.area = ''; payFilter.pos = ''; payFilter.rate = ''; payFilter.chip = '';
+                var dEl = document.getElementById('pay-dept-filter');
+                var pEl = document.getElementById('pay-pos-filter');
+                var rEl = document.getElementById('pay-rate-filter');
+                dEl.value = ''; payCsRefresh(dEl);
+                paySyncAreas();                       // back to the full ward list (refreshes itself)
+                pEl.value = ''; payCsRefresh(pEl);
+                rEl.value = ''; payCsRefresh(rEl);
+                payRenderChips();
+                payApplyFilter();
+            });
+            document.addEventListener('click', function (ev) {
+                if (!payPop.classList.contains('open')) return;
+                var t = ev.target;
+                if (payPop.contains(t) || payBtn.contains(t)) return;
+                if (t.closest && t.closest('.cs-menu, .swal2-container, .select2-container')) return;
+                payCloseFilter();
+            });
+            document.addEventListener('keydown', function (ev) {
+                if (ev.key !== 'Escape' || !payPop.classList.contains('open')) return;
+                if (document.querySelector('.cs-menu.open')) return;   // the menu owns Esc first
+                payCloseFilter();
+            });
+
             payClassifyRows();
             payRenderChips();
+            payUpdBadge();
         }
     });
     window.addEventListener('resize', () => {
@@ -3332,6 +3504,9 @@ function printPayslipPreview() {
 window.PCW_DATA = <?= json_encode($pcwEmployees, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?>;
 window.PCW_REVIEWS = <?= json_encode($pcwReviewConvo, JSON_UNESCAPED_UNICODE) ?>;
 window.PCW_EXTRA_CATALOG = <?= json_encode($pcwExtraCatalog, JSON_UNESCAPED_UNICODE) ?>;
+/* Areas in this payroll: 'all' is every area, the rest is keyed by department
+   name so the Area filter can follow the Department picker. */
+window.PCW_AREAS = <?= json_encode(['all' => $pay_areas, 'by_dept' => $pay_areas_by_dept], JSON_UNESCAPED_UNICODE) ?>;
 window.PCW_META = <?= json_encode([
     'id'         => (int)$id,
     'status'     => (int)$status,

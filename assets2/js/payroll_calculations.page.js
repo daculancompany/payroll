@@ -12,7 +12,7 @@
     var M = window.PCW_META || {};
     // S.ps holds the payslip selection ({id: true}) — the card list is the only
     // selection UI now that the table preview has no checkbox column.
-    var S = { q: '', dept: '', pos: '', rate: '', sch: '', has: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
+    var S = { q: '', dept: '', area: '', pos: '', rate: '', sch: '', has: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
     // Exception predicates — reused by the Insights chips and the left-list filter.
     function excPred(key, e) {
         switch (key) {
@@ -82,6 +82,7 @@
         S.list = D.filter(function (e) {
             if (S.q && (e.name + ' ' + e.no + ' ' + e.pos).toLowerCase().indexOf(S.q) === -1) return false;
             if (S.dept && e.dept !== S.dept) return false;
+            if (S.area && e.area !== S.area) return false;
             if (S.pos && e.pos !== S.pos) return false;
             if (S.rate && e.rate_type !== S.rate) return false;
             if (S.sch && e.sch !== S.sch) return false;
@@ -1113,6 +1114,10 @@
                 var dept = db.getAttribute('data-dept');
                 S.dept = (S.dept === dept) ? '' : dept;
                 byId('pcw-dept').value = S.dept;
+                csRefresh(byId('pcw-dept'));
+                // Same cascade as the Department dropdown — this bar is just
+                // another way to set it. (Hoisted; defined with the filters.)
+                pcwSyncAreas();
                 buildList();
                 pcwUpdFilterCount();
                 renderInsights();
@@ -1804,8 +1809,51 @@
     });
 
     // ── Filters ──
+    /* Area follows Department: repopulate the ward list from the picked
+       department (all wards when none is picked) and drop a selection that the
+       new department doesn't contain, so the two filters can never combine into
+       an empty list by accident. Rewriting the <option>s is enough for the
+       custom-select skin — it rebuilds on child changes. Returns true when the
+       area selection was cleared, i.e. the caller's list is now stale. */
+    /* The custom-select skin mirrors the native <select> but only re-reads it on
+       a real 'change' event. Setting .value from script, or rewriting the
+       <option>s, therefore leaves the visible control showing the OLD label /
+       list — the MutationObserver in custom-select.js only looks for *new*
+       selects to enhance and skips anything already inside a .cs-select. Every
+       scripted write below has to hand it back. */
+    function csRefresh(el) {
+        if (el && window.CustomSelect && CustomSelect.refresh) CustomSelect.refresh(el);
+    }
+
+    var areaSel = byId('pcw-area-filter');   // absent when no one in the payroll has an area
+    function pcwSyncAreas() {
+        if (!areaSel) return false;
+        var src  = window.PCW_AREAS || { all: [], by_dept: {} };
+        var list = S.dept ? (src.by_dept[S.dept] || []) : (src.all || []);
+        var keep = S.area && list.indexOf(S.area) !== -1;
+
+        var html = '<option value="">All Areas</option>';
+        list.forEach(function (a) {
+            html += '<option value="' + esc(a) + '">' + esc(a) + '</option>';
+        });
+        areaSel.innerHTML = html;
+        // A department with no wards of its own: nothing to choose, so say so
+        // rather than showing a lone "All Areas" that does nothing.
+        areaSel.disabled = list.length === 0;
+        if (!keep) S.area = '';
+        areaSel.value = S.area;
+        csRefresh(areaSel);
+        return !keep;
+    }
+
     byId('pcw-q').addEventListener('input', function () { S.q = this.value.trim().toLowerCase(); buildList(); });
-    byId('pcw-dept').addEventListener('change', function () { S.dept = this.value; buildList(); pcwUpdFilterCount(); });
+    byId('pcw-dept').addEventListener('change', function () {
+        S.dept = this.value;
+        pcwSyncAreas();
+        buildList();
+        pcwUpdFilterCount();
+    });
+    if (areaSel) areaSel.addEventListener('change', function () { S.area = this.value; buildList(); pcwUpdFilterCount(); });
     byId('pcw-pos-filter').addEventListener('change', function () { S.pos = this.value; buildList(); pcwUpdFilterCount(); });
     byId('pcw-rate-filter').addEventListener('change', function () { S.rate = this.value; buildList(); pcwUpdFilterCount(); });
     var schSel = byId('pcw-sch-filter');   // only rendered when the payroll has schedule data
@@ -1859,7 +1907,11 @@
         var open = pop.classList.toggle('open');
         btn.classList.toggle('on', open);
     };
-    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.pos ? 1 : 0) + (S.rate ? 1 : 0) + (S.sch ? 1 : 0) + (S.has !== '' ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0) + (S.lock !== '' ? 1 : 0); }
+    window.pcwCloseFilter = function () {
+        byId('pcw-filter-pop').classList.remove('open');
+        byId('pcw-filter-btn').classList.toggle('on', pcwActiveFilters() > 0);
+    };
+    function pcwActiveFilters() { return (S.dept ? 1 : 0) + (S.area ? 1 : 0) + (S.pos ? 1 : 0) + (S.rate ? 1 : 0) + (S.sch ? 1 : 0) + (S.has !== '' ? 1 : 0) + (S.rv !== '' ? 1 : 0) + (S.erv !== '' ? 1 : 0) + (S.lock !== '' ? 1 : 0); }
     window.pcwUpdFilterCount = function () {
         var n = pcwActiveFilters();
         var badge = byId('pcw-filter-count'), btn = byId('pcw-filter-btn');
@@ -1868,11 +1920,12 @@
         btn.classList.toggle('on', n > 0 || byId('pcw-filter-pop').classList.contains('open'));
     };
     window.pcwResetFilters = function () {
-        S.dept = ''; S.pos = ''; S.rate = ''; S.sch = ''; S.has = ''; S.rv = ''; S.erv = ''; S.lock = '';
-        byId('pcw-dept').value = '';
-        byId('pcw-pos-filter').value = '';
-        byId('pcw-rate-filter').value = '';
-        if (schSel) schSel.value = '';
+        S.dept = ''; S.area = ''; S.pos = ''; S.rate = ''; S.sch = ''; S.has = ''; S.rv = ''; S.erv = ''; S.lock = '';
+        byId('pcw-dept').value = ''; csRefresh(byId('pcw-dept'));
+        pcwSyncAreas();                     // back to the full ward list (refreshes itself)
+        byId('pcw-pos-filter').value = ''; csRefresh(byId('pcw-pos-filter'));
+        byId('pcw-rate-filter').value = ''; csRefresh(byId('pcw-rate-filter'));
+        if (schSel) { schSel.value = ''; csRefresh(schSel); }
         byId('pcw-has-chips').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-has') === ''); });
         byId('pcw-rv-chips').querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-rv') === ''); });
         if (ervChips) ervChips.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-erv') === ''); });
@@ -1880,13 +1933,30 @@
         buildList();
         pcwUpdFilterCount();
     };
-    // Close the popover when clicking outside it
+    /* Close on an outside click — but working the filters is never "outside".
+       The custom-select menus (Department / Area / Position / Rate / Shift) are
+       appended to <body> and positioned fixed, so a click on one of their
+       options lands OUTSIDE .pcw-filter-pop in the DOM even though the user is
+       plainly still filtering; without the .cs-menu check, picking a department
+       slammed the panel shut. Same for SweetAlert, which also mounts at body
+       level. The X button and a genuine click elsewhere on the page are the
+       only ways out. */
     document.addEventListener('click', function (ev) {
         var pop = byId('pcw-filter-pop');
         if (!pop.classList.contains('open')) return;
-        if (pop.contains(ev.target) || byId('pcw-filter-btn').contains(ev.target)) return;
-        pop.classList.remove('open');
-        byId('pcw-filter-btn').classList.toggle('on', pcwActiveFilters() > 0);
+        var t = ev.target;
+        if (pop.contains(t) || byId('pcw-filter-btn').contains(t)) return;
+        if (t.closest && t.closest('.cs-menu, .swal2-container, .select2-container')) return;
+        pcwCloseFilter();
+    });
+    // Esc closes it too — the keyboard equivalent of the X.
+    document.addEventListener('keydown', function (ev) {
+        if (ev.key !== 'Escape') return;
+        var pop = byId('pcw-filter-pop');
+        if (!pop.classList.contains('open')) return;
+        // A select menu open on top owns the Esc first; it closes itself.
+        if (document.querySelector('.cs-menu.open')) return;
+        pcwCloseFilter();
     });
 
     // ── Prev / next ──

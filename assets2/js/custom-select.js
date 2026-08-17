@@ -130,6 +130,7 @@
 
         var html = '';
         if (d.csIcon) {
+            row.classList.add('cs-opt-ico');
             html += '<span class="cs-tod ' + esc(d.csIconClass || '') + '"><i class="' + esc(d.csIcon) + '"></i></span>';
         }
         html += '<span class="cs-opt-main"><span class="cs-opt-name">' + esc(name) + '</span>';
@@ -159,6 +160,12 @@
                 addRow(st, child);
             }
         });
+
+        /* Some-but-not-all rows have an icon chip → indent the plain ones so
+           every label starts on the same x (see .cs-mixed-icons). */
+        var withIcon = 0;
+        st.rows.forEach(function (r) { if (r.classList.contains('cs-opt-ico')) withIcon++; });
+        st.opts.classList.toggle('cs-mixed-icons', withIcon > 0 && withIcon < st.rows.length);
 
         // The filter box only earns its space on long lists.
         var forced = sel.dataset.csSearch;

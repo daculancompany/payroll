@@ -92,6 +92,7 @@ table th {
 <html>
 <title>Payslip Details</title>
 <head>
+<?php include __DIR__ . "/includes/favicon.php"; ?>
   <meta http-equiv="Content-Type" content="charset=utf-8" />
   <style type="text/css">
     * {

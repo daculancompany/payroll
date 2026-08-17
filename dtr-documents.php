@@ -171,6 +171,7 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DTR Documents &mdash; <?= htmlspecialchars($dtr['site_code']) ?> <?= date('M d', strtotime($dtr['date_from'])) ?>&ndash;<?= date('M d, Y', strtotime($dtr['date_to'])) ?></title>
+    <?php include __DIR__ . "/includes/favicon.php"; ?>
     <meta name="robots" content="noindex, nofollow">
     <!-- This page renders its own <head> rather than includes/header.php, so the
          CSRF token has to be published here too — its $.ajax calls hit the
@@ -190,7 +191,17 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
 <style>
 :root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent; }
 html, body { height:100%; }
-body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans-serif; overflow:hidden; }
+/* Dot-grid canvas texture. The panels and the paper are opaque cards on top, so
+   the dots read in the gutters and around the sheet — the page reads as a work
+   surface instead of flat gray. The body never scrolls here (each pane scrolls
+   itself), so the grid stays put like a drafting mat. */
+body {
+    margin:0; font-family:'Segoe UI',system-ui,Arial,sans-serif; overflow:hidden;
+    background-color:#f0eff2;
+    background-image:radial-gradient(circle, rgba(102,66,170,.17) 1.3px, transparent 1.4px);
+    background-size:22px 22px;
+    background-position:-11px -11px;
+}
 /* ── Soft purple scrollbars, everywhere on this page (standalone — no theme.css) ── */
 * { scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 *::-webkit-scrollbar { width:9px; height:9px; }
@@ -780,7 +791,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI',system-ui,Arial,sans
 /* Print: only the paper sheet — or, in print-all mode, every sheet */
 #ddv-print-all { display:none; }
 @media print {
-    body { overflow:visible; }
+    /* The dot grid is screen chrome — never let it onto the sheet, even when
+       the user has "print background graphics" turned on. */
+    body { overflow:visible; background-image:none; background-color:#fff; }
     body * { visibility:hidden; }
     body:not(.print-all) #ddv-paper, body:not(.print-all) #ddv-paper * { visibility:visible; }
     body:not(.print-all) #ddv-paper { position:absolute; left:0; top:0; width:100%; max-width:none; border:none; box-shadow:none; padding:10px 24px; zoom:1 !important; }

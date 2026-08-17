@@ -17,6 +17,7 @@ $html = '
 <html>
 <head>
     <title>Payslip</title>
+    <?php include __DIR__ . "/includes/favicon.php"; ?>
     <style>
         .page-break {
             page-break-after: always;

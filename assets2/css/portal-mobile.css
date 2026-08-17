@@ -182,6 +182,15 @@
         transition: transform .32s cubic-bezier(.32, .72, .24, 1);
     }
     .modal.show .modal-dialog { transform: translateY(0); }
+    /* The sheet is a flex container, so its child (.modal-content, or the <form>
+       that wraps it in the request dialogs) is a flex item with the default
+       min-width:auto — it refuses to shrink below its content's intrinsic width.
+       One long unbreakable string was enough to blow the sheet past the screen:
+       attaching a file named "Screenshot_2026-08-16-22-47-…png" widened the
+       dialog to ~670px, pushing every field and the Submit button off-screen.
+       min-width:0 lets it shrink back to the viewport so the inner ellipsis and
+       wrapping rules do their job. */
+    .modal.fade .modal-dialog > * { min-width: 0; max-width: 100%; }
     .modal .modal-content {
         position: relative;
         width: 100%;
@@ -357,15 +366,35 @@
 
     /* ── FCM push-permission banner — keep it clear of the bottom nav ──
        fcm-client.js injects it with inline bottom:18px/right:18px, which
-       covers (and blocks taps on) the fixed bottom navigation bar. */
+       covers (and blocks taps on) the fixed bottom navigation bar.
+       Stretching it full-width also made it ~250px tall, so it permanently
+       covered the bottom quarter of every tab (the Overview quick actions, the
+       last rows of My Info) until dismissed. On a phone it is collapsed to a
+       single bar instead: title + Enable + Later on one row, long explanation
+       hidden — the button still supplies the click gesture the permission
+       prompt needs, which is the banner's only job. */
     #fcm-enable-banner {
         bottom: calc(92px + env(safe-area-inset-bottom, 0px)) !important;
         left: 12px;
         right: 12px !important;
         max-width: none !important;
-        border-radius: 16px !important;
+        border-radius: 14px !important;
+        padding: 8px 10px !important;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
-    #fcm-enable-banner button { min-height: 42px; }
+    /* Title row — no bottom margin now that it sits inline with the buttons. */
+    #fcm-enable-banner > div:first-child {
+        margin-bottom: 0 !important;
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 12.5px;
+    }
+    /* The two-line explanation: the bar is self-explanatory at this size. */
+    #fcm-enable-banner > div:nth-child(2) { display: none !important; }
+    #fcm-enable-banner button { min-height: 38px; flex: none; white-space: nowrap; }
+    #fcm-enable-banner #fcm-later-btn { padding: 6px 6px !important; }
     /* While a dialog is open (e.g. the payslip details sheet) the banner would
        sit on top of its action buttons — Bootstrap adds .modal-open to <body>,
        so stand the banner down until the sheet is dismissed. */

@@ -210,6 +210,7 @@ LEFT JOIN sites f ON f.id = a.site_id
             $formattedDate = date("F j, Y", $date);
             echo $formattedDate;
             ?></title>
+    <?php include __DIR__ . "/includes/favicon.php"; ?>
 
 <body>
     <div class="container-fluid">

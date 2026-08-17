@@ -29,7 +29,7 @@ $report_groups = [
 
 <div class="main-content">
 <div class="page-content">
-<div class="container-fluid">
+<div class="container-fluid" style="padding-bottom:24px;">
 
     <div class="row mb-2"><div class="col-12">
         <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">

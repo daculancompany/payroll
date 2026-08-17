@@ -10,7 +10,7 @@
     <meta content="Payroll System" name="description" />
     <meta content="Niel Daculan" name="author" />
     <!-- App favicon -->
-    <link rel="shortcut icon" href="assets/images/favicon.ico">
+    <?php include __DIR__ . "/includes/favicon.php"; ?>
 
     <!-- ── PWA: lets the admin app be installed from the login screen too ── -->
     <link rel="manifest" href="manifest-admin.webmanifest">

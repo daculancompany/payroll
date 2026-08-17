@@ -43,6 +43,7 @@ $GLOBALS['PAYSLIP_EMBED'] = true;   // tells view_payslip.php to emit body-only 
 <head>
 <meta charset="UTF-8">
 <title>My Payslips (<?= count($valid) ?>)</title>
+<?php include __DIR__ . "/includes/favicon.php"; ?>
 <link href="assets/css/icons.min.css" rel="stylesheet">
 <style>
     body { background:#f0f2f5; }

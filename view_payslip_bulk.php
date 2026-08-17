@@ -144,6 +144,7 @@ if (empty($payslips)) { echo "No data found."; return; }
 <head>
 <meta charset="UTF-8">
 <title>Payslips — Bulk Print</title>
+<?php include __DIR__ . "/includes/favicon.php"; ?>
 <style>
 * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; box-sizing:border-box; margin:0; padding:0; }
 @page { size: A4 portrait; margin: 8mm 10mm; }

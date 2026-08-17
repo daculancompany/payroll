@@ -82,7 +82,7 @@ if (!isset($page_title)) {
     <script src="assets2/js/csrf.js"></script>
     <meta content="Niel Daculan" name="author" />
     <!-- App favicon -->
-    <link rel="shortcut icon" href="assets/images/favicon.ico">
+    <?php include __DIR__ . "/favicon.php"; ?>
 
     <!-- ── PWA: installable admin app (separate manifest from the employee portal) ── -->
     <link rel="manifest" href="manifest-admin.webmanifest">
@@ -91,7 +91,6 @@ if (!isset($page_title)) {
          name stays readable. -->
     <meta name="theme-color" content="#d1c6e5">
     <!-- iOS ignores the manifest; it reads these tags on "Add to Home Screen" -->
-    <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -433,6 +432,27 @@ if (!isset($page_title)) {
         html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav .menu-dropdown .nav-link.active i {
             background: var(--sb-primary) !important;
             color: #ffffff !important;
+        }
+
+        /* Sidebar count pill (e.g. pending leave requests on "Leave Requests"). */
+        .navbar-menu .navbar-nav .nav-link .sb-count {
+            margin-left: auto;
+            float: right;
+            font-size: 10px;
+            font-weight: 700;
+            min-width: 20px;
+            padding: 3px 7px;
+            line-height: 1.2;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, .12);
+        }
+        /* Collapsed (icon-only) sidebar: sit the pill on the icon's corner. */
+        html[data-sidebar-size^="sm"] .navbar-menu .navbar-nav > .nav-item > .nav-link .sb-count {
+            position: absolute;
+            top: 4px;
+            right: 6px;
+            margin: 0;
+            font-size: 9px;
+            padding: 2px 5px;
         }
     </style>
 

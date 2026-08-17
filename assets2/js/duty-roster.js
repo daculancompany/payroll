@@ -290,9 +290,31 @@ $(document).ready(function () {
         return MON[+a[1] - 1] + ' ' + (+a[2]) + ' – ' + MON[+b[1] - 1] + ' ' + (+b[2]) + ', ' + b[0];
     }
 
+    // Local calendar date as YYYY-MM-DD — the grid's dates are already local,
+    // so a UTC-based toISOString() would flip the "today" column an hour or
+    // more either side of midnight.
+    function todayIso() {
+        var d = new Date(), m = d.getMonth() + 1, day = d.getDate();
+        return d.getFullYear() + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+    }
+    // Per-date column classes (weekend / holiday / today), built once per
+    // render so cellHtml() can stamp the same state on every body cell that
+    // the header already carries — a Sunday column reads as one shaded band
+    // instead of a red header over plain white.
+    var dayCls = {};
+
     function render() {
         var emps = visibleEmployees();
         var has = !!(S.employees.length && S.days.length);
+        var tIso = todayIso();
+        dayCls = {};
+        S.days.forEach(function (d) {
+            var c = '';
+            if (d.w === 0 || d.w === 6) c += ' dr-we';
+            if (S.holidays && S.holidays[d.date]) c += ' dr-hol';
+            if (d.date === tIso) c += ' dr-today';
+            dayCls[d.date] = c;
+        });
         // The grid and the placeholder are siblings that each want the leftover
         // height, so exactly one of them may be in the layout at a time.
         $('#dr-placeholder').toggleClass('d-none', has);
@@ -308,8 +330,9 @@ $(document).ready(function () {
               + '<div class="dr-emp-sub">' + esc(S.employees.length + ' shown') + '</div></th>';
         S.days.forEach(function (d) {
             var hol = S.holidays && S.holidays[d.date];
-            var cls = 'dr-dayhead' + (d.w === 0 || d.w === 6 ? ' dr-we' : '') + (hol ? ' dr-hol' : '');
-            var tip = hol ? esc(hol.title) : 'Click to fill this whole column';
+            var cls = 'dr-dayhead' + (dayCls[d.date] || '');
+            var isToday = d.date === tIso;
+            var tip = hol ? esc(hol.title) : (isToday ? 'Today · click to fill this whole column' : 'Click to fill this whole column');
             h += '<th class="' + cls + '" data-date="' + d.date + '" title="' + tip + '">'
                + '<div class="dr-dom">' + d.dom + '</div><div class="dr-dow">' + esc(d.dow) + '</div></th>';
         });
@@ -388,7 +411,7 @@ $(document).ready(function () {
         var v = cellValue(empId, date);
         var zone = zoneOf(empId, date);
         var k = key(empId, date);
-        var cls = 'dr-cell';
+        var cls = 'dr-cell' + (dayCls[date] || '');
         var style = '';
         var label = '·';
         var title = [];
@@ -507,7 +530,10 @@ $(document).ready(function () {
     // understaffed days still flagged red. Folding the panel away therefore
     // hides detail, never the warning.
     var covCollapsed = (function () {
-        try { return localStorage.getItem('dr-cov-collapsed') === '1'; } catch (e) { return false; }
+        // Folded until the planner opens it: on a 150-row department the
+        // breakdown otherwise costs a third of the viewport before a single
+        // roster row is visible. The summary line is always on screen.
+        try { return localStorage.getItem('dr-cov-collapsed') !== '0'; } catch (e) { return true; }
     })();
 
     function renderCoverage(emps) {
@@ -597,7 +623,9 @@ $(document).ready(function () {
         var acc = 0;
         for (var i = trs.length - 1; i >= 0; i--) {
             $(trs[i]).children().css('bottom', acc + 'px');
-            acc += trs[i].getBoundingClientRect().height;
+            // Rounded: a fractional offset leaves a hairline between two
+            // stacked rows through which the body row beneath bleeds.
+            acc += Math.round(trs[i].getBoundingClientRect().height);
         }
     }
 

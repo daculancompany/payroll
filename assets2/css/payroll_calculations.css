@@ -202,9 +202,33 @@ td.net-content { background: #eef4fc !important; color: #1e50a0 !important; font
 .pay-search-box input { border:none; outline:none; font-size:12px; flex:1; background:transparent; min-width:160px; }
 .pay-search-box button { border:none; background:none; color:#999; cursor:pointer; padding:0 2px; font-size:14px; line-height:1; }
 #pay-dept-filter,
+#pay-area-filter,
 #pay-pos-filter,
-#pay-rate-filter { border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; max-width:230px; }
-.pay-anomaly-chips { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+#pay-rate-filter { border:1px solid #d9d3e4; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#0e6b37; padding:5px 8px; cursor:pointer; width:100%; }
+
+/* ── Table-view filter popover (mirrors the card view's .pcw-filter-pop) ──
+   The filters used to sit inline and ate four rows of the modal before the
+   table even started. Now only the search box and this button show. */
+.pay-filter-host { position:relative; }
+.pay-filter-btn { display:inline-flex; align-items:center; gap:5px; padding:6px 12px; border-radius:6px; cursor:pointer;
+  font-size:12px; font-weight:700; color:#0e6b37; background:#fff; border:1px solid #d9d3e4; transition:all .12s; }
+.pay-filter-btn:hover, .pay-filter-btn.on { background:#eafaf0; border-color:#b7e4c7; }
+.pay-filter-badge { display:inline-flex; align-items:center; justify-content:center; min-width:16px; height:16px; padding:0 4px;
+  border-radius:8px; background:#c62828; color:#fff; font-size:9.5px; font-weight:800; }
+.pay-filter-pop { display:none; position:absolute; left:0; top:calc(100% + 4px); z-index:60; width:300px; max-width:88vw;
+  background:#fff; border:1px solid #e1dfdd; border-radius:12px; padding:11px; box-shadow:0 10px 30px rgba(58,40,93,.18); }
+.pay-filter-pop.open { display:block; }
+.pay-fp-head { display:flex; justify-content:space-between; align-items:center; font-size:11.5px; font-weight:800; color:#0e6b37; }
+.pay-fp-head i { color:#107c41; }
+.pay-fp-head-act { display:inline-flex; align-items:center; gap:4px; }
+.pay-fp-reset { display:inline-flex; align-items:center; gap:3px; border:none; background:transparent; color:#c62828;
+  font-size:10px; font-weight:700; cursor:pointer; padding:2px 5px; border-radius:6px; }
+.pay-fp-reset:hover { background:#fdf4f3; }
+.pay-fp-close { width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid #e9e7ee; border-radius:6px; background:#f4f3f6; color:#767283; font-size:13px; cursor:pointer; transition:all .12s; }
+.pay-fp-close:hover { background:#eafaf0; border-color:#b7e4c7; color:#0e6b37; }
+.pay-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:10px 0 4px; }
+.pay-anomaly-chips { display:flex; align-items:center; gap:4px; flex-wrap:wrap; }
 .pay-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:700; padding:3px 10px; border-radius:12px; border:1px solid; cursor:pointer; user-select:none; background:#fff; transition:box-shadow .1s; }
 .pay-chip:hover { box-shadow:0 1px 4px rgba(0,0,0,.12); }
 .pay-chip.zero     { color:#856404; border-color:#ffe082; background:#fff8e1; }
@@ -477,8 +501,12 @@ tr.review-ok .input-class { pointer-events:none; background:transparent !importa
    very first paint, before the bulk pcw-* stylesheet lower in the page loads. */
 body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
 .pcw-app { transition:opacity .35s ease; }
+/* Carries the same dot grid as the body so the boot overlay fading out doesn't
+   pop the texture in. */
 #pcw-boot { position:fixed; inset:0; z-index:4000; display:flex; align-items:center; justify-content:center;
-    background:#f0eff2; transition:opacity .35s ease; }
+    background-color:#f0eff2; transition:opacity .35s ease;
+    background-image:radial-gradient(circle, rgba(102,66,170,.17) 1.3px, transparent 1.4px);
+    background-size:22px 22px; background-position:-11px -11px; }
 #pcw-boot.hide { opacity:0; pointer-events:none; }
 .pcw-boot-inner { display:flex; flex-direction:column; align-items:center; gap:14px; }
 .pcw-boot-ring { width:46px; height:46px; border-radius:50%;
@@ -493,7 +521,16 @@ body.pcw-booting .pcw-app { opacity:0; pointer-events:none; }
    ════════════════════════════════════════════════════════════════════ */
 :root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent; }
 html, body { height:100%; }
-body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, sans-serif; overflow:hidden; }
+/* Dot-grid canvas texture, same drafting-mat surface as dtr-documents.php. The
+   panels are opaque cards on top, so the dots only read in the gutters. The
+   body never scrolls (each pane scrolls itself), so the grid stays put. */
+body {
+    margin:0; font-family:'Segoe UI', system-ui, Arial, sans-serif; overflow:hidden;
+    background-color:#f0eff2;
+    background-image:radial-gradient(circle, rgba(102,66,170,.17) 1.3px, transparent 1.4px);
+    background-size:22px 22px;
+    background-position:-11px -11px;
+}
 /* ── Soft purple scrollbars, everywhere on this page (same as dtr-documents.php) ── */
 * { scrollbar-width:thin; scrollbar-color:var(--sb-thumb) var(--sb-track); }
 *::-webkit-scrollbar { width:9px; height:9px; }
@@ -567,6 +604,11 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 .pcw-fp-reset { display:inline-flex; align-items:center; gap:3px; border:none; background:transparent; color:#c62828;
   font-size:10px; font-weight:700; cursor:pointer; padding:2px 5px; border-radius:6px; }
 .pcw-fp-reset:hover { background:#fdf4f3; }
+.pcw-fp-head-act { display:inline-flex; align-items:center; gap:4px; }
+.pcw-fp-close { width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center;
+  border:1px solid #e9e7ee; border-radius:6px; background:#f4f3f6; color:#767283; font-size:13px; cursor:pointer;
+  transition:all .12s; }
+.pcw-fp-close:hover { background:#efe9f9; border-color:#d9ccf0; color:#4e3483; }
 .pcw-fp-lbl { font-size:9px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:#948ea5; margin:10px 0 4px; }
 .pcw-rv-chips { display:flex; flex-wrap:wrap; gap:4px; }
 .pcw-rv-chips button { display:inline-flex; align-items:center; gap:3px; padding:3px 9px; border-radius:20px; font-size:10px;
@@ -1064,7 +1106,9 @@ body { margin:0; background:#f0eff2; font-family:'Segoe UI', system-ui, Arial, s
 
 /* Print: only the computation sheet */
 @media print {
-  body { overflow:visible; }
+  /* The dot grid is screen chrome — keep it off the payslip even when the user
+     has "print background graphics" enabled. */
+  body { overflow:visible; background-image:none; background-color:#fff; }
   body * { visibility:hidden; }
   #pcw-paper, #pcw-paper * { visibility:visible; }
   #pcw-paper { position:absolute; left:0; top:0; width:100%; max-width:none; border:none; box-shadow:none; zoom:1 !important; }

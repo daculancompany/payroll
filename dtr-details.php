@@ -1701,6 +1701,7 @@ function human_time_diff(int $ts): string {
         <html>
         <head>
             <title>DTR Details - <?= $dtr['site_name'] ?></title>
+            <?php include __DIR__ . "/includes/favicon.php"; ?>
             <style>
                 body {
                     font-family: Arial, sans-serif;

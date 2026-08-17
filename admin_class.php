@@ -10073,9 +10073,11 @@ class Action
     {
         $id   = (int) ($_POST['id'] ?? 0);
         $role = (int) ($_SESSION['login_role'] ?? 0);
-        // Only leave-workflow roles may delete (Administrator role 1 is view-only).
-        if (!in_array($role, [8, 9, 10], true)) {
-            return ['result' => false, 'message' => 'You are not allowed to delete leave requests.'];
+        // Deleting is HR (9) / Administrator (1) only. The approvers in the chain
+        // (Section Head 11, Supervisor 10, Dept Head 8) reject instead — the same
+        // list gates the Delete button in leaves.php ($can_delete_leave).
+        if (!in_array($role, [1, 9], true)) {
+            return ['result' => false, 'message' => 'Only HR and Administrators may delete leave requests.'];
         }
         $row = $this->db->query("SELECT * FROM leave_requests WHERE id = $id")->fetch_assoc();
         if (!$row) return ['result' => false, 'message' => 'Leave request not found.'];
@@ -11161,6 +11163,16 @@ class Action
      */
     private function recomputeDetailRows($res): array
     {
+        $rows = [];
+        while ($row = $res->fetch_assoc()) $rows[] = $row;
+
+        // A night shift whose clock-out ingestion filed on the NEXT day has to be
+        // re-paired before anything is re-derived: dtr_compute_day reads a row's
+        // OWN logs, so otherwise both days recompute from punches sitting on the
+        // wrong rows. May append the next-day rows it emptied, so they recompute
+        // here too.
+        $this->repairOvernightSpill($rows);
+
         $scanned = $changed = $repending = 0;
         $affectedEmp = [];
 
@@ -11173,7 +11185,7 @@ class Action
              schedule_id=?, day_hours=?, is_rest_day=?, sched_start=?, sched_end=?, sched_break=?, sched_graveyard=?,
              status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
         );
-        while ($row = $res->fetch_assoc()) {
+        foreach ($rows as $row) {
             $scanned++;
             $ts = [];
             foreach ((json_decode($row['logs']) ?: []) as $lg) {
@@ -11197,6 +11209,10 @@ class Action
                  && (string)($c['sched_end'] ?? '')   === (string)($row['sched_end'] ?? '')
                  && (int)($c['sched_break'] ?? -1)    === (int)($row['sched_break'] ?? -1)
                  && (int)($c['sched_graveyard'] ?? -1) === (int)($row['sched_graveyard'] ?? -1);
+            // Ahead of the $same shortcut on purpose: a row whose figures are
+            // already right can still be carrying the label of a shift it no
+            // longer computes under, left behind by an earlier recompute.
+            $this->refreshShiftNote($row, $c);
             if ($same) continue;
 
             $changed++;
@@ -11212,6 +11228,230 @@ class Action
             if (!$stmt->execute()) throw new Exception('Row ' . $rowId . ': ' . $stmt->error);
         }
         return [$scanned, $changed, $repending, $affectedEmp];
+    }
+
+    /**
+     * Keep DTR_details.notes in step with the shift the row now computes under.
+     *
+     * Ingestion writes the shift it recorded the day against into `notes`
+     * ("AM / 7-3 (7AM-3PM) · 7:00 AM–3:00 PM") and the Form 48 prints it, in the
+     * day tooltip and the Notes summary. Re-resolving the schedule left that
+     * label naming the OLD shift, so a day corrected to nights still read as a
+     * morning shift on the sheet — the figures said one thing and the note
+     * another.
+     *
+     * Rewritten ONLY when the note is blank or is one of the labels this app
+     * generates — every shift's, not just the stamp being replaced, since a
+     * previous recompute may already have moved the stamp on and left the note
+     * naming a third shift. Anything an admin typed there matches none of them
+     * and survives untouched.
+     */
+    private function refreshShiftNote(array $row, array $c): void
+    {
+        // Called for every scanned row; the shift list is small and fixed, so
+        // read it once per request.
+        static $shifts = null, $generated = null;
+        if ($shifts === null) {
+            $shifts = $generated = [];
+            $q = $this->db->query("SELECT id, description, start_time, end_time FROM work_schedules");
+            while ($q && ($s = $q->fetch_assoc())) {
+                $shifts[(int) $s['id']] = $s;
+                $generated[] = self::shiftNoteLabel($s['description'], $s['start_time'], $s['end_time']);
+            }
+        }
+
+        $label = function ($schedule_id, $start, $end) use ($shifts) {
+            $sid = (int) $schedule_id;
+            if (!$sid || !$start || !$end || !isset($shifts[$sid])) return null;
+            return self::shiftNoteLabel($shifts[$sid]['description'], $start, $end);
+        };
+
+        $now = $label($c['schedule_id'], $c['sched_start'], $c['sched_end']);
+        if ($now === null) return;
+
+        // The stamp's own label joins the set: a work_schedules row edited since
+        // the punch generates a label that is no longer in the list above, and
+        // dropping it would leave the stale note in place forever.
+        $was  = $label($row['schedule_id'] ?? null, $row['sched_start'] ?? null, $row['sched_end'] ?? null);
+        $pool = array_unique(array_filter(array_merge($generated, [$was])));
+        $in   = implode(',', array_map(function ($l) { return "'" . $this->db->real_escape_string($l) . "'"; }, $pool));
+
+        $stmt = $this->db->prepare(
+            "UPDATE DTR_details SET notes = ? WHERE id = ? AND (notes IS NULL OR notes = '' OR notes IN ($in))"
+        );
+        $id = (int) $row['id'];
+        $stmt->bind_param('si', $now, $id);
+        $stmt->execute();
+    }
+
+    /**
+     * The shift label written into DTR_details.notes. MUST stay byte for byte
+     * identical to save_biometric_attendance's $shift_label, or refreshShiftNote
+     * stops recognising the app's own generated notes and leaves them stale.
+     */
+    private static function shiftNoteLabel($description, $start, $end): string
+    {
+        return substr($description . ' · '
+            . date('g:i A', strtotime($start)) . '–' . date('g:i A', strtotime($end)), 0, 100);
+    }
+
+    /**
+     * Re-date a night shift's clock-out that ingestion filed on the NEXT day.
+     *
+     * Ingestion decides which day a punch belongs to from the roster AS IT STOOD
+     * at scan time (Action::save_biometric_attendance). Correct a day to a night
+     * shift AFTER the fact — the ordinary "wrong shift, fix it and Recompute"
+     * flow — and the morning clock-out is already sitting on its own next-day
+     * row. The night is then left open with no departure, and the morning after
+     * reads as a second, impossible arrival: 11:00 PM–7:00 AM shows as "in
+     * 10:57 PM" on one row and "in 7:03 AM" on the next, both days zero hours.
+     *
+     * Recompute alone cannot fix that — it re-derives each row from its own logs
+     * and never moves a punch between rows. This pass does exactly the re-dating
+     * ingestion would have done had the roster been right at the time, and only
+     * that: same overnight predicate, same 12-hour post-shift OT ceiling.
+     *
+     * Deliberately conservative — a punch is moved only when
+     *   • the night row holds exactly ONE punch (an arrival with nothing to
+     *     close it; two already make a day, none means the shift never started),
+     *   • it lands after that arrival and within the shift's end + 12h, and
+     *   • the next day cannot plausibly own it — that day is a rest day, or the
+     *     punch falls before its own shift's start (early-arrival grace
+     *     included).
+     * Anything ambiguous is left where it is: a wrongly merged punch is worse
+     * than an unmerged one, since it pays one day's hours on another.
+     *
+     * Writes the moved logs straight away (the caller's transaction covers it)
+     * and appends any next-day row it touched to $rows so the caller re-derives
+     * that row's figures too.
+     */
+    private function repairOvernightSpill(array &$rows): void
+    {
+        if (!$rows) return;
+
+        $cols = "d.id, d.employee_id, d.date_time, d.work_hours, d.overtime, d.undertime,
+                 d.late, d.nsd_hours, d.day_type, d.status, d.logs,
+                 d.schedule_id, d.day_hours, d.is_rest_day,
+                 d.sched_start, d.sched_end, d.sched_break, d.sched_graveyard";
+
+        // Where each row sits, so a neighbour already in the set is patched in
+        // place instead of being fetched — and written — a second time.
+        $index = [];
+        foreach ($rows as $i => $r) {
+            $index[(int) $r['employee_id'] . '|' . date('Y-m-d', strtotime($r['date_time']))] = $i;
+        }
+
+        $setLogs = $this->db->prepare("UPDATE DTR_details SET logs = ? WHERE id = ?");
+        // Only fills a blank note — an admin's own note must never be overwritten.
+        $setNote = $this->db->prepare("UPDATE DTR_details SET notes = ? WHERE id = ? AND (notes IS NULL OR notes = '')");
+
+        $entries = function ($json) {
+            $out = [];
+            foreach ((json_decode((string) $json, true) ?: []) as $lg) {
+                $t = strtotime($lg['dateTime'] ?? '');
+                if ($t !== false) $out[] = ['t' => $t, 'lg' => $lg];
+            }
+            usort($out, function ($a, $b) { return $a['t'] <=> $b['t']; });
+            return $out;
+        };
+        $encode = function (array $es) {
+            return json_encode(array_map(function ($e) { return $e['lg']; }, $es));
+        };
+
+        // $rows grows as emptied neighbours are appended, so walk it by position.
+        for ($i = 0; $i < count($rows); $i++) {
+            $eid  = (int) $rows[$i]['employee_id'];
+            $date = date('Y-m-d', strtotime($rows[$i]['date_time']));
+
+            $sched = resolve_employee_schedule($this->db, $eid, $date);
+            if (!$sched) continue;
+            // Same overnight test as ingestion and dtr_compute_day: the flag, or
+            // an end time that wraps past midnight without the flag being ticked.
+            if (!$sched['is_graveyard'] && $sched['end_time'] > $sched['start_time']) continue;
+
+            $own = $entries($rows[$i]['logs']);
+            if (count($own) !== 1) continue;
+
+            $end = strtotime($date . ' ' . $sched['end_time']);
+            if ($sched['end_time'] <= $sched['start_time']) $end = strtotime('+1 day', $end);
+            if ($own[0]['t'] >= $end) continue;      // lone punch is already past the shift
+            $ceiling = $end + 12 * 3600;
+
+            $next = date('Y-m-d', strtotime('+1 day', strtotime($date)));
+            $key  = $eid . '|' . $next;
+            if (isset($index[$key])) {
+                $ni   = $index[$key];
+                $nrow = $rows[$ni];
+            } else {
+                // Outside the recomputed set — a single-day recompute, or the
+                // next day fell into the following cutoff. A final-approved
+                // batch is excluded: its figures are locked and paid.
+                $q = $this->db->query(
+                    "SELECT $cols FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+                     WHERE d.employee_id = $eid AND d.date_time = '" . $this->db->real_escape_string($next) . "'
+                       AND b.status <> 2 ORDER BY d.id DESC LIMIT 1"
+                );
+                $nrow = $q ? $q->fetch_assoc() : null;
+                if (!$nrow) continue;
+                $ni = null;
+            }
+
+            $nlogs = $entries($nrow['logs']);
+            if (!$nlogs) continue;
+
+            // Can the next day own the punch itself? A rest day cannot, and
+            // neither can a shift that had not started yet.
+            $nsched = resolve_employee_schedule($this->db, $eid, $next);
+            if ($nsched !== null && isset($nsched['day_is_rest'])) {
+                $nrest = (int) $nsched['day_is_rest'];
+            } else {
+                $csv   = (string) ($nsched['rest_days'] ?? '');
+                $nrest = ($csv !== '' && in_array((int) date('w', strtotime($next)),
+                    array_map('intval', explode(',', $csv)), true)) ? 1 : 0;
+            }
+            $nstart = ($nsched && !$nrest)
+                ? strtotime($next . ' ' . $nsched['start_time']) - dtr_early_grace_hours() * 3600
+                : null;
+
+            $keep = $move = [];
+            foreach ($nlogs as $e) {
+                $ownable = $nstart !== null && $e['t'] >= $nstart;
+                if (!$ownable && $e['t'] > $own[0]['t'] && $e['t'] <= $ceiling) $move[] = $e;
+                else $keep[] = $e;
+            }
+            if (!$move) continue;
+
+            $merged = array_merge($own, $move);
+            usort($merged, function ($a, $b) { return $a['t'] <=> $b['t']; });
+
+            $nightJson = $encode($merged);
+            $nextJson  = $encode($keep);
+            $nightId   = (int) $rows[$i]['id'];
+            $nextId    = (int) $nrow['id'];
+
+            $setLogs->bind_param('si', $nightJson, $nightId);
+            if (!$setLogs->execute()) throw new Exception('Row ' . $nightId . ': ' . $setLogs->error);
+            $setLogs->bind_param('si', $nextJson, $nextId);
+            if (!$setLogs->execute()) throw new Exception('Row ' . $nextId . ': ' . $setLogs->error);
+
+            $rows[$i]['logs'] = $nightJson;
+            $nrow['logs']     = $nextJson;
+
+            // Say where the punch went, so the day it left doesn't just read as
+            // an unexplained blank on the sheet. varchar(100) — keep it short.
+            if (!$keep) {
+                $note = 'Punch moved to ' . date('M j', strtotime($date)) . ' — night shift clock-out';
+                $setNote->bind_param('si', $note, $nextId);
+                $setNote->execute();
+            }
+
+            if ($ni !== null) {
+                $rows[$ni] = $nrow;
+            } else {
+                $index[$key] = count($rows);
+                $rows[]      = $nrow;
+            }
+        }
     }
 
     // Best-effort audit row for a recompute run — who ran it, its scope, and

@@ -198,7 +198,16 @@
 .cs-search input { border: 0; background: transparent; outline: none; width: 100%; font-size: 12.5px; color: #28223b; }
 
 /* ---- Options ---- */
-.cs-opts { overflow-y: auto; overscroll-behavior: contain; }
+/* Flex column rather than plain block flow: the rows are cards (hover and the
+   selected state both paint a background), so they need real space between
+   them or two adjacent highlighted rows read as one block. */
+.cs-opts {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
 
 .cs-opt {
     display: flex;
@@ -208,16 +217,23 @@
     text-align: left;
     background: transparent;
     border: 0;
-    border-radius: 9px;
-    padding: 7px 9px;
+    border-radius: 10px;
+    padding: 8px 10px;
     cursor: pointer;
-    transition: background .1s;
+    transition: background .1s, box-shadow .1s;
 }
+
+/* .cs-opt sets display:flex, which would otherwise beat the UA/Bootstrap
+   `[hidden] { display: none }` rule — the filter box hides rows with .hidden,
+   so without this every option stays visible while typing. */
+.cs-opt[hidden],
+.cs-group[hidden] { display: none !important; }
 
 .cs-opt:hover,
 .cs-opt.cs-active { background: #f4f1fa; }
 
 .cs-opt[disabled] { opacity: .45; cursor: not-allowed; }
+.cs-opt[disabled]:hover { background: transparent; }
 
 /* Leading icon chip (opt-in via data-cs-icon on the <option>) */
 .cs-tod {
@@ -243,6 +259,13 @@
 .cs-rate-fixed    { background: #f4f1fa; color: #673bb6; }
 
 .cs-opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+
+/* Menus where only SOME options carry an icon chip (e.g. the roster's
+   department picker: a globe on "All departments", nothing on the wards) used
+   to left-align the plain rows against the chip, so the labels stepped in and
+   out. .cs-mixed-icons is set by the JS on exactly those menus and reserves the
+   chip's width — 30px chip + the row's 10px gap. */
+.cs-mixed-icons .cs-opt:not(.cs-opt-ico) .cs-opt-main { margin-left: 40px; }
 
 .cs-opt-name {
     font-size: 13px;
@@ -288,6 +311,11 @@
     letter-spacing: .4px;
     padding: 8px 10px 4px;
 }
+
+/* The list gap already separates rows, so a group header only needs extra room
+   above it — and none at all when it is the first thing in the menu. */
+.cs-group + .cs-opt { margin-top: 1px; }
+.cs-opt + .cs-group { margin-top: 6px; }
 
 .cs-none { padding: 12px 10px; font-size: 12px; color: #9895a3; text-align: center; }
 

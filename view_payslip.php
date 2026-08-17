@@ -248,6 +248,7 @@ $net_in_words = jp_peso_words($net_pay);
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Payslip — <?= htmlspecialchars($payroll['lastname'].', '.$payroll['firstname']) ?></title>
+<?php include __DIR__ . "/includes/favicon.php"; ?>
 <link href="assets/css/icons.min.css" rel="stylesheet">
 <?php endif; ?>
 <?php if (empty($GLOBALS['PAYSLIP_STYLES_DONE'])): $GLOBALS['PAYSLIP_STYLES_DONE'] = true; ?>

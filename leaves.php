@@ -20,8 +20,13 @@ $leave_stage_defs = leave_stages();
 // three others. $my_stage survives only where it is genuinely one-role-one-
 // stage: it is not read anywhere below.
 $my_stage = leave_stage_for_role($my_role);
-// Administrator (role 1) is strictly VIEW-ONLY: no approve, no edit, no delete.
+// Administrator (role 1) does not take part in the approval chain: no approve,
+// no edit. Deleting is the one write it keeps — see $can_delete_leave below.
 $is_admin_view = ($my_role === 1);
+// Deleting a request is an HR/Admin call only (role 1 + role 9). Approvers in
+// the chain (Section Head / Supervisor / Dept Head) reject instead of delete.
+// admin_class::delete_leave_request enforces the same list server-side.
+$can_delete_leave = in_array($my_role, [1, 9], true);
 // Timeline HTML per request id, collected during the row loop for the modal.
 $leave_timelines = [];
 // Employee + type per request id — used in the action confirmation dialogs.
@@ -275,19 +280,25 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                             <?php endforeach; ?>
                                             <td class="text-center"><span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span></td>
                                             <td class="text-center">
+                                                <?php
+                                                // No Delete on an APPROVED request — it already counts toward
+                                                // balances/payroll and the server refuses it anyway
+                                                // (delete_leave_request). Reject it instead.
+                                                $show_delete = $can_delete_leave && (int) $row['status'] !== 1;
+                                                ?>
                                                 <?php if ($can_act_now): ?>
-                                                    <button class="btn btn-sm btn-success" title="<?= htmlspecialchars($leave_stage_defs[$cur_stage]['label']) ?> Approve" onclick="decideLeave(<?= $row['id'] ?>,'<?= $cur_stage ?>',1)"><i class="ri-check-double-line"></i></button>
-                                                    <button class="btn btn-sm btn-danger" title="<?= htmlspecialchars($leave_stage_defs[$cur_stage]['label']) ?> Reject" onclick="decideLeave(<?= $row['id'] ?>,'<?= $cur_stage ?>',2)"><i class="ri-close-line"></i></button>
+                                                    <button class="btn btn-sm btn-success" data-bs-toggle="tooltip" data-bs-placement="top" title="<?= htmlspecialchars($leave_stage_defs[$cur_stage]['label']) ?> Approve" onclick="decideLeave(<?= $row['id'] ?>,'<?= $cur_stage ?>',1)"><i class="ri-check-double-line"></i></button>
+                                                    <button class="btn btn-sm btn-danger" data-bs-toggle="tooltip" data-bs-placement="top" title="<?= htmlspecialchars($leave_stage_defs[$cur_stage]['label']) ?> Reject" onclick="decideLeave(<?= $row['id'] ?>,'<?= $cur_stage ?>',2)"><i class="ri-close-line"></i></button>
                                                 <?php endif; ?>
-                                                <button class="btn btn-sm btn-outline-info" title="Approval timeline" onclick="openLeaveTimeline(<?= $row['id'] ?>)"><i class="ri-history-line"></i></button>
+                                                <button class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Approval timeline" onclick="openLeaveTimeline(<?= $row['id'] ?>)"><i class="ri-history-line"></i></button>
                                                 <?php if ($editable && !$is_admin_view): ?>
-                                                    <button class="btn btn-sm btn-outline-primary" title="Edit"
+                                                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" data-bs-placement="top" title="Edit request"
                                                         onclick='editLeave(<?= json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT) ?>)'><i class="ri-edit-line"></i></button>
                                                 <?php endif; ?>
-                                                <?php if (!$is_admin_view): ?>
-                                                    <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteLeave(<?= $row['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
+                                                <?php if ($show_delete): ?>
+                                                    <button class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete request (HR / Admin only)" onclick="deleteLeave(<?= $row['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
                                                 <?php endif; ?>
-                                                <?php if ($is_admin_view): ?>
+                                                <?php if ($is_admin_view && !$show_delete): ?>
                                                     <span class="text-muted" style="font-size:11px;"><i class="ri-eye-line me-1"></i>View only</span>
                                                 <?php endif; ?>
                                             </td>
@@ -403,6 +414,15 @@ function openLeaveTimeline(id) {
     new bootstrap.Modal(document.getElementById('modal-leave-timeline')).show();
 }
 
+// Action-button tooltips. Rows on other DataTables pages are not in the DOM at
+// load, so this re-runs on every draw; already-initialized buttons are skipped.
+function lvInitTooltips(scope) {
+    if (typeof bootstrap === 'undefined' || !bootstrap.Tooltip) return;
+    (scope || document).querySelectorAll('[data-bs-toggle="tooltip"]').forEach(function (el) {
+        if (!bootstrap.Tooltip.getInstance(el)) new bootstrap.Tooltip(el, { trigger: 'hover' });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     if (window.jQuery && jQuery.fn.DataTable && !jQuery.fn.DataTable.isDataTable('#leave-table')) {
         jQuery('#leave-table').DataTable({
@@ -410,8 +430,9 @@ document.addEventListener('DOMContentLoaded', function () {
             pageLength: 10,
             columnDefs: [{ orderable: false, targets: LEAVE_ACTION_COL }],
             language: { search: '', searchPlaceholder: 'Search leave…' }
-        });
+        }).on('draw.dt', function () { lvInitTooltips(this); });
     }
+    lvInitTooltips();
     if (window.jQuery && jQuery.fn.select2) {
         jQuery('#leave-employee').select2({ dropdownParent: jQuery('#modal-leave'), placeholder: 'Search employee…', width: '100%' });
         jQuery('#leave-type').select2({ dropdownParent: jQuery('#modal-leave'), placeholder: 'Select leave type', width: '100%' });
@@ -551,8 +572,7 @@ document.getElementById('form-leave').addEventListener('submit', async function 
         confirmButtonText: isEdit ? 'Save' : 'Submit', confirmButtonColor: '#28a745'
     });
     if (!c.isConfirmed) return;
-    const res = await fetch('ajax.php?action=save_leave_request', { method: 'POST', body: new URLSearchParams(new FormData(this)) });
-    const json = await res.json();
+    const json = await lvPost('save_leave_request', new URLSearchParams(new FormData(this)), isEdit ? 'Saving changes…' : 'Submitting request…');
     if (json?.result) {
         bootstrap.Modal.getInstance(document.getElementById('modal-leave')).hide();
         Swal.fire({ icon: 'success', title: 'Success', text: json.message, timer: 1400, showConfirmButton: false }).then(() => location.reload());
@@ -560,6 +580,25 @@ document.getElementById('form-leave').addEventListener('submit', async function 
         Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to save.' });
     }
 });
+
+// Blocking "working…" dialog while an ajax call is in flight, so a slow
+// response never looks like a dead button. Returns the parsed JSON, or a
+// {result:false} shape on network / parse failure.
+function lvBusy(title) {
+    Swal.fire({ title: title || 'Please wait…', text: 'Talking to the server.',
+        allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false,
+        didOpen: () => Swal.showLoading() });
+}
+async function lvPost(action, params, busyTitle) {
+    lvBusy(busyTitle);
+    try {
+        const res = await fetch('ajax.php?action=' + action, { method: 'POST', body: params });
+        const json = await res.json();
+        return json && typeof json === 'object' ? json : { result: false, message: 'Unexpected server response.' };
+    } catch (e) {
+        return { result: false, message: 'Network error — please check your connection and try again.' };
+    }
+}
 
 // stage = a key in LEAVE_APPROVAL_STAGES, status = 1 approve / 2 reject
 async function decideLeave(id, stage, status) {
@@ -585,8 +624,7 @@ async function decideLeave(id, stage, status) {
         });
         if (!c.isConfirmed) return;
     }
-    const res = await fetch('ajax.php?action=decide_leave', { method: 'POST', body: new URLSearchParams({ id, stage, status, remarks }) });
-    const json = await res.json();
+    const json = await lvPost('decide_leave', new URLSearchParams({ id, stage, status, remarks }), status === 2 ? 'Rejecting…' : 'Approving…');
     if (json?.result) {
         Swal.fire({ icon: 'success', title: 'Done', text: json.message, timer: 1300, showConfirmButton: false }).then(() => location.reload());
     } else {
@@ -601,8 +639,7 @@ async function deleteLeave(id) {
         icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', confirmButtonColor: '#d33'
     });
     if (!c.isConfirmed) return;
-    const res = await fetch('ajax.php?action=delete_leave_request', { method: 'POST', body: new URLSearchParams({ id }) });
-    const json = await res.json();
+    const json = await lvPost('delete_leave_request', new URLSearchParams({ id }), 'Deleting…');
     if (json?.result) {
         Swal.fire({ icon: 'success', title: 'Deleted', text: json.message, timer: 1200, showConfirmButton: false }).then(() => location.reload());
     } else {

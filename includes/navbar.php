@@ -1,4 +1,20 @@
-<?php $page = isset($_GET['page']) ? $_GET['page'] : 'home'; ?>
+<?php
+$page = isset($_GET['page']) ? $_GET['page'] : 'home';
+// Pending leave-request count for the "Leave Requests" menu pill, scoped the
+// same way leaves.php scopes its list (a Department Head sees only their own
+// ward's). Wrapped in try so a DB hiccup never breaks the whole sidebar.
+$__lv_pending = 0;
+if (function_exists('page_allowed') && page_allowed('leaves') && isset($conn)) {
+    try {
+        require_once __DIR__ . '/../dept-scope.php';
+        $__q = $conn->query("SELECT COUNT(*) c FROM leave_requests WHERE status = 0 " . dept_scope_emp_sql('employee_id'));
+        if ($__q) $__lv_pending = (int) ($__q->fetch_assoc()['c'] ?? 0);
+    } catch (Throwable $e) { $__lv_pending = 0; }
+}
+$__lv_pill = $__lv_pending > 0
+    ? '<span class="badge rounded-pill bg-warning text-dark ms-auto sb-count" title="' . $__lv_pending . ' pending request' . ($__lv_pending === 1 ? '' : 's') . '">' . ($__lv_pending > 99 ? '99+' : $__lv_pending) . '</span>'
+    : '';
+?>
 
 <div class="app-menu navbar-menu">
     <!-- LOGO -->
@@ -65,6 +81,7 @@
                 <li class="nav-item">
                     <a href="leaves" class="nav-link menu-link <?= $page === 'leaves' ? 'active' : '' ?>">
                         <i class="ri-file-list-3-line"></i> <span>Leave Requests</span>
+                        <?= $__lv_pill ?>
                     </a>
                 </li>
                 <?php endif; ?>
@@ -228,6 +245,7 @@
                             <li class="nav-item">
                                 <a href="leaves" class="nav-link <?= $page === 'leaves' ? 'active' : '' ?>">
                                     <i class="ri-file-list-3-line me-1"></i>Leave Requests
+                                    <?= $__lv_pill ?>
                                 </a>
                             </li>
                             <li class="nav-item">

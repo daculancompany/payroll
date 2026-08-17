@@ -86,6 +86,7 @@ $payroll_type = $payroll['type'];
                 $dateTo = date("F j, Y", strtotime($payroll['date_to']));
                 echo $dateFrom . " - " . $dateTo;
                 ?>l</title>
+<?php include __DIR__ . "/includes/favicon.php"; ?>
 
 <body>
     <style>

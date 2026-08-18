@@ -1105,7 +1105,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
                                 <div class="stat-icon" style="background:#fce4ec;color:#f06548;"><i class="ri-alarm-warning-line"></i></div>
                                 <div>
                                     <div class="stat-val" style="color:#c62828;"><span id="stat-late"><?= number_format($grandTotals['late'], 2) ?></span></div>
-                                    <div class="stat-lbl">Late (min)</div>
+                                    <div class="stat-lbl">Late (hrs)</div>
                                 </div>
                             </div>
                             <div class="dtr-stat-box sb-appr">

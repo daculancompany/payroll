@@ -461,10 +461,26 @@ foreach ($dtr_flag_rows as $__row) {
     // Blocking problems first — these change the paid figure outright.
     if (count($__logs) < 2)  $__f[] = ['k' => 'no_out',   'sev' => 'bad',  'txt' => 'No time out recorded'];
     if ($__wh <= 0)          $__f[] = ['k' => 'zero',     'sev' => 'bad',  'txt' => 'No work hours credited'];
-    // OT worked but never filed: without an approved request the hours are
-    // logged yet unpaid, and this is the flag with the shortest fuse.
-    if ($__ot > 0 && empty($dtr_req_dates[$__d]['overtime'])) {
-        $__f[] = ['k' => 'ot_unfiled', 'sev' => 'bad', 'txt' => nd($__ot) . ' OT hour(s) not yet filed'];
+    // Hours worked but never filed: without an approved request they are
+    // logged yet unpaid, and this is the flag with the shortest fuse. The
+    // ceiling itself decides what is fileable and under which type, so the
+    // chip can never promise hours the form would then refuse — ask it once
+    // per candidate day rather than restating the rule here.
+    $__filed = !empty($dtr_req_dates[$__d]['overtime']) || !empty($dtr_req_dates[$__d]['rest_day']);
+    $__type  = 'incident';
+    if (!$__filed && ($__ot > 0 || ($__rest && $__wh > 0))) {
+        $__lim = ot_request_limit($conn, $emp_id, $__d);
+        if ($__lim['allowed']) {
+            $__type = $__lim['request_type'];
+            // A rest day is unfileable-until-filed in a way a regular day is
+            // not: with auto-authorize off, NOTHING on the day is approved or
+            // paid until the filing is (see the gate in admin_class.php).
+            $__f[] = $__lim['request_type'] === 'rest_day'
+                ? ['k' => 'rest_unfiled', 'sev' => 'bad',
+                   'txt' => 'Rest-day work not yet filed (' . nd($__lim['max_hours']) . ' hr)']
+                : ['k' => 'ot_unfiled',   'sev' => 'bad',
+                   'txt' => nd($__lim['max_hours']) . ' OT hour(s) not yet filed'];
+        }
     }
     if ($__lt > 0)           $__f[] = ['k' => 'late',     'sev' => 'warn', 'txt' => 'Late ' . nd($__lt) . ' min'];
     if ($__ut > 0)           $__f[] = ['k' => 'ut',       'sev' => 'warn', 'txt' => 'Undertime ' . nd($__ut) . ' min'];
@@ -475,10 +491,11 @@ foreach ($dtr_flag_rows as $__row) {
         $dtr_flag_days[] = [
             'date'  => $__d,
             'flags' => $__f,
-            // Pending means the timekeeper has not decided yet, so a correction
+            // Pending means the admin has not decided yet, so a correction
             // filed now still lands before the figure is locked.
             'pending' => ((int)$__row['status'] === 0),
             'filed'   => !empty($dtr_req_dates[$__d]),
+            'type'    => $__type,
         ];
     }
 }
@@ -534,6 +551,7 @@ foreach ($dtr_missing_days as $__md) {
         'flags'   => [['k' => 'absent', 'sev' => 'bad', 'txt' => 'No attendance recorded']],
         'pending' => true,
         'filed'   => false,
+        'type'    => 'incident',
     ];
 }
 usort($dtr_flag_days, fn($a, $b) => strcmp($b['date'], $a['date']));
@@ -3156,7 +3174,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <div class="dtrf-ic <?= $__worst ?>"><i class="<?= $__absent ? 'ri-calendar-close-line' : 'ri-time-line' ?>"></i></div>
                 <div class="dtrf-main">
                     <div class="dtrf-date"><?= date('D, M j', strtotime($fd['date'])) ?>
-                        <?php if (!$fd['pending']): ?><span class="dtrf-locked" title="Already decided by your timekeeper">reviewed</span><?php endif; ?>
+                        <?php if (!$fd['pending']): ?><span class="dtrf-locked" title="Already decided by the admin">reviewed</span><?php endif; ?>
                     </div>
                     <div class="dtrf-chips">
                         <?php foreach ($fd['flags'] as $fl): ?>
@@ -3166,7 +3184,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <?php if ($fd['filed']): ?><div class="dtrf-sub"><i class="ri-check-line"></i> You already filed a request for this day</div><?php endif; ?>
                 </div>
                 <?php if (!$fd['filed']): ?>
-                <button type="button" class="dtrf-act" onclick="openAttRequestForDate('<?= $fd['date'] ?>','<?= in_array('ot_unfiled', $__keys, true) ? 'overtime' : 'incident' ?>')">File</button>
+                <button type="button" class="dtrf-act" onclick="openAttRequestForDate('<?= $fd['date'] ?>','<?= htmlspecialchars($fd['type'] ?? 'incident') ?>')">File</button>
                 <?php endif; ?>
             </div>
             <?php endforeach; ?>
@@ -3968,11 +3986,29 @@ function toggleAttFields(type) {
         var input = el.querySelector('.form-control');
         if (input) { if (type === 'incident') input.setAttribute('required', 'required'); else input.removeAttribute('required'); }
     });
+    // Overtime and rest-day work are both filed as HOURS against the day's
+    // scans, so they share the block; only the label differs.
+    var hourType = ATT_HOUR_TYPES.indexOf(type) !== -1;
     document.querySelectorAll('.att-ot-field').forEach(function(el){
-        el.style.display = type === 'overtime' ? '' : 'none';
+        el.style.display = hourType ? '' : 'none';
         var input = el.querySelector('.form-control');
-        if (input) { if (type === 'overtime') input.setAttribute('required', 'required'); else input.removeAttribute('required'); }
+        if (input) { if (hourType) input.setAttribute('required', 'required'); else input.removeAttribute('required'); }
     });
+    var otLbl = document.getElementById('att-ot-hours-label');
+    if (otLbl) otLbl.innerHTML = (type === 'rest_day' ? 'Rest Day Hours Rendered' : 'OT Hours Requested')
+        + ' <span style="color:red;">*</span>';
+
+    // The reason is not a real choice for these two — there is exactly one
+    // sensible value, and leaving it blank only earns the employee a "Please
+    // select a reason." on submit. Only a blank, or the value another type
+    // filled in, is overwritten: a reason they picked themselves stands.
+    var reasonSel  = document.querySelector('#att-request-form select[name="reason"]');
+    var autoReason = ATT_AUTO_REASON[type];
+    if (reasonSel && autoReason
+        && (!reasonSel.value || Object.values(ATT_AUTO_REASON).indexOf(reasonSel.value) !== -1)) {
+        reasonSel.value = autoReason;
+        reasonSel.dispatchEvent(new Event('change', { bubbles: true }));   // repaint custom-select
+    }
     var form = document.getElementById('att-request-form');
     if (form && window.jQuery && jQuery(form).parsley) { jQuery(form).parsley().reset(); }
     refreshOtLimit();
@@ -4001,6 +4037,22 @@ function setOtHint(text, tone) {
     hint.innerHTML        = '<i class="' + palette[2] + ' me-1"></i>' + text;
 }
 
+// The scan strip above the hint: what the DTR recorded for that date. Shown
+// whenever the day has a paired in/out, even when no OT can be filed from it —
+// seeing the scans is how an employee spots the day the ceiling came from.
+function setOtScan(lim) {
+    var box = document.getElementById('att-ot-scan');
+    if (!box) return;
+    if (!lim || !lim.time_in || !lim.time_out) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    // *_html come from dtr_punch_time() — the same renderer (and the same
+    // .dtr-nextday "+1" chip) the DTR itself uses for an overnight punch.
+    document.getElementById('att-ot-scan-date').textContent     = lim.date_label ? '· ' + lim.date_label : '';
+    document.getElementById('att-ot-scan-in').innerHTML         = lim.time_in_html || lim.time_in;
+    document.getElementById('att-ot-scan-out').innerHTML        = lim.time_out_html || lim.time_out;
+    document.getElementById('att-ot-scan-rendered').textContent = (lim.rendered_hours || 0) + ' hrs';
+}
+
 function refreshOtLimit() {
     var typeEl = document.getElementById('att-req-type');
     var input  = document.getElementById('att-ot-hours');
@@ -4011,9 +4063,13 @@ function refreshOtLimit() {
     _otLimit = null;
     input.setAttribute('max', '12');
     input.removeAttribute('data-parsley-otlimit-message');
+    // A new date means a new day's scans, so whatever is in the box is stale —
+    // it may be prefilled again from the answer below.
+    input.dataset.otAuto = '1';
+    setOtScan(null);
 
-    if (!typeEl || typeEl.value !== 'overtime') { setOtHint('', 'busy'); return; }
-    if (!date) { setOtHint('Pick the date first — the OT you may file is limited to the hours your scans show past your shift end.', 'busy'); return; }
+    if (!typeEl || ATT_HOUR_TYPES.indexOf(typeEl.value) === -1) { setOtHint('', 'busy'); return; }
+    if (!date) { setOtHint('Pick the date first — what you may file is limited to the hours your scans actually show for that day.', 'busy'); return; }
 
     setOtHint('Checking your scans for that date…', 'busy');
     var seq = ++_otLimitSeq;
@@ -4025,10 +4081,33 @@ function refreshOtLimit() {
         if (seq !== _otLimitSeq) return;               // a newer date won
         var lim = (res && res.limit) || null;
         _otLimit = lim;
+        setOtScan(lim);
+        // The DATE decides which filing it is, not the employee: a rest day
+        // must be filed as rest-day work (approval authorizes it and writes
+        // nothing), a working day as overtime (approval writes the hours). The
+        // server rejects a mismatch, so correcting the select here saves them a
+        // round trip into an error they cannot act on.
+        if (lim && lim.request_type && typeEl.value !== lim.request_type
+            && ATT_HOUR_TYPES.indexOf(lim.request_type) !== -1) {
+            typeEl.value = lim.request_type;
+            // Same reason as openAttRequestForDate: only a dispatched 'change'
+            // repaints the custom-select label (and re-runs toggleAttFields,
+            // which relabels the hours field). It re-enters this function once
+            // more, and stops there — the type now matches the answer.
+            typeEl.dispatchEvent(new Event('change', { bubbles: true }));
+        }
         if (lim && lim.allowed) {
             input.setAttribute('max', String(lim.max_hours));
             input.setAttribute('data-parsley-otlimit-message',
                 'Your scans for that date only support up to ' + lim.max_hours + ' hr of overtime.');
+            // Prefill with everything the day's scans support — filing the OT
+            // actually rendered is the whole point of the form, so typing the
+            // number back in by hand is busywork. A value the employee edited
+            // themselves (otAuto '0') is left alone.
+            if (input.dataset.otAuto !== '0') {
+                input.value = String(lim.max_hours);
+                input.dataset.otAuto = '1';
+            }
             setOtHint(lim.message, 'ok');
         } else {
             input.value = '';
@@ -4042,6 +4121,14 @@ function refreshOtLimit() {
         setOtHint('Could not check your scans for that date. You can still submit — it will be verified on the server.', 'busy');
     });
 }
+
+// Typing in the box takes it out of the prefill's hands until the date changes.
+// Delegated: this script runs above the modal's markup, so the input does not
+// exist yet at this point.
+document.addEventListener('input', function (e) {
+    if (e.target && e.target.id === 'att-ot-hours') e.target.dataset.otAuto = '0';
+});
+
 
 // Parsley gate on the OT input: never let a value through that the day's scans
 // don't support (and never let one through at all on a date with no OT).
@@ -4225,7 +4312,12 @@ function updatePayslipRow(payrollId, decision) {
 }
 
 // ── In-place row builders for freshly-submitted Leave / Attendance requests ──
-var REASON_LABELS = { forgot_scan:'Forgot to Scan', device_error:'Device Error', system_down:'System Down', overtime:'Overtime', other:'Other' };
+var REASON_LABELS = { forgot_scan:'Forgot to Scan', device_error:'Device Error', system_down:'System Down', overtime:'Overtime', other:'Other', rest_day_work:'Rest Day Work' };
+var ATT_TYPE_ICONS = { incident:'ri-error-warning-line', rest_day:'ri-moon-line', overtime:'ri-timer-flash-line' };
+// Types filed as hours against the day's scans (ATT_REQUEST_HOUR_TYPES server-side).
+var ATT_HOUR_TYPES = ['overtime', 'rest_day'];
+// The one reason each hour-type always has — prefilled, still editable.
+var ATT_AUTO_REASON = { overtime: 'overtime', rest_day: 'rest_day_work' };
 function fmtMDY(s) { var d = new Date((s || '').replace(' ', 'T')); if (isNaN(d)) return s || ''; return d.toLocaleDateString('en-US', { month:'short', day:'2-digit', year:'numeric' }); }
 function fmtMD(s)  { var d = new Date((s || '').replace(' ', 'T')); if (isNaN(d)) return s || ''; return d.toLocaleDateString('en-US', { month:'short', day:'2-digit' }); }
 function fmtTimeHM(t) {
@@ -4884,12 +4976,19 @@ if ($req_tab !== null && in_array($req_tab, $valid_portal_tabs, true)):
     // Optional deep-link into a specific attendance record (from a message push).
     $dl_rec  = isset($_GET['rec']) ? (int)$_GET['rec'] : 0;
     $dl_date = (isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date'])) ? $_GET['date'] : '';
+    // …and straight into the filing form for one date, which is what the
+    // "not yet filed" notification links to. The type is resolved by
+    // refreshOtLimit from the date itself, so the link never has to carry it.
+    $dl_file = (isset($_GET['file']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['file'])) ? $_GET['file'] : '';
 ?>
 document.addEventListener('DOMContentLoaded', function () {
 <?php if ($req_tab === 'attendance' && $dl_rec > 0): ?>
     goAttendanceRecord(<?= $dl_rec ?>, '<?= $dl_date ?>');
 <?php else: ?>
     switchTab('<?= $req_tab ?>', null);
+<?php endif; ?>
+<?php if ($dl_file !== ''): ?>
+    openAttRequestForDate('<?= $dl_file ?>', 'overtime');
 <?php endif; ?>
     window.scrollTo(0, 0);
 });
@@ -5096,7 +5195,8 @@ function renderDtrReview(res) {
             // DTR_details.notes — 'note' here, not d.note, which the endpoint
             // uses for the rejection reason shown elsewhere in this view.
             note: d.dtr_note || '',
-            wh: d.work_hours, ot: d.overtime, ut: (d.undertime || 0), late: d.late
+            wh: d.work_hours, ot: d.overtime, ut: (d.undertime || 0), late: d.late,
+            late_tip: d.late_tip || '', half_day: d.half_day || 0
         };
         totals.wh += d.work_hours; totals.ot += d.overtime;
         totals.ut += (d.undertime || 0); totals.late += d.late;
@@ -6270,7 +6370,7 @@ var AREQ_ENDPOINT = 'attendance-requests-portal-server.php';
 // Click-to-open details modal for a request row/card (shares one modal).
 function openAreqDetail(r) {
     if (!r) return;
-    var typeIcon = r.type_key === 'incident' ? 'ri-error-warning-line' : 'ri-timer-flash-line';
+    var typeIcon = ATT_TYPE_ICONS[r.type_key] || 'ri-timer-flash-line';
     var lbl = function (t) { return '<div style="font-size:9.5px;font-weight:800;color:#8f8c98;text-transform:uppercase;letter-spacing:.3px;">' + t + '</div>'; };
     var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
         + '<span style="font-weight:800;color:#4e3483;font-size:16px;"><i class="' + typeIcon + ' me-1"></i>' + (r.type_label || 'Request') + '</span>'
@@ -6297,7 +6397,7 @@ function areqCard(r) {
     // Tap opens the full request details sheet.
     var row = document.createElement('div');
     row.className = 'psrow attrow st-' + (r.status_slug || 'pending');
-    var typeIcon = r.type_key === 'incident' ? 'ri-error-warning-line' : 'ri-timer-flash-line';
+    var typeIcon = ATT_TYPE_ICONS[r.type_key] || 'ri-timer-flash-line';
     var pending  = (r.status_slug || 'pending') === 'pending';
     if (pending) row.classList.add('needs');
 
@@ -6852,6 +6952,7 @@ jQuery(function ($) {
                                 <option value="">— Select type —</option>
                                 <option value="incident">Incident Report (missed/wrong scan)</option>
                                 <option value="overtime">Overtime Authorization Request</option>
+                                <option value="rest_day">Rest Day / Day-Off Work Authorization</option>
                             </select>
                         </div>
                         <div class="col-12 col-md-6">
@@ -6868,6 +6969,7 @@ jQuery(function ($) {
                                 <option value="device_error">Device / Scanner Error</option>
                                 <option value="system_down">System Down</option>
                                 <option value="overtime">Overtime Authorization</option>
+                                <option value="rest_day_work">Rest Day / Day-Off Work</option>
                                 <option value="other">Other</option>
                             </select>
                         </div>
@@ -6900,10 +7002,35 @@ jQuery(function ($) {
                         <div class="col-12 att-ot-field" style="display:none;">
                             <div class="row g-3">
                                 <div class="col-12 col-md-6">
-                                    <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
+                                    <label id="att-ot-hours-label" style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT Hours Requested <span style="color:red;">*</span></label>
                                     <input type="number" name="ot_hours_requested" id="att-ot-hours" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5"
                                         data-parsley-type="number" data-parsley-otlimit="true"
                                         data-parsley-required-message="Please enter the OT hours requested.">
+                                </div>
+                                <!-- The day's own scans, as the DTR paired them. The hours above
+                                     are prefilled from these, so the employee can check the figure
+                                     against the record it came from without leaving the form. -->
+                                <div class="col-12">
+                                    <div id="att-ot-scan" style="display:none;border:1px solid #e7e3f2;border-radius:12px;padding:9px 12px;background:#faf9fd;">
+                                        <div style="font-size:10.5px;font-weight:700;color:#6b6386;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">
+                                            <i class="ri-fingerprint-line me-1"></i>Your scans <span id="att-ot-scan-date" style="font-weight:600;text-transform:none;letter-spacing:0;color:#948ea5;"></span>
+                                        </div>
+                                        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+                                            <div style="flex:1 1 74px;">
+                                                <div style="font-size:10px;color:#948ea5;font-weight:600;">TIME IN</div>
+                                                <div id="att-ot-scan-in" style="font-size:14px;font-weight:700;color:#2f2a3d;white-space:nowrap;">—</div>
+                                            </div>
+                                            <!-- Wider: an overnight out carries the "+1 <date>" chip beside it. -->
+                                            <div style="flex:1 1 122px;">
+                                                <div style="font-size:10px;color:#948ea5;font-weight:600;">TIME OUT</div>
+                                                <div id="att-ot-scan-out" style="font-size:14px;font-weight:700;color:#2f2a3d;white-space:nowrap;">—</div>
+                                            </div>
+                                            <div style="flex:1 1 88px;">
+                                                <div style="font-size:10px;color:#948ea5;font-weight:600;">HOURS RENDERED</div>
+                                                <div id="att-ot-scan-rendered" style="font-size:14px;font-weight:700;color:#4e3483;white-space:nowrap;">—</div>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <!-- Live ceiling from the day's actual scans (ot_request_limit) — the
                                      same rule the server re-checks on submit. -->

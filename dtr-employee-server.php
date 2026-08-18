@@ -448,7 +448,7 @@ if ($action === 'docs') {
             $E = &$byEmp[$eid];
             $date = $row['attendance_date'];
             if (!isset($E['days'][$date])) {
-                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => '', 'sched_id' => null, 'sched_start' => null];
+                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => '', 'sched_id' => null, 'sched_start' => null, 'day_hours' => null];
                 $E['_logs'][$date] = [];
             }
             $D = &$E['days'][$date];
@@ -470,6 +470,11 @@ if ($action === 'docs') {
             // punches the figures were actually computed from.
             if ($D['sched_start'] === null && !empty($row['sched_start'])) {
                 $D['sched_start'] = $row['sched_start'];
+            }
+            // Stamped day length — needed to recognise a half-day late charge
+            // (late == day_hours / 2) when explaining the Late cell.
+            if ($D['day_hours'] === null && $row['day_hours'] !== null) {
+                $D['day_hours'] = (float) $row['day_hours'];
             }
             $D['wh']   += (float)$row['work_hours'];
             $D['ot']   += (float)$row['overtime'];
@@ -536,9 +541,11 @@ if ($action === 'docs') {
                 // the Change Schedule modal show what it's correcting FROM.
                 'schedule_id' => $row['schedule_id'] !== null ? (int)$row['schedule_id'] : null,
                 'is_rest_day' => (int)($row['is_rest_day'] ?? 0),
-                // Backfilled once $reqMap is built, below — whether an approved
-                // 'overtime' attendance_request covers this date.
+                // Both backfilled once $reqMap is built, below: whether an
+                // APPROVED rest-day/overtime request covers this date, and the
+                // filing itself (id + status) so the card can act on it.
                 'ot_filed'    => false,
+                'req'         => null,
             ];
             unset($E, $D);
         }
@@ -595,18 +602,19 @@ if ($action === 'docs') {
             }
         }
 
-        $reqMap = [];     // eid => 'Y-m-d' => [['t' => 'incident'|'overtime', 's', 'h'], ...]
-        $aq = $conn->prepare("SELECT employee_id, request_type, request_date, status,
+        $reqMap = [];     // eid => 'Y-m-d' => [['id','t' => 'incident'|'overtime'|'rest_day','s','h'], ...]
+        $aq = $conn->prepare("SELECT id, employee_id, request_type, request_date, status,
                                      COALESCE(ot_hours_requested, 0) AS hrs
                               FROM attendance_requests
                               WHERE employee_id IN ($idList) AND status IN (0,1)
-                                AND request_date BETWEEN ? AND ?");
+                                AND request_date BETWEEN ? AND ?
+                              ORDER BY id ASC");
         $aq->bind_param('ss', $dFrom, $dTo);
         $aq->execute();
         $ares = $aq->get_result();
         while ($r = $ares->fetch_assoc()) {
             $reqMap[(int)$r['employee_id']][$r['request_date']][] =
-                ['t' => $r['request_type'], 's' => (int)$r['status'], 'h' => (float)$r['hrs']];
+                ['id' => (int)$r['id'], 't' => $r['request_type'], 's' => (int)$r['status'], 'h' => (float)$r['hrs']];
         }
 
         // EVERY schedule window these employees have, not just the ones overlapping
@@ -739,6 +747,21 @@ if ($action === 'docs') {
                         . ' excluded — more than ' . rtrim(rtrim(number_format(dtr_early_grace_hours(), 1), '0'), '.')
                         . ' hrs before the ' . date('g:i A', strtotime($d['sched_start'])) . ' shift start.';
                 }
+                // Why the Late cell says what it says. `late` is the hours CHARGED
+                // (grace / brackets / half day — dtr_charge_late), which is not
+                // the clock gap a reader sees between the shift start and the
+                // Arrival cell, so the cell explains itself on hover. Nothing is
+                // re-derived for pay here: raw = clock minutes after the stamped
+                // start, purely for the sentence.
+                if (!empty($d['sched_start']) && $n >= 1) {
+                    $ss  = strtotime($date . ' ' . $d['sched_start']);
+                    $raw = max(0, ($logs[0] - $ss) / 60);
+                    $tip = dtr_late_tip($raw, (float) $d['late'], $d['day_hours']);
+                    if ($tip !== '') $cells['late_tip'] = $tip;
+                    if ((float) $d['late'] > 0 && $d['day_hours'] > 0 && abs((float) $d['late'] - $d['day_hours'] / 2) < 0.011) {
+                        $cells['half_day'] = 1;
+                    }
+                }
                 // Positional mapping, the way the paper form is filled:
                 // in / lunch-out / lunch-in / out. Odd counts fall back on the
                 // clock: a middle log before 1 PM is the lunch-out, after is the
@@ -852,13 +875,25 @@ if ($action === 'docs') {
                        && in_array((int)date('w', $d), array_map('intval', explode(',', $rest)), true));
                 if ($isOff) $m[] = ['k' => 'off'];
                 $otFiled = false;
+                $hourReq = null;          // the filing itself, for the record card
                 foreach (($reqMap[$eid][$ymd] ?? []) as $rq) {
                     $m[] = ['k' => 'req'] + $rq;
-                    if ($rq['t'] === 'overtime' && $rq['s'] === 1) $otFiled = true;
+                    // Either filing authorizes a rest day; only 'overtime'
+                    // ever restates a regular day's OT figure.
+                    if (!in_array($rq['t'], ATT_REQUEST_HOUR_TYPES, true)) continue;
+                    if ($rq['s'] === 1) $otFiled = true;
+                    // An APPROVED filing always wins the slot — it is the one
+                    // that unblocks the record; a pending one only reports that
+                    // something is waiting for a decision.
+                    if ($hourReq === null || ($rq['s'] === 1 && (int) $hourReq['s'] !== 1)) $hourReq = $rq;
                 }
-                if ($otFiled && isset($E['days'][$ymd]['recs'])) {
+                if (isset($E['days'][$ymd]['recs'])) {
                     foreach ($E['days'][$ymd]['recs'] as &$rc) {
-                        if (in_array('rest_worked', $rc['flags'], true)) $rc['ot_filed'] = true;
+                        if ($otFiled && in_array('rest_worked', $rc['flags'], true)) $rc['ot_filed'] = true;
+                        // Carried per record so the card can show the filing's
+                        // state — and, when it is still pending, decide it right
+                        // there instead of sending the admin to another screen.
+                        if ($hourReq !== null) $rc['req'] = $hourReq;
                     }
                     unset($rc);
                 }

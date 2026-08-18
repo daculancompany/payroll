@@ -129,10 +129,12 @@ $payroll_period = isset($period_codes[$pp_code]) ? $period_codes[$pp_code] : 'se
                                                     <label class="form-check-label fw-semibold" for="rest-auto">Auto-authorize rest-day work</label>
                                                 </div>
                                                 <small class="text-muted">
-                                                    Off (default) = base rest-day hours (up to a full duty) are approved and paid automatically as always —
-                                                    no filing needed. A DTR record with <b>overtime beyond that</b> on a rest day <b>cannot be approved</b> —
-                                                    single or bulk — until an approved OT request exists on file for that employee and date.<br>
-                                                    On = the OT portion is approved normally too, no filing required.
+                                                    Off (default) = <b>any</b> attendance record on a rest day <b>cannot be approved</b> — single or bulk —
+                                                    until an approved <b>Rest Day Work</b> request exists for that employee and date. The employee files it
+                                                    from their portal, where the day is flagged with the hours their scans credit.
+                                                    Approving that request authorizes the duty only: it never rewrites the DTR figures, so the day stays
+                                                    paid once (base pay + 30% rest-day premium, plus any OT the scans show).<br>
+                                                    On = rest-day records are approved normally, no filing required.
                                                 </small>
                                             </div>
                                         </div>
@@ -359,6 +361,80 @@ $payroll_period = isset($period_codes[$pp_code]) ? $period_codes[$pp_code] : 'se
                                         </div>
                                     </div>
 
+                                    <!-- Late / tardiness rules -->
+                                    <?php
+                                    // Defaults mirror migrations/2026_08_late_rules.sql; a DB that predates it
+                                    // (no rows) shows the pre-migration behaviour: exact minutes, no grace.
+                                    $lm  = isset($settings['late_mode']) ? ((int) ps('late_mode', $settings) === 1 ? 1 : 0) : 0;
+                                    $lv  = function ($k, $d) use ($settings) { return isset($settings[$k]) ? rtrim(rtrim(number_format(ps($k, $settings), 2), '0'), '.') : $d; };
+                                    ?>
+                                    <div class="col-12">
+                                        <hr class="my-1">
+                                        <h6 class="fw-bold text-uppercase text-muted mb-3" style="font-size:11px;letter-spacing:1px;">
+                                            <i class="ri-timer-flash-line me-1"></i>Late (Tardiness) Rules
+                                        </h6>
+                                        <div class="row g-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label fw-semibold d-block">How is a late arrival charged?</label>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="late_mode" id="lm-1" value="1" <?= $lm === 1 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label" for="lm-1"><b>Brackets</b> &mdash; grace, then fixed hours per bracket, then half day</label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio" name="late_mode" id="lm-0" value="0" <?= $lm === 0 ? 'checked' : '' ?>>
+                                                    <label class="form-check-label" for="lm-0"><b>Exact minutes</b> &mdash; every minute after the grace period is deducted</label>
+                                                </div>
+                                                <label class="form-label fw-semibold mt-3">Grace period</label>
+                                                <div class="input-group" style="max-width:220px;">
+                                                    <input type="number" class="form-control" name="late_grace_minutes" id="lr-grace"
+                                                           value="<?= $lv('late_grace_minutes', 0) ?>" min="0" max="120" step="1" required>
+                                                    <span class="input-group-text">min after shift start</span>
+                                                </div>
+                                                <small class="text-muted">Arrivals up to this many minutes after the shift start are not late at all. Applies in both modes.</small>
+                                            </div>
+                                            <div class="col-md-8">
+                                                <div id="late-brackets" <?= $lm === 1 ? '' : 'style="opacity:.5;"' ?>>
+                                                    <table class="table table-sm table-bordered align-middle mb-2" style="max-width:640px;">
+                                                        <thead class="table-light">
+                                                            <tr><th>Arrives (minutes after shift start)</th><th class="text-center" style="width:180px;">Charged</th><th class="text-center" style="width:150px;">On an 8:00 shift</th></tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr>
+                                                                <td>1 &ndash; <span class="lr-echo" data-for="lr-grace"><?= $lv('late_grace_minutes', 0) ?></span> min</td>
+                                                                <td class="text-center text-success fw-semibold">not late</td>
+                                                                <td class="text-center text-muted lr-clock" data-from="0" data-to="lr-grace"></td>
+                                                            </tr>
+                                                            <tr>
+                                                                <td><span class="lr-echo-plus" data-for="lr-grace"></span> &ndash;
+                                                                    <input type="number" class="form-control form-control-sm d-inline-block" style="width:80px;" name="late_bracket_1_max" id="lr-b1max" value="<?= $lv('late_bracket_1_max', 30) ?>" min="1" max="600" step="1" required> min</td>
+                                                                <td class="text-center"><div class="input-group input-group-sm"><input type="number" class="form-control" name="late_bracket_1_hours" value="<?= $lv('late_bracket_1_hours', 1) ?>" min="0" max="12" step="0.25" required><span class="input-group-text">hr</span></div></td>
+                                                                <td class="text-center text-muted lr-clock" data-from="lr-grace" data-to="lr-b1max"></td>
+                                                            </tr>
+                                                            <tr>
+                                                                <td><span class="lr-echo-plus" data-for="lr-b1max"></span> &ndash;
+                                                                    <input type="number" class="form-control form-control-sm d-inline-block" style="width:80px;" name="late_bracket_2_max" id="lr-b2max" value="<?= $lv('late_bracket_2_max', 60) ?>" min="1" max="600" step="1" required> min</td>
+                                                                <td class="text-center"><div class="input-group input-group-sm"><input type="number" class="form-control" name="late_bracket_2_hours" value="<?= $lv('late_bracket_2_hours', 2) ?>" min="0" max="12" step="0.25" required><span class="input-group-text">hr</span></div></td>
+                                                                <td class="text-center text-muted lr-clock" data-from="lr-b1max" data-to="lr-b2max"></td>
+                                                            </tr>
+                                                            <tr>
+                                                                <td>more than
+                                                                    <input type="number" class="form-control form-control-sm d-inline-block" style="width:80px;" name="late_half_day_after" id="lr-hd" value="<?= $lv('late_half_day_after', 60) ?>" min="1" max="720" step="1" required> min</td>
+                                                                <td class="text-center text-danger fw-semibold">HALF DAY</td>
+                                                                <td class="text-center text-muted lr-clock" data-from="lr-hd" data-to=""></td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                <div class="alert alert-info py-2 px-3 mb-0" style="font-size:12px;">
+                                                    <i class="ri-information-line me-1"></i>
+                                                    Measured from <b>each employee&rsquo;s own shift start</b> (8-5, Evening, Night alike), in paid time &mdash; the shift&rsquo;s break is skipped when counting.
+                                                    <b>Half day</b> charges half the shift&rsquo;s hours and caps hours worked at the other half.
+                                                    Like every DTR figure this is <b>frozen at punch time</b>: new scans use the rules right away; records already on file keep their stored late until a <b>Recompute</b> is run.
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <!-- Summary -->
                                     <div class="col-12">
                                         <hr class="my-1">
@@ -417,6 +493,35 @@ document.querySelectorAll('#form-pay-settings input[type="number"]').forEach(fun
     el.addEventListener('input', updateSummary);
 });
 updateSummary();
+
+// Late-rule table: echo the boundaries into the neighbouring rows and show what
+// each bracket means on an 8:00 shift, so the rule reads as a timetable while
+// it is being edited. Brackets are dimmed (not disabled — values still post)
+// when the exact-minute mode is picked, since only the grace applies then.
+function updateLateRules() {
+    const v = id => parseFloat(document.getElementById(id)?.value) || 0;
+    document.querySelectorAll('.lr-echo').forEach(el => { el.textContent = v(el.dataset.for); });
+    document.querySelectorAll('.lr-echo-plus').forEach(el => { el.textContent = v(el.dataset.for) + 1; });
+    const clock = m => {
+        const t = new Date(2000, 0, 1, 8, 0, 0); t.setMinutes(t.getMinutes() + m);
+        let h = t.getHours(), mi = t.getMinutes(); const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+        return h + ':' + String(mi).padStart(2, '0') + ' ' + ap;
+    };
+    document.querySelectorAll('.lr-clock').forEach(el => {
+        const from = el.dataset.from === '0' ? 0 : v(el.dataset.from);
+        if (!el.dataset.to) { el.textContent = 'after ' + clock(from); return; }
+        const to = v(el.dataset.to);
+        el.textContent = to > from ? clock(from + 1) + ' – ' + clock(to) : '—';
+    });
+    const bracket = document.querySelector('input[name="late_mode"]:checked')?.value === '1';
+    const box = document.getElementById('late-brackets');
+    if (box) box.style.opacity = bracket ? '' : '.5';
+}
+document.querySelectorAll('#late-brackets input, #lr-grace, input[name="late_mode"]').forEach(function (el) {
+    el.addEventListener('input', updateLateRules);
+    el.addEventListener('change', updateLateRules);
+});
+updateLateRules();
 
 document.getElementById('form-pay-settings').addEventListener('submit', async function(e) {
     e.preventDefault();

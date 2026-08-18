@@ -13,7 +13,7 @@
      regularDays, saturdays,     // header blanks (optional)
      officialArrival, officialDeparture, // header blanks (optional)
      compact,                    // true → tighter type for modals
-     days,                       // { 'YYYY-MM-DD': {in,out,am_in,am_out,pm_in,pm_out,wh,ot,ut,late} }
+     days,                       // { 'YYYY-MM-DD': {in,out,am_in,am_out,pm_in,pm_out,wh,ot,ut,late[,late_tip,half_day]} }
      totals,                     // { wh, ot, ut, late }
      marks                       // optional { 'YYYY-MM-DD': [marker,…] } — see markInfo()
    }) => HTML string
@@ -84,7 +84,7 @@
     // ── Day markers: holiday / leave / day-off / attendance request ──
     // Server shape (dtr-employee-server.php `marks`):
     //   holiday {k,t:'legal'|'special',lbl}  leave {k,lbl,s,half}
-    //   off {k}                              req  {k,t:'incident'|'overtime',s}
+    //   off {k}                       req {k,t:'incident'|'overtime'|'rest_day',s}
     function markInfo(m) {
         // Which shift the day ran on. Colour-coded by when it starts so a month
         // of mixed rotations is readable at a glance: day / afternoon / night.
@@ -127,10 +127,10 @@
         // Same moon glyph the duty roster grid uses for a rest day — one icon
         // means "day off" everywhere in the app, not a different mark per screen.
         if (m.k === 'off') return { cls: 'dm-off', ltr: '<i class="ri-moon-line"></i>', note: 'DAY OFF' };
+        var reqNote = { overtime: 'OT REQUEST', rest_day: 'REST DAY WORK REQUEST' }[m.t] || 'INCIDENT REPORT';
         return {
             cls: 'dm-req', ltr: '<i class="ri-time-line"></i>',
-            note: (m.t === 'overtime' ? 'OT REQUEST' : 'INCIDENT REPORT')
-                + (m.s === 0 ? ' (PENDING)' : ' (APPROVED)')
+            note: reqNote + (m.s === 0 ? ' (PENDING)' : ' (APPROVED)')
         };
     }
 
@@ -225,7 +225,12 @@
             // and approved). A payload without h falls back to the row figure.
             var otAppr = false, otApprH = 0;
             raw.forEach(function (m) {
-                if (m.k === 'req' && m.t === 'overtime' && m.s === 1) { otAppr = true; otApprH += Number(m.h || 0); }
+                // Either filing authorizes the day — same set payroll reads
+                // (ATT_REQUEST_HOUR_TYPES); the min() below keeps a rest-day
+                // request, which names the WHOLE day, from inflating anything.
+                if (m.k === 'req' && (m.t === 'overtime' || m.t === 'rest_day') && m.s === 1) {
+                    otAppr = true; otApprH += Number(m.h || 0);
+                }
             });
             if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
             var times = ampm
@@ -264,7 +269,17 @@
                 + '</td>'
                 + '<td class="ut">' + (d.ut > 0 ? ut[0] : '') + '</td>'
                 + '<td class="ut">' + (d.ut > 0 ? ut[1] : '') + '</td>'
-                + '<td class="x-col num late">' + (d.late > 0 ? num(d.late) : '') + '</td>'
+                // Late is the hours CHARGED (grace / brackets / half day per Pay
+                // Settings), not the clock gap — so when a tip explains the
+                // difference it rides on the cell, and a half day is labelled.
+                + '<td class="x-col num late' + (d.half_day ? ' late-hd' : '') + '">'
+                + (d.late > 0 || d.late_tip
+                    ? (d.late_tip
+                        ? '<span tabindex="0" role="note" data-tip="' + esc(d.late_tip) + '">'
+                          + (d.late > 0 ? num(d.late) : '') + (d.half_day ? '<i class="late-hd-tag">½ day</i>' : '') + '</span>'
+                        : num(d.late))
+                    : '')
+                + '</td>'
                 + '</tr>';
         });
 
@@ -272,12 +287,12 @@
         var head = ampm
             ? '<tr><th rowspan="2">Day</th><th colspan="2">A.M.</th><th colspan="2">P.M.</th>'
               + '<th class="x-col" rowspan="2">Work Hrs</th><th class="x-col" rowspan="2">Overtime</th>'
-              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late (min)</th></tr>'
+              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late (hrs)</th></tr>'
               + '<tr><th class="t-col">Arrival</th><th class="t-col">Departure</th>'
               + '<th class="t-col">Arrival</th><th class="t-col">Departure</th><th>Hours</th><th>Minutes</th></tr>'
             : '<tr><th rowspan="2">Day</th><th colspan="2">TIME</th>'
               + '<th class="x-col" rowspan="2">Work Hrs</th><th class="x-col" rowspan="2">Overtime</th>'
-              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late (min)</th></tr>'
+              + '<th colspan="2">UNDERTIME</th><th class="x-col" rowspan="2">Late (hrs)</th></tr>'
               + '<tr><th class="t-col">Arrival</th><th class="t-col">Departure</th><th>Hours</th><th>Minutes</th></tr>';
 
         // ── Shift summary: how many days were worked on each shift ──

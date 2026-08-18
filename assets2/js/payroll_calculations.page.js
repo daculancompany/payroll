@@ -1591,7 +1591,12 @@
             if (dot <= 0) return;
             var appr = false, apprH = 0;
             (dtrMarks[iso] || []).forEach(function (m) {
-                if (m.k === 'req' && m.t === 'overtime' && m.s === 1) { appr = true; apprH += Number(m.h || 0); }
+                // Either hour-carrying filing authorizes the day (a rest-day
+                // request names the whole day; the min() below caps it at what
+                // the scans rendered) — same set payroll reads server-side.
+                if (m.k === 'req' && (m.t === 'overtime' || m.t === 'rest_day') && m.s === 1) {
+                    appr = true; apprH += Number(m.h || 0);
+                }
             });
             if (appr) otPaid += apprH > 0 ? Math.min(dot, apprH) : dot;
         });

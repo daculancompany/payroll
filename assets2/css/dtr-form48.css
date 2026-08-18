@@ -85,6 +85,12 @@
 /* Rendered past the shift end but never filed/approved → visible, clearly unpaid */
 .dtrf48-table td.x-col.ot.ot-raw { color: #b9ad93; font-weight: 400; }
 .dtrf48-table td.x-col.late { color: #b02a37; }
+/* Half-day late charge — the figure is half the shift, and the row says so */
+.dtrf48-table td.x-col.late.late-hd { background: #fdf1f0; }
+.dtrf48-table td.x-col.late .late-hd-tag {
+  display: block; font-style: normal; font-size: 8px; line-height: 1; letter-spacing: .4px;
+  text-transform: uppercase; font-weight: 800; color: #b02a37; margin-top: 2px;
+}
 .dtrf48-table tfoot td { font-weight: 800; background: #efeadb; }
 .dtrf48-table tfoot td.x-col { background: #e9f2ee; }
 /* The totals are the line everything else adds up to — a double rule above

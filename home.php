@@ -433,7 +433,7 @@ for ($i = 5; $i >= 0; $i--) {
 }
 
 // ── Attendance / OT requests — last 30 days by type × outcome ──
-$areq = ['incident'=>['p'=>0,'a'=>0,'r'=>0], 'overtime'=>['p'=>0,'a'=>0,'r'=>0]];
+$areq = ['incident'=>['p'=>0,'a'=>0,'r'=>0], 'overtime'=>['p'=>0,'a'=>0,'r'=>0], 'rest_day'=>['p'=>0,'a'=>0,'r'=>0]];
 $arr = $conn->query("
     SELECT request_type, status, COUNT(*) AS c FROM attendance_requests
     WHERE created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY) $dsSub
@@ -976,7 +976,8 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                             <div class="mini-strip">
                                 <div class="mini-stat" style="--ac:#0891b2;"><div class="mv"><?= $areq_total_30d ?></div><div class="ml">Filed</div></div>
                                 <div class="mini-stat" style="--ac:#e6a817;"><div class="mv" data-stat="pending_att_req"><?= $pending_att_req ?></div><div class="ml">Pending (all time)</div></div>
-                                <div class="mini-stat" style="--ac:#28a745;"><div class="mv"><?= $areq_total_30d ? round(($areq['incident']['a'] + $areq['overtime']['a']) / max(1, $areq_total_30d - $areq['incident']['p'] - $areq['overtime']['p']) * 100) : 0 ?>%</div><div class="ml">Approval rate</div></div>
+                                <?php $areq_appr = array_sum(array_column($areq, 'a')); $areq_pend = array_sum(array_column($areq, 'p')); ?>
+                                <div class="mini-stat" style="--ac:#28a745;"><div class="mv"><?= $areq_total_30d ? round($areq_appr / max(1, $areq_total_30d - $areq_pend) * 100) : 0 ?>%</div><div class="ml">Approval rate</div></div>
                             </div>
                             <?php if ($areq_total_30d): ?>
                             <div id="chart-att-req" style="min-height:170px;"></div>
@@ -1633,11 +1634,11 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
         colors: ['#e6a817', '#28a745', '#dc3545'],
         plotOptions: { bar:{ horizontal:true, borderRadius:3, barHeight:'55%' } },
         series: [
-            { name:'Pending',  data: [<?= $areq['incident']['p'] ?>, <?= $areq['overtime']['p'] ?>] },
-            { name:'Approved', data: [<?= $areq['incident']['a'] ?>, <?= $areq['overtime']['a'] ?>] },
-            { name:'Rejected', data: [<?= $areq['incident']['r'] ?>, <?= $areq['overtime']['r'] ?>] }
+            { name:'Pending',  data: [<?= $areq['incident']['p'] ?>, <?= $areq['overtime']['p'] ?>, <?= $areq['rest_day']['p'] ?>] },
+            { name:'Approved', data: [<?= $areq['incident']['a'] ?>, <?= $areq['overtime']['a'] ?>, <?= $areq['rest_day']['a'] ?>] },
+            { name:'Rejected', data: [<?= $areq['incident']['r'] ?>, <?= $areq['overtime']['r'] ?>, <?= $areq['rest_day']['r'] ?>] }
         ],
-        xaxis: { categories: ['Incident / Missed log', 'Overtime'], labels:{style:{fontSize:'10px'}} },
+        xaxis: { categories: ['Incident / Missed log', 'Overtime', 'Rest-day work'], labels:{style:{fontSize:'10px'}} },
         yaxis: { labels:{style:{fontSize:'11px'}} },
         dataLabels: { enabled:true, style:{fontSize:'10px', colors:['#fff']}, formatter:function(v){ return v > 0 ? v : ''; } },
         legend: { position:'bottom', fontSize:'11px' },

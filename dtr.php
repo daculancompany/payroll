@@ -127,14 +127,16 @@ function dtr_status_badge($s) {
                                                         data-bs-toggle="tooltip" data-bs-placement="top" title="View DTR Details">
                                                         <i class="ri-eye-line"></i>
                                                     </a>
-                                                    <?php if ($status === 1): ?>
+                                                    <?php // Employee sign-off is optional (DTR_EMPLOYEE_REVIEW_ENABLED, db_connect.php).
+                                                          // Off: skip it and final-approve straight from Pending. ?>
+                                                    <?php if ($status === 1 && DTR_EMPLOYEE_REVIEW_ENABLED): ?>
                                                     <button onclick="sendDTRForReview(<?= $row['id'] ?>)" type="button"
                                                         class="btn btn-sm btn-outline-info"
                                                         data-bs-toggle="tooltip" data-bs-placement="top" title="Send to Employees for Review">
                                                         <i class="ri-user-received-2-line"></i>
                                                     </button>
                                                     <?php endif; ?>
-                                                    <?php if ($status === 3): ?>
+                                                    <?php if ($status === 3 || ($status === 1 && !DTR_EMPLOYEE_REVIEW_ENABLED)): ?>
                                                     <button onclick="approveDTR(<?= $row['id'] ?>)" type="button"
                                                         class="btn btn-sm btn-outline-primary"
                                                         data-bs-toggle="tooltip" data-bs-placement="top" title="Final Approve for Payroll">

@@ -684,6 +684,21 @@ if ($action == 'get_employee_edit') {
 if ($action == 'save_attendance_request') {
     echo json_encode($crud->save_attendance_request());
 }
+// The day's filing ceiling, for the approver's edit form — same rule the
+// employee's own portal shows (ot_request_limit), with the request being
+// edited excluded from the "already filed" total.
+if ($action == 'get_attendance_request') {
+    echo json_encode($crud->get_attendance_request());
+}
+
+if ($action == 'attendance_request_limit') {
+    echo json_encode($crud->attendance_request_limit());
+}
+
+if ($action == 'update_attendance_request') {
+    echo json_encode($crud->update_attendance_request());
+}
+
 if ($action == 'decide_attendance_request') {
     echo json_encode($crud->decide_attendance_request());
 }

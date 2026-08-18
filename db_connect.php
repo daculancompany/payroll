@@ -602,6 +602,26 @@ if (!defined('PAYROLL_EXCLUDED_CLASSIFICATIONS')) {
     define('PAYROLL_EXCLUDED_CLASSIFICATIONS', ['INTERM', 'INTERN']);
 }
 
+// ── Employee DTR review step (GLOBAL, OPTIONAL) ─────────────────────────
+// Whether a DTR batch must be sent to the employees for their own sign-off
+// (confirm / dispute in the portal) before it can be approved for payroll.
+//
+//   false (default) → the step is SKIPPED entirely. DTR Documents offers
+//                     "Final Approve" straight from Pending Approval, the
+//                     Send-for-Review buttons are hidden, and the server
+//                     refuses send_dtr_for_review / bulk_send_dtr_for_review
+//                     so no batch can be parked in status 3 (Ready for
+//                     Review) by a stale page or a crafted request.
+//   true            → the full chain: Pending Approval → Send for Review
+//                     (status 3, employees notified) → Final Approve.
+//
+// Off by default because most sites approve DTRs in-house; flip this ONE line
+// to turn the employee sign-off on app-wide. Batches already reviewed keep
+// their Review panel (their sign-offs are still shown) even when it is off.
+if (!defined('DTR_EMPLOYEE_REVIEW_ENABLED')) {
+    define('DTR_EMPLOYEE_REVIEW_ENABLED', false);
+}
+
 // ── DTR review rules (GLOBAL) ───────────────────────────────────────────
 // How the DTR Documents screen reads punches and flags exceptions.
 // Change these lines to adjust app-wide; other companies may need 'ampm'.
@@ -664,6 +684,207 @@ if (!function_exists('dtr_early_grace_hours')) {
             if ($v >= 0 && $v <= 24) $hrs = $v;
         }
         return $hrs;
+    }
+}
+// ── Late (tardiness) rules (GLOBAL) ─────────────────────────────────────
+// How many hours a late arrival COSTS, given how many minutes after the shift
+// start the employee clocked in. Two modes, both from pay_settings
+// (migrations/2026_08_late_rules.sql), both measured from the employee's OWN
+// shift start so one rule serves every schedule:
+//   late_mode 0 — exact minutes past the start (the original behaviour),
+//                 minus nothing except the grace window;
+//   late_mode 1 — grace + two brackets + half day, e.g. on an 8:00 shift
+//                 8:01–8:15 free, 8:16–8:30 = 1 hr, 8:31–9:00 = 2 hrs,
+//                 9:01+ = half day (day_hours / 2).
+// Missing rows fall back to these constants, which reproduce the pre-migration
+// maths exactly (no grace, exact minutes), so PHP may be deployed first.
+if (!defined('DTR_LATE_MODE'))           define('DTR_LATE_MODE', 0);
+if (!defined('DTR_LATE_GRACE_MINUTES'))  define('DTR_LATE_GRACE_MINUTES', 0);
+if (!function_exists('dtr_late_rules')) {
+    function dtr_late_rules(): array
+    {
+        static $rules = null;
+        if ($rules !== null) return $rules;
+        $rules = [
+            'mode'           => (int) DTR_LATE_MODE,
+            'grace'          => (float) DTR_LATE_GRACE_MINUTES,
+            'brackets'       => [],          // [[max_minutes, charged_hours], ...] ascending
+            'half_day_after' => null,        // minutes; null = no half-day rule
+        ];
+        global $conn;
+        if (!($conn instanceof mysqli)) return $rules;
+        $r = $conn->query("SELECT setting_key, setting_value FROM pay_settings
+                            WHERE setting_key IN ('late_mode','late_grace_minutes',
+                                  'late_bracket_1_max','late_bracket_1_hours',
+                                  'late_bracket_2_max','late_bracket_2_hours',
+                                  'late_half_day_after')");
+        $v = [];
+        if ($r) while ($row = $r->fetch_assoc()) $v[$row['setting_key']] = (float) $row['setting_value'];
+        if (isset($v['late_mode']))          $rules['mode']  = (int) $v['late_mode'] === 1 ? 1 : 0;
+        if (isset($v['late_grace_minutes'])) $rules['grace'] = max(0.0, $v['late_grace_minutes']);
+        foreach ([1, 2] as $i) {
+            $mx = $v["late_bracket_{$i}_max"]   ?? null;
+            $hr = $v["late_bracket_{$i}_hours"] ?? null;
+            if ($mx !== null && $hr !== null && $mx > 0 && $hr >= 0) $rules['brackets'][] = [$mx, $hr];
+        }
+        usort($rules['brackets'], function ($a, $b) { return $a[0] <=> $b[0]; });
+        if (isset($v['late_half_day_after']) && $v['late_half_day_after'] > 0) {
+            $rules['half_day_after'] = $v['late_half_day_after'];
+        }
+        return $rules;
+    }
+}
+// Price a late arrival. $raw_minutes = paid minutes between the shift start and
+// the time-in (a break falling inside that gap is already excluded by
+// dtr_shift_figures). Returns the hours to charge plus WHICH rule decided it:
+//   'none'     on time / inside the grace window
+//   'exact'    mode 0 — the raw minutes themselves
+//   'bracket'  mode 1 — a bracket's fixed hours
+//   'half_day' mode 1 — beyond the last bracket: half of the day's hours
+// Every charge is capped at the day length: nothing can cost more than the day.
+if (!function_exists('dtr_charge_late')) {
+    function dtr_charge_late(float $raw_minutes, float $day_hours): array
+    {
+        $rules = dtr_late_rules();
+        $day_hours = $day_hours > 0 ? $day_hours : (float) PAYROLL_DEFAULT_DAY_HOURS;
+        if ($raw_minutes <= 0.0001 || $raw_minutes <= $rules['grace']) {
+            return ['hours' => 0.0, 'rule' => 'none'];
+        }
+        if ($rules['mode'] !== 1) {
+            return ['hours' => round(min($day_hours, $raw_minutes / 60), 2), 'rule' => 'exact'];
+        }
+        foreach ($rules['brackets'] as [$mx, $hr]) {
+            if ($raw_minutes <= $mx) return ['hours' => round(min($day_hours, $hr), 2), 'rule' => 'bracket'];
+        }
+        // Past every bracket. Half day when a half-day rule exists (or when
+        // there are no brackets at all — then it is the only rule); otherwise
+        // the top bracket's charge stands.
+        if ($rules['half_day_after'] !== null || !$rules['brackets']) {
+            return ['hours' => round($day_hours / 2, 2), 'rule' => 'half_day'];
+        }
+        $top = end($rules['brackets']);
+        return ['hours' => round(min($day_hours, $top[1]), 2), 'rule' => 'bracket'];
+    }
+}
+// The break as an absolute [start, end] window for a shift anchored at
+// $sched_start..$sched_end. Uses the shift's break_start when set; otherwise
+// the break is assumed to sit in the middle of the shift, which is what every
+// shift defined before break_start existed meant. null when the shift has no
+// break. break_minutes may be a stamped value (DTR_details.sched_break) — the
+// window's LENGTH follows the stamp, only its position comes from the shift.
+if (!function_exists('dtr_break_window')) {
+    function dtr_break_window(int $sched_start, int $sched_end, array $schedule): ?array
+    {
+        $mins = isset($schedule['break_minutes']) ? (int) $schedule['break_minutes'] : 60;
+        if ($mins <= 0 || $sched_end <= $sched_start) return null;
+        $bs = null;
+        if (!empty($schedule['break_start'])) {
+            $bs = strtotime(date('Y-m-d', $sched_start) . ' ' . $schedule['break_start']);
+            // Overnight shift whose break falls after midnight (11PM–8AM, break 3AM).
+            if ($bs !== false && $bs < $sched_start) $bs = strtotime('+1 day', $bs);
+            if ($bs === false || $bs < $sched_start || $bs >= $sched_end) $bs = null;
+        }
+        if ($bs === null) {
+            // Middle of the shift: equal paid halves either side of the break.
+            $bs = (int) round($sched_start + (($sched_end - $sched_start) - $mins * 60) / 2);
+        }
+        $be = min($sched_end, $bs + $mins * 60);
+        return [$bs, $be];
+    }
+}
+// Seconds of [$a, $b] that fall inside the break window (0 when none).
+if (!function_exists('dtr_break_overlap')) {
+    function dtr_break_overlap(?array $win, int $a, int $b): int
+    {
+        if (!$win || $b <= $a) return 0;
+        return max(0, min($b, $win[1]) - max($a, $win[0]));
+    }
+}
+// THE day maths, shared by ingestion (Action::save_biometric_attendance) and
+// recompute / manual paths (dtr_compute_day) so the two can never disagree.
+// $in_ts / $out_ts are the paired punches, $sched_start / $sched_end the shift
+// anchored to the row's day (end already pushed to +1 day when overnight).
+// $schedule needs total_hours, break_minutes and (optionally) break_start.
+//
+// Everything is measured in PAID time — the break window is excluded from
+// late, undertime and work alike — so on a complete day
+//     work_hours + late + undertime == total_hours
+// always holds, which is what payroll's whole-day credit relies on
+// (worked fraction + (late + UT) / day_hours == 1).
+//
+//   late       hours CHARGED for the late arrival (dtr_charge_late)
+//   late_raw   paid minutes actually late — what the charge was decided from
+//   late_rule  'none' | 'exact' | 'bracket' | 'half_day'
+//   work_hours presence inside the shift minus break overlap, capped at the day
+//              and at (day − late − undertime): a bracket charge takes its hours
+//              out of the day, so an employee charged 1 hr for 16 min cannot
+//              also be credited those 44 minutes as worked.
+if (!function_exists('dtr_shift_figures')) {
+    function dtr_shift_figures(int $in_ts, int $out_ts, int $sched_start, int $sched_end, array $schedule): array
+    {
+        $day_hours = day_hours_or_default($schedule['total_hours'] ?? null);
+        $win       = dtr_break_window($sched_start, $sched_end, $schedule);
+
+        $late_raw_min = 0.0;
+        if ($in_ts > $sched_start) {
+            $late_raw_min = (($in_ts - $sched_start) - dtr_break_overlap($win, $sched_start, $in_ts)) / 60;
+        }
+        $charge = dtr_charge_late($late_raw_min, $day_hours);
+        $late   = $charge['hours'];
+
+        $undertime = 0.0;
+        if ($out_ts < $sched_end) {
+            $undertime = round((($sched_end - $out_ts) - dtr_break_overlap($win, $out_ts, $sched_end)) / 3600, 2);
+        }
+        $overtime = round(max(0, ($out_ts - $sched_end) / 3600), 2);
+
+        // Only time INSIDE the shift counts as work. Clocking in early does not
+        // earn anything, and time past the shift end is overtime — already
+        // measured above, so counting it here too would pay it twice.
+        // Inside the grace window the arrival is NOT late — so it is not
+        // unpaid either: the day is measured from the shift start, or a 10-min
+        // grace would still cost 10 minutes of basic pay through the worked
+        // fraction (payroll credits worked + late + UT, and late is 0 here).
+        $eff_in  = ($charge['rule'] === 'none') ? $sched_start : max($in_ts, $sched_start);
+        $eff_out = min($out_ts, $sched_end);
+        $work    = ($eff_out - $eff_in) - dtr_break_overlap($win, $eff_in, $eff_out);
+        $work_hours = round(max(0, $work / 3600), 2);
+        $work_hours = round(min($work_hours, $day_hours, max(0, $day_hours - $late - $undertime)), 2);
+
+        return [
+            'work_hours' => $work_hours,
+            'overtime'   => $overtime,
+            'undertime'  => max(0.0, $undertime),
+            'late'       => $late,
+            'late_raw'   => round($late_raw_min, 2),
+            'late_rule'  => $charge['rule'],
+            'half_day'   => $charge['rule'] === 'half_day' ? 1 : 0,
+        ];
+    }
+}
+// One-line explanation of a late charge for tooltips, from figures the display
+// side already has: minutes after the shift start (clock gap, as a person reads
+// it), the hours charged, and the day length. Empty when there is nothing to
+// explain (on time, or exact-minute mode charging exactly what was late).
+if (!function_exists('dtr_late_tip')) {
+    function dtr_late_tip(float $raw_clock_min, float $charged_hours, ?float $day_hours = null): string
+    {
+        $raw_clock_min = round($raw_clock_min);
+        $dh = day_hours_or_default($day_hours);
+        $fmtMin = function ($m) {
+            $m = (int) round($m);
+            return $m >= 60 ? floor($m / 60) . ' hr ' . ($m % 60 ? ($m % 60) . ' min' : '') : $m . ' min';
+        };
+        $chargeTxt = rtrim(rtrim(number_format($charged_hours, 2), '0'), '.') . ' hr' . ($charged_hours == 1 ? '' : 's');
+        if ($raw_clock_min <= 0 && $charged_hours <= 0) return '';
+        if ($charged_hours <= 0) {
+            return 'Arrived ' . trim($fmtMin($raw_clock_min)) . ' after the shift start — within the grace period, not charged.';
+        }
+        if ($dh > 0 && abs($charged_hours - $dh / 2) < 0.011) {
+            return 'HALF DAY — arrived ' . trim($fmtMin($raw_clock_min)) . ' after the shift start; charged ' . $chargeTxt . ' (half of the ' . rtrim(rtrim(number_format($dh, 2), '0'), '.') . '-hr day).';
+        }
+        if (abs($charged_hours * 60 - $raw_clock_min) < 1) return '';
+        return 'Arrived ' . trim($fmtMin($raw_clock_min)) . ' after the shift start — charged ' . $chargeTxt . ' under the late brackets.';
     }
 }
 // Default work schedule auto-assigned to every employee that has none —
@@ -1615,6 +1836,51 @@ if (!function_exists('resolve_schedule_period')) {
     }
 }
 
+// ── Day IN/OUT pairing (GLOBAL) ─────────────────────────────────────────
+// Which two taps are a day's boundaries. Kept here as ONE rule because more
+// than one reader needs it: dtr_compute_day prices the day with it, and
+// ot_request_limit measures the OT ceiling with it — when the two paired
+// differently the DTR line and the filing form described the same day with
+// different clock times (a 6:40 PM–6:40 AM graveyard read as 6:40 AM–6:40 AM,
+// a 24-hour span, and offered 12 hr of OT against 0.68 on the DTR).
+//   $log_ts     unix timestamps, any order
+//   $date       the row's date (Y-m-d) — the day $start_time belongs to
+//   $start_time the shift's start (HH:MM:SS) or null to skip the early filter
+// Returns ['in' => ts|null, 'out' => ts|null]; 'out' is null on a day with a
+// single usable tap (still open).
+if (!function_exists('dtr_pair_logs')) {
+    function dtr_pair_logs(array $log_ts, string $date, $start_time = null): array
+    {
+        sort($log_ts);
+        // First and last of whatever is handed in; an out at or before the in
+        // belongs to the next calendar day (overnight shift).
+        $pair = function (array $ts) {
+            $n   = count($ts);
+            $in  = $n ? $ts[0] : null;
+            $out = $n >= 2 ? $ts[$n - 1] : null;
+            if ($in && $out && $out <= $in) $out = strtotime('+1 day', $out);
+            return ['in' => $in, 'out' => $out];
+        };
+        $res = $pair($log_ts);
+
+        // A tap hours before any plausible arrival for this shift is noise —
+        // pairing it as the day's IN steals the slot from the real punch and
+        // reports the whole shift as undertime instead of leaving the day
+        // correctly open for its actual checkout. Grace covers ordinary early
+        // arrival; must mirror the ingestion-side filter in
+        // Action::save_biometric_attendance, or a Recompute would restate a
+        // row differently than ingestion originally paired it. Nothing left
+        // after the filter means every tap belongs to some other shift — the
+        // raw pair stands rather than emptying the day.
+        if ($start_time !== null && $start_time !== '' && $log_ts) {
+            $grace = strtotime($date . ' ' . $start_time) - dtr_early_grace_hours() * 3600;
+            $kept  = array_values(array_filter($log_ts, function ($t) use ($grace) { return $t >= $grace; }));
+            if ($kept) $res = $pair($kept);
+        }
+        return $res;
+    }
+}
+
 // ── DTR day math (GLOBAL) ───────────────────────────────────────────────
 // Single source of truth for computing one DTR_details row's figures from
 // its raw log timestamps + the employee's effective schedule + the holiday
@@ -1634,10 +1900,12 @@ if (!function_exists('dtr_compute_day')) {
     function dtr_compute_day(mysqli $db, int $employee_id, string $date, array $log_ts, bool $use_stamp = true): array
     {
         sort($log_ts);
-        $n      = count($log_ts);
-        $in_ts  = $n ? $log_ts[0] : null;
-        $out_ts = $n >= 2 ? $log_ts[$n - 1] : null;
-        if ($in_ts && $out_ts && $out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
+        $n = count($log_ts);
+        // Paired without the shift first — the schedule that refines it is only
+        // resolved below, and dtr_pair_logs is re-run with it once it is known.
+        $pair   = dtr_pair_logs($log_ts, $date);
+        $in_ts  = $pair['in'];
+        $out_ts = $pair['out'];
 
         $dateEsc  = $db->real_escape_string($date);
         $day_type = 'regular';
@@ -1696,27 +1964,19 @@ if (!function_exists('dtr_compute_day')) {
             )) ? 1 : 0;
         }
 
-        // A tap hours before any plausible arrival for this shift is noise —
-        // pairing it as the day's IN steals the slot from the real punch and
-        // reports the whole shift as undertime instead of leaving the day
-        // correctly open for its actual checkout. Grace covers ordinary early
-        // arrival; must mirror the ingestion-side filter in
-        // Action::save_biometric_attendance, or a Recompute would restate a
-        // row differently than ingestion originally paired it.
+        // Re-pair now that the shift is known, so the early-arrival filter in
+        // dtr_pair_logs can drop taps that belong to another day.
         if ($schedule && $n) {
-            $grace = strtotime($date . ' ' . $schedule['start_time']) - dtr_early_grace_hours() * 3600;
-            $kept  = array_values(array_filter($log_ts, function ($t) use ($grace) { return $t >= $grace; }));
-            if ($kept) {
-                $in_ts  = $kept[0];
-                $out_ts = count($kept) >= 2 ? $kept[count($kept) - 1] : null;
-                if ($in_ts && $out_ts && $out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
-            }
+            $pair   = dtr_pair_logs($log_ts, $date, $schedule['start_time'] ?? null);
+            $in_ts  = $pair['in'];
+            $out_ts = $pair['out'];
         }
 
         $raw_hours  = ($in_ts && $out_ts) ? ($out_ts - $in_ts) / 3600 : 0;
         $break_hrs  = (isset($schedule['break_minutes']) ? $schedule['break_minutes'] : 60) / 60;
         $work_hours = 0;
         $overtime = $late = $undertime = $nsd_hours = 0;
+        $late_raw = 0; $late_rule = 'none';
         if ($out_ts && $schedule) {
             $sched_start = strtotime($date . ' ' . $schedule['start_time']);
             $sched_end   = strtotime($date . ' ' . $schedule['end_time']);
@@ -1730,20 +1990,17 @@ if (!function_exists('dtr_compute_day')) {
             if ($schedule['is_graveyard'] || $schedule['end_time'] <= $schedule['start_time']) {
                 $sched_end = strtotime('+1 day', $sched_end);
             }
-            $late       = round(max(0, ($in_ts - $sched_start) / 3600), 2);
-            $undertime  = round(max(0, ($sched_end - $out_ts) / 3600), 2);
-            $overtime   = round(max(0, ($out_ts - $sched_end) / 3600), 2);
-
-            // Only time INSIDE the shift counts as work. Clocking in early does not
-            // earn anything, and time past the shift end is overtime — already
-            // measured above, so counting it here too would pay it twice.
-            // Without this clamp an early arrival inflated work_hours, and the
-            // giveaway was work_hours + undertime exceeding the shift length
-            // (e.g. 07:47→13:10 on an 08:00–17:00 shift gave 4.39 + 3.82 = 8.21).
-            $eff_in     = max($in_ts, $sched_start);
-            $eff_out    = min($out_ts, $sched_end);
-            $work_hours = round(max(0, ($eff_out - $eff_in) / 3600 - $break_hrs), 2);
-            $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+            // Late / undertime / overtime / work hours — the shared paid-time
+            // maths (dtr_shift_figures): break overlap excluded from all of
+            // them, late priced by the grace/bracket/half-day rules in
+            // pay_settings, work capped so worked + late + UT == the day.
+            $fig        = dtr_shift_figures($in_ts, $out_ts, $sched_start, $sched_end, $schedule);
+            $late       = $fig['late'];
+            $undertime  = $fig['undertime'];
+            $overtime   = $fig['overtime'];
+            $work_hours = $fig['work_hours'];
+            $late_raw   = $fig['late_raw'];
+            $late_rule  = $fig['late_rule'];
 
             // Night differential = time worked inside 22:00–06:00. That window is
             // ONE contiguous 8-hour block crossing midnight, so it is built as
@@ -1775,6 +2032,9 @@ if (!function_exists('dtr_compute_day')) {
         return [
             'work_hours' => $work_hours, 'overtime' => $overtime, 'undertime' => $undertime,
             'late' => $late, 'nsd_hours' => $nsd_hours, 'day_type' => $day_type,
+            // Informational — not stored on the row. Paid minutes actually late
+            // and which rule priced them ('none'|'exact'|'bracket'|'half_day').
+            'late_raw' => $late_raw, 'late_rule' => $late_rule,
             'is_complete' => $out_ts ? 1 : 0,
             'schedule_id' => isset($schedule['id']) ? (int) $schedule['id'] : null,
             'day_hours'   => isset($schedule['total_hours']) ? (float) $schedule['total_hours'] : null,
@@ -1897,8 +2157,9 @@ if (!function_exists('dtr_schedule_mismatches')) {
 //
 //     regular day → the time scanned PAST the shift end (dtr_compute_day's
 //                   `overtime`, the same figure the DTR itself shows)
-//     rest day    → the whole worked span (minus break) — every hour on a
-//                   rest day is overtime, there is no shift to exceed
+//     rest day    → the hours the DTR credits (work + OT) BEYOND one full
+//                   duty — the duty itself is already auto-paid, with the
+//                   rest-day premium, straight from the punches
 //
 // then floored onto the 0.5-hour grid the form uses, clamped to the per-day
 // hard ceiling, and reduced by whatever the employee already has pending or
@@ -1920,7 +2181,13 @@ if (!function_exists('ot_request_limit')) {
      *   excess_hours float  — raw overtime the scans show for that date
      *   already      float  — hours already pending/approved for that date
      *   message      string — why it is blocked / how the cap was derived
-     *   time_in/time_out/shift_end — display strings for the UI hint
+     *   rendered_hours float — hours the DTR credits for that day (work + OT)
+     *   duty_hours   float  — the day's full duty, what a rest day auto-pays
+     *   date_label   string — the date, formatted for the UI
+     *   time_in/time_out/shift_start/shift_end — display strings for the UI
+     *   time_in_html/time_out_html — the same two punches through
+     *                        dtr_punch_time(), so an overnight out is chipped
+     *                        "+1" exactly as the DTR renders it
      */
     function ot_request_limit(mysqli $db, int $employee_id, string $date, int $exclude_request_id = 0): array
     {
@@ -1930,10 +2197,17 @@ if (!function_exists('ot_request_limit')) {
             'excess_hours' => 0.0,
             'already'      => 0.0,
             'message'      => '',
+            'rendered_hours' => 0.0,
+            'duty_hours'   => 0.0,
+            'date_label'   => '',
             'time_in'      => '',
             'time_out'     => '',
+            'time_in_html' => '',
+            'time_out_html' => '',
+            'shift_start'  => '',
             'shift_end'    => '',
             'rest_day'     => false,
+            'request_type' => 'overtime',
         ];
 
         $ts = strtotime($date);
@@ -1949,10 +2223,28 @@ if (!function_exists('ot_request_limit')) {
         $ymdEsc  = $db->real_escape_string($ymd);
         $dateStr = date('M d, Y', $ts);
 
+        // The day's actual scans — plus the shift STAMPED on the row when they
+        // were recorded. The stamp is what the employee's own DTR line was
+        // priced against, so it is read first below: resolving the roster fresh
+        // here would measure the ceiling against a shift the DTR never used.
+        $rec = $db->query(
+            "SELECT logs, schedule_id, day_hours, is_rest_day,
+                    sched_start, sched_end, sched_break, sched_graveyard
+             FROM DTR_details
+             WHERE employee_id = " . (int) $employee_id . " AND date_time = '$ymdEsc'
+             ORDER BY id DESC LIMIT 1"
+        );
+        $rec = $rec ? $rec->fetch_assoc() : null;
+        if (!$rec) {
+            $out['message'] = "No attendance record for $dateStr yet. Overtime can only be filed for a day you actually scanned — if a scan is missing, file an Incident Report for that date first.";
+            return $out;
+        }
+        $stamped = ($rec['schedule_id'] !== null);
+
         // The schedule in effect that date — its end time is what OT is measured
         // against, and its rest days decide which rule prices the span.
         $sched = $db->query("
-            SELECT ws.end_time, ws.break_minutes, ws.is_graveyard, ws.total_hours, es.rest_days
+            SELECT ws.start_time, ws.end_time, ws.break_minutes, ws.is_graveyard, ws.total_hours, es.rest_days
             FROM employee_schedules es
             INNER JOIN work_schedules ws ON ws.id = es.schedule_id
             WHERE es.employee_id = " . (int) $employee_id . "
@@ -1969,7 +2261,7 @@ if (!function_exists('ot_request_limit')) {
         // A rostered rest day with no shift keeps the period's boundaries.
         $day = duty_roster_day($db, $employee_id, $ymd);
         if ($day && $day['schedule_id'] !== null) {
-            $dsq = $db->query("SELECT end_time, break_minutes, is_graveyard, total_hours
+            $dsq = $db->query("SELECT start_time, end_time, break_minutes, is_graveyard, total_hours
                                FROM work_schedules WHERE id = " . (int) $day['schedule_id'] . " LIMIT 1");
             if ($dsq && ($drow = $dsq->fetch_assoc())) {
                 $drow['rest_days'] = '';
@@ -1977,23 +2269,22 @@ if (!function_exists('ot_request_limit')) {
             }
         }
 
-        if (!$sched) {
+        // …and the stamp beats both, exactly as in dtr_compute_day.
+        if ($stamped) {
+            if (!is_array($sched)) $sched = ['rest_days' => ''];
+            if ($rec['sched_start']     !== null) $sched['start_time']    = $rec['sched_start'];
+            if ($rec['sched_end']       !== null) $sched['end_time']      = $rec['sched_end'];
+            if ($rec['sched_break']     !== null) $sched['break_minutes'] = (int) $rec['sched_break'];
+            if ($rec['sched_graveyard'] !== null) $sched['is_graveyard']  = (int) $rec['sched_graveyard'];
+            if ($rec['day_hours']       !== null) $sched['total_hours']   = $rec['day_hours'];
+        }
+
+        if (!$sched || empty($sched['end_time'])) {
             $out['message'] = "You have no work schedule on file for $dateStr, so there are no duty hours to measure overtime against. Ask HR to set your schedule first.";
             return $out;
         }
-        $out['shift_end'] = date('g:i A', strtotime($ymd . ' ' . $sched['end_time']));
-
-        // The day's actual scans.
-        $rec = $db->query(
-            "SELECT logs FROM DTR_details
-             WHERE employee_id = " . (int) $employee_id . " AND DATE(date_time) = '$ymdEsc'
-             ORDER BY id DESC LIMIT 1"
-        );
-        $rec = $rec ? $rec->fetch_assoc() : null;
-        if (!$rec) {
-            $out['message'] = "No attendance record for $dateStr yet. Overtime can only be filed for a day you actually scanned — if a scan is missing, file an Incident Report for that date first.";
-            return $out;
-        }
+        $out['shift_start'] = !empty($sched['start_time']) ? date('g:i A', strtotime($ymd . ' ' . $sched['start_time'])) : '';
+        $out['shift_end']   = date('g:i A', strtotime($ymd . ' ' . $sched['end_time']));
 
         $log_ts = [];
         foreach ((json_decode($rec['logs'] ?? '[]', true) ?: []) as $lg) {
@@ -2001,22 +2292,32 @@ if (!function_exists('ot_request_limit')) {
             if ($t) $log_ts[] = $t;
         }
         sort($log_ts);
-        if (count($log_ts) < 2) {
+        // Same pairing the DTR itself used — including the early-tap filter, or
+        // a stray morning scan on a graveyard day would be read as the IN and
+        // hand the employee a whole extra day of "rendered" hours to file.
+        $pair   = dtr_pair_logs($log_ts, $ymd, $sched['start_time'] ?? null);
+        $in_ts  = $pair['in'];
+        $out_ts = $pair['out'];
+        if (!$in_ts || !$out_ts) {
             $out['message'] = "Your record for $dateStr has no time-out scan, so there is nothing showing you worked past your shift. File an Incident Report for the missing scan first.";
             return $out;
         }
-        $in_ts  = $log_ts[0];
-        $out_ts = $log_ts[count($log_ts) - 1];
-        if ($out_ts <= $in_ts) $out_ts = strtotime('+1 day', $out_ts);
-        $out['time_in']  = date('g:i A', $in_ts);
-        $out['time_out'] = date('g:i A', $out_ts);
+        // Plain strings for the messages below (which end up in plain-text
+        // contexts too), plus the app's own punch renderer for the UI — so an
+        // overnight out carries the same "+1" chip here as on the DTR line.
+        $out['time_in']       = date('g:i A', $in_ts);
+        $out['time_out']      = date('g:i A', $out_ts);
+        $out['time_in_html']  = dtr_punch_time($ymd, $in_ts, 'g:i A');
+        $out['time_out_html'] = dtr_punch_time($ymd, $out_ts, 'g:i A');
 
         // Rest day → duty up to one full day's hours is paid AUTOMATICALLY from
         // the punches (basic + rest-day premium in payroll), so it must not be
         // filed as OT too — that double-paid the same hours. Only time rendered
         // BEYOND the full duty is fileable. Regular day → only the part past the
         // shift end (dtr_compute_day, so this always agrees with the DTR).
-        if ($day) {
+        if ($stamped) {
+            $out['rest_day'] = ((int) $rec['is_rest_day'] === 1);
+        } elseif ($day) {
             $out['rest_day'] = ((int) $day['is_rest_day'] === 1);
         } else {
             $rest = array_filter(array_map('intval', explode(',', (string) ($sched['rest_days'] ?? ''))), function ($d) {
@@ -2025,15 +2326,38 @@ if (!function_exists('ot_request_limit')) {
             $out['rest_day'] = in_array((int) date('w', $ts), $rest, true);
         }
 
-        $duty = day_hours_or_default($sched['total_hours'] ?? null);
+        $duty  = day_hours_or_default($sched['total_hours'] ?? null);
+        $break = ($sched['break_minutes'] ?? 60) / 60;
+
+        // What the DTR credits for the day — the figure the employee sees on
+        // their own DTR line, so the form can show it back to them instead of
+        // making them work it out from two clock times.
+        $calc = dtr_compute_day($db, $employee_id, $ymd, $log_ts);
+        $out['rendered_hours'] = round(max(0, (float) $calc['work_hours'] + (float) $calc['overtime']), 2);
+        $out['duty_hours']     = round((float) $duty, 2);
+        $out['date_label']     = $dateStr;
+
         if ($out['rest_day']) {
-            $break  = ($sched['break_minutes'] ?? 60) / 60;
-            $excess = round(max(0, ($out_ts - $in_ts) / 3600 - $break - $duty), 2);
+            // The WHOLE rest day is filed, not just the part beyond the duty:
+            // with pay_settings.rest_day_auto_authorize off, this filing is the
+            // authorization for working the day off at all, so it has to be
+            // able to name every hour rendered. It is measured against the
+            // hours the DTR CREDITS rather than the raw punch span — the span
+            // counts early arrival the DTR never pays, and a ceiling must never
+            // promise more than the record behind it can defend.
+            //
+            // Filing all 7.68 does NOT pay them twice: approving a rest-day
+            // request writes nothing onto the row (applyOvertimeToDtr), and
+            // payroll pays min(row.overtime, approved hours) — so the duty
+            // hours stay paid once, as a present day plus the 30% premium.
+            $excess = $out['rendered_hours'];
         } else {
-            $calc   = dtr_compute_day($db, $employee_id, $ymd, $log_ts);
             $excess = round(max(0, (float) $calc['overtime']), 2);
         }
         $out['excess_hours'] = $excess;
+        // Which filing this day needs. The UI reads it instead of re-deriving
+        // the rest-day rule, and the server re-checks it on submit.
+        $out['request_type'] = $out['rest_day'] ? 'rest_day' : 'overtime';
 
         // Floor onto the form's 0.5 grid so the cap is never rounded UP past
         // what was actually rendered, then apply the per-day hard ceiling.
@@ -2044,9 +2368,7 @@ if (!function_exists('ot_request_limit')) {
             $min  = rtrim(rtrim(number_format(OT_REQUEST_MIN_HOURS, 2), '0'), '.');
             $span = "$dateStr ({$out['time_in']} – {$out['time_out']})";
             if ($out['rest_day']) {
-                $out['message'] = "Rest-day duty is paid automatically from your scans (with the rest-day premium) — no filing needed. "
-                    . "Overtime on a rest day is only the time beyond your full {$duty}-hr duty, and your scans for $span "
-                    . ($excess > 0 ? "show only $excess hr beyond it — less than the $min hr minimum." : "do not go beyond it.");
+                $out['message'] = "Your scans for $span credit only $excess hr of rest-day duty — less than the $min hr minimum, so there is nothing to file for that date.";
             } elseif ($excess > 0) {
                 // Went past the shift end, but by less than one filing step.
                 $out['message'] = "Your scans for $span go past your {$out['shift_end']} shift end by only $excess hr — less than the $min hr minimum, so there is no overtime to file.";
@@ -2060,7 +2382,8 @@ if (!function_exists('ot_request_limit')) {
         $ex  = $exclude_request_id > 0 ? " AND id <> " . (int) $exclude_request_id : '';
         $agg = $db->query(
             "SELECT COALESCE(SUM(ot_hours_requested), 0) AS h FROM attendance_requests
-             WHERE employee_id = " . (int) $employee_id . " AND request_type = 'overtime'
+             WHERE employee_id = " . (int) $employee_id . "
+               AND request_type IN ('overtime', 'rest_day')
                AND request_date = '$ymdEsc' AND status IN (0, 1)$ex"
         );
         $already = round((float) ($agg ? ($agg->fetch_assoc()['h'] ?? 0) : 0), 2);
@@ -2068,17 +2391,40 @@ if (!function_exists('ot_request_limit')) {
 
         $remaining = round($cap - $already, 2);
         if ($remaining < OT_REQUEST_MIN_HOURS) {
-            $out['message'] = "You have already filed $already of the $cap overtime hours your scans support for $dateStr.";
+            $label = $out['rest_day'] ? 'rest-day' : 'overtime';
+            $out['message'] = "You have already filed $already of the $cap $label hours your scans support for $dateStr.";
             return $out;
         }
 
         $out['allowed']   = true;
         $out['max_hours'] = $remaining;
         $out['message']   = $out['rest_day']
-            ? "Rest day — your first {$duty} hrs are paid automatically with the rest-day premium; your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) support up to $remaining hr of overtime beyond that."
+            ? "Rest day — your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) credit $remaining hr of duty. File them: your attendance for that date cannot be approved until this filing is, and your pay for the day (plus the rest-day premium) follows the approved record."
             : "Your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) run past your {$out['shift_end']} shift end, so you may file up to $remaining hr of overtime.";
         return $out;
     }
+}
+
+// ── Attendance-request labels (GLOBAL) ──────────────────────────────────
+// One name per request type, so the portal list, the admin queue, the
+// notifications and the DTR marks can never call the same row three things.
+//   $short: 'Overtime' (badges, chips) vs 'overtime request' (sentences)
+if (!function_exists('att_request_label')) {
+    function att_request_label(string $type, bool $short = false): string
+    {
+        switch ($type) {
+            case 'incident': return $short ? 'Incident' : 'attendance incident report';
+            case 'rest_day': return $short ? 'Rest Day' : 'rest-day work request';
+            default:         return $short ? 'Overtime' : 'overtime request';
+        }
+    }
+}
+
+// The request types that carry HOURS (ot_hours_requested) and are therefore
+// bounded by ot_request_limit(). 'rest_day' files the whole day off; 'overtime'
+// files the part past the shift end. Both cap what payroll pays.
+if (!defined('ATT_REQUEST_HOUR_TYPES')) {
+    define('ATT_REQUEST_HOUR_TYPES', ['overtime', 'rest_day']);
 }
 
 // ── Leave eligibility resolver (GLOBAL) ─────────────────────────────────

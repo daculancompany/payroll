@@ -42,6 +42,7 @@ $(document).ready(function () {
     var pendingRecompute = [];
 
     var $grid = $('#dr-grid');
+    var $cov = $('#dr-cov-panel');
     var $period = $('#dr-period');
     var $dept = $('#dr-dept');
     var $area = $('#dr-area');   // absent (0 length) for an area-scoped session — every $area.* call below already no-ops on an empty jQuery set
@@ -301,7 +302,8 @@ $(document).ready(function () {
         $('#dr-scroll').toggleClass('d-none', !has);
         syncChips();
         if (!has) {
-            $grid.find('thead,tbody,tfoot').empty();
+            $grid.find('thead,tbody').empty();
+            $cov.empty();
             return;
         }
 
@@ -511,11 +513,16 @@ $(document).ready(function () {
     // The column question — "how many nurses do we have on NOC that day" — is
     // the one a paper sheet cannot answer, so it is always on screen.
     //
-    // The breakdown is collapsible because it costs one grid row per shift, and
-    // a ward running four shifts loses five rows of roster to it permanently.
+    // The breakdown is collapsible because it costs one row of screen per shift,
+    // and a ward running four shifts loses five rows of roster to it permanently.
     // What never collapses is the SUMMARY line: total on duty per day, with the
     // understaffed days still flagged red. Folding the panel away therefore
     // hides detail, never the warning.
+    //
+    // The panel lives outside the table (see .dr-cov-panel) so it can be capped
+    // and scrolled: an eighteen-shift ward otherwise built a breakdown taller
+    // than the pane, which carried the summary row — and the only toggle —
+    // off the top of the scrollport, leaving the panel open for good.
     var covCollapsed = (function () {
         // Folded until the planner opens it: on a 150-row department the
         // breakdown otherwise costs a third of the viewport before a single
@@ -558,7 +565,9 @@ $(document).ready(function () {
         }
 
         // ── Summary row: always visible, carries the toggle ──
-        var f = '<tr class="dr-cov-head">'
+        // In the panel table's <thead>, so it stays frozen at the top of the
+        // panel while the breakdown under it scrolls.
+        var f = '<thead><tr class="dr-cov-head">'
               + '<th class="dr-emp"><button type="button" class="dr-cov-toggle" id="dr-cov-toggle"'
               + ' title="Show or hide the per-shift breakdown">'
               + '<i class="ri-arrow-down-s-line dr-cov-caret"></i>'
@@ -571,9 +580,9 @@ $(document).ready(function () {
             var lowDay = min > 0 && usedShifts.some(function (sh) { return byShift[sh.id][i] < min; });
             f += '<td class="dr-cov dr-cov-total' + (lowDay ? ' dr-cov-low' : '') + '">' + (totals[i] || '') + '</td>';
         }
-        f += '</tr>';
+        f += '</tr></thead><tbody>';
 
-        // ── Breakdown rows: the collapsible part ──
+        // ── Breakdown rows: the collapsible, scrollable part ──
         usedShifts.forEach(function (sh) {
             f += '<tr class="dr-cov-row"><th class="dr-emp"><div class="dr-cov-label">'
                + '<span class="dr-chip" style="background:' + shiftColor(sh) + ';border:1px solid rgba(0,0,0,.12);"></span>'
@@ -588,33 +597,53 @@ $(document).ready(function () {
         f += '<tr class="dr-cov-row dr-cov-off"><th class="dr-emp"><div class="dr-cov-label">'
            + '<span class="dr-chip" style="background:#f4f4f6;border:1px solid rgba(0,0,0,.12);"></span>Off</div></th>';
         for (var k = 0; k < nd; k++) f += '<td class="dr-cov">' + (offs[k] || '') + '</td>';
-        f += '</tr>';
+        f += '</tr></tbody>';
 
-        $grid.find('tfoot').html(f).toggleClass('collapsed', covCollapsed);
-        stackFooter();
+        // Painting a cell re-renders this whole panel, and on a ward with more
+        // shifts than fit it is scrolled to somewhere the planner chose. Put it
+        // back, or every painted cell would snap the breakdown to the top.
+        var st = $cov[0] ? $cov[0].scrollTop : 0;
+        $cov.html('<table class="dr-covtbl">' + f + '</table>').toggleClass('collapsed', covCollapsed);
+        syncCoverage();
+        if (st) $cov[0].scrollTop = st;
     }
 
     $(document).on('click', '#dr-cov-toggle', function () {
         covCollapsed = !covCollapsed;
         try { localStorage.setItem('dr-cov-collapsed', covCollapsed ? '1' : '0'); } catch (e) {}
-        $grid.find('tfoot').toggleClass('collapsed', covCollapsed);
-        stackFooter();
+        $cov.toggleClass('collapsed', covCollapsed);
+        // Reopening lands on the first shift, not wherever it was left scrolled.
+        if (!covCollapsed) $cov[0].scrollTop = 0;
+        syncCoverage();
     });
 
-    // Every coverage row is position:sticky, so they all pin to the SAME
-    // bottom:0 and collapse into one another once the body scrolls (invisible
-    // on a short ward, obvious on a 150-row department). Give each row its own
-    // offset — the height of everything below it — so they stack.
-    function stackFooter() {
-        var trs = $grid.find('tfoot tr').toArray();
-        var acc = 0;
-        for (var i = trs.length - 1; i >= 0; i--) {
-            $(trs[i]).children().css('bottom', acc + 'px');
-            // Rounded: a fractional offset leaves a hairline between two
-            // stacked rows through which the body row beneath bleeds.
-            acc += Math.round(trs[i].getBoundingClientRect().height);
-        }
+    // The panel is a sticky block, so nothing sizes it for us: it has to be told
+    // the pane's width (it pins to the LEFT edge and clips, rather than riding
+    // the grid's full width off-screen) and the grid's width (its table, so the
+    // columns line up), and it has to be capped so a ward with many shifts can
+    // never bury the roster it is summarising.
+    function syncCoverage() {
+        var pane = document.getElementById('dr-scroll');
+        var panel = $cov[0];
+        if (!pane || !panel) return;
+        var tbl = panel.querySelector('table');
+        if (!tbl) return;
+        tbl.style.width = Math.round($grid[0].getBoundingClientRect().width) + 'px';
+        panel.style.width = pane.clientWidth + 'px';
+        // Half the pane, and never more than ~12 shift rows' worth: past that
+        // the panel stops being a footnote to the roster and becomes the page.
+        panel.style.maxHeight = Math.max(120, Math.min(360, Math.round(pane.clientHeight * 0.5))) + 'px';
+        // The panel clips horizontally instead of scrolling, so its own offset
+        // has to be driven from the grid's — that is what keeps the counts
+        // under their days, and the shift labels frozen at the left.
+        panel.scrollLeft = pane.scrollLeft;
     }
+
+    $('#dr-scroll').on('scroll', function () {
+        var panel = $cov[0];
+        if (panel) panel.scrollLeft = this.scrollLeft;
+    });
+    $(window).on('resize', syncCoverage);
 
     /* ── painting ────────────────────────────────────────────────────────── */
 

@@ -1029,6 +1029,12 @@ class Action
         $end_time      = trim($_POST['end_time'] ?? '');
         $total_hours   = floatval($_POST['total_hours'] ?? 8);
         $break_minutes = intval($_POST['break_minutes'] ?? 60);
+        // When the break falls (HH:MM). Blank = NULL = middle of the shift
+        // (dtr_break_window). Only the paid part of a day is late / undertime /
+        // worked, so this decides e.g. whether a 12:34 PM arrival on 8–5 lost the
+        // whole lunch hour or just the 26 minutes of it they were present for.
+        $break_start   = trim($_POST['break_start'] ?? '');
+        $break_start   = ($break_start !== '' && preg_match('/^\d{1,2}:\d{2}(:\d{2})?$/', $break_start)) ? $break_start : null;
         $is_graveyard  = intval($_POST['is_graveyard'] ?? 0);
         $has_nsd       = intval($_POST['has_nsd'] ?? 0);
         $nsd_rate      = floatval($_POST['nsd_rate'] ?? 0);
@@ -1040,15 +1046,16 @@ class Action
         if ($id) {
             $stmt = $this->db->prepare(
                 "UPDATE work_schedules SET description=?, start_time=?, end_time=?, total_hours=?,
-                 break_minutes=?, is_graveyard=?, has_nsd=?, nsd_rate=? WHERE id=?"
+                 break_minutes=?, break_start=?, is_graveyard=?, has_nsd=?, nsd_rate=? WHERE id=?"
             );
             $stmt->bind_param(
-                'sssdiiidi',
+                'sssdisiidi',
                 $description,
                 $start_time,
                 $end_time,
                 $total_hours,
                 $break_minutes,
+                $break_start,
                 $is_graveyard,
                 $has_nsd,
                 $nsd_rate,
@@ -1057,15 +1064,16 @@ class Action
         } else {
             $stmt = $this->db->prepare(
                 "INSERT INTO work_schedules (description, start_time, end_time, total_hours,
-                 break_minutes, is_graveyard, has_nsd, nsd_rate) VALUES (?,?,?,?,?,?,?,?)"
+                 break_minutes, break_start, is_graveyard, has_nsd, nsd_rate) VALUES (?,?,?,?,?,?,?,?,?)"
             );
             $stmt->bind_param(
-                'sssdiiid',
+                'sssdisiid',
                 $description,
                 $start_time,
                 $end_time,
                 $total_hours,
                 $break_minutes,
+                $break_start,
                 $is_graveyard,
                 $has_nsd,
                 $nsd_rate
@@ -3483,28 +3491,42 @@ class Action
             ? floatval($_POST['ot_hours_requested']) : null;
         $notes        = trim($_POST['notes'] ?? '');
 
-        if (!$employee_id || !in_array($request_type, ['incident', 'overtime'], true) || !$request_date || !$reason) {
+        $valid_types = array_merge(['incident'], ATT_REQUEST_HOUR_TYPES);
+        if (!$employee_id || !in_array($request_type, $valid_types, true) || !$request_date || !$reason) {
             return ['result' => false, 'message' => 'Missing required fields'];
         }
 
-        // Same ceiling the employee portal enforces: OT can only be filed against
-        // scans that actually ran past the shift end, and never for more hours
-        // than those scans show for that date (see ot_request_limit).
-        if ($request_type === 'overtime') {
+        // Same ceiling the employee portal enforces: hours can only be filed
+        // against scans that actually show them — past the shift end on a
+        // regular day, the whole credited duty on a rest day (ot_request_limit).
+        if (in_array($request_type, ATT_REQUEST_HOUR_TYPES, true)) {
+            $what = $request_type === 'rest_day' ? 'rest-day' : 'overtime';
             if (!$ot_hours) {
-                return ['result' => false, 'message' => 'Please provide the number of OT hours requested.'];
+                return ['result' => false, 'message' => 'Please provide the number of ' . $what . ' hours requested.'];
             }
             $lim = ot_request_limit($this->db, $employee_id, $request_date);
             if (!$lim['allowed']) {
                 return ['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim];
             }
+            // The date itself decides which filing it needs — a rest day cannot
+            // be filed as plain overtime, or approval would write the duty onto
+            // the row and pay it twice.
+            if ($lim['request_type'] !== $request_type) {
+                return [
+                    'result'  => false,
+                    'message' => $lim['request_type'] === 'rest_day'
+                        ? 'That date is a rest day — file it as rest-day work, not overtime.'
+                        : 'That date is a regular working day — file it as overtime, not rest-day work.',
+                    'ot_limit' => $lim,
+                ];
+            }
             if ($ot_hours < OT_REQUEST_MIN_HOURS) {
-                return ['result' => false, 'message' => 'The smallest overtime that can be filed is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim];
+                return ['result' => false, 'message' => 'The smallest ' . $what . ' that can be filed is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim];
             }
             if ($ot_hours > $lim['max_hours'] + 0.001) {
                 return [
                     'result'   => false,
-                    'message'  => 'Only up to ' . $lim['max_hours'] . ' hr of overtime can be filed for that date. ' . $lim['message'],
+                    'message'  => 'Only up to ' . $lim['max_hours'] . ' hr of ' . $what . ' can be filed for that date. ' . $lim['message'],
                     'ot_limit' => $lim,
                 ];
             }
@@ -3522,7 +3544,7 @@ class Action
 
         $erow  = $this->db->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $employee_id")->fetch_assoc();
         $ename = $erow['n'] ?? 'Employee';
-        $label = $request_type === 'incident' ? 'attendance incident report' : 'overtime request';
+        $label = att_request_label($request_type);
         foreach ([1, 8, 9] as $role) {
             $this->notifyRole(
                 $role,
@@ -3535,6 +3557,194 @@ class Action
         }
 
         return ['result' => true, 'message' => 'Request submitted. Awaiting approval.'];
+    }
+
+    /**
+     * One attendance request, for the shared review modal.
+     *
+     * The modal is opened from two screens that hold different amounts of the
+     * row already (the requests queue has all of it, a DTR record card has only
+     * the id), so it always reads the request from here instead of from
+     * whatever the caller happened to have.
+     */
+    function get_attendance_request()
+    {
+        $id   = intval($_POST['id'] ?? 0);
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!in_array($role, [1, 8, 9], true)) return ['result' => false, 'message' => 'Not authorized'];
+        if (!$id) return ['result' => false, 'message' => 'Invalid request'];
+
+        $q = $this->db->query(
+            "SELECT ar.*, CONCAT(e.lastname, ', ', e.firstname) AS employee_name, e.employee_no
+             FROM attendance_requests ar
+             INNER JOIN employee e ON e.id = ar.employee_id
+             WHERE ar.id = $id LIMIT 1"
+        );
+        $r = $q ? $q->fetch_assoc() : null;
+        if (!$r) return ['result' => false, 'message' => 'Request not found'];
+
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int) $r['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        }
+
+        return ['result' => true, 'request' => [
+            'id'          => (int) $r['id'],
+            'employee_id' => (int) $r['employee_id'],
+            'employee'    => $r['employee_name'],
+            'employee_no' => $r['employee_no'],
+            'type'        => $r['request_type'],
+            'date'        => $r['request_date'],
+            'reason'      => $r['reason'],
+            'time_in'     => $r['claimed_time_in'],
+            'time_out'    => $r['claimed_time_out'],
+            'ot_hours'    => $r['ot_hours_requested'] !== null ? (float) $r['ot_hours_requested'] : null,
+            'notes'       => (string) $r['notes'],
+            'attachment'  => (string) $r['attachment'],
+            'status'      => (int) $r['status'],
+            'filed_at'    => date('M d, Y g:i A', strtotime($r['created_at'])),
+        ]];
+    }
+
+    /** The filing ceiling for one employee+date, for the approver's edit form. */
+    function attendance_request_limit()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!in_array($role, [1, 8, 9], true)) {
+            return ['result' => false, 'message' => 'Not authorized'];
+        }
+        return [
+            'result' => true,
+            'limit'  => ot_request_limit(
+                $this->db,
+                (int) ($_POST['employee_id'] ?? 0),
+                trim($_POST['request_date'] ?? ''),
+                (int) ($_POST['exclude_id'] ?? 0)
+            ),
+        ];
+    }
+
+    /**
+     * Correct a PENDING attendance request before deciding it.
+     *
+     * The approver is the one who knows the day: an employee files 7.5 hrs when
+     * the slip says 6, or claims 8:00 AM when the roster started at 7:00. Before
+     * this, the only ways to fix that were to reject the request and make them
+     * re-file, or to approve the wrong figure and repair the DTR afterwards.
+     *
+     * Decided requests are immutable — they have already written to the DTR (an
+     * incident repair, an OT figure), and a silent edit afterwards would leave
+     * the record and the request telling different stories.
+     *
+     * Hours are re-checked against the day's scans exactly as filing does, with
+     * this request excluded from the "already filed" total — otherwise the row
+     * being edited would count against its own ceiling.
+     */
+    function update_attendance_request()
+    {
+        $id   = intval($_POST['id'] ?? 0);
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+
+        if (!in_array($role, [1, 8, 9], true) || !can_edit('attendance-requests', $role)) {
+            return ['result' => false, 'message' => 'Your role cannot edit this request.'];
+        }
+        if (!$id) return ['result' => false, 'message' => 'Invalid request'];
+
+        $req = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
+        if (!$req) return ['result' => false, 'message' => 'Request not found'];
+        if ((int) $req['status'] !== 0) {
+            return ['result' => false, 'message' => 'This request was already decided — it can no longer be edited.'];
+        }
+
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int) $req['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        }
+
+        $employee_id = (int) $req['employee_id'];
+        $type        = (string) $req['request_type'];
+        $reason      = trim($_POST['reason'] ?? '') ?: $req['reason'];
+        $notes       = isset($_POST['notes']) ? trim($_POST['notes']) : (string) $req['notes'];
+        $time_in     = $req['claimed_time_in'];
+        $time_out    = $req['claimed_time_out'];
+        $ot_hours    = $req['ot_hours_requested'] !== null ? (float) $req['ot_hours_requested'] : null;
+
+        if ($type === 'incident') {
+            $time_in  = trim($_POST['claimed_time_in'] ?? '')  ?: $time_in;
+            $time_out = trim($_POST['claimed_time_out'] ?? '') ?: $time_out;
+            if (!$time_in || !$time_out) {
+                return ['result' => false, 'message' => 'An incident report needs both a claimed time in and time out.'];
+            }
+        }
+
+        if (in_array($type, ATT_REQUEST_HOUR_TYPES, true)) {
+            if (trim($_POST['ot_hours_requested'] ?? '') === '') {
+                return ['result' => false, 'message' => 'Please provide the hours.'];
+            }
+            $ot_hours = (float) $_POST['ot_hours_requested'];
+            $what     = $type === 'rest_day' ? 'rest-day' : 'overtime';
+            // Excluding THIS request, so editing 7.5 → 6 is measured against the
+            // day's scans and not against the 7.5 already on the row.
+            $lim = ot_request_limit($this->db, $employee_id, $req['request_date'], $id);
+            if (!$lim['allowed']) {
+                return ['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim];
+            }
+            if ($ot_hours < OT_REQUEST_MIN_HOURS) {
+                return ['result' => false, 'message' => 'The smallest ' . $what . ' that can be filed is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim];
+            }
+            if ($ot_hours > $lim['max_hours'] + 0.001) {
+                return [
+                    'result'   => false,
+                    'message'  => 'Only up to ' . $lim['max_hours'] . ' hr of ' . $what . ' is supported by the scans for that date. ' . $lim['message'],
+                    'ot_limit' => $lim,
+                ];
+            }
+        }
+
+        $stmt = $this->db->prepare(
+            "UPDATE attendance_requests
+                SET reason = ?, claimed_time_in = ?, claimed_time_out = ?, ot_hours_requested = ?, notes = ?
+              WHERE id = ? AND status = 0"
+        );
+        $stmt->bind_param('sssdsi', $reason, $time_in, $time_out, $ot_hours, $notes, $id);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        // The employee sees what the approver changed BEFORE the decision lands,
+        // so an approved 6 hrs against a filed 7.5 is never a silent haircut.
+        $changed = [];
+        if ((float) ($req['ot_hours_requested'] ?? 0) !== (float) ($ot_hours ?? 0)) {
+            $changed[] = 'hours ' . rtrim(rtrim(number_format((float) $req['ot_hours_requested'], 2), '0'), '.')
+                       . ' → ' . rtrim(rtrim(number_format((float) $ot_hours, 2), '0'), '.');
+        }
+        if ($req['claimed_time_in'] !== $time_in || $req['claimed_time_out'] !== $time_out) {
+            $changed[] = 'claimed time updated';
+        }
+        if ($changed) {
+            $this->notifyEmployee(
+                $employee_id,
+                'Your request was adjusted',
+                att_request_label($type, true) . ' for ' . date('M d, Y', strtotime($req['request_date']))
+                    . ' — ' . implode(', ', $changed) . '. It is still awaiting a decision.',
+                'ri-edit-line',
+                'warning',
+                'employee-portal.php?tab=att-requests'
+            );
+        }
+
+        return [
+            'result'  => true,
+            'message' => 'Request updated',
+            'request' => [
+                'id'        => $id,
+                'reason'    => $reason,
+                'time_in'   => $time_in,
+                'time_out'  => $time_out,
+                'ot_hours'  => $ot_hours,
+                'notes'     => $notes,
+            ],
+        ];
     }
 
     function decide_attendance_request()
@@ -3579,9 +3789,11 @@ class Action
             }
 
             // Overtime requests, once approved, auto-fill the DTR_details.overtime figure
-            // instead of leaving it at 0 pending a manual edit by the timekeeper.
+            // instead of leaving it at 0 pending a manual edit by the admin. A
+            // rest-day request only authorizes the day — applyOvertimeToDtr
+            // writes nothing for it (the scans already priced the row).
             $ot_applied = true;
-            if ($status == 1 && $req['request_type'] === 'overtime' && $req['ot_hours_requested'] !== null) {
+            if ($status == 1 && in_array($req['request_type'], ATT_REQUEST_HOUR_TYPES, true) && $req['ot_hours_requested'] !== null) {
                 $ot_applied = $this->applyOvertimeToDtr($req);
             }
 
@@ -3592,7 +3804,7 @@ class Action
         }
 
         // Notify the employee on their portal bell (recipient_type='employee').
-        $label   = $req['request_type'] === 'incident' ? 'attendance incident report' : 'overtime request';
+        $label   = att_request_label($req['request_type']);
         $datestr = $req['request_date'] ? date('M d, Y', strtotime($req['request_date'])) : '';
         $emp_link = 'employee-portal.php?tab=att-requests';
         if ($status == 1) {
@@ -3754,10 +3966,19 @@ class Action
         $ot_hours    = (float) $req['ot_hours_requested'];
 
         $existing = $this->db->query(
-            "SELECT id FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' ORDER BY id DESC LIMIT 1"
+            "SELECT id, is_rest_day FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' ORDER BY id DESC LIMIT 1"
         )->fetch_assoc();
 
         if ($existing) {
+            // A REST-DAY filing authorizes the duty; it does not restate it.
+            // Its hours name the whole day (7.5 on a 7.00 + 0.68 row), and the
+            // row's work_hours are ALREADY paid — as a present day plus the 30%
+            // rest-day premium — so writing 7.5 into `overtime` would pay the
+            // same duty a second time at the OT rate. The scans keep deciding
+            // the figures; approval only unblocks the record, and payroll still
+            // caps what it pays at min(row.overtime, approved hours).
+            if ((int) ($existing['is_rest_day'] ?? 0) === 1) return true;
+
             $existing_id = (int) $existing['id'];
             $stmt = $this->db->prepare("UPDATE DTR_details SET overtime = ? WHERE id = ?");
             $stmt->bind_param('di', $ot_hours, $existing_id);
@@ -3774,12 +3995,16 @@ class Action
         // Stamp the shift on the parked row so it follows the same frozen-shift
         // policy as every other new attendance row (no logs → figures stay 0).
         $cs = dtr_compute_day($this->db, $employee_id, $req['request_date'], []);
+        // Same rule as above on a date that resolves to a rest day: the parked
+        // row records the authorization, and the hours come from the scans when
+        // they land — never from the filing.
+        $park_hours = ((int) $cs['is_rest_day'] === 1) ? 0.0 : $ot_hours;
         $stmt = $this->db->prepare(
             "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, logs, attendance_type, status,
                                       schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
              VALUES (?,?,?,0,?,'[]','overtime',0,?,?,?,?,?,?,?)"
         );
-        $stmt->bind_param('iisdidissii', $ddtr_id, $employee_id, $date, $ot_hours, $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
+        $stmt->bind_param('iisdidissii', $ddtr_id, $employee_id, $date, $park_hours, $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
                           $cs['sched_start'], $cs['sched_end'], $cs['sched_break'], $cs['sched_graveyard']);
         if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
         return true;
@@ -5153,8 +5378,11 @@ class Action
                     }
                 }
 
-                // Approved OT requests in the period — the ONLY overtime payroll
-                // pays, and only UP TO the hours actually approved. The DTR row
+                // Approved OT and rest-day requests in the period — the ONLY
+                // overtime payroll pays, and only UP TO the hours approved.
+                // A rest-day filing names the whole day (7.5 on a 7.00 + 0.68
+                // row) and the min() below keeps that from inflating anything:
+                // it authorizes the 0.68 the scans show, nothing more. The DTR row
                 // carries the raw computed excess (and a Recompute restores it
                 // even after an approval overwrote it), so the row figure can
                 // exceed what was authorized — an employee who filed 5 hrs with
@@ -5164,7 +5392,7 @@ class Action
                 $oq = $this->db->prepare(
                     "SELECT employee_id, request_date, COALESCE(ot_hours_requested, 0) AS hrs
                      FROM attendance_requests
-                     WHERE request_type = 'overtime' AND status = 1
+                     WHERE request_type IN ('overtime', 'rest_day') AND status = 1
                        AND request_date BETWEEN ? AND ?"
                 );
                 $oq->bind_param('ss', $date_from, $date_to);
@@ -6422,6 +6650,13 @@ class Action
     // so they can confirm/dispute their own attendance in the portal before payroll.
     function send_dtr_for_review()
     {
+        // The employee sign-off is an OPTIONAL step, off by default
+        // (DTR_EMPLOYEE_REVIEW_ENABLED in db_connect.php). While it is off no
+        // batch may be parked in status 3 by a stale page or a crafted request.
+        if (!DTR_EMPLOYEE_REVIEW_ENABLED) {
+            return ['result' => false, 'message' => 'Employee DTR review is turned off. Approve this DTR directly for payroll.'];
+        }
+
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         if (!$id) return ['result' => false, 'message' => 'Invalid parameters'];
 
@@ -6586,6 +6821,10 @@ class Action
     // Bulk-send several DTR batches for review (status 1 → 3). ids = array of DTR ids.
     function bulk_send_dtr_for_review()
     {
+        if (!DTR_EMPLOYEE_REVIEW_ENABLED) {
+            return ['result' => false, 'message' => 'Employee DTR review is turned off. Approve these DTRs directly for payroll.'];
+        }
+
         $ids = $this->_intIds($_POST['ids'] ?? []);
         if (!$ids) return ['result' => false, 'message' => 'No DTR batches selected.'];
 
@@ -6658,6 +6897,9 @@ class Action
     // Re-notify only the employees on a batch who have NOT reviewed yet (still pending).
     function remind_dtr_review()
     {
+        if (!DTR_EMPLOYEE_REVIEW_ENABLED) {
+            return ['result' => false, 'message' => 'Employee DTR review is turned off.'];
+        }
         return $this->_remindReview('dtr');
     }
     function remind_payroll_review()
@@ -7793,22 +8035,24 @@ class Action
                 // after midnight, and anchoring to it would shift the whole schedule
                 // one day forward (zero late, ~22h undertime).
                 $late = $undertime = $overtime = 0;
+                $late_raw = 0; $late_rule = 'none';
                 if ($schedule) {
                     $sched_start = strtotime($scan_date . ' ' . $schedule['start_time']);
                     $sched_end   = strtotime($scan_date . ' ' . $schedule['end_time']);
                     if ($is_overnight) $sched_end = strtotime('+1 day', $sched_end);
-                    $late      = round(max(0, ($earliest - $sched_start) / 3600), 2);
-                    $undertime = round(max(0, ($sched_end - $latest) / 3600), 2);
-                    $overtime  = round(max(0, ($latest - $sched_end) / 3600), 2);
-                    // Only time INSIDE the shift counts as work — same clamp as
-                    // dtr_compute_day. Without it an early clock-in inflated
-                    // work_hours from the raw span (5:20 AM in on an 8–5 shift
-                    // read 8.00 hrs worked alongside 2:40 undertime), and the two
-                    // paths restated each other on every recompute.
-                    $eff_in     = max($earliest, $sched_start);
-                    $eff_out    = min($latest, $sched_end);
-                    $work_hours = round(max(0, ($eff_out - $eff_in) / 3600 - $break_hrs), 2);
-                    $work_hours = round(min($work_hours, $schedule['total_hours']), 2);
+                    // Same shared paid-time maths as dtr_compute_day
+                    // (dtr_shift_figures, db_connect.php): break overlap
+                    // excluded, late priced by the pay_settings grace /
+                    // bracket / half-day rules, work capped so worked + late +
+                    // UT == the day. Anything computed here by hand drifted
+                    // from the recompute path sooner or later.
+                    $fig        = dtr_shift_figures($earliest, $latest, $sched_start, $sched_end, $schedule);
+                    $late       = $fig['late'];
+                    $undertime  = $fig['undertime'];
+                    $overtime   = $fig['overtime'];
+                    $work_hours = $fig['work_hours'];
+                    $late_raw   = $fig['late_raw'];
+                    $late_rule  = $fig['late_rule'];
                 } else {
                     $work_hours = max(0, $raw_hours - $break_hrs);
                     $overtime   = round(max(0, $work_hours - 8), 2);
@@ -7862,7 +8106,12 @@ class Action
                 // Best-effort: a notification hiccup must never fail an already-saved punch.
                 try {
                     $ot_txt   = $overtime  > 0 ? ', ' . round($overtime, 2) . ' hr OT'         : '';
-                    $late_txt = $late      > 0 ? ', ' . (int) round($late * 60) . ' min late'  : '';
+                    // Say what was CHARGED, and why, when a rule reshaped it —
+                    // "16 min late" alone would not explain a 1-hour deduction.
+                    if ($late_rule === 'half_day')     $late_txt = ', HALF DAY (arrived ' . (int) round($late_raw) . ' min late)';
+                    elseif ($late_rule === 'bracket')  $late_txt = ', ' . (int) round($late_raw) . ' min late → ' . rtrim(rtrim(number_format($late, 2), '0'), '.') . ' hr charged';
+                    elseif ($late > 0)                 $late_txt = ', ' . (int) round($late * 60) . ' min late';
+                    else                               $late_txt = '';
                     $this->notifyEmployee(
                         $employee_id,
                         'Time Out recorded',
@@ -7873,6 +8122,9 @@ class Action
                         'success',
                         'employee-portal.php?tab=attendance'
                     );
+                    // The day is complete, so its ceiling is finally knowable —
+                    // this is the moment to tell them it needs filing.
+                    $this->notifyUnfiledHours($employee_id, $scan_date);
                 } catch (\Throwable $e) { /* ignore */
                 }
 
@@ -7886,7 +8138,9 @@ class Action
                     'time_out'          => date('Y-m-d H:i:s', $latest),
                     'work_hours'        => round($work_hours, 2),
                     'overtime_hours'    => round($overtime, 2),
-                    'late_minutes'      => (int) round($late * 60),
+                    'late_minutes'      => (int) round($late * 60),      // minutes CHARGED
+                    'late_raw_minutes'  => (int) round($late_raw),       // paid minutes actually late
+                    'late_rule'         => $late_rule,                   // none|exact|bracket|half_day
                     'undertime_minutes' => (int) round($undertime * 60),
                     'nsd_hours'         => $nsd_hours,
                     'schedule' => $schedule ? [
@@ -10677,6 +10931,22 @@ class Action
         // count as the day's time-in. dtr_early_grace_hours() clamps it to 0–24
         // on read, so a hand-edited row can't break ingestion either.
         $keys[] = 'dtr_early_grace_hours';
+        // Late (tardiness) rules — dtr_late_rules() in db_connect.php. late_mode
+        // is a radio (0 exact / 1 brackets); the rest are minutes / hours.
+        // Brackets must ascend and the half-day cutoff must not sit inside a
+        // bracket, or the rule table would contradict itself.
+        $keys = array_merge($keys, ['late_mode', 'late_grace_minutes',
+            'late_bracket_1_max', 'late_bracket_1_hours',
+            'late_bracket_2_max', 'late_bracket_2_hours', 'late_half_day_after']);
+        if (isset($_POST['late_bracket_1_max'], $_POST['late_bracket_2_max'], $_POST['late_half_day_after'])) {
+            $g  = (float) ($_POST['late_grace_minutes'] ?? 0);
+            $b1 = (float) $_POST['late_bracket_1_max'];
+            $b2 = (float) $_POST['late_bracket_2_max'];
+            $hd = (float) $_POST['late_half_day_after'];
+            if (!($g < $b1 && $b1 < $b2 && $b2 <= $hd)) {
+                return ['result' => false, 'message' => 'Late rules must ascend: grace < bracket 1 < bracket 2 ≤ half-day cutoff (all in minutes after the shift start).'];
+            }
+        }
         // Withholding method is a radio (1 = per-cutoff, 2 = cumulative), so it
         // always posts a value and needs no unchecked-means-zero handling.
         $keys[] = 'tax_method';
@@ -11296,14 +11566,15 @@ class Action
         $decider = (int)($_SESSION['login_id'] ?? 0) ?: null;
         $setSql  = "status = ?, decision_note = ?, decided_by = ?, decided_at = NOW()";
 
-        // Rest-day work beyond the normal duty length (overtime > 0) needs a
-        // filed & approved OT request before it can be approved — matches
-        // ot_request_limit()'s own rule (db_connect.php): base rest-day hours
-        // up to a full duty are paid automatically with the rest-day premium
-        // and the filing form refuses to accept a request for them ("no
-        // filing needed"), so gating on work_hours alone would deadlock —
-        // nothing to approve without a filing, and nothing fileable to
-        // produce one. Only the excess actually needs authorization.
+        // ANY work recorded on a rest day needs a filed & approved rest-day (or
+        // legacy overtime) request before the record can be approved — matches
+        // ot_request_limit()'s own rule (db_connect.php), which now offers the
+        // whole rest day for filing rather than only the part beyond the duty.
+        //
+        // This used to gate on `overtime > 0` alone, back when base rest-day
+        // hours were auto-authorized and the filing form refused to accept
+        // them. Under that split a day off worked exactly to the shift (OT = 0)
+        // was approved and paid with nobody ever authorizing the duty.
         // pay_settings.rest_day_auto_authorize off (the default) enforces
         // this outright rather than just warning. Disapprovals are never
         // blocked — rejecting a bad record must always stay possible. The
@@ -11312,10 +11583,10 @@ class Action
         // itself selects from a different table.
         $restAuto = $this->pay_setting('rest_day_auto_authorize', 0) >= 1;
         $restBlockSql = ($decision === 1 && !$restAuto)
-            ? " AND NOT (is_rest_day = 1 AND overtime > 0 AND NOT EXISTS (
+            ? " AND NOT (is_rest_day = 1 AND (work_hours > 0 OR overtime > 0) AND NOT EXISTS (
                     SELECT 1 FROM attendance_requests ar
                     WHERE ar.employee_id = DTR_details.employee_id
-                      AND ar.request_type = 'overtime' AND ar.status = 1
+                      AND ar.request_type IN ('rest_day', 'overtime') AND ar.status = 1
                       AND ar.request_date = DATE(DTR_details.date_time)
                 ))"
             : '';
@@ -11329,11 +11600,11 @@ class Action
                 $ph  = implode(',', array_fill(0, count($ids), '?'));
                 $chk = $this->db->prepare(
                     "SELECT id FROM DTR_details
-                     WHERE id IN ($ph) AND is_rest_day = 1 AND overtime > 0
+                     WHERE id IN ($ph) AND is_rest_day = 1 AND (work_hours > 0 OR overtime > 0)
                        AND NOT EXISTS (
                            SELECT 1 FROM attendance_requests ar
                            WHERE ar.employee_id = DTR_details.employee_id
-                             AND ar.request_type = 'overtime' AND ar.status = 1
+                             AND ar.request_type IN ('rest_day', 'overtime') AND ar.status = 1
                              AND ar.request_date = DATE(DTR_details.date_time)
                        )"
                 );
@@ -11351,7 +11622,7 @@ class Action
             $msg = 'Records updated';
             if ($blockedIds) {
                 $msg = $stmt->affected_rows . ' updated; ' . count($blockedIds)
-                     . ' skipped — overtime on a rest day with no approved OT request on file.';
+                     . ' skipped — rest-day work with no approved Rest Day Work request on file.';
             }
             return [
                 'result'      => true,
@@ -12414,6 +12685,58 @@ class Action
             fcm_push_employee($this->db, $employee_id, $title, $message, $link ?: 'employee-portal.php');
         } catch (\Throwable $e) { /* ignore */
         }
+    }
+
+    /**
+     * "You have hours to file" nudge for ONE date, sent once.
+     *
+     * Rest-day work is the case that needs it: with
+     * pay_settings.rest_day_auto_authorize off, NOTHING on a rest-day record is
+     * approved or paid until the employee files for it — and an employee who
+     * never opens the portal has no way of learning that before the period
+     * closes. Overtime gets the same nudge, where the stake is only the OT
+     * itself.
+     *
+     * ot_request_limit() decides whether there is anything to file at all, so
+     * this can never nag about a day the form would refuse. Sent at most once
+     * per date: the link carries the date and doubles as the dedupe key.
+     */
+    private function notifyUnfiledHours($employee_id, $date)
+    {
+        $employee_id = (int) $employee_id;
+        if ($employee_id <= 0 || !$date) return;
+
+        $lim = ot_request_limit($this->db, $employee_id, $date);
+        if (!$lim['allowed']) return;
+
+        $ymd  = date('Y-m-d', strtotime($date));
+        $esc  = $this->db->real_escape_string($ymd);
+        $has  = $this->db->query(
+            "SELECT 1 FROM attendance_requests
+             WHERE employee_id = $employee_id AND request_date = '$esc'
+               AND request_type IN ('overtime', 'rest_day') AND status IN (0, 1) LIMIT 1"
+        );
+        if ($has && $has->num_rows) return;          // already filed — nothing to nudge
+
+        $link = 'employee-portal.php?tab=att-requests&file=' . $ymd;
+        $sent = $this->db->query(
+            "SELECT 1 FROM notifications
+             WHERE user_id = $employee_id AND recipient_type = 'employee'
+               AND link = '" . $this->db->real_escape_string($link) . "' LIMIT 1"
+        );
+        if ($sent && $sent->num_rows) return;        // already told them once
+
+        $when = date('M d, Y', strtotime($ymd));
+        if ($lim['rest_day']) {
+            $title = 'File your rest-day work';
+            $msg   = "You worked on your day off ($when) — {$lim['max_hours']} hrs. "
+                   . 'File it now: your attendance for that date stays unapproved, and unpaid, until this is approved.';
+        } else {
+            $title = 'File your overtime';
+            $msg   = "Your scans for $when show {$lim['max_hours']} hrs past your shift end. "
+                   . 'Overtime is only paid once it is filed and approved.';
+        }
+        $this->notifyEmployee($employee_id, $title, $msg, 'ri-timer-flash-line', 'warning', $link);
     }
 
     // Notify every employee returned by $employeeIdSelect (a SELECT yielding one

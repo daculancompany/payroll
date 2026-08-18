@@ -165,6 +165,13 @@ if (in_array($batchStatus, [2, 3], true)) {
     }
 }
 $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
+
+// The employee sign-off is optional (DTR_EMPLOYEE_REVIEW_ENABLED, db_connect.php).
+// With it OFF the Send-for-Review action disappears and Final Approve is offered
+// straight from Pending Approval — but a batch that WAS reviewed before the
+// switch was flipped keeps its Review tab, so the sign-offs stay readable.
+$reviewOn   = (bool) DTR_EMPLOYEE_REVIEW_ENABLED;
+$showReview = in_array($batchStatus, [2, 3], true) && ($reviewOn || $reviewRows);
 ?><!doctype html>
 <html lang="en">
 <head>
@@ -620,6 +627,19 @@ body {
 .ddv-flag-sub { font-size:8.5px; font-weight:700; align-self:center; }
 .ddv-flag-sub.filed   { color:#2e7d32; }
 .ddv-flag-sub.unfiled { color:#c98a00; }
+/* Rest-day filing state — same pill shape as .ddv-flag so the row reads as one
+   band of chips, coloured by what it means for approving the day. */
+.ddv-filing { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:800;
+              padding:2px 7px; border-radius:7px; border:1px solid transparent; white-space:nowrap; }
+.ddv-filing i { font-size:11px; line-height:1; }
+.ddv-filing.none { background:#fdecec; color:#c23434; border-color:#f7c9c9; }
+.ddv-filing.pend { background:#fff4e2; color:#a86206; border-color:#f3ddb5; }
+.ddv-filing.ok   { background:#e8f5e9; color:#2e7d32; border-color:#c6e6c9; }
+.ddv-filing-act { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:800;
+                  padding:2px 8px; border-radius:7px; border:none; cursor:pointer;
+                  background:#0f9d58; color:#fff; }
+.ddv-filing-act:hover { background:#0c7d46; }
+.ddv-filing-act i { font-size:11px; line-height:1; }
 
 /* ── Cross-employee bulk selection ── */
 .ddv-bulk {
@@ -967,10 +987,16 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                     <i class="ri-checkbox-multiple-line"></i> Approve Clean
                     <span class="ddv-pend-pill" id="hdr-clean"><?= $cleanPending ?></span>
                 </button>
-                <?php if ($batchStatus === 1): ?>
+                <?php if ($batchStatus === 1 && $reviewOn): ?>
                     <button class="ddv-btn primary ddv-tip" id="btn-send-review" onclick="sendForReview()" <?= $pendingRecs > 0 ? 'disabled' : '' ?>
                         data-tip="Decide all records first, then send to employees for review.">
                         <i class="ri-user-received-2-line"></i> Send for Review
+                    </button>
+                <?php elseif ($batchStatus === 1): ?>
+                    <?php /* Employee review turned off — approve straight from Pending. */ ?>
+                    <button class="ddv-btn primary ddv-tip" id="btn-final-approve" onclick="finalApprove()" <?= $pendingRecs > 0 ? 'disabled' : '' ?>
+                        data-tip="Decide all records first, then final approve this batch for payroll processing.">
+                        <i class="ri-checkbox-circle-line"></i> Final Approve
                     </button>
                 <?php elseif ($batchStatus === 3): ?>
                     <button class="ddv-btn primary ddv-tip" onclick="finalApprove()" data-tip="Final approve this batch for payroll processing.">
@@ -1134,7 +1160,7 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                         <button type="button" data-ac="notes"><i class="ri-sticky-note-line"></i> Has notes</button>
                         <button type="button" data-ac="msgs"><i class="ri-chat-3-line"></i> Has messages</button>
                     </div>
-                    <?php if (in_array($batchStatus, [2, 3], true)): ?>
+                    <?php if ($showReview): ?>
                     <?php /* The employees' own sign-off — pull up every disputed DTR,
                              or everyone still silent, in one click. */ ?>
                     <div class="ddv-fp-lbl">Employee review</div>
@@ -1243,7 +1269,7 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                 <div class="ddv-rtabs" id="ddv-rtabs">
                     <button type="button" data-tab="summary" class="on"><i class="ri-user-3-line"></i> Summary</button>
                     <button type="button" data-tab="records"><i class="ri-fingerprint-line"></i> Records <span class="ddv-rtab-n" id="ddv-rec-count"></span></button>
-                    <?php if (in_array($batchStatus, [2, 3], true)): ?>
+                    <?php if ($showReview): ?>
                     <button type="button" data-tab="review"><i class="ri-user-received-2-line"></i> Review<?php if ($ddvUnreadMsgs > 0): ?> <span class="ddv-rtab-dot" id="ddv-rtab-review-dot" title="Unread employee messages"></span><?php endif; ?></button>
                     <?php endif; ?>
                     <button type="button" data-tab="batch"><i class="ri-stack-line"></i> Batch</button>
@@ -1262,7 +1288,7 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                     <div style="font-size:11.5px;color:#948ea5;padding:8px;">No employee selected.</div>
                 </div>
                 </section>
-            <?php if (in_array($batchStatus, [2, 3], true)): ?>
+            <?php if ($showReview): ?>
                 <section class="ddv-rtab-view" data-view="review">
                 <div class="drp-body">
                     <div class="drp-counts">
@@ -1440,7 +1466,7 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                             <input type="number" step="0.01" min="0" class="form-control" id="er-ut">
                         </div>
                         <div class="col-6">
-                            <label class="form-label fw-semibold">Late (min)</label>
+                            <label class="form-label fw-semibold">Late (hrs charged)</label>
                             <input type="number" step="0.01" min="0" class="form-control" id="er-late">
                         </div>
                     </div>
@@ -1644,7 +1670,7 @@ async function refreshBatch() {
         const he = $id('hdr-exc'), hen = $id('hdr-exc-n');
         if (he) he.style.display = exceptions > 0 ? '' : 'none';
         if (hen) hen.textContent = exceptions;
-        const sr = $id('btn-send-review');
+        const sr = $id('btn-send-review') || $id('btn-final-approve');
         if (sr) sr.disabled = s.pending > 0;
         return exceptions;
     } catch (e) { return 0; /* summary refresh is best-effort */ }
@@ -2237,19 +2263,77 @@ const FLAG_META = {
     // Same moon glyph as the duty roster grid and the Form 48 "Day off" marker
     // — one icon for "rest day" everywhere in the app.
     rest_worked: { cls: 'info', icon: 'ri-moon-line',          lbl: 'Day off worked',
-                  why: 'This date is marked as the employee\'s rest day, but hours were recorded here — pays base pay + 30% rest-day premium instead of a regular working day (see Change schedule to correct it if this was not intended). Base hours up to a full duty are paid automatically, no filing needed. Any OT beyond that cannot be approved until an approved OT request is on file for this date (or pay_settings.rest_day_auto_authorize is turned on).' },
+                  why: 'This date is marked as the employee\'s rest day, but hours were recorded here — pays base pay + 30% rest-day premium instead of a regular working day (see Change schedule to correct it if this was not intended). The record cannot be approved until an approved Rest Day Work request is on file for this date (or pay_settings.rest_day_auto_authorize is turned on). Approving that request authorizes the duty; it never changes the hours — the scans keep deciding them.' },
 };
 
-// A rest_worked record with OVERTIME (hours beyond a full duty on the rest
-// day) that has no approved 'overtime' attendance_request on file. Base
-// rest-day hours up to a full duty need no filing at all — matches
-// ot_request_limit()'s own rule server-side (db_connect.php), whose filing
-// form actively refuses a request for them ("no filing needed"), so gating
-// on work_hours alone would deadlock: nothing to approve without a filing,
-// and nothing fileable to produce one. The server (decide_dtr_details) is
-// authoritative; this mirrors that same r.ot > 0 rule client-side purely for
+// A rest_worked record with ANY hours on it and no approved rest-day (or
+// legacy overtime) attendance_request on file. The whole day off is filed
+// now, not just the part beyond the duty — matches ot_request_limit()'s own
+// rule server-side (db_connect.php), whose filing form offers every credited
+// hour. The server (decide_dtr_details) is authoritative; this mirrors the
+// same rule client-side purely for
 // messaging/exception-counting.
-const isRestUnfiled = r => !REST_AUTO && (r.flags || []).includes('rest_worked') && !r.ot_filed && r.ot > 0;
+const isRestUnfiled = r => !REST_AUTO && (r.flags || []).includes('rest_worked') && !r.ot_filed && (r.wh > 0 || r.ot > 0);
+
+// The filing's state, as a chip that reads at a glance. `r.req` is the
+// rest-day/overtime attendance_request covering this date (dtr-employee-server),
+// null when the employee has not filed at all.
+//   nothing filed → red, blocking: this is why the record cannot be approved
+//   pending       → amber, with an Approve action right on the chip
+//   approved      → green, and the record is free to approve
+function filingChip(r) {
+    const req = r.req;
+    if (req && Number(req.s) === 1) {
+        // Still clickable: the approver may want to re-read what they approved.
+        return `<span class="ddv-filing ok ddv-tip" role="button" tabindex="0" onclick="reviewFiling(${req.id}, ${r.id})" data-tip="Rest Day Work request approved — ${Number(req.h || 0)} hr on file. This record can be approved. Click to view the request."><i class="ri-checkbox-circle-fill"></i>Filed · approved</span>`;
+    }
+    if (req) {
+        const act = CAN_EDIT
+            ? `<button class="ddv-filing-act ddv-tip" onclick="reviewFiling(${req.id}, ${r.id})" data-tip="Review the employee's Rest Day Work request (${Number(req.h || 0)} hr) — see the day's scans, correct the hours if needed, then approve. It authorizes the duty; it never changes the hours below"><i class="ri-search-eye-line"></i>Review</button>`
+            : '';
+        return `<span class="ddv-filing pend ddv-tip" role="button" tabindex="0" onclick="reviewFiling(${req.id}, ${r.id})" data-tip="The employee filed ${Number(req.h || 0)} hr for this day; the request is still pending, so the record cannot be approved yet."><i class="ri-time-fill"></i>Filed · pending</span>${act}`;
+    }
+    return `<span class="ddv-filing none ddv-tip" data-tip="No Rest Day Work request on file — this record cannot be approved until the employee files one and it is approved (or Auto-authorize rest-day work is turned on in Pay Settings)."><i class="ri-error-warning-fill"></i>Not filed</span>`;
+}
+
+// Review the employee's filing from the record card — the SAME modal the
+// requests queue uses (includes/attendance_request_review.php), so the day's
+// scans, the editable hours and the decision are one form in both places
+// instead of a blind one-click approve here and a review screen there.
+//
+// The DTR record itself is not touched: approving the filing only lifts the
+// block, and the admin still decides the day. Everything updates in place — the
+// chip, the exception counts and the approve button all re-render from the
+// local model, so a queue the admin has scrolled and filtered never resets.
+function reviewFiling(reqId, recId) {
+    AttReqReview.open(reqId, {
+        onDecided: (status, q) => {
+            // Every record on that employee's SAME DATE is covered by the one
+            // filing, so they all clear together — the same way the server's
+            // gate reads it (per employee + date, not per record).
+            const hit = findRec(recId);
+            if (hit) {
+                (hit.e.days[hit.date].recs || []).forEach(rc => {
+                    if (!rc.req || rc.req.id !== reqId) return;
+                    rc.req = Object.assign({}, rc.req, { s: status, h: q.ot_hours });
+                    if ((rc.flags || []).includes('rest_worked')) rc.ot_filed = (status === 1);
+                });
+                recomputeEmp(hit.e);
+            }
+            rerenderAll();
+            if (status === 1) toast('Filing approved — the day can be approved now');
+        },
+        // An edit before the decision changes the hours the chip reports.
+        onSaved: (q) => {
+            const hit = findRec(recId);
+            if (!hit) return;
+            (hit.e.days[hit.date].recs || []).forEach(rc => {
+                if (rc.req && rc.req.id === reqId) rc.req = Object.assign({}, rc.req, { h: q.ot_hours });
+            });
+            rerenderAll();
+        }
+    });
+}
 
 // ── Right: records & logs ────────────────────────────────────────────────────
 function renderRecords(e) {
@@ -2271,12 +2355,14 @@ function renderRecords(e) {
             const flags = (r.flags || []).map(f => {
                 const m = FLAG_META[f];
                 if (!m) return '';
-                // Filing only matters for the OT portion — base rest-day hours
-                // need none, so the tag stays silent when r.ot is 0.
-                const filedTag = (f === 'rest_worked' && r.ot > 0)
-                    ? (r.ot_filed
-                        ? '<span class="ddv-flag-sub filed">· OT filed</span>'
-                        : '<span class="ddv-flag-sub unfiled">· OT not filed</span>')
+                // The whole day off needs a filing now, so the tag follows any
+                // hours on the record rather than the OT portion alone. Three
+                // states, not two: a filing that is only PENDING still leaves
+                // the record unapprovable, and saying "not filed" about a day
+                // the employee already filed sends the admin looking for a
+                // request that is sitting right there waiting for them.
+                const filedTag = (f === 'rest_worked' && (r.wh > 0 || r.ot > 0))
+                    ? filingChip(r)
                     : '';
                 return `<span class="ddv-flag ${m.cls}" title="${esc(m.why)}"><i class="${m.icon}"></i>${m.lbl}</span>${filedTag}`;
             }).join('');
@@ -2395,7 +2481,7 @@ function decideRecs(ids, decision, confirmText) {
         : Swal.fire({
             title: unfiled ? 'Some records will be skipped' : 'Approve?',
             text: unfiled
-                ? `${unfiled} of ${ids.length} record(s) have overtime on a rest day with no approved OT request on file — they will NOT be approved (stay pending) until one is filed and approved. The rest will proceed. ${confirmText || ''}`
+                ? `${unfiled} of ${ids.length} record(s) have hours on a rest day with no approved Rest Day Work request on file — they will NOT be approved (stay pending) until one is filed and approved. The rest will proceed. ${confirmText || ''}`
                 : (confirmText || 'This attendance record will be approved.'),
             icon: unfiled ? 'warning' : 'question', showCancelButton: true,
             confirmButtonColor: unfiled ? '#c98a00' : '#0f9d58', confirmButtonText: unfiled ? 'Continue' : 'Yes, approve',
@@ -3333,6 +3419,10 @@ loadPage();
 // navigating away from it to read an ID number loses all of that.
 $eqv_full_target = '_blank';
 include 'component/employee_quick_view.php';
+
+// Shared "Review request" modal — the same form the requests queue decides
+// through, opened here from a record's filing chip (reviewFiling).
+include __DIR__ . '/includes/attendance_request_review.php';
 ?>
 
 </body>

@@ -155,7 +155,7 @@ switch ($action) {
 
         $days = [];
         $stampByDate = [];   // 'Y-m-d' => DTR_details.schedule_id
-        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes, schedule_id, sched_start
+        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes, schedule_id, sched_start, day_hours
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
         $st->bind_param('ii', $ddtr_id, $emp_id);
         $st->execute();
@@ -223,9 +223,22 @@ switch ($action) {
                     'excluded' => $ki === false,
                 ];
             }
+            // Same Late-cell explanation as the admin sheet (dtr-employee-server):
+            // `late` is the hours CHARGED under the grace / bracket / half-day
+            // rules, so the employee is told how their clock gap became it.
+            $lateTip = ''; $halfDay = 0;
+            if (!empty($d['sched_start']) && !empty($logs)) {
+                $ss  = strtotime($rowDate . ' ' . $d['sched_start']);
+                $raw = max(0, (strtotime($logs[0]['dateTime']) - $ss) / 60);
+                $dh  = $d['day_hours'] !== null ? (float) $d['day_hours'] : null;
+                $lateTip = dtr_late_tip($raw, (float) $d['late'], $dh);
+                if ((float) $d['late'] > 0 && $dh > 0 && abs((float) $d['late'] - $dh / 2) < 0.011) $halfDay = 1;
+            }
             $days[] = [
                 'rec_id'     => (int) $d['id'],
                 'msgs'       => $msgMap[(int)$d['id']] ?? [],
+                'late_tip'   => $lateTip,
+                'half_day'   => $halfDay,
                 'iso'        => date('Y-m-d', strtotime($d['date_time'])),
                 'date'       => date('D, M j, Y', strtotime($d['date_time'])),
                 'time_in'    => $tIn,
@@ -906,7 +919,8 @@ switch ($action) {
         $ot_hours  = trim($_POST['ot_hours_requested'] ?? '') !== '' ? (float) $_POST['ot_hours_requested'] : null;
         $att_notes = trim($_POST['notes'] ?? '');
 
-        if (!in_array($req_type, ['incident', 'overtime'], true) || !$req_date || !$reason) {
+        $hour_type = in_array($req_type, ATT_REQUEST_HOUR_TYPES, true);
+        if (!in_array($req_type, array_merge(['incident'], ATT_REQUEST_HOUR_TYPES), true) || !$req_date || !$reason) {
             echo json_encode(['result' => false, 'message' => 'Please complete all required fields.']);
             break;
         }
@@ -914,26 +928,41 @@ switch ($action) {
             echo json_encode(['result' => false, 'message' => 'Please provide your claimed time in and time out.']);
             break;
         }
-        if ($req_type === 'overtime' && !$ot_hours) {
-            echo json_encode(['result' => false, 'message' => 'Please provide the number of OT hours requested.']);
+        $what = $req_type === 'rest_day' ? 'rest-day' : 'OT';
+        if ($hour_type && !$ot_hours) {
+            echo json_encode(['result' => false, 'message' => 'Please provide the number of ' . $what . ' hours requested.']);
             break;
         }
-        // OT is only fileable against scans that actually ran past the shift end,
-        // and never for more hours than those scans show (see ot_request_limit).
-        if ($req_type === 'overtime') {
+        // Hours are only fileable against scans that actually show them — past
+        // the shift end on a regular day, the whole credited duty on a rest day
+        // (see ot_request_limit).
+        if ($hour_type) {
             $lim = ot_request_limit($conn, $emp_id, $req_date);
             if (!$lim['allowed']) {
                 echo json_encode(['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim]);
                 break;
             }
+            // The date decides which filing it needs. Filing a rest day as
+            // plain overtime would let approval write the duty onto the row,
+            // and payroll would pay the same hours twice.
+            if ($lim['request_type'] !== $req_type) {
+                echo json_encode([
+                    'result'  => false,
+                    'message' => $lim['request_type'] === 'rest_day'
+                        ? 'That date is your rest day — please file it as Rest Day Work, not overtime.'
+                        : 'That date is a regular working day — please file it as Overtime, not rest-day work.',
+                    'ot_limit' => $lim,
+                ]);
+                break;
+            }
             if ($ot_hours < OT_REQUEST_MIN_HOURS) {
-                echo json_encode(['result' => false, 'message' => 'The smallest overtime you can file is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim]);
+                echo json_encode(['result' => false, 'message' => 'The smallest ' . $what . ' you can file is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim]);
                 break;
             }
             if ($ot_hours > $lim['max_hours'] + 0.001) {
                 echo json_encode([
                     'result'  => false,
-                    'message' => 'You can only file up to ' . $lim['max_hours'] . ' hr of overtime for that date. ' . $lim['message'],
+                    'message' => 'You can only file up to ' . $lim['max_hours'] . ' hr of ' . $what . ' for that date. ' . $lim['message'],
                     'ot_limit' => $lim,
                 ]);
                 break;

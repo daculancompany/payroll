@@ -14,6 +14,20 @@ if (function_exists('page_allowed') && page_allowed('leaves') && isset($conn)) {
 $__lv_pill = $__lv_pending > 0
     ? '<span class="badge rounded-pill bg-warning text-dark ms-auto sb-count" title="' . $__lv_pending . ' pending request' . ($__lv_pending === 1 ? '' : 's') . '">' . ($__lv_pending > 99 ? '99+' : $__lv_pending) . '</span>'
     : '';
+
+// Same idea for "Attendance Requests" (incident reports / OT filing), scoped
+// the way attendance-requests.php scopes its own Pending tile.
+$__ar_pending = 0;
+if (function_exists('page_allowed') && page_allowed('attendance-requests') && isset($conn)) {
+    try {
+        require_once __DIR__ . '/../dept-scope.php';
+        $__q = $conn->query("SELECT COUNT(*) c FROM attendance_requests WHERE status = 0 " . dept_scope_emp_sql('employee_id'));
+        if ($__q) $__ar_pending = (int) ($__q->fetch_assoc()['c'] ?? 0);
+    } catch (Throwable $e) { $__ar_pending = 0; }
+}
+$__ar_pill = $__ar_pending > 0
+    ? '<span class="badge rounded-pill bg-warning text-dark ms-auto sb-count" title="' . $__ar_pending . ' pending request' . ($__ar_pending === 1 ? '' : 's') . '">' . ($__ar_pending > 99 ? '99+' : $__ar_pending) . '</span>'
+    : '';
 ?>
 
 <div class="app-menu navbar-menu">
@@ -227,6 +241,7 @@ $__lv_pill = $__lv_pending > 0
                                     <?php if (is_hr($login_role)): ?>
                                         <span class="badge bg-light text-muted border ms-1" style="font-size:9px;">View</span>
                                     <?php endif; ?>
+                                    <?= $__ar_pill ?>
                                 </a>
                             </li>
                             <?php endif; ?>

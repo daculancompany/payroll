@@ -49,7 +49,13 @@
                                         <td class="text-center"><?= date('h:i A', strtotime($row['start_time'])) ?></td>
                                         <td class="text-center"><?= date('h:i A', strtotime($row['end_time'])) ?></td>
                                         <td class="text-center"><span class="badge bg-success"><?= $row['total_hours'] ?> hrs</span></td>
-                                        <td class="text-center"><span class="badge bg-secondary"><?= $row['break_minutes'] ?> mins</span></td>
+                                        <td class="text-center"><span class="badge bg-secondary"><?= $row['break_minutes'] ?> mins</span>
+                                            <?php if (!empty($row['break_start'])): ?>
+                                                <div class="text-muted" style="font-size:11px;">at <?= date('g:i A', strtotime($row['break_start'])) ?></div>
+                                            <?php elseif ((int)$row['break_minutes'] > 0): ?>
+                                                <div class="text-muted" style="font-size:11px;">mid-shift</div>
+                                            <?php endif; ?>
+                                        </td>
                                         <td class="text-center">
                                             <?php if ($row['is_graveyard']): ?>
                                                 <span class="badge bg-dark"><i class="ri-moon-line me-1"></i>Yes</span>
@@ -123,7 +129,12 @@
                             <label class="form-label fw-semibold">Break (minutes)</label>
                             <input type="number" class="form-control" id="sched-break" name="break_minutes"
                                    value="60" min="0" max="120" step="5">
-                            <small class="text-muted">Subtracted from raw hours</small>
+                            <small class="text-muted">Unpaid; excluded from hours worked</small>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold">Break starts at</label>
+                            <input type="time" class="form-control" id="sched-break-start" name="break_start">
+                            <small class="text-muted">Optional. Blank = middle of the shift (8–5 → 12:00). Only the part of the break the employee is actually present for is deducted, so a half-day arrival isn&rsquo;t charged the whole lunch hour.</small>
                         </div>
                     </div>
 
@@ -201,6 +212,7 @@ function editSchedule(row) {
     document.getElementById('sched-end').value       = row.end_time;
     document.getElementById('sched-hours').value     = row.total_hours;
     document.getElementById('sched-break').value     = row.break_minutes;
+    document.getElementById('sched-break-start').value = row.break_start ? String(row.break_start).substring(0, 5) : '';
     document.getElementById('sched-nsd').value       = row.nsd_rate;
     document.querySelector('input[name="is_graveyard"][value="' + row.is_graveyard + '"]').checked = true;
     document.querySelector('input[name="has_nsd"][value="' + row.has_nsd + '"]').checked = true;

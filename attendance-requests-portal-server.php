@@ -36,6 +36,7 @@ $reasonLabels = [
     'system_down'  => 'System Down',
     'overtime'     => 'Overtime',
     'other'        => 'Other',
+    'rest_day_work' => 'Rest Day Work',
 ];
 $statusMap = [
     0 => ['Pending',  '#e6a817', 'pending'],
@@ -65,12 +66,18 @@ $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
 $data = [];
 foreach ($rows as $row) {
     $isIncident = ($row['request_type'] === 'incident');
-    $type_key   = $isIncident ? 'incident' : 'overtime';
-    $type_label = $isIncident ? 'Incident' : 'OT Request';
+    $isRestDay  = ($row['request_type'] === 'rest_day');
+    $type_key   = $row['request_type'];
+    $type_label = $isIncident ? 'Incident' : ($isRestDay ? 'Rest Day' : 'OT Request');
 
-    $typeHtml = $isIncident
-        ? '<span style="background:#fff3cd;color:#856404;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-error-warning-line me-1"></i>Incident</span>'
-        : '<span style="background:#cff4fc;color:#055160;border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="ri-timer-flash-line me-1"></i>OT Request</span>';
+    $typeChip = [
+        'incident' => ['#fff3cd', '#856404', 'ri-error-warning-line', 'Incident'],
+        'rest_day' => ['#ece4fb', '#4c2f96', 'ri-moon-line',          'Rest Day'],
+        'overtime' => ['#cff4fc', '#055160', 'ri-timer-flash-line',   'OT Request'],
+    ][$type_key] ?? ['#cff4fc', '#055160', 'ri-timer-flash-line', 'OT Request'];
+    $typeHtml = '<span style="background:' . $typeChip[0] . ';color:' . $typeChip[1]
+        . ';border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="'
+        . $typeChip[2] . ' me-1"></i>' . $typeChip[3] . '</span>';
 
     // Details — claimed in/out window OR requested OT hours.
     $details = '';
@@ -79,7 +86,7 @@ foreach ($rows as $row) {
                  . ' – '
                  . ($row['claimed_time_out'] ? date('g:i A', strtotime($row['claimed_time_out'])) : '—');
     } elseif ($row['ot_hours_requested']) {
-        $details = htmlspecialchars($row['ot_hours_requested']) . ' hrs OT';
+        $details = htmlspecialchars($row['ot_hours_requested']) . ($isRestDay ? ' hrs rest-day duty' : ' hrs OT');
     }
     $notesFull = trim((string)($row['notes'] ?? ''));
     $notesShort = $notesFull !== ''

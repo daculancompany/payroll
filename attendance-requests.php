@@ -23,6 +23,7 @@ $reasonLabels = [
     'system_down'  => 'System Down',
     'overtime'     => 'Overtime Authorization',
     'other'        => 'Other',
+    'rest_day_work' => 'Rest Day / Day-Off Work',
 ];
 ?>
 <!-- Stored-attachment view + in-app viewer (shared with the portal's request form) -->
@@ -158,7 +159,18 @@ $reasonLabels = [
                                             ];
                                             [$slabel, $sclass] = $statusMap[$row['status']] ?? ['Unknown', 'bg-secondary'];
                                         ?>
-                                        <tr data-status="<?= (int)$row['status'] ?>">
+                                        <tr data-status="<?= (int)$row['status'] ?>"
+                                            data-req-id="<?= (int)$row['id'] ?>"
+                                            data-emp-id="<?= (int)$row['employee_id'] ?>"
+                                            data-emp-name="<?= htmlspecialchars($row['employee_name']) ?>"
+                                            data-type="<?= htmlspecialchars($row['request_type']) ?>"
+                                            data-date="<?= htmlspecialchars($row['request_date']) ?>"
+                                            data-reason="<?= htmlspecialchars($row['reason']) ?>"
+                                            data-hours="<?= $row['ot_hours_requested'] !== null ? htmlspecialchars($row['ot_hours_requested']) : '' ?>"
+                                            data-in="<?= htmlspecialchars($row['claimed_time_in'] ?? '') ?>"
+                                            data-out="<?= htmlspecialchars($row['claimed_time_out'] ?? '') ?>"
+                                            data-notes="<?= htmlspecialchars($row['notes'] ?? '') ?>"
+                                            data-attach="<?= htmlspecialchars($row['attachment'] ?? '') ?>">
                                             <td><?= date('M d, Y', strtotime($row['created_at'])) ?></td>
                                             <td>
                                                 <a href="index.php?page=employee-details&id=<?= (int)$row['employee_id'] ?>" data-emp-quickview="<?= (int)$row['employee_id'] ?>" class="rpt-emp-link fw-semibold" title="View employee details"><?= htmlspecialchars($row['employee_name']) ?></a>
@@ -167,24 +179,26 @@ $reasonLabels = [
                                             <td>
                                                 <?php if ($row['request_type'] === 'incident'): ?>
                                                     <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-error-warning-line me-1"></i>Incident</span>
+                                                <?php elseif ($row['request_type'] === 'rest_day'): ?>
+                                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="ri-moon-line me-1"></i>Rest Day</span>
                                                 <?php else: ?>
                                                     <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="ri-timer-flash-line me-1"></i>Overtime</span>
                                                 <?php endif; ?>
                                             </td>
                                             <td><?= date('M d, Y', strtotime($row['request_date'])) ?></td>
-                                            <td><span class="badge bg-light text-dark border"><?= htmlspecialchars($reasonLabels[$row['reason']] ?? $row['reason']) ?></span></td>
-                                            <td style="font-size:12px;">
+                                            <td class="req-reason-cell"><span class="badge bg-light text-dark border"><?= htmlspecialchars($reasonLabels[$row['reason']] ?? $row['reason']) ?></span></td>
+                                            <td class="req-detail-cell" style="font-size:12px;">
                                                 <?php if ($row['claimed_time_in'] || $row['claimed_time_out']): ?>
                                                     <?= $row['claimed_time_in'] ? date('h:i A', strtotime($row['claimed_time_in'])) : '—' ?>
                                                     &ndash;
                                                     <?= $row['claimed_time_out'] ? date('h:i A', strtotime($row['claimed_time_out'])) : '—' ?>
                                                 <?php endif; ?>
                                                 <?php if ($row['ot_hours_requested']): ?>
-                                                    <div><b><?= $row['ot_hours_requested'] ?> hrs</b> requested</div>
+                                                    <div><b><?= $row['ot_hours_requested'] ?> hrs</b> <?= $row['request_type'] === 'rest_day' ? 'rendered' : 'requested' ?></div>
                                                 <?php endif; ?>
                                             </td>
                                             <td style="max-width:180px;">
-                                                <span class="text-muted"><?= nl2br(htmlspecialchars($row['notes'] ?? '')) ?></span>
+                                                <span class="text-muted req-notes-text"><?= nl2br(htmlspecialchars($row['notes'] ?? '')) ?></span>
                                                 <?php if (!empty($row['attachment'])):
                                                     $attUrl   = 'uploads/' . rawurlencode($row['attachment']);
                                                     $attIsPdf = (bool) preg_match('/\.pdf$/i', $row['attachment']); ?>
@@ -202,7 +216,7 @@ $reasonLabels = [
                                                     </div>
                                                 <?php endif; ?>
                                             </td>
-                                            <td class="text-center">
+                                            <td class="text-center req-status-cell">
                                                 <span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span>
                                                 <?php if ($row['status'] != 0): ?>
                                                     <div class="text-muted" style="font-size:10px;"><?= htmlspecialchars($row['reviewer_name'] ?? '') ?></div>
@@ -211,9 +225,13 @@ $reasonLabels = [
                                                     <div class="text-muted" style="font-size:10px;" title="<?= htmlspecialchars($row['reviewer_remarks']) ?>"><i class="ri-information-line"></i> <?= htmlspecialchars(mb_strimwidth($row['reviewer_remarks'], 0, 24, '…')) ?></div>
                                                 <?php endif; ?>
                                             </td>
-                                            <td class="text-center">
+                                            <td class="text-center req-actions-cell">
                                                 <?php if ($can_decide && $row['status'] == 0): ?>
-                                                    <button class="btn btn-sm btn-success" title="Approve" onclick="decideRequest(<?= $row['id'] ?>,1)"><i class="ri-check-double-line"></i></button>
+                                                    <!-- Opens the review modal: the day's scans, the figures (editable
+                                                         before the decision — update_attendance_request) and Approve in
+                                                         one place, so the approver never decides on a number they have
+                                                         not seen against the record behind it. -->
+                                                    <button class="btn btn-sm btn-success" title="Review &amp; approve" onclick="reviewRequest(<?= $row['id'] ?>)"><i class="ri-check-double-line"></i></button>
                                                     <button class="btn btn-sm btn-danger" title="Reject" onclick="decideRequest(<?= $row['id'] ?>,2)"><i class="ri-close-line"></i></button>
                                                 <?php else: ?>
                                                     <span class="text-muted">—</span>
@@ -232,7 +250,83 @@ $reasonLabels = [
     </div>
 </div>
 
+<?php include __DIR__ . '/includes/attendance_request_review.php'; ?>
+
 <script>
+// ── Review & approve ─────────────────────────────────────────────────────────
+// The modal itself lives in includes/attendance_request_review.php — shared with
+// the DTR review screen, so both decide requests through one form. This page
+// only has to repaint the row the decision came from, which is why nothing here
+// reloads: the admin keeps their tab filter, their search and their scroll.
+var REASON_LABELS = <?= json_encode($reasonLabels) ?>;
+var ME_NAME       = <?= json_encode($_SESSION['login_name'] ?? $_SESSION['login_username'] ?? '') ?>;
+
+function reqRow(id) { return document.querySelector('tr[data-req-id="' + id + '"]'); }
+
+function reviewRequest(id) {
+    AttReqReview.open(id, {
+        onSaved: function (q) {
+            var tr = reqRow(q.id);
+            if (!tr) return;
+            tr.dataset.reason = q.reason;
+            tr.dataset.notes  = q.notes || '';
+            tr.dataset.in     = q.time_in || '';
+            tr.dataset.out    = q.time_out || '';
+            tr.dataset.hours  = (q.ot_hours === null || q.ot_hours === undefined) ? '' : q.ot_hours;
+            paintRequestRow(tr);
+        },
+        onDecided: function (status, q) {
+            var tr = reqRow(q.id);
+            if (tr) paintRequestDecision(tr, status);
+        }
+    });
+}
+
+// Repaint the cells an edit can change, from the row's own dataset — the same
+// shape the PHP above renders, so an edited row and a freshly loaded one look
+// identical without a reload.
+function paintRequestRow(tr) {
+    var d = tr.dataset;
+    var reasonCell = tr.querySelector('.req-reason-cell');
+    if (reasonCell) reasonCell.innerHTML = '<span class="badge bg-light text-dark border">'
+        + escHtml(REASON_LABELS[d.reason] || d.reason) + '</span>';
+
+    var detail = tr.querySelector('.req-detail-cell');
+    if (detail) {
+        var html = '';
+        if (d.in || d.out) html += fmt12(d.in) + ' &ndash; ' + fmt12(d.out);
+        if (d.hours) html += '<div><b>' + escHtml(d.hours) + ' hrs</b> '
+            + (d.type === 'rest_day' ? 'rendered' : 'requested') + '</div>';
+        detail.innerHTML = html;
+    }
+    // Only the text — the attachment preview beside it is not ours to redraw.
+    var notes = tr.querySelector('.req-notes-text');
+    if (notes) notes.innerHTML = escHtml(d.notes || '').replace(/\n/g, '<br>');
+}
+
+// The status badge + actions after a decision.
+function paintRequestDecision(tr, status) {
+    tr.setAttribute('data-status', String(status));
+    var map = { 1: ['Approved', 'bg-success'], 2: ['Rejected', 'bg-danger'] };
+    var cell = tr.querySelector('.req-status-cell');
+    if (cell) cell.innerHTML = '<span class="badge ' + map[status][1] + ' rounded-pill">' + map[status][0] + '</span>'
+        + '<div class="text-muted" style="font-size:10px;">' + escHtml(ME_NAME) + '</div>';
+    var act = tr.querySelector('.req-actions-cell');
+    if (act) act.innerHTML = '<span class="text-muted">&mdash;</span>';
+}
+
+function escHtml(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+}
+function fmt12(t) {
+    if (!t) return '—';
+    var p = String(t).split(':'), h = parseInt(p[0], 10), m = p[1] || '00';
+    var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12;
+    return h + ':' + m + ' ' + ap;
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     if (window.jQuery && jQuery.fn.DataTable && !jQuery.fn.DataTable.isDataTable('#att-req-table')) {
         var currentStatus = 'all';
@@ -260,6 +354,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 });
 
+// Quick reject straight from the row — approving always goes through the review
+// modal, which is the only path that shows the scans behind the figure.
 async function decideRequest(id, status) {
     const dlg = status === 1
         ? await Swal.fire({
@@ -284,11 +380,18 @@ async function decideRequest(id, status) {
     });
     const json = await res.json();
     if (json?.result) {
-        await Swal.fire({
+        // Repaint the one row instead of reloading: the admin keeps their tab
+        // filter, their search and their scroll position mid-queue. The server
+        // message still comes through — it carries the DTR-write warning when
+        // an approved OT request had no attendance record to write to.
+        const tr = reqRow(id);
+        if (tr) paintRequestDecision(tr, status);
+        Swal.fire({
             icon: 'success', title: status === 1 ? 'Approved' : 'Rejected',
-            timer: 1400, showConfirmButton: false,
+            text: (json.message && json.message !== 'Request approved' && json.message !== 'Request rejected') ? json.message : '',
+            timer: json.message && json.message.length > 40 ? undefined : 1400,
+            showConfirmButton: !!(json.message && json.message.length > 40),
         });
-        location.reload();
     } else {
         Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to update request.' });
     }

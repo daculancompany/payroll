@@ -265,7 +265,7 @@ function daily_board_data(mysqli $conn, string $target_date): array
         // approver sees the disputed days next to the status being disputed.
         $prq = $conn->query("
             SELECT employee_id, COUNT(*) AS n,
-                   GROUP_CONCAT(DISTINCT request_type ORDER BY request_type SEPARATOR ', ') AS types
+                   GROUP_CONCAT(DISTINCT REPLACE(request_type, '_', ' ') ORDER BY request_type SEPARATOR ', ') AS types
             FROM attendance_requests
             WHERE request_date = '$esc' AND status = 0 AND employee_id IN ($empIdList)
             GROUP BY employee_id

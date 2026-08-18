@@ -438,7 +438,6 @@ table.dr-grid tbody td.dr-cell.dr-empty.dr-hol-legal { background:var(--hol-lega
 table.dr-grid tbody td.dr-cell.dr-today:not([style*="background"]):not(.dr-rest):not(.dr-locked) { background:#f4effd; }
 table.dr-grid tbody td.dr-cell.dr-today { border-right-color:#d9cdf1; }
 table.dr-grid tbody td.dr-cell.dr-today + td { border-left:1px solid #d9cdf1; }
-table.dr-grid tfoot td.dr-cov.dr-today { background:#efe8fb !important; }
 
 .dr-cell { height:31px; text-align:center; cursor:pointer; position:relative;
            font-size:10.5px; font-weight:700; color:#28223b; user-select:none; letter-spacing:.01em; }
@@ -557,47 +556,65 @@ table.dr-grid tfoot td.dr-cov.dr-today { background:#efe8fb !important; }
 .dr-clash.soft .who { color:#a67c1a; }
 .dr-clash.soft > i { color:#c98a00 !important; }
 
-/* ── Coverage footer (collapsible) ── */
-/* Every row is sticky to its own offset — see stackFooter() in the JS. The
-   summary row is the last to be given an offset, so it sits on top of the
-   stack and reads as the panel's header. */
-table.dr-grid tfoot th, table.dr-grid tfoot td { position:sticky; bottom:0; background:#f7f6fa; z-index:2; }
-table.dr-grid tfoot .dr-emp { z-index:3; background:#f7f6fa; }
+/* ── Coverage panel (collapsible) ── */
+/* Deliberately NOT a <tfoot>. As table rows the panel could only be pinned by
+   making every row sticky to its own bottom offset, one stacked on the next —
+   and a ward running eighteen shifts built a stack taller than the pane, which
+   pushed the summary row clean off the TOP of the scrollport. The one control
+   that folds the panel away went with it, so the breakdown could be opened and
+   then never closed. A sticky block outside the table takes a max-height and
+   scrolls its own breakdown instead: the summary row stays frozen at the top
+   of it however many shifts the ward runs, and the roster it summarises keeps
+   at least half the pane. Width, table width and max-height come from
+   syncCoverage() in the JS — they track the grid, which is sized in px. */
+.dr-cov-panel { position:sticky; bottom:0; left:0; z-index:4; background:#f7f6fa;
+                overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-width:thin;
+                box-shadow:0 -4px 10px -6px rgba(40,34,59,.22); }
+.dr-cov-panel:empty { display:none; }
+
+/* Its own copy of the grid's geometry — same fixed layout, same 210px name
+   column — so the counts land on the grid's day columns to the pixel. The
+   grid's zebra/hover/today rules are deliberately NOT inherited: this is a
+   summary, not more roster. */
+table.dr-covtbl { border-collapse:separate; border-spacing:0; font-size:12px; margin:0; table-layout:fixed; }
+table.dr-covtbl th, table.dr-covtbl td { border-right:1px solid #eef0f4; border-bottom:1px solid #eef0f4; padding:0; }
+table.dr-covtbl .dr-emp { position:sticky; left:0; z-index:2; width:210px; padding:4px 8px; text-align:left;
+                          box-shadow:1px 0 0 #ded9ea, 3px 0 6px -3px rgba(40,34,59,.14); }
+table.dr-covtbl thead th, table.dr-covtbl thead td { position:sticky; top:0; z-index:3; }
+table.dr-covtbl thead .dr-emp { z-index:4; }
+
 .dr-cov { text-align:center; font-size:11px; font-weight:700; color:var(--brand-dark); padding:0 2px; font-variant-numeric:tabular-nums; }
-/* Whole-pixel row heights. Each footer row is sticky at its own offset (see
-   stackFooter in the JS); a fractional row height leaves a hairline between
-   two rows through which the body row underneath shows. */
-table.dr-grid tfoot tr.dr-cov-row th, table.dr-grid tfoot tr.dr-cov-row td { height:26px; line-height:25px; }
-table.dr-grid tfoot tr.dr-cov-head th, table.dr-grid tfoot tr.dr-cov-head td { height:30px; }
+/* Whole-pixel row heights. The summary row is sticky OVER the breakdown; a
+   fractional height leaves a hairline through which the row beneath bleeds. */
+table.dr-covtbl tbody th, table.dr-covtbl tbody td { height:26px; line-height:25px; background:#faf9fc; }
+table.dr-covtbl tbody tr:hover th, table.dr-covtbl tbody tr:hover td { background:#f4f1fa; }
 .dr-cov.dr-cov-low { background:#fff1f0; color:#cf1322; }
 .dr-cov-label { font-size:10.5px; font-weight:700; color:var(--brand-dark); padding:0 4px 0 22px; line-height:1;
                 display:flex; align-items:center; gap:5px; }
 .dr-cov-label .dr-chip { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
 .dr-cov-time { font-weight:500; color:#9895a3; }
 
-/* Summary row — the one that never folds away, and the only line on the page
-   that answers "is this day covered". It carries the weight to match. */
-table.dr-grid tfoot tr.dr-cov-head th,
-table.dr-grid tfoot tr.dr-cov-head td { background:#eae5f6; border-top:2px solid #c9c0e0; }
+/* Summary row — the one that never folds away and never scrolls away, and the
+   only line on the page that answers "is this day covered". It carries the
+   weight to match. */
+table.dr-covtbl thead th, table.dr-covtbl thead td { height:30px; background:#eae5f6; border-top:2px solid #c9c0e0;
+                                                     box-shadow:inset 0 -1px 0 #d7cfea; }
+table.dr-covtbl thead .dr-emp { background:#eae5f6;
+                                box-shadow:inset 0 -1px 0 #d7cfea, 1px 0 0 #ded9ea, 3px 0 6px -3px rgba(40,34,59,.14); }
 .dr-cov-total { font-size:13px; font-weight:800; color:#3d2b6b; }
-/* The per-shift rows sit visually beneath the total rather than beside it. */
-table.dr-grid tfoot tr.dr-cov-row th,
-table.dr-grid tfoot tr.dr-cov-row td { background:#faf9fc; }
-table.dr-grid tfoot tr.dr-cov-row:hover th,
-table.dr-grid tfoot tr.dr-cov-row:hover td { background:#f4f1fa; }
 .dr-cov-toggle {
     display:flex; align-items:center; gap:6px; width:100%; padding:4px 4px; border:0; background:transparent;
     cursor:pointer; font-size:11px; font-weight:800; color:var(--brand-dark); text-align:left;
 }
 .dr-cov-toggle:hover .dr-cov-title { text-decoration:underline; }
 .dr-cov-caret { font-size:15px; line-height:1; transition:transform .18s ease; color:#7c72a0; }
-tfoot.collapsed .dr-cov-caret { transform:rotate(-90deg); }
+.dr-cov-panel.collapsed .dr-cov-caret { transform:rotate(-90deg); }
 .dr-cov-title { letter-spacing:.2px; }
 .dr-cov-n { background:#ded6ee; color:#4f3288; border-radius:20px; padding:1px 7px; font-size:9.5px; font-weight:800; }
 .dr-cov-warn { display:inline-flex; align-items:center; gap:3px; margin-left:auto; background:#fdecea; color:#c62828;
                border:1px solid #f5c6cb; border-radius:20px; padding:1px 7px; font-size:9.5px; font-weight:800; }
 .dr-cov-warn i { font-size:10px; }
-tfoot.collapsed .dr-cov-row { display:none; }
+.dr-cov-panel.collapsed tbody { display:none; }
 
 /* ── Footer strip: legend + recompute + unsaved ── */
 /* margin-top:auto pins the key to the bottom of the viewport now that the grid
@@ -1032,8 +1049,9 @@ Nothing is saved on upload. You are shown what would change, then it is painted 
         <table class="dr-grid" id="dr-grid">
             <thead></thead>
             <tbody></tbody>
-            <tfoot></tfoot>
         </table>
+        <!-- Coverage: a sticky block, not a <tfoot> — see .dr-cov-panel above. -->
+        <div class="dr-cov-panel" id="dr-cov-panel"></div>
     </div>
     <div class="dr-placeholder d-none" id="dr-placeholder">
         <div class="dr-empty-art"><i class="ri-calendar-schedule-line"></i></div>

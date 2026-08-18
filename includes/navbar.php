@@ -167,7 +167,7 @@ $__ar_pill = $__ar_pending > 0
                      index.php routes through — so a visible menu item and an
                      openable URL are guaranteed to be the same set. -->
                 <?php
-                $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests','punch-logs'];
+                $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests','punch-logs','similarity-reports'];
                 $att_shown  = array_filter($att_pages, 'page_allowed');
                 $sched_shown = array_filter(['work-schedules','schedule-roster','duty-roster'], 'page_allowed');
                 ?>
@@ -231,6 +231,14 @@ $__ar_pill = $__ar_pending > 0
                                 <!-- The raw scans behind the DTR — one row per punch, not per day. -->
                                 <a href="punch-logs" class="nav-link <?= $page === 'punch-logs' ? 'active' : '' ?>">
                                     <i class="ri-scan-line me-1"></i>Punch Logs
+                                </a>
+                            </li>
+                            <?php endif; ?>
+                            <?php if (page_allowed('similarity-reports')): ?>
+                            <li class="nav-item">
+                                <!-- Scans the fingerprint scanner flagged as matching 2+ employees. -->
+                                <a href="similarity-reports" class="nav-link <?= $page === 'similarity-reports' ? 'active' : '' ?>">
+                                    <i class="ri-fingerprint-2-line me-1"></i>Similarity Reports
                                 </a>
                             </li>
                             <?php endif; ?>

@@ -8297,6 +8297,78 @@ class Action
      * Fallback for a finger that cannot scan (bandage, injury). The admin's
      * credentials are re-verified here and the punch goes through the normal
      * biometric save flow flagged type=manual + authorized_by in the log. */
+    /**
+     * Scanner → server: a live scan verified against MORE THAN ONE employee
+     * (or the kiosk is in debug mode). Stores the ranked candidate list so an
+     * admin can see exactly which fingers look alike and re-enroll them.
+     * Never affects attendance — purely an audit trail. Auth: Bearer token
+     * (same as save-attendance).
+     */
+    function report_biometric_similarity()
+    {
+        $scan_time  = trim($_POST['scan_time'] ?? '');
+        $matched    = intval($_POST['matched_employee_id'] ?? 0) ?: null;
+        $decision   = trim($_POST['decision'] ?? 'saved');
+        $candidates = (string) ($_POST['candidates'] ?? '');
+        $device     = trim($_POST['device'] ?? '');
+        $operator   = intval($_POST['operator_user_id'] ?? 0) ?: null;
+
+        $dt = DateTime::createFromFormat('Y-m-d H:i:s', $scan_time);
+        if (!$dt || $dt->format('Y-m-d H:i:s') !== $scan_time) {
+            return ['result' => false, 'message' => 'Invalid scan_time format. Use Y-m-d H:i:s'];
+        }
+        if (!in_array($decision, ['saved', 'ambiguous', 'debug'], true)) {
+            $decision = 'saved';
+        }
+        $list = json_decode($candidates, true);
+        if (!is_array($list)) {
+            return ['result' => false, 'message' => 'candidates must be a JSON array'];
+        }
+        // Keep the payload bounded — the scanner sends the top few only, but
+        // never trust a client with an unbounded TEXT column.
+        $list = array_slice($list, 0, 25);
+        $verified = 0;
+        foreach ($list as $c) {
+            if (!empty($c['verified'])) {
+                $verified++;
+            }
+        }
+        $json = json_encode($list, JSON_UNESCAPED_UNICODE);
+        if ($device === '') {
+            $device = null;
+        }
+
+        $this->db->query("CREATE TABLE IF NOT EXISTS biometric_similarity_reports (
+            id INT(11) NOT NULL AUTO_INCREMENT,
+            scan_time DATETIME NOT NULL,
+            matched_employee_id INT(11) DEFAULT NULL,
+            decision VARCHAR(20) NOT NULL DEFAULT 'saved',
+            candidate_count INT(11) NOT NULL DEFAULT 0,
+            candidates TEXT NOT NULL,
+            device VARCHAR(100) DEFAULT NULL,
+            operator_user_id INT(11) DEFAULT NULL,
+            reviewed_at DATETIME DEFAULT NULL,
+            reviewed_by INT(11) DEFAULT NULL,
+            review_note VARCHAR(255) DEFAULT NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id), KEY idx_matched (matched_employee_id), KEY idx_scan_time (scan_time)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        $stmt = $this->db->prepare(
+            "INSERT INTO biometric_similarity_reports
+                (scan_time, matched_employee_id, decision, candidate_count, candidates, device, operator_user_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?)"
+        );
+        if (!$stmt) {
+            return ['result' => false, 'message' => 'DB error: ' . $this->db->error];
+        }
+        $stmt->bind_param('sisissi', $scan_time, $matched, $decision, $verified, $json, $device, $operator);
+        if (!$stmt->execute()) {
+            return ['result' => false, 'message' => 'DB error: ' . $stmt->error];
+        }
+        return ['result' => true, 'id' => $stmt->insert_id, 'candidate_count' => $verified];
+    }
+
     function manual_biometric_attendance()
     {
         $employee_no = trim($_POST['employee_no'] ?? '');
@@ -12362,6 +12434,34 @@ class Action
         $id = (int)($_POST['id'] ?? 0);
         if (!$id) return ['result' => false, 'message' => 'Missing id'];
         $stmt = $this->db->prepare("DELETE FROM dtr_admin_notes WHERE id = ?");
+        $stmt->bind_param('i', $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
+    }
+
+    // ── Fingerprint similarity reports (scanner look-alike audit) ──────────
+    function review_similarity_report()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+        $id   = (int)($_POST['id'] ?? 0);
+        $note = trim((string)($_POST['note'] ?? ''));
+        if (!$id) return ['result' => false, 'message' => 'Missing id'];
+        if (mb_strlen($note) > 255) $note = mb_substr($note, 0, 255);
+        $by = (int)($_SESSION['login_id'] ?? 0) ?: null;
+        $stmt = $this->db->prepare("UPDATE biometric_similarity_reports
+                                    SET reviewed_at = NOW(), reviewed_by = ?, review_note = ?
+                                    WHERE id = ?");
+        $stmt->bind_param('isi', $by, $note, $id);
+        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Marked reviewed'];
+    }
+
+    function delete_similarity_report()
+    {
+        $role = (int)($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+        $id = (int)($_POST['id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing id'];
+        $stmt = $this->db->prepare("DELETE FROM biometric_similarity_reports WHERE id = ?");
         $stmt->bind_param('i', $id);
         return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
     }

@@ -80,6 +80,9 @@ switch ($api_action) {
     case 'manual-attendance':
         $result = $action->manual_biometric_attendance();
         break;
+    case 'report-similar':
+        $result = $action->report_biometric_similarity();
+        break;
     default:
         bio_api_unknown_action($api_action);
 }

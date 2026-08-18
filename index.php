@@ -934,6 +934,7 @@ function getRole($login_role)
                 'attendance-requests'  => 'attendance-requests',
                 'biometric-dtr'        => 'biometric-dtr',
                 'punch-logs'           => 'punch-logs',
+                'similarity-reports'   => 'similarity-reports',
                 'pay-settings'         => 'pay-settings',
                 'thirteenth-month'     => 'thirteenth-month',
                 'bank-payout'          => 'bank-payout',

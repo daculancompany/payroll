@@ -208,6 +208,7 @@ if (!defined('ADMIN_ONLY_PAGES')) {
         'compare-dtr',
         'biometric-dtr',
         'punch-logs',             // raw scans behind the DTR — same sensitivity
+        'similarity-reports',     // scanner look-alike fingerprint reports
     ]);
 }
 
@@ -382,6 +383,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         // DTR review
         'decide_dtr_details' => 'dtr', 'delete_dtr' => 'dtr', 'delete_dtr_logs' => 'dtr',
         'delete_dtr_note' => 'dtr', 'delete_dtr_record' => 'dtr', 'edit_dtr_time' => 'dtr',
+        'review_similarity_report' => 'similarity-reports', 'delete_similarity_report' => 'similarity-reports',
         'finalize_dtr' => 'dtr', 'finalize_dtr_bulk' => 'dtr', 'message_dtr_record' => 'dtr',
         'recompute_dtr' => 'dtr', 'save_dtr_note' => 'dtr', 'update_dtr_logs' => 'dtr',
         'save_dtr_punches' => 'dtr',

@@ -775,6 +775,12 @@ if ($action == 'delete_dtr_note') {
 if ($action == 'delete_dtr_record') {
     echo json_encode($crud->delete_dtr_record());
 }
+if ($action == 'review_similarity_report') {
+    echo json_encode($crud->review_similarity_report());
+}
+if ($action == 'delete_similarity_report') {
+    echo json_encode($crud->delete_similarity_report());
+}
 
 
 

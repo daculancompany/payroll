@@ -1,0 +1,117 @@
+{
+    "info": {
+        "name": "Biometric API",
+        "description": "Fingerprint scanner API for payroll-cagayandeoromedicalcenter.com. Run 'Login' first — it auto-saves the access_token for the other requests.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    },
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "https://payroll-cagayandeoromedicalcenter.com/biometric-api.php"
+        },
+        {
+            "key": "access_token",
+            "value": ""
+        }
+    ],
+    "item": [
+        {
+            "name": "Login",
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "try {",
+                            "    var json = pm.response.json();",
+                            "    if (json.access_token) {",
+                            "        pm.collectionVariables.set('access_token', json.access_token);",
+                            "        console.log('access_token saved');",
+                            "    }",
+                            "} catch (e) {",
+                            "    console.warn('Response is not JSON — likely blocked by the CDN browser challenge');",
+                            "}"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "POST",
+                "header": [
+                    { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                    "raw": "{{base_url}}?action=login",
+                    "host": ["{{base_url}}"],
+                    "query": [{ "key": "action", "value": "login" }]
+                },
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"username\": \"your_admin_username\",\n    \"password\": \"your_admin_password\"\n}"
+                }
+            }
+        },
+        {
+            "name": "Ping",
+            "request": {
+                "method": "POST",
+                "header": [
+                    { "key": "Authorization", "value": "Bearer {{access_token}}" }
+                ],
+                "url": {
+                    "raw": "{{base_url}}?action=ping",
+                    "host": ["{{base_url}}"],
+                    "query": [{ "key": "action", "value": "ping" }]
+                }
+            }
+        },
+        {
+            "name": "Get Employees",
+            "request": {
+                "method": "POST",
+                "header": [
+                    { "key": "Authorization", "value": "Bearer {{access_token}}" }
+                ],
+                "url": {
+                    "raw": "{{base_url}}?action=get-employees",
+                    "host": ["{{base_url}}"],
+                    "query": [{ "key": "action", "value": "get-employees" }]
+                }
+            }
+        },
+        {
+            "name": "Get Fingerprints",
+            "request": {
+                "method": "POST",
+                "header": [
+                    { "key": "Authorization", "value": "Bearer {{access_token}}" }
+                ],
+                "url": {
+                    "raw": "{{base_url}}?action=get-fingerprints",
+                    "host": ["{{base_url}}"],
+                    "query": [{ "key": "action", "value": "get-fingerprints" }]
+                }
+            }
+        },
+        {
+            "name": "Save Attendance",
+            "request": {
+                "method": "POST",
+                "header": [
+                    { "key": "Authorization", "value": "Bearer {{access_token}}" },
+                    { "key": "Content-Type", "value": "application/json" }
+                ],
+                "url": {
+                    "raw": "{{base_url}}?action=save-attendance",
+                    "host": ["{{base_url}}"],
+                    "query": [{ "key": "action", "value": "save-attendance" }]
+                },
+                "body": {
+                    "mode": "raw",
+                    "raw": "{\n    \"employee_id\": 1,\n    \"scan_time\": \"2026-07-29 08:00:00\",\n    \"site_id\": 1\n}"
+                }
+            }
+        }
+    ]
+}

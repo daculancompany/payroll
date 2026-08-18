@@ -33,7 +33,7 @@ if ($sr_has_table) {
     $where = ["r.scan_time BETWEEN ? AND ?"];
     $types = 'ss';
     $args  = [$sr_from . ' 00:00:00', $sr_to . ' 23:59:59'];
-    if ($sr_dec !== '' && in_array($sr_dec, ['saved', 'ambiguous', 'debug'], true)) {
+    if ($sr_dec !== '' && in_array($sr_dec, ['saved', 'ambiguous', 'debug', 'audit', 'nomatch'], true)) {
         $where[] = "r.decision = ?"; $types .= 's'; $args[] = $sr_dec;
     }
     if ($sr_open) {
@@ -110,7 +110,7 @@ function sr_name($c, $employees) {
 .sr-time{font-weight:700;color:#3a285d;white-space:nowrap;}
 .sr-date{font-size:11px;color:#999;}
 .sr-dec{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:9px;text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;}
-.sr-dec.saved{background:#fff6e0;color:#c98a00;} .sr-dec.ambiguous{background:#fdecea;color:#c62828;} .sr-dec.debug{background:#eef4ff;color:#3b5bbf;}
+.sr-dec.saved{background:#fff6e0;color:#c98a00;} .sr-dec.ambiguous{background:#fdecea;color:#c62828;} .sr-dec.debug{background:#eef4ff;color:#3b5bbf;} .sr-dec.audit{background:#efe9fb;color:#5b3ea8;} .sr-dec.nomatch{background:#f0f0f0;color:#555;}
 .sr-cand{display:flex;flex-direction:column;gap:3px;}
 .sr-cand .c{display:flex;align-items:center;gap:8px;font-size:12px;}
 .sr-cand .c .nm{font-weight:600;color:#3a285d;}
@@ -145,7 +145,9 @@ tr.sr-open{background:#fffdf5;}
         <i class="ri-information-line me-1"></i>
         Each row is one live scan on the fingerprint scanner that <b>verified against more than one employee</b>.
         <span class="sr-dec saved">saved</span> the punch was recorded for the strongest match but another employee also verified &mdash;
-        <span class="sr-dec ambiguous">ambiguous</span> the two were too close, the scan was <b>rejected</b> and the person asked to rescan.
+        <span class="sr-dec ambiguous">ambiguous</span> the two were too close, the scan was <b>rejected</b> and the person asked to rescan &mdash;
+        <span class="sr-dec audit">audit</span> found during an audit sweep in the scanner's Check Fingerprint window (no punch involved) &mdash;
+        <span class="sr-dec nomatch">nomatch</span> someone failed to match <b>3&times; in a row</b>; the closest templates hint who it was &mdash; re-enroll that finger.
         Either way the fingers listed in red are look-alikes: open the scanner, <b>Menu &rarr; Check Fingerprint / Find Similar</b>, and re-enroll the weaker finger.
         Mark a row reviewed once handled.
     </div>
@@ -183,6 +185,8 @@ tr.sr-open{background:#fffdf5;}
                         <option value="">All</option>
                         <option value="saved" <?= $sr_dec === 'saved' ? 'selected' : '' ?>>Saved (with warning)</option>
                         <option value="ambiguous" <?= $sr_dec === 'ambiguous' ? 'selected' : '' ?>>Ambiguous (rejected)</option>
+                        <option value="audit" <?= $sr_dec === 'audit' ? 'selected' : '' ?>>Audit sweep (Check Fingerprint)</option>
+                        <option value="nomatch" <?= $sr_dec === 'nomatch' ? 'selected' : '' ?>>No match ×3 (weak / unenrolled finger)</option>
                         <option value="debug" <?= $sr_dec === 'debug' ? 'selected' : '' ?>>Debug</option>
                     </select>
                 </div>
@@ -268,13 +272,13 @@ tr.sr-open{background:#fffdf5;}
                                 <div class="sr-date"><?= date('D, M j, Y', strtotime($r['scan_time'])) ?></div>
                             </td>
                             <td><span class="sr-dec <?= htmlspecialchars($r['decision']) ?>"><?= htmlspecialchars($r['decision']) ?></span>
-                                <div class="sr-date"><?= (int)$r['candidate_count'] ?> verified</div></td>
+                                <div class="sr-date"><?= $r['decision'] === 'nomatch' ? 'closest only' : (int)$r['candidate_count'] . ' verified' ?></div></td>
                             <td>
                                 <?php if ($r['matched_employee_id']): ?>
                                     <b><?= htmlspecialchars($r['matched_name'] ?: ('Employee ' . $r['matched_employee_id'])) ?></b>
                                     <div class="sr-date">#<?= (int)$r['matched_employee_id'] ?> <?= htmlspecialchars($r['matched_no'] ?? '') ?></div>
                                 <?php else: ?>
-                                    <span class="text-danger fw-bold">Nobody &mdash; rejected</span>
+                                    <span class="text-danger fw-bold"><?= $r['decision'] === 'audit' ? 'Audit scan (no punch)' : ($r['decision'] === 'nomatch' ? 'No match &mdash; see closest' : 'Nobody &mdash; rejected') ?></span>
                                 <?php endif; ?>
                             </td>
                             <td>

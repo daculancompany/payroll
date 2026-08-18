@@ -8244,6 +8244,29 @@ class Action
             ORDER BY e.lastname, e.firstname
         ");
 
+        // Today's and yesterday's resolved shift per employee. The scanner uses
+        // this ONLY as a tie-breaker when one scan verifies against two people
+        // almost equally: the one who is actually on shift right now wins;
+        // if both/neither are, the scan is still rejected. Yesterday is sent
+        // so a night shift that started yesterday still counts after midnight.
+        // Compact: {s: "HH:MM:SS", e: "HH:MM:SS", g: 0|1 graveyard, r: 0|1 rest}.
+        $today     = date('Y-m-d');
+        $yesterday = date('Y-m-d', strtotime('-1 day'));
+        $shiftOf = function ($employee_id, $date) {
+            $sc = function_exists('resolve_employee_schedule') ? resolve_employee_schedule($this->db, (int) $employee_id, $date) : null;
+            if (!$sc) return null;
+            $rest = isset($sc['day_is_rest']) ? (int) $sc['day_is_rest'] : 0;
+            if (!$rest && !empty($sc['rest_days'])) {
+                // Fixed-week rest days CSV, e.g. "Sun,Sat" or "0,6" — match either style.
+                $dow = date('D', strtotime($date)); $dowN = date('w', strtotime($date));
+                foreach (array_map('trim', explode(',', $sc['rest_days'])) as $rd) {
+                    if ($rd !== '' && (strcasecmp($rd, $dow) === 0 || $rd === (string) $dowN)) { $rest = 1; break; }
+                }
+            }
+            return ['s' => substr((string) $sc['start_time'], 0, 8), 'e' => substr((string) $sc['end_time'], 0, 8),
+                    'g' => (int) ($sc['is_graveyard'] ?? 0), 'r' => $rest];
+        };
+
         $employees = [];
         while ($row = $res->fetch_assoc()) {
             $employees[] = [
@@ -8257,6 +8280,8 @@ class Action
                 'is_active'      => (int) $row['status'],
                 'fingerprint_count' => (int) $row['fingerprint_count'],
                 'fingers'           => $row['fingers'],
+                'shift_today'       => $shiftOf($row['id'], $today),
+                'shift_yesterday'   => $shiftOf($row['id'], $yesterday),
             ];
         }
 
@@ -8299,7 +8324,7 @@ class Action
      * biometric save flow flagged type=manual + authorized_by in the log. */
     /**
      * Scanner → server: a live scan verified against MORE THAN ONE employee
-     * (or the kiosk is in debug mode). Stores the ranked candidate list so an
+     * (or during an audit sweep in Check Fingerprint). Stores the ranked candidate list so an
      * admin can see exactly which fingers look alike and re-enroll them.
      * Never affects attendance — purely an audit trail. Auth: Bearer token
      * (same as save-attendance).
@@ -8317,7 +8342,7 @@ class Action
         if (!$dt || $dt->format('Y-m-d H:i:s') !== $scan_time) {
             return ['result' => false, 'message' => 'Invalid scan_time format. Use Y-m-d H:i:s'];
         }
-        if (!in_array($decision, ['saved', 'ambiguous', 'debug'], true)) {
+        if (!in_array($decision, ['saved', 'ambiguous', 'debug', 'audit', 'nomatch'], true)) {
             $decision = 'saved';
         }
         $list = json_decode($candidates, true);

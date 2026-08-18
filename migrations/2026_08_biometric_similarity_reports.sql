@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS biometric_similarity_reports (
   id                  INT(11)      NOT NULL AUTO_INCREMENT,
   scan_time           DATETIME     NOT NULL,
   matched_employee_id INT(11)      DEFAULT NULL COMMENT 'employee the punch was saved for; NULL when rejected as ambiguous',
-  decision            VARCHAR(20)  NOT NULL DEFAULT 'saved' COMMENT 'saved | ambiguous | debug',
+  decision            VARCHAR(20)  NOT NULL DEFAULT 'saved' COMMENT 'saved | ambiguous | debug | audit | nomatch',
   candidate_count     INT(11)      NOT NULL DEFAULT 0 COMMENT 'employees that VERIFIED at the identify threshold',
   candidates          TEXT         NOT NULL COMMENT 'JSON [{employee_id,name,finger,far,percent,verified}] best first',
   device              VARCHAR(100) DEFAULT NULL,

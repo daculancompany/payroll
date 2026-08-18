@@ -1,207 +1,25 @@
 <?php
 // Daily Attendance Board — pick a date, see who's on which shift and whether they've
 // actually clocked in yet, grouped by Shift (default) or Department.
+//
+// All the reasoning lives in includes/daily_board_data.php, which the CSV export
+// (export-daily-board.php) reads too. This file is presentation only.
 
-require_once 'dept-scope.php';
+require_once __DIR__ . '/includes/daily_board_data.php';
 
-$today = date('Y-m-d');
-$target_date = isset($_GET['date']) ? trim($_GET['date']) : $today;
-if (!strtotime($target_date)) $target_date = $today;
-$is_future = $target_date > $today;
-$is_today  = $target_date === $today;
+$target_date = isset($_GET['date']) ? trim($_GET['date']) : date('Y-m-d');
+$B = daily_board_data($conn, $target_date);
 
-$prev_date = date('Y-m-d', strtotime($target_date . ' -1 day'));
-$next_date = date('Y-m-d', strtotime($target_date . ' +1 day'));
+$target_date = $B['date'];
+$is_future   = $B['is_future'];
+$is_today    = $B['is_today'];
+$employees   = $B['employees'];
+$summary     = $B['summary'];
+$shift_rows  = $B['shift_rows'];
+$holiday     = $B['holiday'];
 
-// Cutoff half this date falls in, in the "Y-m-<1|2>" shape dutyPeriodRange()
-// (admin_class.php) expects — duty_roster_save/recompute are period-scoped.
-$duty_period = date('Y-m', strtotime($target_date)) . '-' . ((int) date('j', strtotime($target_date)) <= 15 ? '1' : '2');
-
-// Shift definitions, ordered by start time (drives both grouping order and the header legend)
-$shift_rows = [];
-$sq = $conn->query("SELECT id, description, start_time, end_time, is_graveyard FROM work_schedules WHERE status=1 ORDER BY start_time ASC");
-while ($sq && $s = $sq->fetch_assoc()) $shift_rows[] = $s;
-
-$target_date_esc = $conn->real_escape_string($target_date);
-
-// Every active employee + whichever shift was in effect ON the target date (not just "current")
-$emp_q = $conn->query("
-    SELECT e.id, e.firstname, e.lastname, e.middlename, e.employee_no, e.area_id,
-           p.name AS pname, d.name AS dept_name, c.clasification,
-           es.schedule_id AS shift_id, ws.description AS shift_desc,
-           ws.start_time AS shift_start, ws.end_time AS shift_end, ws.is_graveyard,
-           es.rest_days
-    FROM employee e
-    INNER JOIN position p ON e.position_id = p.id
-    INNER JOIN clasification c ON e.clasification_id = c.id
-    LEFT JOIN department d ON e.department_id = d.id
-    LEFT JOIN employee_schedules es ON es.employee_id = e.id
-         AND es.effective_from <= '$target_date_esc'
-         AND (es.effective_to IS NULL OR es.effective_to >= '$target_date_esc')
-    LEFT JOIN work_schedules ws ON ws.id = es.schedule_id
-    WHERE e.status = 1
-    ORDER BY e.lastname ASC, e.firstname ASC
-");
-$employees = $emp_q ? $emp_q->fetch_all(MYSQLI_ASSOC) : [];
-
-// Published duty-roster day for the target date wins over the period roster —
-// the more specific answer for rotating staff, same precedence
-// resolve_employee_schedule() applies (db_connect.php). Batched for the whole
-// board instead of resolved per employee to avoid an N+1 on this page.
-$duty_by_emp = [];
-$dutyq = $conn->query("
-    SELECT eds.employee_id, eds.schedule_id, eds.is_rest_day,
-           ws.description AS shift_desc, ws.start_time AS shift_start,
-           ws.end_time AS shift_end, ws.is_graveyard
-    FROM employee_day_schedule eds
-    LEFT JOIN work_schedules ws ON ws.id = eds.schedule_id
-    WHERE eds.work_date = '$target_date_esc' AND eds.status = 1
-");
-while ($dutyq && $d = $dutyq->fetch_assoc()) $duty_by_emp[$d['employee_id']] = $d;
-
-// The lock freezes every roster write board-wide (mirrors admin_class's
-// dutyRosterLockDeny — that check is private to the class, so it's re-read
-// here directly for the UI gate; duty_roster_save() still enforces it).
-$duty_locked = false;
-$lkq = $conn->query("SELECT setting_value FROM pay_settings WHERE setting_key = 'duty_roster_locked'");
-if ($lkq && ($lkr = $lkq->fetch_assoc())) $duty_locked = ((float) $lkr['setting_value']) >= 1;
-
-// Approved leave covering the target date — same source (leave_requests,
-// status = 1 approved) duty_roster_publish's leave-conflict check reads
-// (dutyLeaveMap, admin_class.php), scoped here to just the one board date.
-$leave_by_emp = [];
-if ($employees) {
-    $empIdList = implode(',', array_map(fn($e) => (int) $e['id'], $employees));
-    $lvq = $conn->query("
-        SELECT lr.employee_id, lr.dates, lr.is_half_day, lr.half_date, lr.half_period,
-               COALESCE(lt.name, 'Leave') AS type_name
-        FROM leave_requests lr
-        LEFT JOIN leave_types lt ON lt.id = lr.leave_type_id
-        WHERE lr.status = 1
-          AND lr.employee_id IN ($empIdList)
-          AND lr.date_from <= '$target_date_esc'
-          AND lr.date_to   >= '$target_date_esc'
-    ");
-    while ($lvq && $lv = $lvq->fetch_assoc()) {
-        // Non-contiguous leave (an explicit day list) must actually name this
-        // date — date_from/date_to alone only bracket the outer range.
-        if (!empty($lv['dates'])) {
-            $days = json_decode($lv['dates'], true);
-            if (is_array($days)) {
-                $named = false;
-                foreach ($days as $dy) if (date('Y-m-d', strtotime($dy)) === $target_date) { $named = true; break; }
-                if (!$named) continue;
-            }
-        }
-        $half = ((int) $lv['is_half_day'] === 1 && !empty($lv['half_date'])
-                 && date('Y-m-d', strtotime($lv['half_date'])) === $target_date);
-        $leave_by_emp[$lv['employee_id']] = [
-            'name' => (string) $lv['type_name'],
-            'half' => $half ? 1 : 0,
-            'part' => $half ? (string) ($lv['half_period'] ?? '') : '',
-        ];
-    }
-}
-
-// Weekday number for the target date, 0=Sunday..6=Saturday — same convention
-// employee_schedules.rest_days is written in (dtr_compute_day, db_connect.php:1556-1561).
-$target_weekday = (int) date('w', strtotime($target_date));
-
-foreach ($employees as &$r) {
-    $r['is_rest_day'] = 0;
-    $duty = $duty_by_emp[$r['id']] ?? null;
-    if ($duty) {
-        // Rostered day: the grid said so explicitly, for THIS date — a
-        // rotating employee's day off moves through the week, so the fixed
-        // weekday CSV below cannot answer for them and must not be consulted.
-        $r['is_rest_day'] = (int) $duty['is_rest_day'];
-        if ($duty['schedule_id'] !== null) {
-            $r['shift_id']     = (int) $duty['schedule_id'];
-            $r['shift_desc']   = $duty['shift_desc'];
-            $r['shift_start']  = $duty['shift_start'];
-            $r['shift_end']    = $duty['shift_end'];
-            $r['is_graveyard'] = $duty['is_graveyard'];
-        }
-    } else {
-        // Not on the day grid at all (fixed staff, or a rotating employee with
-        // no row this date) — fall back to the period roster's weekday rest
-        // days, same rule dtr_compute_day() applies for an unstamped day.
-        $rest_csv = (string) ($r['rest_days'] ?? '');
-        if ($rest_csv !== '' && in_array($target_weekday, array_map('intval', explode(',', $rest_csv)), true)) {
-            $r['is_rest_day'] = 1;
-        }
-    }
-    $r['leave'] = $leave_by_emp[$r['id']] ?? null;
-    // roster_can_edit_area() already covers the unscoped-role case (returns
-    // true), so this one call is the whole permission check for this row.
-    $r['can_adjust'] = !$duty_locked && roster_can_edit_area((int) ($r['area_id'] ?? 0));
-}
-unset($r);
-
-// Actual attendance rows for that date, keyed by employee_id
-$dtr_by_emp = [];
-$dq = $conn->query("SELECT employee_id, work_hours, late, overtime, logs, is_complete
-                     FROM DTR_details WHERE date_time = '" . $conn->real_escape_string($target_date) . "'");
-while ($dq && $d = $dq->fetch_assoc()) $dtr_by_emp[$d['employee_id']] = $d;
-
-// Work out an attendance status for one employee on the target date.
-function board_attendance_status($dtrRow, $shiftStart, $isFuture, $isToday, $isRestDay = false, $leave = null)
-{
-    $leaveStatus = function () use ($leave) {
-        return [
-            'label' => 'On Leave', 'class' => 'leave', 'icon' => 'ri-suitcase-line', 'in' => null, 'out' => null,
-            'leave_name' => $leave['name'], 'leave_half' => $leave['half'], 'leave_part' => $leave['part'],
-        ];
-    };
-    if ($dtrRow) {
-        $logs = json_decode($dtrRow['logs'] ?? '[]', true) ?: [];
-        usort($logs, fn($a, $b) => strcmp($a['dateTime'] ?? '', $b['dateTime'] ?? ''));
-        $in  = $logs[0]['dateTime'] ?? null;
-        $out = count($logs) > 1 ? end($logs)['dateTime'] : null;
-        $ot  = (float)($dtrRow['overtime'] ?? 0);
-        if ((float)($dtrRow['late'] ?? 0) > 0) {
-            return ['label' => 'Late', 'class' => 'warning', 'icon' => 'ri-alarm-warning-line', 'in' => $in, 'out' => $out, 'late' => (float)$dtrRow['late'], 'ot' => $ot];
-        }
-        if (!empty($logs)) {
-            return ['label' => 'Present', 'class' => 'success', 'icon' => 'ri-checkbox-circle-line', 'in' => $in, 'out' => $out, 'ot' => $ot];
-        }
-        if ($leave) return $leaveStatus();
-        if ($isRestDay) {
-            return ['label' => 'Day Off', 'class' => 'secondary', 'icon' => 'ri-moon-line', 'in' => null, 'out' => null];
-        }
-        return ['label' => 'No Record', 'class' => 'secondary', 'icon' => 'ri-question-line', 'in' => null, 'out' => null];
-    }
-    // Approved leave and a published roster rest day are both facts, not
-    // guesses, when nobody punched — leave is the more specific of the two
-    // (it says WHY, a rest day only says "not expected"), so it wins.
-    if ($leave) return $leaveStatus();
-    if ($isRestDay) {
-        return ['label' => 'Day Off', 'class' => 'secondary', 'icon' => 'ri-moon-line', 'in' => null, 'out' => null];
-    }
-    if ($isFuture) {
-        return ['label' => 'Scheduled', 'class' => 'secondary', 'icon' => 'ri-calendar-line', 'in' => null, 'out' => null];
-    }
-    if ($isToday && $shiftStart && strtotime(date('Y-m-d') . ' ' . $shiftStart) > time()) {
-        return ['label' => 'Not Yet Due', 'class' => 'info', 'icon' => 'ri-time-line', 'in' => null, 'out' => null];
-    }
-    return ['label' => 'Absent', 'class' => 'danger', 'icon' => 'ri-close-circle-line', 'in' => null, 'out' => null];
-}
-
-// Attach a computed 'att' status to each employee row
-foreach ($employees as &$r) {
-    $r['att'] = board_attendance_status($dtr_by_emp[$r['id']] ?? null, $r['shift_start'] ?? null, $is_future, $is_today, !empty($r['is_rest_day']), $r['leave'] ?? null);
-}
-unset($r);
-
-// Day summary strip
-$summary = ['Present' => 0, 'Late' => 0, 'Absent' => 0, 'Not Yet Due' => 0, 'Scheduled' => 0, 'Day Off' => 0, 'On Leave' => 0, 'No Record' => 0];
-foreach ($employees as $r) $summary[$r['att']['label']] = ($summary[$r['att']['label']] ?? 0) + 1;
-
-// Attendance rate: who has clocked in vs who was expected to (today excludes
-// shifts not yet due, and days off / leave are never "expected" to clock in)
-$attended = $summary['Present'] + $summary['Late'];
-$expected = count($employees) - $summary['Scheduled'] - $summary['Day Off'] - $summary['On Leave'] - ($is_today ? $summary['Not Yet Due'] : 0);
-$att_rate = $expected > 0 ? (int)round($attended / $expected * 100) : 0;
+$pending_total = 0;
+foreach ($employees as $r) if (!empty($r['pending'])) $pending_total += $r['pending']['n'];
 
 // Group by shift (ordered by start time, unassigned last)
 $by_shift = [];
@@ -216,11 +34,18 @@ foreach ($employees as $r) {
 $by_dept = [];
 foreach ($employees as $r) {
     $key = $r['dept_name'] ?: '__unassigned__';
-    if (!isset($by_dept[$key])) $by_dept[$key] = ['label' => $r['dept_name'] ?: 'Unassigned', 'employees' => []];
+    if (!isset($by_dept[$key])) $by_dept[$key] = ['label' => $r['dept_name'] ?: 'Unassigned', 'time' => '', 'employees' => []];
     $by_dept[$key]['employees'][] = $r;
 }
 ksort($by_dept);
 if (isset($by_dept['__unassigned__'])) { $u = $by_dept['__unassigned__']; unset($by_dept['__unassigned__']); $by_dept['__unassigned__'] = $u; }
+
+// The group key each employee belongs to in either mode — the cards are rendered
+// once and moved between the two sets of group heads by daily-board.js.
+$shift_key_of = [];
+$dept_key_of  = [];
+foreach ($by_shift as $k => $g) foreach ($g['employees'] as $e) $shift_key_of[$e['id']] = $k;
+foreach ($by_dept as $k => $g)  foreach ($g['employees'] as $e) $dept_key_of[$e['id']]  = $k;
 
 function board_initials($r)
 {
@@ -247,6 +72,18 @@ function board_name($r)
     .db-search input { border:1px solid #dad4e5; border-radius:20px; padding:6px 12px 6px 32px; font-size:12.5px; width:220px; outline:none; background:#fff; transition:border-color .15s, box-shadow .15s; }
     .db-search input:focus { border-color:#673bb6; box-shadow:0 0 0 3px rgba(103,59,182,.12); }
 
+    .db-note { font-size:11px; border-radius:20px; padding:4px 12px; display:inline-flex; align-items:center; gap:5px; white-space:nowrap; }
+    .db-note-lock { color:#ad6800; background:#fffbe6; border:1px solid #ffe58f; }
+    .db-note-hol  { color:#08979c; background:#e6fffb; border:1px solid #87e8de; font-weight:700; }
+    .db-note-req  { color:#096dd9; background:#e6f7ff; border:1px solid #91d5ff; text-decoration:none; }
+    .db-note-req:hover { color:#0050b3; border-color:#69c0ff; }
+
+    .db-asof { font-size:11px; color:#666; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+    .db-live { font-size:11px; color:#57339d; font-weight:700; display:inline-flex; align-items:center; gap:5px; background:#fff; border:1px solid #dad4e5; border-radius:20px; padding:3px 11px; cursor:pointer; user-select:none; }
+    .db-live input { margin:0; cursor:pointer; }
+    .db-live-dot { width:6px; height:6px; border-radius:50%; background:#c9c4d4; }
+    .db-live.on .db-live-dot { background:#2eb872; box-shadow:0 0 0 3px rgba(46,184,114,.18); }
+
     .db-rate { display:flex; align-items:center; gap:10px; margin:12px 2px 0; }
     .db-rate-track { flex:1; height:7px; background:#eceff3; border-radius:4px; overflow:hidden; }
     .db-rate-fill { height:100%; border-radius:4px; background:linear-gradient(90deg,#6f47b5,#6339af); transition:width .4s ease; }
@@ -261,10 +98,12 @@ function board_name($r)
     .db-sum-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.4px; font-weight:700; margin-top:2px; }
     .db-sum-card.success { background:#f0fbf5; border-color:#b7ebc6; color:#1a7f37; }
     .db-sum-card.warning { background:#fffbe6; border-color:#ffe58f; color:#ad6800; }
+    .db-sum-card.attn    { background:#fff7e6; border-color:#ffd591; color:#d46b08; }
     .db-sum-card.danger  { background:#fff1f0; border-color:#ffccc7; color:#cf1322; }
     .db-sum-card.info    { background:#e6f7ff; border-color:#91d5ff; color:#096dd9; }
     .db-sum-card.secondary { background:#f5f5f5; border-color:#e0e0e0; color:#666; }
     .db-sum-card.leave { background:#f3e8ff; border-color:#dcc6fa; color:#7c3aed; }
+    .db-sum-card.holiday { background:#e6fffb; border-color:#87e8de; color:#08979c; }
 
     .db-group { margin-bottom:16px; }
     .db-group-head { position:relative; display:flex; align-items:center; gap:8px; background:linear-gradient(135deg,#f2f0f6,#edeaf3); border:1px solid #dad4e5; border-radius:8px; padding:7px 12px 9px; cursor:pointer; user-select:none; overflow:hidden; transition:border-color .15s, box-shadow .15s, background .15s; }
@@ -282,10 +121,12 @@ function board_name($r)
     .db-stat-chip .db-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
     .db-stat-chip.success .db-dot { background:#2eb872; } .db-stat-chip.success { color:#1a7f37; border-color:#c9ecd8; }
     .db-stat-chip.warning .db-dot { background:#f0a800; } .db-stat-chip.warning { color:#ad6800; border-color:#f6e4b5; }
+    .db-stat-chip.attn    .db-dot { background:#fa8c16; } .db-stat-chip.attn    { color:#d46b08; border-color:#ffd591; }
     .db-stat-chip.danger  .db-dot { background:#e5484d; } .db-stat-chip.danger  { color:#cf1322; border-color:#f7cfcf; }
     .db-stat-chip.info    .db-dot { background:#3a9bdc; } .db-stat-chip.info    { color:#096dd9; border-color:#c9e4f7; }
     .db-stat-chip.secondary .db-dot { background:#b9bec9; }
     .db-stat-chip.leave .db-dot { background:#7c3aed; } .db-stat-chip.leave { color:#7c3aed; border-color:#dcc6fa; }
+    .db-stat-chip.holiday .db-dot { background:#13c2c2; } .db-stat-chip.holiday { color:#08979c; border-color:#87e8de; }
     .db-group-bar { position:absolute; left:0; right:0; bottom:0; height:3px; background:rgba(103,59,182,.10); }
     .db-group-bar-fill { height:100%; background:linear-gradient(90deg,#6f47b5,#2eb872); transition:width .4s ease; }
 
@@ -301,10 +142,12 @@ function board_name($r)
     .db-card:hover { box-shadow:0 3px 10px rgba(0,0,0,.10); transform:translateY(-1px); }
     .db-card.st-success { border-left-color:#2eb872; }
     .db-card.st-warning { border-left-color:#f0a800; }
+    .db-card.st-attn    { border-left-color:#fa8c16; }
     .db-card.st-danger  { border-left-color:#e5484d; }
     .db-card.st-info    { border-left-color:#3a9bdc; }
     .db-card.st-secondary { border-left-color:#c5c9d3; }
     .db-card.st-leave { border-left-color:#7c3aed; }
+    .db-card.st-holiday { border-left-color:#13c2c2; }
     .db-card-top { display:flex; align-items:center; gap:8px; }
     .db-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#6f47b5,#5d36a6); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
     .db-card.st-danger .db-avatar { background:linear-gradient(135deg,#adb5bd,#868e96); }
@@ -313,23 +156,32 @@ function board_name($r)
     .db-name-link:hover { color:#5d36a6; text-decoration:underline; }
     a.db-avatar:hover { box-shadow:0 0 0 3px rgba(103,59,182,.25); text-decoration:none; color:#fff; }
     .db-sub { font-size:10.5px; color:#888; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    /* One card, two captions: the sub-line names whichever axis you are NOT grouped by. */
+    .db-sub-shift { display:none; }
+    #db-board.mode-dept .db-sub-shift { display:inline; }
+    #db-board.mode-dept .db-sub-dept  { display:none; }
     .db-tag { font-size:9.5px; color:#1976d2; }
     .db-status-row { margin-top:8px; padding-top:7px; border-top:1px dashed #eef0f8; display:flex; align-items:center; justify-content:space-between; gap:6px; flex-wrap:wrap; }
     .db-status-badge { font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; display:inline-flex; align-items:center; gap:3px; }
     .db-status-badge.success { background:#e6f9ee; color:#1a7f37; }
     .db-status-badge.warning { background:#fff7e0; color:#ad6800; }
+    .db-status-badge.attn    { background:#fff7e6; color:#d46b08; }
     .db-status-badge.danger  { background:#ffefee; color:#cf1322; }
     .db-status-badge.info    { background:#e6f4ff; color:#096dd9; }
     .db-status-badge.secondary { background:#f0f0f0; color:#666; }
     .db-status-badge.leave { background:#f3e8ff; color:#7c3aed; }
-    .db-ot-chip { font-size:9.5px; font-weight:700; background:#f3e8ff; color:#7c3aed; padding:1px 6px; border-radius:8px; }
-    .db-leave-chip { font-size:9.5px; font-weight:700; background:#f0f0f0; color:#666; padding:1px 6px; border-radius:8px; white-space:nowrap; }
+    .db-status-badge.holiday { background:#e6fffb; color:#08979c; }
+    .db-chip { font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:8px; white-space:nowrap; }
+    .db-ot-chip { background:#f3e8ff; color:#7c3aed; }
+    .db-ut-chip { background:#fff1f0; color:#cf1322; }
+    .db-late-chip { background:#fff7e0; color:#ad6800; }
+    .db-pend-chip { background:#e6f7ff; color:#096dd9; }
+    .db-leave-chip { background:#f0f0f0; color:#666; }
     .db-in-out { font-size:10px; color:#666; white-space:nowrap; }
     .db-no-match { display:none; text-align:center; color:#999; padding:28px 0; font-size:13px; }
 
     .db-adjust-btn { flex-shrink:0; width:24px; height:24px; border-radius:6px; border:1px solid #e2ddef; background:#faf9fc; color:#8b7bb0; display:flex; align-items:center; justify-content:center; font-size:12px; cursor:pointer; transition:background .15s,color .15s,border-color .15s; }
     .db-adjust-btn:hover { background:#673bb6; color:#fff; border-color:#673bb6; }
-    .db-lock-note { font-size:11px; color:#ad6800; background:#fffbe6; border:1px solid #ffe58f; border-radius:20px; padding:4px 12px; display:flex; align-items:center; gap:5px; }
 </style>
 
 <div class="main-content">
@@ -363,70 +215,83 @@ function board_name($r)
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-expand-all" title="Expand all groups"><i class="ri-arrow-down-s-line"></i> Expand</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary" id="btn-collapse-all" title="Collapse all groups"><i class="ri-arrow-up-s-line"></i> Collapse</button>
                         </div>
+                        <a href="export-daily-board.php?date=<?= urlencode($target_date) ?>" id="db-export" class="btn btn-sm btn-outline-success" title="Download what is currently on screen as CSV"><i class="ri-file-excel-2-line"></i> Export</a>
                     </div>
                     <div class="card-body">
 
                         <!-- Date navigation -->
                         <div class="db-toolbar mb-2">
-                            <a href="index.php?page=daily-board&date=<?= $prev_date ?>" class="db-nav-btn" title="Previous day"><i class="ri-arrow-left-s-line"></i></a>
+                            <a href="index.php?page=daily-board&date=<?= $B['prev_date'] ?>" class="db-nav-btn" id="db-prev-day" title="Previous day (←)"><i class="ri-arrow-left-s-line"></i></a>
                             <div class="db-date-pill" style="min-width: 250px;" id="db-date-pill" title="Click to pick a date">
                                 <i class="ri-calendar-2-line"></i>
                                 <span id="db-date-label"><?= date('l, F j, Y', strtotime($target_date)) ?></span>
                                 <?php if ($is_today): ?><span class="db-today-badge">TODAY</span><?php endif; ?>
                             </div>
-                            <a href="index.php?page=daily-board&date=<?= $next_date ?>" class="db-nav-btn" title="Next day"><i class="ri-arrow-right-s-line"></i></a>
+                            <a href="index.php?page=daily-board&date=<?= $B['next_date'] ?>" class="db-nav-btn" id="db-next-day" title="Next day (→)"><i class="ri-arrow-right-s-line"></i></a>
                             <input type="hidden" id="db-date-input" value="<?= htmlspecialchars($target_date) ?>">
                             <?php if (!$is_today): ?>
                             <a href="index.php?page=daily-board" class="btn btn-sm btn-outline-secondary"><i class="ri-calendar-check-line me-1"></i>Today</a>
                             <?php endif; ?>
-                            <?php if ($duty_locked): ?>
-                            <span class="db-lock-note"><i class="ri-lock-2-line"></i>Duty roster is locked by the administrator</span>
+                            <?php if ($holiday): ?>
+                            <span class="db-note db-note-hol" title="Nobody is expected to clock in on this date"><i class="ri-flag-2-line"></i><?= htmlspecialchars($holiday['title']) ?> · <?= htmlspecialchars($holiday['kind']) ?></span>
                             <?php endif; ?>
-                            <div class="ms-auto d-flex gap-3" style="font-size:11px;color:#666;">
+                            <?php if ($pending_total > 0): ?>
+                            <a href="index.php?page=attendance-requests" class="db-note db-note-req" title="Attendance corrections awaiting review for this date"><i class="ri-file-edit-line"></i><?= $pending_total ?> pending request<?= $pending_total > 1 ? 's' : '' ?></a>
+                            <?php endif; ?>
+                            <?php if ($B['duty_locked']): ?>
+                            <span class="db-note db-note-lock"><i class="ri-lock-2-line"></i>Duty roster is locked by the administrator</span>
+                            <?php endif; ?>
+                            <div class="ms-auto d-flex align-items-center gap-2" style="font-size:11px;color:#666;">
                                 <span><i class="ri-team-line me-1"></i><?= count($employees) ?> active employees</span>
+                                <?php if ($is_today): ?>
+                                <span class="db-asof"><i class="ri-time-line"></i>as of <?= date('h:i A') ?></span>
+                                <a href="javascript:void(0);" class="db-nav-btn" id="db-refresh" title="Refresh now" style="width:26px;height:26px;"><i class="ri-refresh-line"></i></a>
+                                <label class="db-live" id="db-live-wrap" title="Reload the board every 2 minutes. Pauses while you are searching or filtering.">
+                                    <span class="db-live-dot"></span>
+                                    <input type="checkbox" id="db-auto-refresh"> Live
+                                </label>
+                                <?php endif; ?>
                             </div>
                         </div>
 
                         <?php if (!$is_future): ?>
                         <!-- Attendance rate -->
                         <div class="db-rate">
-                            <div class="db-rate-track"><div class="db-rate-fill" style="width:<?= $att_rate ?>%;"></div></div>
-                            <span class="db-rate-lbl"><?= $attended ?> of <?= $expected ?> clocked in · <?= $att_rate ?>%</span>
+                            <div class="db-rate-track"><div class="db-rate-fill" style="width:<?= $B['att_rate'] ?>%;"></div></div>
+                            <span class="db-rate-lbl"><?= $B['attended'] ?> of <?= $B['expected'] ?> clocked in · <?= $B['att_rate'] ?>%</span>
                         </div>
                         <?php endif; ?>
 
                         <!-- Day summary (click a card to filter the board by that status) -->
                         <div class="db-summary">
-                            <?php if ($is_future): ?>
-                                <div class="db-sum-card secondary" data-filter="Scheduled"><div class="db-sum-ico"><i class="ri-calendar-line"></i></div><div class="db-sum-val"><?= $summary['Scheduled'] ?></div><div class="db-sum-lbl">Scheduled</div></div>
-                                <?php if ($summary['Day Off'] > 0): ?>
-                                <div class="db-sum-card secondary" data-filter="Day Off"><div class="db-sum-ico"><i class="ri-moon-line"></i></div><div class="db-sum-val"><?= $summary['Day Off'] ?></div><div class="db-sum-lbl">Day Off</div></div>
-                                <?php endif; ?>
-                                <?php if ($summary['On Leave'] > 0): ?>
-                                <div class="db-sum-card leave" data-filter="On Leave"><div class="db-sum-ico"><i class="ri-suitcase-line"></i></div><div class="db-sum-val"><?= $summary['On Leave'] ?></div><div class="db-sum-lbl">On Leave</div></div>
-                                <?php endif; ?>
-                            <?php else: ?>
-                                <div class="db-sum-card success" data-filter="Present"><div class="db-sum-ico"><i class="ri-checkbox-circle-line"></i></div><div class="db-sum-val"><?= $summary['Present'] ?></div><div class="db-sum-lbl">Present</div></div>
-                                <div class="db-sum-card warning" data-filter="Late"><div class="db-sum-ico"><i class="ri-alarm-warning-line"></i></div><div class="db-sum-val"><?= $summary['Late'] ?></div><div class="db-sum-lbl">Late</div></div>
-                                <div class="db-sum-card danger" data-filter="Absent"><div class="db-sum-ico"><i class="ri-close-circle-line"></i></div><div class="db-sum-val"><?= $summary['Absent'] ?></div><div class="db-sum-lbl">Absent</div></div>
-                                <?php if ($is_today): ?>
-                                <div class="db-sum-card info" data-filter="Not Yet Due"><div class="db-sum-ico"><i class="ri-time-line"></i></div><div class="db-sum-val"><?= $summary['Not Yet Due'] ?></div><div class="db-sum-lbl">Not Yet Due</div></div>
-                                <?php endif; ?>
-                                <?php if ($summary['Day Off'] > 0): ?>
-                                <div class="db-sum-card secondary" data-filter="Day Off"><div class="db-sum-ico"><i class="ri-moon-line"></i></div><div class="db-sum-val"><?= $summary['Day Off'] ?></div><div class="db-sum-lbl">Day Off</div></div>
-                                <?php endif; ?>
-                                <?php if ($summary['On Leave'] > 0): ?>
-                                <div class="db-sum-card leave" data-filter="On Leave"><div class="db-sum-ico"><i class="ri-suitcase-line"></i></div><div class="db-sum-val"><?= $summary['On Leave'] ?></div><div class="db-sum-lbl">On Leave</div></div>
-                                <?php endif; ?>
-                                <?php if ($summary['No Record'] > 0): ?>
-                                <div class="db-sum-card secondary" data-filter="No Record"><div class="db-sum-ico"><i class="ri-question-line"></i></div><div class="db-sum-val"><?= $summary['No Record'] ?></div><div class="db-sum-lbl">No Record</div></div>
-                                <?php endif; ?>
-                            <?php endif; ?>
+                            <?php
+                            // Which cards are worth a slot: the three headline
+                            // statuses always show on a past/current day (a zero
+                            // Absent count is itself the news), the rest only when
+                            // they actually happened.
+                            $always = $is_future ? ['Scheduled'] : ['Present', 'Late', 'Absent'];
+                            foreach (DAILY_BOARD_STATUSES as $label => $meta):
+                                if ($is_future && !in_array($label, ['Scheduled', 'Day Off', 'On Leave', 'Holiday'], true)) continue;
+                                if (!$is_future && $label === 'Scheduled') continue;
+                                if ($label === 'Not Yet Due' && !$is_today) continue;
+                                if (!in_array($label, $always, true) && $summary[$label] < 1) continue;
+                            ?>
+                            <div class="db-sum-card <?= $meta['class'] ?>" data-filter="<?= htmlspecialchars($label) ?>">
+                                <div class="db-sum-ico"><i class="<?= $meta['icon'] ?>"></i></div>
+                                <div class="db-sum-val"><?= $summary[$label] ?></div>
+                                <div class="db-sum-lbl"><?= htmlspecialchars($label) ?></div>
+                            </div>
+                            <?php endforeach; ?>
                         </div>
 
                         <?php
-                        // Renders one grouped board (used for both Shift and Department groupings)
-                        function board_render_group($gkey, $group, $isShiftGroup)
+                        /**
+                         * One group. $withCards is false for the Department heads,
+                         * which start empty — daily-board.js moves the single set of
+                         * rendered cards between the two group sets on toggle, so a
+                         * 400-employee board never renders 800 cards.
+                         */
+                        function board_render_group($gkey, $group, $isShiftGroup, $withCards)
                         {
                             if (empty($group['employees'])) return;
                             $total = count($group['employees']);
@@ -435,10 +300,8 @@ function board_name($r)
                             foreach ($group['employees'] as $e) {
                                 $lbl = $e['att']['label'];
                                 $counts[$lbl] = ($counts[$lbl] ?? 0) + 1;
-                                if (in_array($lbl, ['Present', 'Late'])) $in_count++;
+                                if (in_array($lbl, DAILY_BOARD_IN_STATUSES, true)) $in_count++;
                             }
-                            // Status chips stay visible when the group is collapsed, so the head alone tells the story
-                            $chip_order = ['Present' => 'success', 'Late' => 'warning', 'Absent' => 'danger', 'Not Yet Due' => 'info', 'No Record' => 'secondary', 'Scheduled' => 'secondary', 'Day Off' => 'secondary', 'On Leave' => 'leave'];
                             $bar_pct = $total > 0 ? round($in_count / $total * 100) : 0;
                             ?>
                             <div class="db-group" data-group-key="<?= htmlspecialchars($gkey) ?>">
@@ -448,8 +311,8 @@ function board_name($r)
                                     <span class="db-group-title"><?= htmlspecialchars($group['label']) ?></span>
                                     <?php if (!empty($group['time'])): ?><span class="db-group-time"><?= htmlspecialchars($group['time']) ?></span><?php endif; ?>
                                     <span class="db-group-stats">
-                                        <?php foreach ($chip_order as $lbl => $cls): if (empty($counts[$lbl])) continue; ?>
-                                        <span class="db-stat-chip <?= $cls ?>" data-chip-status="<?= htmlspecialchars($lbl) ?>" title="<?= htmlspecialchars($lbl) ?>"><span class="db-dot"></span><span class="db-chip-val"><?= $counts[$lbl] ?></span> <?= htmlspecialchars($lbl) ?></span>
+                                        <?php foreach (DAILY_BOARD_STATUSES as $lbl => $meta): ?>
+                                        <span class="db-stat-chip <?= $meta['class'] ?><?= empty($counts[$lbl]) ? ' d-none' : '' ?>" data-chip-status="<?= htmlspecialchars($lbl) ?>" title="<?= htmlspecialchars($lbl) ?>"><span class="db-dot"></span><span class="db-chip-val"><?= (int) ($counts[$lbl] ?? 0) ?></span> <?= htmlspecialchars($lbl) ?></span>
                                         <?php endforeach; ?>
                                         <span class="db-group-in"><i class="ri-user-follow-line"></i> <?= $in_count ?> in</span>
                                         <span class="badge bg-secondary db-group-count"><?= $total ?></span>
@@ -458,9 +321,15 @@ function board_name($r)
                                 </div>
                                 <div class="db-group-body"><div class="db-group-body-inner">
                                 <div class="row g-2">
+                                    <?php if (!$withCards) { echo '</div></div></div></div>'; return; } ?>
                                     <?php foreach ($group['employees'] as $r): $att = $r['att'];
                                         $search = strtolower($r['lastname'] . ' ' . $r['firstname'] . ' ' . $r['employee_no'] . ' ' . ($r['dept_name'] ?? '') . ' ' . ($r['shift_desc'] ?? '')); ?>
-                                    <div class="col-6 col-sm-4 col-md-3 col-xl-2 db-card-col" data-status="<?= htmlspecialchars($att['label']) ?>" data-search="<?= htmlspecialchars($search) ?>">
+                                    <div class="col-6 col-sm-4 col-md-3 col-xl-2 db-card-col"
+                                         data-status="<?= htmlspecialchars($att['label']) ?>"
+                                         data-search="<?= htmlspecialchars($search) ?>"
+                                         data-ord="<?= (int) $GLOBALS['board_ord'][$r['id']] ?>"
+                                         data-shift-key="<?= htmlspecialchars((string) $GLOBALS['board_shift_key'][$r['id']]) ?>"
+                                         data-dept-key="<?= htmlspecialchars((string) $GLOBALS['board_dept_key'][$r['id']]) ?>">
                                         <div class="db-card st-<?= $att['class'] ?>">
                                             <div class="db-card-top">
                                                 <!-- Quick-view drawer first; the full employee-details page
@@ -469,11 +338,8 @@ function board_name($r)
                                                 <div style="min-width:0;flex:1;">
                                                     <div class="db-name" title="<?= board_name($r) ?>"><a href="javascript:void(0);" data-emp-quickview="<?= (int)$r['id'] ?>" class="db-name-link" title="Employee quick view"><?= board_name($r) ?></a></div>
                                                     <div class="db-sub">
-                                                        <?php if ($isShiftGroup): ?>
-                                                            <?= !empty($r['dept_name']) ? htmlspecialchars($r['dept_name']) : '<span class="text-muted">No dept</span>' ?>
-                                                        <?php else: ?>
-                                                            <?= $r['shift_desc'] ? htmlspecialchars($r['shift_desc']) : '<span class="text-muted">No shift</span>' ?>
-                                                        <?php endif; ?>
+                                                        <span class="db-sub-dept"><?= !empty($r['dept_name']) ? htmlspecialchars($r['dept_name']) : '<span class="text-muted">No dept</span>' ?></span>
+                                                        <span class="db-sub-shift"><?= $r['shift_desc'] ? htmlspecialchars($r['shift_desc']) : '<span class="text-muted">No shift</span>' ?></span>
                                                     </div>
                                                     <div class="db-tag"><?= htmlspecialchars($r['employee_no']) ?></div>
                                                 </div>
@@ -482,9 +348,12 @@ function board_name($r)
                                                 <?php endif; ?>
                                             </div>
                                             <div class="db-status-row">
-                                                <span class="db-status-badge <?= $att['class'] ?>"><i class="<?= $att['icon'] ?>"></i><?= htmlspecialchars($att['label']) ?><?php if (!empty($att['late'])): ?> <?= (int)$att['late'] ?>m<?php endif; ?></span>
-                                                <?php if (!empty($att['ot'])): ?><span class="db-ot-chip">OT <?= rtrim(rtrim(number_format((float)$att['ot'], 1), '0'), '.') ?>h</span><?php endif; ?>
-                                                <?php if (!empty($att['leave_name'])): ?><span class="db-leave-chip"><?= htmlspecialchars($att['leave_name']) ?><?= !empty($att['leave_half']) ? ' (' . htmlspecialchars($att['leave_part']) . ')' : '' ?></span><?php endif; ?>
+                                                <span class="db-status-badge <?= $att['class'] ?>"><i class="<?= $att['icon'] ?>"></i><?= htmlspecialchars($att['label']) ?><?php if ($att['label'] === 'Late' && !empty($att['late'])): ?> <?= daily_board_hm((float) $att['late']) ?><?php endif; ?></span>
+                                                <?php if ($att['label'] !== 'Late' && !empty($att['late'])): ?><span class="db-chip db-late-chip" title="Late">Late <?= daily_board_hm((float) $att['late']) ?></span><?php endif; ?>
+                                                <?php if (!empty($att['ut'])): ?><span class="db-chip db-ut-chip" title="Undertime">UT <?= daily_board_hm((float) $att['ut']) ?></span><?php endif; ?>
+                                                <?php if (!empty($att['ot'])): ?><span class="db-chip db-ot-chip" title="Overtime">OT <?= daily_board_hm((float) $att['ot']) ?></span><?php endif; ?>
+                                                <?php if (!empty($att['leave_name'])): ?><span class="db-chip db-leave-chip"><?= htmlspecialchars($att['leave_name']) ?><?= !empty($att['leave_half']) ? ' (' . htmlspecialchars($att['leave_part']) . ')' : '' ?></span><?php endif; ?>
+                                                <?php if (!empty($r['pending'])): ?><span class="db-chip db-pend-chip" title="<?= (int) $r['pending']['n'] ?> pending attendance request(s): <?= htmlspecialchars($r['pending']['types']) ?>"><i class="ri-file-edit-line"></i> <?= (int) $r['pending']['n'] ?></span><?php endif; ?>
                                                 <?php if ($att['in']): ?>
                                                 <span class="db-in-out"><?= date('h:i A', strtotime($att['in'])) ?><?= $att['out'] ? ' – ' . date('h:i A', strtotime($att['out'])) : '' ?></span>
                                                 <?php endif; ?>
@@ -497,17 +366,24 @@ function board_name($r)
                             </div>
                             <?php
                         }
+
+                        // Lookups the card renderer above reads (it is called from
+                        // inside a function, so they are passed through globals).
+                        $GLOBALS['board_shift_key'] = $shift_key_of;
+                        $GLOBALS['board_dept_key']  = $dept_key_of;
+                        $GLOBALS['board_ord']       = [];
+                        foreach ($employees as $i => $r) $GLOBALS['board_ord'][$r['id']] = $i;
                         ?>
 
-                        <!-- Grouped by Shift (default) -->
-                        <div id="db-board-shift">
-                            <?php foreach ($by_shift as $gkey => $group) board_render_group($gkey, $group, true); ?>
-                            <?php if (empty($employees)): ?><div class="text-center text-muted py-4">No active employees found.</div><?php endif; ?>
-                        </div>
-
-                        <!-- Grouped by Department (hidden by default) -->
-                        <div id="db-board-dept" class="d-none">
-                            <?php foreach ($by_dept as $gkey => $group) board_render_group($gkey, $group, false); ?>
+                        <div id="db-board" class="mode-shift">
+                            <!-- Cards are rendered once, here. -->
+                            <div class="db-board-mode" data-mode="shift">
+                                <?php foreach ($by_shift as $gkey => $group) board_render_group($gkey, $group, true, true); ?>
+                            </div>
+                            <!-- Department heads only; the cards above move in on toggle. -->
+                            <div class="db-board-mode d-none" data-mode="dept">
+                                <?php foreach ($by_dept as $gkey => $group) board_render_group($gkey, $group, false, false); ?>
+                            </div>
                             <?php if (empty($employees)): ?><div class="text-center text-muted py-4">No active employees found.</div><?php endif; ?>
                         </div>
 
@@ -558,8 +434,8 @@ function board_name($r)
 <script>
     window.DB_ADJUST = {
         date: <?= json_encode($target_date) ?>,
-        period: <?= json_encode($duty_period) ?>
+        period: <?= json_encode($B['duty_period']) ?>,
+        isToday: <?= $is_today ? 'true' : 'false' ?>
     };
 </script>
 <!-- Employee quick-view drawer is included globally by index.php -->
-

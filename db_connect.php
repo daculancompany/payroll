@@ -401,6 +401,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'duty_roster_data' => 'duty-roster', 'duty_roster_areas' => 'duty-roster', 'duty_roster_save' => 'duty-roster',
         'duty_roster_publish' => 'duty-roster', 'duty_roster_copy' => 'duty-roster',
         'duty_roster_clear_drafts' => 'duty-roster', 'duty_roster_recompute' => 'duty-roster',
+        'duty_roster_history' => 'duty-roster',
         // Import only previews, but it is the front half of a write and is kept
         // out of READ_ONLY_ACTIONS so a look-but-don't-touch role is refused.
         'duty_roster_import' => 'duty-roster',
@@ -444,6 +445,9 @@ if (!defined('READ_ONLY_ACTIONS')) {
     define('READ_ONLY_ACTIONS', [
         'get_employee_schedule_history', 'employee_quick_view',
         'loan_history_details', 'plan_list', 'duty_roster_data', 'duty_roster_areas',
+        // Pure read. A view-only head auditing what the scheduling office did is
+        // the main reason the history exists, so it must not need write access.
+        'duty_roster_history',
         'get_payroll_rows_data', 'payroll_history_details', 'remittance_breakdown',
         'isLock', 'dtr_review_progress', 'eport_payroll_reviews', 'eport_dtr_reviews',
     ]);

@@ -664,6 +664,9 @@ if ($action == 'duty_roster_recompute') {
 if ($action == 'duty_roster_import') {
     echo json_encode($crud->duty_roster_import());
 }
+if ($action == 'duty_roster_history') {
+    echo json_encode($crud->duty_roster_history());
+}
 if ($action == 'duty_roster_set_lock') {
     echo json_encode($crud->duty_roster_set_lock());
 }

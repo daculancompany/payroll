@@ -18,6 +18,9 @@ class Action
 {
     private $db;
 
+    /** work_schedules id → description, memoised for dutyCellLabel(). */
+    private $dutyShiftNames = null;
+
     public function __construct()
     {
         ob_start();
@@ -1912,6 +1915,25 @@ class Action
     /** dept-scope.php is not loaded on every entry point; pull it in on demand. */
     private function loadScopeHelpers(): void
     {
+        // dept-scope.php resolves the session's areas through $GLOBALS['conn'],
+        // and returns [] — "unscoped", i.e. every check passes — when it cannot
+        // find a connection there.
+        //
+        // Pages set that global: they `include 'db_connect.php'` at file scope.
+        // ajax.php does not — it includes admin_class.php, whose constructor
+        // includes db_connect.php from INSIDE __construct(), so $conn is a
+        // method local and $GLOBALS['conn'] is never set. dept-scope.php's own
+        // fallback cannot recover it either: its require_once is a no-op by then
+        // (the file is already loaded) and would bind $conn inside a function
+        // anyway. The result was that area scoping silently switched itself off
+        // for the entire ajax surface — dutyDenyWrite() returned null for every
+        // ward, so a head scoped to one ward could write any other one's roster.
+        //
+        // Publishing our own handle first is what makes the fence real. It must
+        // happen before the first area_scope_ids() call, which memoises.
+        if (!isset($GLOBALS['conn']) || !($GLOBALS['conn'] instanceof mysqli)) {
+            $GLOBALS['conn'] = $this->db;
+        }
         if (function_exists('dept_scope_id')) return;
         $f = __DIR__ . '/dept-scope.php';
         if (is_file($f)) require_once $f;
@@ -1954,6 +1976,70 @@ class Action
     {
         if ($this->pay_setting('duty_roster_locked', 0) < 1) return null;
         return 'The duty roster is locked by the administrator. Ask them to unlock it before making changes.';
+    }
+
+    /**
+     * Append one entry to the duty roster's change history.
+     *
+     * employee_day_schedule's own created_by / changed_by describe the row as it
+     * stands now, which cannot say who DELETED a day — the row and its audit
+     * columns go together. So every write path calls this instead, and the log is
+     * append-only: nothing here ever updates or removes an earlier entry.
+     *
+     * Best-effort by design. A history write must never be the reason a roster
+     * save fails, so a missing table or a failed insert is swallowed; the caller
+     * is already inside its own transaction and does not want ours.
+     */
+    private function dutyLog(string $period, string $action, string $detail, array $opt = []): void
+    {
+        try {
+            $stmt = $this->db->prepare(
+                "INSERT INTO duty_roster_log
+                   (period, employee_id, work_date, action,
+                    old_schedule_id, old_is_rest_day, new_schedule_id, new_is_rest_day,
+                    was_published, note, detail, user_id)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"
+            );
+            if (!$stmt) return;
+
+            $eid   = isset($opt['employee_id']) ? (int) $opt['employee_id'] : null;
+            $date  = $opt['work_date']       ?? null;
+            $os    = array_key_exists('old_schedule_id', $opt) && $opt['old_schedule_id'] !== null ? (int) $opt['old_schedule_id'] : null;
+            $or    = array_key_exists('old_is_rest_day', $opt) && $opt['old_is_rest_day'] !== null ? (int) $opt['old_is_rest_day'] : null;
+            $ns    = array_key_exists('new_schedule_id', $opt) && $opt['new_schedule_id'] !== null ? (int) $opt['new_schedule_id'] : null;
+            $nr    = array_key_exists('new_is_rest_day', $opt) && $opt['new_is_rest_day'] !== null ? (int) $opt['new_is_rest_day'] : null;
+            $pub   = !empty($opt['was_published']) ? 1 : 0;
+            $note  = isset($opt['note']) && $opt['note'] !== '' ? mb_substr((string) $opt['note'], 0, 255) : null;
+            $det   = mb_substr($detail, 0, 255);
+            $uid   = (int) ($_SESSION['login_id'] ?? 0) ?: null;
+
+            $stmt->bind_param(
+                'sissiiiiissi',
+                $period, $eid, $date, $action,
+                $os, $or, $ns, $nr,
+                $pub, $note, $det, $uid
+            );
+            $stmt->execute();
+        } catch (\Throwable $e) {
+            // History is an aid, not a gate — never let it break a roster write.
+        }
+    }
+
+    /** "Nights (10:00 PM–6:00 AM)" / "Day off" / "blank", for log sentences. */
+    private function dutyCellLabel(?int $scheduleId, ?int $isRestDay): string
+    {
+        if ($scheduleId === null && !$isRestDay) return 'blank';
+        $parts = [];
+        if ($scheduleId !== null) {
+            if ($this->dutyShiftNames === null) {
+                $this->dutyShiftNames = [];
+                $q = $this->db->query("SELECT id, description FROM work_schedules");
+                while ($q && ($r = $q->fetch_assoc())) $this->dutyShiftNames[(int) $r['id']] = (string) $r['description'];
+            }
+            $parts[] = $this->dutyShiftNames[$scheduleId] ?? ('shift #' . $scheduleId);
+        }
+        if ($isRestDay) $parts[] = 'day off';
+        return implode(' + ', $parts);
     }
 
     private function dutyDenyWrite(array $empIds): ?string
@@ -2342,6 +2428,34 @@ class Action
         );
         $del = $this->db->prepare("DELETE FROM employee_day_schedule WHERE employee_id = ? AND work_date = ?");
 
+        // What these cells look like BEFORE the write, so the history can say
+        // "Nights → Day off" rather than just "changed". Read in one query over
+        // the whole batch — a paint drag can be hundreds of cells and this must
+        // not become a per-cell round trip.
+        $before = [];
+        if ($empIds) {
+            $bq = $this->db->query(
+                "SELECT employee_id, work_date, schedule_id, is_rest_day, status
+                 FROM employee_day_schedule
+                 WHERE employee_id IN (" . implode(',', array_map('intval', array_keys($empIds))) . ")
+                   AND work_date BETWEEN '" . $this->db->real_escape_string($range['from']) . "'
+                                     AND '" . $this->db->real_escape_string($range['to']) . "'"
+            );
+            while ($bq && ($b = $bq->fetch_assoc())) {
+                $before[$b['employee_id'] . '|' . $b['work_date']] = $b;
+            }
+        }
+        $period = (string) ($_POST['period'] ?? '');
+        $logs   = [];   // written after the transaction commits — see below
+
+        // Three screens post here: the grid, the spreadsheet import (which is
+        // preview-only and applies through this same endpoint), and the Daily
+        // Board's one-cell adjust. The history has to say which, or an imported
+        // sheet is indistinguishable from someone painting 300 cells by hand.
+        $SOURCES = ['grid' => '', 'import' => ' (spreadsheet import)', 'board' => ' (Daily Board)'];
+        $srcKey  = (string) ($_POST['source'] ?? 'grid');
+        $srcTag  = $SOURCES[$srcKey] ?? '';
+
         $saved = $cleared = $locked = $invalid = 0;
         $needsRecompute = [];
 
@@ -2360,10 +2474,22 @@ class Action
                 $rest = !empty($c['r']) ? 1 : 0;
                 if ($sid !== null && !isset($validShifts[$sid])) { $invalid++; continue; }
 
+                $prev    = $before[$eid . '|' . $date] ?? null;
+                $wasPub  = $prev ? ((int) $prev['status'] === 1) : false;
+                $oldSid  = $prev && $prev['schedule_id'] !== null ? (int) $prev['schedule_id'] : null;
+                $oldRest = $prev ? (int) $prev['is_rest_day'] : null;
+
                 if ($sid === null && !$rest) {
                     $del->bind_param('is', $eid, $date);
                     if (!$del->execute()) throw new Exception($del->error);
-                    if ($del->affected_rows > 0) $cleared++;
+                    if ($del->affected_rows > 0) {
+                        $cleared++;
+                        $logs[] = ['delete', 'Cleared ' . $this->dutyCellLabel($oldSid, $oldRest), [
+                            'employee_id' => $eid, 'work_date' => $date,
+                            'old_schedule_id' => $oldSid, 'old_is_rest_day' => $oldRest,
+                            'was_published' => $wasPub,
+                        ]];
+                    }
                     if ($del->affected_rows > 0 && $zone === 'punched') $needsRecompute[$eid] = true;
                     continue;
                 }
@@ -2372,6 +2498,23 @@ class Action
                 $ins->bind_param('isiisii', $eid, $date, $sid, $rest, $note, $uid, $uid);
                 if (!$ins->execute()) throw new Exception($ins->error);
                 $saved++;
+                // A cell that already said the same thing is not a change worth a
+                // timeline entry — a row-fill or column-fill repaints everything
+                // it touches, and logging the no-ops would bury the real edits.
+                if (!$prev) {
+                    $logs[] = ['create', 'Set to ' . $this->dutyCellLabel($sid, $rest), [
+                        'employee_id' => $eid, 'work_date' => $date,
+                        'new_schedule_id' => $sid, 'new_is_rest_day' => $rest,
+                        'note' => $note,
+                    ]];
+                } elseif ($oldSid !== $sid || (int) $oldRest !== $rest) {
+                    $logs[] = ['update', $this->dutyCellLabel($oldSid, $oldRest) . ' → ' . $this->dutyCellLabel($sid, $rest), [
+                        'employee_id' => $eid, 'work_date' => $date,
+                        'old_schedule_id' => $oldSid, 'old_is_rest_day' => $oldRest,
+                        'new_schedule_id' => $sid, 'new_is_rest_day' => $rest,
+                        'was_published' => $wasPub, 'note' => $note,
+                    ]];
+                }
                 if ($zone === 'punched') $needsRecompute[$eid] = true;
             }
             $this->db->commit();
@@ -2379,6 +2522,10 @@ class Action
             $this->db->rollback();
             return ['result' => false, 'message' => 'Save failed — nothing was changed. ' . $e->getMessage()];
         }
+
+        // Only after the commit: a rolled-back save must leave no history behind,
+        // and dutyLog() writes outside the caller's transaction on purpose.
+        foreach ($logs as [$action, $detail, $opt]) $this->dutyLog($period, $action, $detail . $srcTag, $opt);
 
         $msg = [];
         if ($saved)   $msg[] = "$saved day(s) saved";
@@ -2478,6 +2625,10 @@ class Action
                 planned_is_rest_day = COALESCE(planned_is_rest_day, is_rest_day)
             WHERE status = 0 AND employee_id IN ($ids) AND work_date BETWEEN '$fromE' AND '$toE'");
         if (!$ok) return ['result' => false, 'message' => 'Publish failed: ' . $this->db->error];
+
+        $this->dutyLog((string) ($_POST['period'] ?? ''), 'publish',
+            array_sum($affected) . ' day(s) published for ' . count($affected) . ' employee(s)'
+            . ($conflicts ? ', ' . count($conflicts) . ' on approved leave (confirmed)' : ''));
 
         $label = date('M j', strtotime($range['from'])) . ' – ' . date('M j, Y', strtotime($range['to']));
         foreach ($affected as $eid => $n) {
@@ -2597,6 +2748,10 @@ class Action
             return ['result' => false, 'message' => 'Copy failed — nothing was changed. ' . $e->getMessage()];
         }
 
+        $this->dutyLog((string) ($_POST['period'] ?? ''), 'copy',
+            "$copied day(s) seeded as drafts from " . $this->dutyPeriodLabel($prev)
+            . ($skipped ? ", $skipped left alone" : ''));
+
         return [
             'result'  => true,
             'copied'  => $copied,
@@ -2625,6 +2780,10 @@ class Action
         if (!$ok) return ['result' => false, 'message' => 'Clear failed: ' . $this->db->error];
 
         $n = $this->db->affected_rows;
+        // Worth logging even at zero: "someone pressed Discard and nothing was
+        // there" is a different story from "nobody touched it".
+        $this->dutyLog((string) ($_POST['period'] ?? ''), 'discard',
+            "$n draft day(s) discarded across " . count($empIds) . ' employee(s) in view');
         return ['result' => true, 'deleted' => $n, 'message' => "$n draft day(s) discarded."];
     }
 
@@ -2683,6 +2842,10 @@ class Action
                 'employee-portal.php?tab=attendance'
             );
         }
+
+        $this->dutyLog((string) ($_POST['period'] ?? ''), 'recompute',
+            'Recomputed attendance for ' . count($ids) . ' employee(s)'
+            . " — $scanned scanned, $changed updated, $repending back to pending");
 
         return [
             'result'    => true,
@@ -2995,6 +3158,93 @@ class Action
      * which several roles can; this answers "is this person the administrator
      * account", which only role 1 is, so it stays out of ACTION_PAGE_MAP.
      */
+    /**
+     * The duty roster's change history, for the drawer.
+     *
+     * Two shapes, one endpoint:
+     *   employee_id + work_date  → that one cell's story, oldest change first
+     *   period only              → everything that happened to the cutoff
+     *
+     * A cell's history includes the period-wide acts that swept over it (publish,
+     * discard, copy, recompute) — those are what actually changed the day for a
+     * lot of the questions people ask, and hiding them would make a published
+     * cell look untouched since the last paint.
+     */
+    function duty_roster_history()
+    {
+        $period = (string) ($_POST['period'] ?? '');
+        $eid    = (int) ($_POST['employee_id'] ?? 0);
+        $date   = (string) ($_POST['work_date'] ?? '');
+        $cell   = $eid > 0 && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date);
+
+        // Read access follows the grid: if you may see the roster you may see how
+        // it got that way. A scoped session can only ask about its own people
+        // because dutyRosterEmployees() is what fed it the ids in the first place;
+        // re-check anyway so a hand-made request cannot read another ward.
+        if ($cell) {
+            $this->loadScopeHelpers();
+            if (function_exists('area_scope_ids') && area_scope_ids() !== []) {
+                $ok = implode(',', array_map('intval', area_scope_ids()));
+                $r  = $this->db->query("SELECT COUNT(*) c FROM employee WHERE id = $eid AND area_id IN ($ok)");
+                if (!$r || (int) ($r->fetch_assoc()['c'] ?? 0) === 0) {
+                    return ['result' => false, 'message' => 'That employee is outside your ward.'];
+                }
+            }
+        }
+
+        $where = [];
+        $pE = $this->db->real_escape_string($period);
+        if ($cell) {
+            $dE = $this->db->real_escape_string($date);
+            // The cell's own entries, plus the sweeps over its cutoff.
+            $where[] = "((l.employee_id = $eid AND l.work_date = '$dE')"
+                     . ($period !== '' ? " OR (l.period = '$pE' AND l.employee_id IS NULL)" : '')
+                     . ")";
+        } elseif ($period !== '') {
+            $where[] = "l.period = '$pE'";
+        } else {
+            return ['result' => false, 'message' => 'Nothing to look up.'];
+        }
+
+        $sql = "SELECT l.id, l.employee_id, l.work_date, l.action, l.detail, l.note,
+                       l.old_schedule_id, l.old_is_rest_day, l.new_schedule_id, l.new_is_rest_day,
+                       l.was_published, l.created_at,
+                       u.name AS user_name,
+                       CONCAT(e.lastname, ', ', e.firstname) AS employee_name
+                FROM duty_roster_log l
+                LEFT JOIN users u    ON u.id = l.user_id
+                LEFT JOIN employee e ON e.id = l.employee_id
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY l.created_at DESC, l.id DESC
+                LIMIT " . ($cell ? 60 : 200);
+
+        $q = $this->db->query($sql);
+        if (!$q) {
+            // The migration has not been run on this install yet — say so plainly
+            // instead of surfacing a SQL error in the drawer.
+            return ['result' => true, 'rows' => [], 'scope' => $cell ? 'cell' : 'period',
+                    'message' => 'History is not set up on this database yet.'];
+        }
+
+        $rows = [];
+        while ($r = $q->fetch_assoc()) {
+            $rows[] = [
+                'id'          => (int) $r['id'],
+                'action'      => (string) $r['action'],
+                'detail'      => (string) $r['detail'],
+                'note'        => $r['note'],
+                'work_date'   => $r['work_date'],
+                'employee'    => $r['employee_name'],
+                'was_published' => (int) $r['was_published'],
+                'by'          => $r['user_name'] ?: null,
+                'created_at'  => (string) $r['created_at'],
+                'scope'       => $r['employee_id'] === null ? 'period' : 'cell',
+            ];
+        }
+
+        return ['result' => true, 'rows' => $rows, 'scope' => $cell ? 'cell' : 'period'];
+    }
+
     function duty_roster_set_lock()
     {
         if ((int) ($_SESSION['login_role'] ?? 0) !== 1) {
@@ -3009,6 +3259,10 @@ class Action
         );
         $stmt->bind_param('sdidi', $key, $lock, $uid, $lock, $uid);
         $stmt->execute();
+
+        // Not tied to a cutoff — the lock is board-wide, so it carries no period.
+        $this->dutyLog('', $lock ? 'lock' : 'unlock',
+            $lock ? 'Roster locked for everyone' : 'Roster unlocked — editing reopened');
 
         return [
             'result'  => true,

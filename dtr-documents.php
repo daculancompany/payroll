@@ -180,6 +180,12 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
     <script src="assets2/js/csrf.js"></script>
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/icons.min.css" rel="stylesheet">
+    <!-- Shared report-table skin (.rpt-card / .rpt-scroll / .rpt-table), the same
+         one payroll-register and the other report pages use, so the Table view
+         reads as part of the app rather than a one-off grid. This page renders
+         its own <head>, so theme.css is not in scope — the --rpt-* tokens
+         reports.css reads are declared in the :root block below instead. -->
+    <link href="<?= av('assets2/css/reports.css') ?>" rel="stylesheet">
     <!-- Global DTR (Form 48) template — shared with the employee portal -->
     <link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
     <script src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
@@ -189,7 +195,17 @@ $reviewPending = max(0, $reviewTotalEmp - $reviewConfirmed - $reviewDisputed);
          JS component, not just the CSS this page already loaded. -->
     <script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
 <style>
-:root { --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent; }
+:root {
+    --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent;
+    /* Mirrors of the assets2/css/theme.css tokens reports.css depends on. Keep
+       these in step with theme.css if the palette there moves. */
+    --app-primary:#673bb6; --app-primary-dark:#5d35a5;
+    --sb-thumb-hover:#9d7ad4; --sb-size:10px; --sb-radius:8px;
+    --rpt-card-border:#e3dbf2; --rpt-head-bg:#e7dffa; --rpt-head-fg:#4e3483;
+    --rpt-head-border:#d4c6ee; --rpt-cell-border:#efeaf8; --rpt-row-alt:#faf8fe;
+    --rpt-row-hover:#ece3fb; --rpt-foot-bg:#ded2f5; --rpt-foot-fg:#46297a;
+    --rpt-foot-border:#c9b8ea;
+}
 html, body { height:100%; }
 /* Dot-grid canvas texture. The panels and the paper are opaque cards on top, so
    the dots read in the gutters and around the sheet — the page reads as a work
@@ -782,12 +798,107 @@ input.pe-locked { background:#f6f5f9; color:#6c6880; cursor:not-allowed; }
 .ddv-ring { width:24px; height:24px; border-radius:50%; border:3px solid #e1dcec; border-top-color:var(--brand); animation:ddv-spin .8s linear infinite; }
 @keyframes ddv-spin { to { transform:rotate(360deg); } }
 
+/* ── View toggle (Paper ⇄ Table) ─────────────────────────────────────────── */
+/* Sits in the light top bar next to .ddv-btn, so it borrows that palette:
+   a recessed track with the active half raised out of it. */
+.ddv-viewseg { display:inline-flex; background:#eceaf3; border:1px solid #ddd9e7; border-radius:8px; padding:2px; gap:2px; }
+.ddv-viewseg button {
+    display:inline-flex; align-items:center; gap:5px; border:1px solid transparent; background:transparent;
+    color:#7d7690; font-size:12px; font-weight:700; padding:5px 12px;
+    border-radius:6px; cursor:pointer; white-space:nowrap; transition:background .15s, color .15s;
+}
+.ddv-viewseg button:hover { color:var(--brand-dark); }
+.ddv-viewseg button.on { background:#fff; border-color:#d3cbe5; color:var(--brand-dark); box-shadow:0 1px 3px rgba(78,52,131,.16); }
+
+/* ── Table view ──────────────────────────────────────────────────────────── */
+.ddv-tableview { display:none; min-width:0; min-height:0; flex-direction:column; gap:9px; }
+body.view-table .ddv-tableview { display:flex; }
+body.view-table .ddv-center, body.view-table .ddv-right { display:none; }
+body.view-table .ddv-wrap { grid-template-columns:300px minmax(0,1fr); }
+body.view-table .ddv-drawer-btn { display:none !important; }
+@media (max-width:1150px) { body.view-table .ddv-wrap { grid-template-columns:260px minmax(0,1fr); } }
+
+.ddv-tbl-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:0 2px; }
+.ddv-tbl-title { font-size:12.5px; font-weight:800; color:var(--brand-dark); display:inline-flex; align-items:center; gap:6px; }
+.ddv-tbl-hint { font-size:11px; color:#7d7690; }
+.ddv-tbl-sortnote { margin-left:auto; font-size:10.5px; color:#948ea5; display:inline-flex; align-items:center; gap:4px; }
+.ddv-tbl-card { flex:1; min-height:0; display:flex; flex-direction:column; overflow:hidden; background:#fff; }
+/* The card owns the height here, so the shared 62vh cap has to give way. */
+.ddv-tbl-scroll { max-height:none; flex:1; min-height:0; border-radius:12px; }
+
+.ddv-tbl > tbody > tr { cursor:pointer; }
+.ddv-tbl > tbody > tr.is-sel > td { background:#efe7fd !important; box-shadow:inset 3px 0 0 var(--brand); }
+.ddv-tbl > tbody > tr.is-picked > td { background:#f6f1ff !important; }
+.ddv-tbl th.srt { cursor:pointer; user-select:none; }
+.ddv-tbl th.srt:hover { background:#dfd3f7; }
+.ddv-tbl th .sarr { opacity:.35; font-size:11px; margin-left:3px; }
+.ddv-tbl th.srt.on .sarr { opacity:1; }
+
+.ddv-tbl-emp { font-weight:700; color:#1a1a1a; }
+.ddv-tbl-sub { font-size:10.5px; color:#8b8598; }
+.ddv-tbl-chk { color:#a79dc0; font-size:15px; line-height:1; }
+.ddv-tbl-chk.on { color:var(--brand); }
+
+/* Days cell: count over a hairline attendance bar — the same ratio the summary
+   panel spells out, small enough to scan down a column. */
+.ddv-tbl-days { display:flex; flex-direction:column; gap:3px; align-items:flex-end; }
+.ddv-tbl-days b { font-variant-numeric:tabular-nums; font-size:12px; }
+.ddv-tbl-days b span { color:#9b95a8; font-weight:600; }
+.ddv-tbl-bar { width:46px; height:4px; border-radius:3px; background:#ece8f5; overflow:hidden; }
+.ddv-tbl-bar i { display:block; height:100%; background:linear-gradient(90deg,#7d55c7,#5d36a6); }
+.ddv-tbl-bar.low i { background:linear-gradient(90deg,#e9a13b,#c98a00); }
+
+.ddv-tbl-pills { display:inline-flex; gap:4px; flex-wrap:wrap; }
+.ddv-pl { display:inline-flex; align-items:center; gap:3px; font-size:10px; font-weight:800; line-height:1; padding:3px 7px; border-radius:9px; white-space:nowrap; }
+.ddv-pl.ok   { background:#e6f6ec; color:#0f7a3d; }
+.ddv-pl.pend { background:#fff6e0; color:#a3720a; }
+.ddv-pl.disa { background:#fdecec; color:#b3261e; }
+.ddv-pl.none { background:#f1eff5; color:#8b8598; }
+
+.ddv-tbl-flags { display:inline-flex; gap:5px; align-items:center; font-size:13px; }
+.ddv-tbl-flags i { flex-shrink:0; }
+.ddv-tbl-view {
+    border:1px solid #d9d0ee; background:#f7f4fd; color:var(--brand-dark);
+    border-radius:7px; padding:4px 9px; font-size:11px; font-weight:800; cursor:pointer;
+    display:inline-flex; align-items:center; gap:4px; white-space:nowrap;
+}
+.ddv-tbl-view:hover { background:var(--brand); border-color:var(--brand); color:#fff; }
+.ddv-tbl-empty { text-align:center; color:#948ea5; font-size:12.5px; padding:34px 0; }
+
+/* ── Full-view modal ─────────────────────────────────────────────────────── */
+#modal-dtr-full .modal-dialog { max-width:min(1180px, 96vw); }
+#modal-dtr-full .modal-body { background:#f0eff2; padding:0; }
+.dfv-head { background:linear-gradient(135deg,var(--brand),var(--brand-dark)); color:#fff; padding:11px 16px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.dfv-head .nm { font-size:14.5px; font-weight:800; line-height:1.2; }
+.dfv-head .sb { font-size:11px; opacity:.85; margin-top:2px; }
+.dfv-head .sp { margin-left:auto; display:flex; align-items:center; gap:6px; }
+.dfv-hbtn {
+    border:1px solid rgba(255,255,255,.34); background:rgba(255,255,255,.14); color:#fff;
+    border-radius:7px; padding:5px 10px; font-size:11.5px; font-weight:700; cursor:pointer;
+    display:inline-flex; align-items:center; gap:5px; white-space:nowrap;
+}
+.dfv-hbtn:hover:not(:disabled) { background:#fff; color:var(--brand-dark); }
+.dfv-hbtn:disabled { opacity:.4; cursor:default; }
+.dfv-hbtn.go { background:#fff; color:var(--brand-dark); border-color:#fff; }
+.dfv-tiles { display:flex; gap:8px; flex-wrap:wrap; padding:11px 16px 0; }
+.dfv-tile { flex:1; min-width:88px; background:#fff; border:1px solid #e6e1f0; border-radius:9px; padding:7px 10px; text-align:center; }
+.dfv-tile .v { font-size:16px; font-weight:800; color:#3b2f52; font-variant-numeric:tabular-nums; }
+.dfv-tile .l { font-size:9.5px; font-weight:800; letter-spacing:.4px; text-transform:uppercase; color:#948ea5; margin-top:1px; }
+.dfv-tile.ot .v { color:#0f7a3d; } .dfv-tile.ut .v { color:#b3261e; } .dfv-tile.late .v { color:#a3720a; }
+.dfv-paper-scroll { padding:11px 16px 16px; overflow:auto; max-height:calc(100vh - 300px); }
+.dfv-paper { background:#fff; border:1px solid #ddd7ea; border-radius:6px; box-shadow:0 2px 10px rgba(60,40,110,.10); padding:16px 22px; }
+
 /* Print: only the paper sheet — or, in print-all mode, every sheet */
 #ddv-print-all { display:none; }
 @media print {
     /* The dot grid is screen chrome — never let it onto the sheet, even when
        the user has "print background graphics" turned on. */
     body { overflow:visible; background-image:none; background-color:#fff; }
+    /* Table view hides .ddv-center outright, and a display:none ancestor gives
+       #ddv-paper no box for the visibility rules below to reveal — Print would
+       emit a blank page. Put the sheet back on the layout just for printing. */
+    body.view-table .ddv-center { display:flex !important; }
+    body.view-table .ddv-tableview, body.view-table .ddv-left { display:none !important; }
     body * { visibility:hidden; }
     body:not(.print-all) #ddv-paper, body:not(.print-all) #ddv-paper * { visibility:visible; }
     body:not(.print-all) #ddv-paper { position:absolute; left:0; top:0; width:100%; max-width:none; border:none; box-shadow:none; padding:10px 24px; zoom:1 !important; }
@@ -873,6 +984,13 @@ input.pe-locked { background:#f6f5f9; color:#6c6880; cursor:not-allowed; }
                     <i class="ri-refresh-line"></i> Recompute<?php if ($schedMM['rows']): ?> <span class="ddv-recompute-dot"><?= (int)$schedMM['rows'] ?></span><?php endif; ?>
                 </button>
             <?php endif; ?>
+            <!-- Paper ⇄ Table. The left panel (search, filters, pager, bulk bar)
+                 stays put in both — only the reading surface changes. -->
+            <div class="ddv-viewseg" role="group" aria-label="View mode">
+                <button type="button" class="on ddv-tip" data-view="paper" onclick="setViewMode('paper')" data-tip="One employee's Form 48 sheet at a time."><i class="ri-file-paper-2-line"></i> Paper</button>
+                <button type="button" class="ddv-tip" data-view="table" onclick="setViewMode('table')" data-tip="Every employee on this page as one row — totals, approval counts and flags side by side."><i class="ri-table-2"></i> Table</button>
+            </div>
+            <button class="ddv-btn ddv-tip" id="ddv-excel-btn" onclick="exportExcel()" data-tip="Download the whole batch as .xlsx — a Summary sheet and a day-by-day matrix. Honours the filters you have on."><i class="ri-file-excel-2-line"></i> Excel</button>
             <button class="ddv-btn ddv-tip" id="ddv-print" onclick="window.print()" data-tip="Print the selected employee's DTR sheet."><i class="ri-printer-line"></i> Print</button>
             <button class="ddv-btn ddv-tip" id="ddv-print-all-btn" onclick="printAll()" data-tip="Print every employee's DTR sheet in this batch."><i class="ri-printer-cloud-line"></i> Print All</button>
         </div>
@@ -1099,6 +1217,26 @@ input.pe-locked { background:#f6f5f9; color:#6c6880; cursor:not-allowed; }
             </div>
         </div>
 
+        <!-- TABLE VIEW: takes the room of CENTER + RIGHT. Same st.emps page the
+             left list is showing, same tickboxes, same bulk bar — only laid out
+             as a sheet. Row click opens the full Form 48 in a modal. -->
+        <div class="ddv-tableview" id="ddv-tableview">
+            <div class="ddv-tbl-toolbar">
+                <span class="ddv-tbl-title"><i class="ri-table-2"></i> Batch Sheet</span>
+                <span class="ddv-tbl-hint" id="ddv-tbl-hint"></span>
+                <span class="ddv-tbl-sortnote"><i class="ri-arrow-up-down-line"></i> Click a column to sort</span>
+            </div>
+            <div class="rpt-card ddv-tbl-card">
+                <div class="rpt-scroll ddv-tbl-scroll">
+                    <table class="table table-sm mb-0 rpt-table ddv-tbl" id="ddv-tbl">
+                        <thead id="ddv-tbl-head"></thead>
+                        <tbody id="ddv-tbl-body"></tbody>
+                        <tfoot id="ddv-tbl-foot"></tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
         <!-- RIGHT: one docs-style panel — sliding tabs instead of stacked boxes -->
         <div class="ddv-right">
             <div class="ddv-panel">
@@ -1223,6 +1361,36 @@ input.pe-locked { background:#f6f5f9; color:#6c6880; cursor:not-allowed; }
     <button type="button" class="ddv-drawer-btn" onclick="toggleDrawer()" id="ddv-drawer-btn">
         <i class="ri-list-check-2"></i> Summary &amp; Actions
     </button>
+</div>
+
+<!-- Full view: the selected row's Form 48, opened from the Table view. Same
+     docHTML() the Paper view renders, so the two can never disagree; the header
+     carries the row's figures and the actions that belong to one employee. -->
+<div class="modal fade" id="modal-dtr-full" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content" style="border:0;border-radius:12px;overflow:hidden;">
+            <div class="dfv-head">
+                <div style="min-width:0;">
+                    <div class="nm" id="dfv-name">&nbsp;</div>
+                    <div class="sb" id="dfv-sub">&nbsp;</div>
+                </div>
+                <div class="sp">
+                    <button type="button" class="dfv-hbtn" id="dfv-prev" onclick="fullViewStep(-1)" title="Previous employee"><i class="ri-arrow-left-s-line"></i></button>
+                    <span style="font-size:11px;opacity:.85;white-space:nowrap;" id="dfv-pos"></span>
+                    <button type="button" class="dfv-hbtn" id="dfv-next" onclick="fullViewStep(1)" title="Next employee"><i class="ri-arrow-right-s-line"></i></button>
+                    <button type="button" class="dfv-hbtn" id="dfv-approve" onclick="fullViewApprove()" style="display:none;"><i class="ri-checkbox-circle-line"></i> <span id="dfv-approve-n"></span></button>
+                    <button type="button" class="dfv-hbtn go" onclick="fullViewOpenPaper()" title="Open this employee in the Paper view"><i class="ri-external-link-line"></i> Paper</button>
+                    <button type="button" class="dfv-hbtn" data-bs-dismiss="modal" title="Close"><i class="ri-close-line"></i></button>
+                </div>
+            </div>
+            <div class="modal-body">
+                <div class="dfv-tiles" id="dfv-tiles"></div>
+                <div class="dfv-paper-scroll">
+                    <div class="dfv-paper dtrf48" id="dfv-paper"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Print All target: every employee's sheet is rendered here on demand -->
@@ -1418,19 +1586,26 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const toast = msg => Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: msg, timer: 1600, showConfirmButton: false });
 
 // ── Data ────────────────────────────────────────────────────────────────────
+// The docs URL for an arbitrary window of the CURRENT filter set. Shared by the
+// on-screen pager and the Excel export, so the workbook can never be built from
+// a different filter than the one on screen.
+function docsURL(offset, limit) {
+    return `dtr-employee-server.php?action=docs&id=${DDTR_ID}&offset=${offset}&limit=${limit}&q=${encodeURIComponent(st.q)}`
+        + (st.flag === 'any' ? '&flagged=1' : (st.flag ? '&flag=' + st.flag : ''))
+        + (st.status ? '&status=' + st.status : '')
+        + (st.dep ? '&dep=' + st.dep : '')
+        + (st.pos ? '&pos=' + st.pos : '')
+        + (st.sch ? '&sch=' + st.sch : '')
+        + (st.has ? '&has=' + st.has : '')
+        + (st.act ? '&act=' + st.act : '')
+        + (st.erv !== '' ? '&erv=' + st.erv : '');
+}
+
 async function loadPage(keepSel) {
     const seq = ++st.seq;
     $id('ddv-list').innerHTML = '<div class="ddv-loader show"><span class="ddv-ring"></span> Loading...</div>';
     try {
-        const u = `dtr-employee-server.php?action=docs&id=${DDTR_ID}&offset=${st.page * st.size}&limit=${st.size}&q=${encodeURIComponent(st.q)}`
-            + (st.flag === 'any' ? '&flagged=1' : (st.flag ? '&flag=' + st.flag : ''))
-            + (st.status ? '&status=' + st.status : '')
-            + (st.dep ? '&dep=' + st.dep : '')
-            + (st.pos ? '&pos=' + st.pos : '')
-            + (st.sch ? '&sch=' + st.sch : '')
-            + (st.has ? '&has=' + st.has : '')
-            + (st.act ? '&act=' + st.act : '')
-            + (st.erv !== '' ? '&erv=' + st.erv : '');
+        const u = docsURL(st.page * st.size, st.size);
         // no-store: the URL is stable per filter set, so without it the browser
         // could replay a payload captured before the last recompute — the sheet
         // would keep showing the old shift's Arrival/Departure after a schedule
@@ -1563,7 +1738,7 @@ function renderSelected() {
     $id('ddv-doc-pos').textContent = e ? `${st.page * st.size + st.sel + 1} of ${st.total}` : '';
     $id('ddv-doc-prev').disabled = st.sel <= 0;
     $id('ddv-doc-next').disabled = st.sel < 0 || st.sel >= st.emps.length - 1;
-    renderDoc(e); renderSummary(e); renderRecords(e);
+    renderDoc(e); renderSummary(e); renderRecords(e); renderTable();
 }
 
 function eachDay(cb) {
@@ -1608,6 +1783,287 @@ function fmtPeriod() {
     if (f.getMonth() === t.getMonth() && f.getFullYear() === t.getFullYear())
         return `${M[f.getMonth()]} ${f.getDate()}–${t.getDate()}, ${t.getFullYear()}`;
     return `${M[f.getMonth()]} ${f.getDate()} – ${M[t.getMonth()]} ${t.getDate()}, ${t.getFullYear()}`;
+}
+
+// ── Table view ───────────────────────────────────────────────────────────────
+// The same page of employees the left list is showing, laid out as one row each.
+// Nothing here re-derives a figure: every number comes off the payload the paper
+// sheet is rendered from, so the two views can never disagree.
+let VIEW_MODE = 'paper';
+let PERIOD_DAYS = 0; eachDay(() => PERIOD_DAYS++);
+const tblSort = { key: '', dir: 1 };
+
+const TBL_COLS = [
+    { k: '',     lbl: '',         w: '34px' },
+    { k: '',     lbl: '#',        w: '42px', cls: 'rpt-num' },
+    { k: 'name', lbl: 'Employee', sort: 1 },
+    { k: 'days', lbl: 'Days',     sort: 1, cls: 'rpt-num', w: '78px' },
+    { k: 'wh',   lbl: 'Hours',    sort: 1, cls: 'rpt-num rpt-net', w: '82px' },
+    { k: 'ot',   lbl: 'OT',       sort: 1, cls: 'rpt-num', w: '68px' },
+    { k: 'ut',   lbl: 'UT',       sort: 1, cls: 'rpt-num', w: '68px' },
+    { k: 'late', lbl: 'Late',     sort: 1, cls: 'rpt-num', w: '68px' },
+    { k: 'pend', lbl: 'Approval', sort: 1, w: '186px' },
+    { k: '',     lbl: 'Flags',    w: '84px' },
+    { k: '',     lbl: '',         w: '66px' },
+];
+
+const dayCount = e => Object.keys(e.days || {}).length;
+function tblSortVal(e, k) {
+    if (k === 'name') return (e.lastname + ' ' + e.firstname).toLowerCase();
+    if (k === 'days') return dayCount(e);
+    if (k === 'pend') return e.pend;
+    return Number(e.totals[k] || 0);
+}
+
+function setViewMode(mode) {
+    VIEW_MODE = mode === 'table' ? 'table' : 'paper';
+    document.body.classList.toggle('view-table', VIEW_MODE === 'table');
+    document.querySelectorAll('.ddv-viewseg button').forEach(b =>
+        b.classList.toggle('on', b.dataset.view === VIEW_MODE));
+    try { localStorage.setItem('ddv-view', VIEW_MODE); } catch (err) {}
+    // Print/Print All target the paper sheet, which is not on screen in table
+    // mode — say so rather than printing a blank page.
+    const p = $id('ddv-print');
+    if (p) p.disabled = VIEW_MODE === 'table' && st.sel < 0;
+    if (VIEW_MODE === 'table') renderTable();
+}
+
+function renderTable() {
+    if (VIEW_MODE !== 'table') return;
+    const head = $id('ddv-tbl-head'), body = $id('ddv-tbl-body'), foot = $id('ddv-tbl-foot');
+
+    head.innerHTML = '<tr>' + TBL_COLS.map(c => {
+        const on = c.sort && tblSort.key === c.k;
+        return `<th class="${c.cls || ''}${c.sort ? ' srt' : ''}${on ? ' on' : ''}"
+                    ${c.w ? `style="width:${c.w};"` : ''}
+                    ${c.sort ? `data-sort="${c.k}"` : ''}>${esc(c.lbl)}${c.sort
+                    ? `<i class="sarr ri-arrow-${on && tblSort.dir < 0 ? 'down' : 'up'}-s-fill"></i>` : ''}</th>`;
+    }).join('') + '</tr>';
+
+    $id('ddv-tbl-hint').textContent = st.total
+        ? `${st.emps.length} of ${st.total} employee/s · page ${st.page + 1}`
+        : '';
+
+    if (!st.emps.length) {
+        body.innerHTML = `<tr><td colspan="${TBL_COLS.length}" class="ddv-tbl-empty">
+            <i class="ri-search-eye-line" style="font-size:22px;display:block;margin-bottom:6px;"></i>No employees match the current filters.</td></tr>`;
+        foot.innerHTML = '';
+        return;
+    }
+
+    // Sort a copy; the original index rides along so row clicks still address
+    // st.emps (which the pager, bulk bar and paper view all key off).
+    const rows = st.emps.map((e, i) => ({ e, i }));
+    if (tblSort.key) {
+        rows.sort((a, b) => {
+            const x = tblSortVal(a.e, tblSort.key), y = tblSortVal(b.e, tblSort.key);
+            return (x < y ? -1 : x > y ? 1 : a.i - b.i) * tblSort.dir;
+        });
+    }
+
+    const T = { wh: 0, ot: 0, ut: 0, late: 0, days: 0, appr: 0, pend: 0, disa: 0 };
+    body.innerHTML = rows.map(({ e, i }, n) => {
+        const days = dayCount(e);
+        T.wh += +e.totals.wh; T.ot += +e.totals.ot; T.ut += +e.totals.ut; T.late += +e.totals.late;
+        T.days += days; T.appr += e.appr; T.pend += e.pend; T.disa += e.disa;
+
+        const pct = PERIOD_DAYS ? Math.round(days / PERIOD_DAYS * 100) : 0;
+        const pickable = CAN_EDIT && e.pend > 0;
+        const picked = st.picked.has(e.id);
+        const chk = pickable
+            ? `<span role="checkbox" aria-checked="${picked}" tabindex="0" class="ddv-tbl-chk${picked ? ' on' : ''}"
+                     data-pick="${e.id}" title="Select for bulk approve/reject (${e.pend} pending)"><i class="${picked ? 'ri-checkbox-fill' : 'ri-checkbox-blank-line'}"></i></span>`
+            : '';
+
+        const pills = [];
+        if (e.appr) pills.push(`<span class="ddv-pl ok" title="${e.appr} approved"><i class="ri-checkbox-circle-fill"></i>${e.appr}</span>`);
+        if (e.pend) pills.push(`<span class="ddv-pl pend" title="${e.pend} pending"><i class="ri-time-fill"></i>${e.pend}</span>`);
+        if (e.disa) pills.push(`<span class="ddv-pl disa" title="${e.disa} disapproved"><i class="ri-close-circle-fill"></i>${e.disa}</span>`);
+        if (!pills.length) pills.push('<span class="ddv-pl none">no records</span>');
+
+        const flags = [];
+        if (e.exc > 0) flags.push(`<i class="ri-error-warning-fill" style="color:#c62828;" title="${e.exc} flagged record(s) need a manual decision"></i>`);
+        if (e.low_att) flags.push(`<i class="ri-calendar-close-fill" style="color:#c98a00;" title="Low attendance — fewer than ${MIN_DAYS} logged days"></i>`);
+        if (e.notes && e.notes.length) {
+            const NC = { info: '#1565c0', good: '#0f9d58', watch: '#c98a00', critical: '#c62828' };
+            const top = ['critical', 'watch', 'info', 'good'].find(l => e.notes.some(x => x.level === l)) || 'info';
+            flags.push(`<i class="ri-sticky-note-fill" style="color:${NC[top]};" title="${e.notes.length} internal note(s)"></i>`);
+        }
+        const cv = (window.DDV_REVIEWS || {})[e.id];
+        if (cv && cv.c) flags.push(`<i class="ri-chat-3-fill" style="color:${cv.st === 2 ? '#c62828' : '#a9700a'};" title="${cv.st === 2 ? 'Disputed' : 'Confirmed'} their DTR with a message"></i>`);
+
+        return `<tr data-i="${i}" class="${i === st.sel ? 'is-sel' : ''}${picked ? ' is-picked' : ''}">
+            <td style="text-align:center;">${chk}</td>
+            <td class="rpt-num" style="color:#9b95a8;">${st.page * st.size + n + 1}</td>
+            <td><div class="ddv-tbl-emp">${esc(e.lastname)}, ${esc(e.firstname)}</div>
+                <div class="ddv-tbl-sub">${esc(e.no)}${e.department ? ' · ' + esc(e.department) : ''}</div></td>
+            <td><div class="ddv-tbl-days">
+                <b>${days}<span>/${PERIOD_DAYS}</span></b>
+                <span class="ddv-tbl-bar${e.low_att ? ' low' : ''}" title="Logged ${days} of ${PERIOD_DAYS} days (${pct}%)"><i style="width:${pct}%;"></i></span>
+            </div></td>
+            <td class="rpt-num rpt-net">${(+e.totals.wh).toFixed(2)}</td>
+            <td class="rpt-num">${(+e.totals.ot).toFixed(2)}</td>
+            <td class="rpt-num">${(+e.totals.ut).toFixed(2)}</td>
+            <td class="rpt-num">${(+e.totals.late).toFixed(2)}</td>
+            <td><span class="ddv-tbl-pills">${pills.join('')}</span></td>
+            <td><span class="ddv-tbl-flags">${flags.join('') || '<span style="color:#cfc9db;">—</span>'}</span></td>
+            <td style="text-align:center;"><button type="button" class="ddv-tbl-view" data-view-emp="${i}"><i class="ri-eye-line"></i> View</button></td>
+        </tr>`;
+    }).join('');
+
+    foot.innerHTML = `<tr>
+        <td colspan="3" style="text-align:right;">TOTAL — ${rows.length} employee/s</td>
+        <td class="rpt-num">${T.days}</td>
+        <td class="rpt-num rpt-net">${T.wh.toFixed(2)}</td>
+        <td class="rpt-num">${T.ot.toFixed(2)}</td>
+        <td class="rpt-num">${T.ut.toFixed(2)}</td>
+        <td class="rpt-num">${T.late.toFixed(2)}</td>
+        <td colspan="3">${T.appr} approved · ${T.pend} pending · ${T.disa} rejected</td>
+    </tr>`;
+}
+
+$id('ddv-tbl-head').addEventListener('click', ev => {
+    const th = ev.target.closest('th[data-sort]');
+    if (!th) return;
+    const k = th.dataset.sort;
+    if (tblSort.key === k) tblSort.dir = -tblSort.dir; else { tblSort.key = k; tblSort.dir = 1; }
+    renderTable();
+});
+
+$id('ddv-tbl-body').addEventListener('click', ev => {
+    const pk = ev.target.closest('[data-pick]');
+    if (pk) { ev.stopPropagation(); togglePick(parseInt(pk.dataset.pick, 10)); return; }
+    const vb = ev.target.closest('[data-view-emp]');
+    if (vb) { ev.stopPropagation(); openFullView(parseInt(vb.dataset.viewEmp, 10)); return; }
+    const tr = ev.target.closest('tr[data-i]');
+    if (tr) openFullView(parseInt(tr.dataset.i, 10));
+});
+
+// ── Full view modal ──────────────────────────────────────────────────────────
+let fvIdx = -1, fvModal = null;
+
+function openFullView(i) {
+    const e = st.emps[i];
+    if (!e) return;
+    fvIdx = i;
+    st.sel = i;                       // keep the paper view and the left list in step
+    const days = dayCount(e);
+    const pct = PERIOD_DAYS ? Math.round(days / PERIOD_DAYS * 100) : 0;
+
+    $id('dfv-name').textContent = `${e.lastname}, ${e.firstname} ${e.middlename || ''}`.trim();
+    $id('dfv-sub').textContent  = [e.no, e.position, e.department].filter(Boolean).join(' · ') + ' · ' + fmtPeriod();
+    $id('dfv-pos').textContent  = `${st.page * st.size + i + 1} of ${st.total}`;
+    $id('dfv-prev').disabled = i <= 0;
+    $id('dfv-next').disabled = i >= st.emps.length - 1;
+
+    $id('dfv-tiles').innerHTML = `
+        <div class="dfv-tile"><div class="v">${(+e.totals.wh).toFixed(2)}</div><div class="l">Hours</div></div>
+        <div class="dfv-tile ot"><div class="v">${(+e.totals.ot).toFixed(2)}</div><div class="l">OT</div></div>
+        <div class="dfv-tile ut"><div class="v">${(+e.totals.ut).toFixed(2)}</div><div class="l">UT</div></div>
+        <div class="dfv-tile late"><div class="v">${(+e.totals.late).toFixed(2)}</div><div class="l">Late</div></div>
+        <div class="dfv-tile"><div class="v">${days}/${PERIOD_DAYS}</div><div class="l">Days · ${pct}%</div></div>
+        <div class="dfv-tile"><div class="v" style="font-size:12px;padding-top:3px;">
+            <span class="ddv-pl ok">${e.appr}</span> <span class="ddv-pl pend">${e.pend}</span> <span class="ddv-pl disa">${e.disa}</span>
+        </div><div class="l">Appr · Pend · Rej</div></div>`;
+
+    const ab = $id('dfv-approve');
+    if (CAN_EDIT && e.pend > 0) {
+        ab.style.display = '';
+        $id('dfv-approve-n').textContent = `Approve ${e.pend} pending`;
+    } else ab.style.display = 'none';
+
+    $id('dfv-paper').innerHTML = docHTML(e);
+
+    if (!fvModal) fvModal = new bootstrap.Modal($id('modal-dtr-full'));
+    fvModal.show();
+    renderTable();                    // repaint the selected-row highlight
+}
+
+function fullViewStep(d) {
+    const n = fvIdx + d;
+    if (n >= 0 && n < st.emps.length) openFullView(n);
+}
+
+function fullViewApprove() {
+    // decideRecs() reloads the page data and calls rerenderAll(); reopening the
+    // same row afterwards is what keeps the modal showing fresh figures.
+    st.sel = fvIdx;
+    approveEmployee();
+}
+
+function fullViewOpenPaper() {
+    st.sel = fvIdx;
+    if (fvModal) fvModal.hide();
+    setViewMode('paper');
+    renderSelected();
+}
+
+document.addEventListener('keydown', ev => {
+    if (!document.body.classList.contains('modal-open')) return;
+    if (!$id('modal-dtr-full').classList.contains('show')) return;
+    if (ev.key === 'ArrowLeft')  { ev.preventDefault(); fullViewStep(-1); }
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); fullViewStep(1); }
+});
+
+// ── Excel export ─────────────────────────────────────────────────────────────
+// Walks the SAME docs endpoint the screen reads, one page at a time, then posts
+// the assembled rows to the writer. Going through the endpoint rather than a
+// second server-side query is what guarantees the workbook and the screen agree
+// — including every filter currently applied.
+async function exportExcel() {
+    const btn = $id('ddv-excel-btn');
+    const old = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="ri-loader-4-line"></i> Preparing…';
+    try {
+        const LIM = 100;
+        const all = [];
+        let total = 0;
+        for (let off = 0; ; off += LIM) {
+            const r = await fetch(docsURL(off, LIM), { cache: 'no-store' });
+            const j = await r.json();
+            if (!j.result) throw new Error(j.message || 'Could not read the batch.');
+            total = j.total;
+            const page = j.employees || [];
+            all.push(...page);
+            if (!page.length || all.length >= total) break;
+        }
+        if (!all.length) { Swal.fire('Nothing to export', 'No employees match the current filters.', 'info'); return; }
+
+        // Slim the payload to what the workbook prints — the raw per-day punch
+        // cells and mark metadata would multiply the POST size for nothing.
+        const rows = all.map(e => {
+            const days = {};
+            Object.keys(e.days).forEach(d => {
+                const x = e.days[d];
+                days[d] = { wh: +x.wh || 0, ot: +x.ot || 0, ut: +x.ut || 0, late: +x.late || 0, logs: x.logs || 0 };
+            });
+            return {
+                no: e.no, last: e.lastname, first: e.firstname, mid: e.middlename || '',
+                pos: e.position || '', dep: e.department || '',
+                wh: +e.totals.wh, ot: +e.totals.ot, ut: +e.totals.ut, late: +e.totals.late,
+                appr: e.appr, pend: e.pend, disa: e.disa, exc: e.exc,
+                low_att: e.low_att ? 1 : 0, days,
+            };
+        });
+
+        const f = document.createElement('form');
+        f.method = 'POST';
+        f.action = 'export-dtr-documents.php';
+        f.style.display = 'none';
+        const add = (n, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = n; i.value = v; f.appendChild(i); };
+        add('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
+        add('id', DDTR_ID);
+        add('payload', JSON.stringify({ from: DATE_FROM, to: DATE_TO, rows }));
+        document.body.appendChild(f);
+        f.submit();
+        setTimeout(() => f.remove(), 2000);
+    } catch (err) {
+        Swal.fire('Export failed', err.message || String(err), 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = old;
+    }
 }
 
 // ── Right: summary ───────────────────────────────────────────────────────────
@@ -1980,12 +2436,14 @@ function decideRecs(ids, decision, confirmText) {
 function togglePick(empId) {
     if (st.picked.has(empId)) st.picked.delete(empId); else st.picked.add(empId);
     renderList();
+    renderTable();
     syncBulkBar();
 }
 
 function clearPicked() {
     st.picked.clear();
     renderList();
+    renderTable();
     syncBulkBar();
 }
 
@@ -2861,6 +3319,8 @@ document.addEventListener('keydown', ev => {
     }
 });
 
+// Restore the last view this browser was left on, then load.
+try { setViewMode(localStorage.getItem('ddv-view') || 'paper'); } catch (err) { setViewMode('paper'); }
 loadPage();
 </script>
 

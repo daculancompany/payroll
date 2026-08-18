@@ -121,7 +121,7 @@ $__can_publish = function_exists('action_allowed') ? action_allowed('duty_roster
 :root { --brand:#6642aa; --brand-dark:#4e3483; --brand-soft:#f2effa; --brand-line:#ddd6ee;
         --ink:#28223b; --ink-2:#5d5870; --ink-3:#9895a3; --line:#e4e1ea; --sb-thumb:#cfc4e6;
         --card:#fff; --radius:12px; --shadow-1:0 1px 2px rgba(40,34,59,.05), 0 0 0 1px rgba(40,34,59,.02);
-        --today:#6642aa; --we-tint:#faf8fd; --hol-tint:#fff6ea; }
+        --today:#6642aa; --we-tint:#faf8fd; --hol-tint:#fff6ea; --hol-legal-tint:#fff4f2; }
 html, body { height:100%; }
 body { margin:0; font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif; overflow:hidden;
        display:flex; flex-direction:column; color:var(--ink);
@@ -408,8 +408,19 @@ table.dr-grid thead .dr-emp .dr-emp-sub { color:#a79fc0; font-weight:600; }
 .dr-dow { font-size:9px; color:var(--ink-3); text-transform:uppercase; letter-spacing:.06em; margin-top:1px; }
 table.dr-grid thead th.dr-we { background:#f8f4fb; }
 .dr-dayhead.dr-we .dr-dom, .dr-dayhead.dr-we .dr-dow { color:#c1544f; }
+/* Holidays come from the same calendar_events rows DTR prices days against
+   (type 1 = legal/regular, 3 = special non-working). The two are NOT
+   interchangeable — a legal holiday pays a different premium from a special
+   one — so a planner deciding who works needs to tell them apart at a glance.
+   The payload has carried `type` all along; only the rendering was flat.
+   A flag glyph carries the distinction too, so it survives printing and does
+   not rest on colour alone. */
 table.dr-grid thead th.dr-hol { background:#fff1de; }
 .dr-dayhead.dr-hol .dr-dom { color:#d46b08; }
+table.dr-grid thead th.dr-hol-legal { background:#ffe9e6; }
+.dr-dayhead.dr-hol-legal .dr-dom { color:#c0453f; }
+.dr-hol-flag { display:block; font-size:8px; line-height:1; margin-top:1px; color:#d46b08; }
+.dr-dayhead.dr-hol-legal .dr-hol-flag { color:#c0453f; }
 /* Today: the number becomes a solid brand disc and the whole column carries a
    faint tint down through the body and footer, so the eye finds "now" on a
    16-day sheet without reading the header. */
@@ -423,6 +434,7 @@ table.dr-grid thead th.dr-today { box-shadow:inset 0 -2px 0 var(--today), 0 2px 
    rest-grey and rest+shift orange already say something. */
 table.dr-grid tbody td.dr-cell.dr-empty.dr-we { background:var(--we-tint); }
 table.dr-grid tbody td.dr-cell.dr-empty.dr-hol { background:var(--hol-tint); }
+table.dr-grid tbody td.dr-cell.dr-empty.dr-hol-legal { background:var(--hol-legal-tint); }
 table.dr-grid tbody td.dr-cell.dr-today:not([style*="background"]):not(.dr-rest):not(.dr-locked) { background:#f4effd; }
 table.dr-grid tbody td.dr-cell.dr-today { border-right-color:#d9cdf1; }
 table.dr-grid tbody td.dr-cell.dr-today + td { border-left:1px solid #d9cdf1; }
@@ -632,6 +644,16 @@ tfoot.collapsed .dr-cov-row { display:none; }
    a badge icon — wider than the shared 30px so "6-2" and the moon badge each
    get their own room instead of fighting for it, at the normal 11px size. */
 .lg-sw.dr-rest-shift { width:60px; }
+/* The two holiday swatches mirror a day HEADER, not a body cell — that is where
+   the tint and the flag actually live — so they are built from the same colours
+   as th.dr-hol / th.dr-hol-legal rather than borrowing .dr-cell. */
+.lg-sw.lg-holhead { flex-direction:column; gap:0; line-height:1; }
+.lg-sw.lg-holhead b { font-size:10px; font-weight:800; }
+.lg-sw.lg-holhead i { font-size:7px; margin-top:1px; }
+.lg-sw.lg-hol-special { background:#fff1de; border-color:#f3ddc0; }
+.lg-sw.lg-hol-special b, .lg-sw.lg-hol-special i { color:#d46b08; }
+.lg-sw.lg-hol-legal { background:#ffe9e6; border-color:#f3ccc7; }
+.lg-sw.lg-hol-legal b, .lg-sw.lg-hol-legal i { color:#c0453f; }
 
 /* The instructions, not the key. Only useful the first few times, so it steps
    back rather than sitting at the same weight as everything else. */
@@ -676,9 +698,70 @@ tfoot.collapsed .dr-cov-row { display:none; }
 .dr-empty-step .t { font-size:12px; font-weight:700; color:var(--ink); line-height:1.2; }
 .dr-empty-step .s { font-size:10.5px; color:var(--ink-3); margin-top:1px; }
 
+/* ── Change history drawer ─────────────────────────────────────────────────
+   Slides in from the right, over the grid rather than reflowing it — the whole
+   point is to read the history against the cell you were just looking at.
+   Timeline styling follows payroll's history modal (assets2/js/payroll.js) so
+   "history" looks the same everywhere in the app. */
+.drh-scrim { position:fixed; inset:0; background:rgba(30,24,48,.34); opacity:0; visibility:hidden;
+             transition:opacity .22s ease, visibility .22s; z-index:1055; }
+.drh-scrim.show { opacity:1; visibility:visible; }
+.drh-drawer { position:fixed; top:0; right:0; bottom:0; width:min(470px, 94vw); z-index:1056;
+              background:#fff; border-left:1px solid #e4e3e9; box-shadow:-14px 0 44px -18px rgba(47,35,73,.42);
+              transform:translateX(102%); transition:transform .26s cubic-bezier(.22,.9,.3,1);
+              display:flex; flex-direction:column; }
+.drh-drawer.show { transform:translateX(0); }
+.drh-head { flex-shrink:0; display:flex; align-items:flex-start; gap:10px; padding:13px 15px 12px;
+            background:linear-gradient(135deg,var(--brand),var(--brand-dark)); color:#fff; }
+.drh-title { font-size:14px; font-weight:800; display:flex; align-items:center; gap:7px; line-height:1.2; }
+.drh-sub { font-size:11px; opacity:.87; margin-top:3px; line-height:1.35; }
+.drh-x { margin-left:auto; flex-shrink:0; width:28px; height:28px; border-radius:8px; border:1px solid rgba(255,255,255,.32);
+         background:rgba(255,255,255,.14); color:#fff; display:flex; align-items:center; justify-content:center;
+         font-size:16px; cursor:pointer; }
+.drh-x:hover { background:#fff; color:var(--brand-dark); }
+.drh-cols { flex-shrink:0; display:grid; grid-template-columns:88px 1fr 104px; gap:8px; padding:6px 15px;
+            background:#f4f2f8; border-bottom:1px solid #e6e2ee; font-size:9.5px; font-weight:800;
+            color:#7a7688; text-transform:uppercase; letter-spacing:.05em; }
+.drh-body { flex:1; min-height:0; overflow-y:auto; scrollbar-width:thin; }
+/* stretch, not start: the rail below is a flex column whose connector line grows
+   to fill it, and a start-aligned grid item collapses to its content so the line
+   would have no height to take. */
+.drh-row { display:grid; grid-template-columns:88px 1fr 104px; gap:8px; align-items:stretch;
+           padding:10px 15px; border-bottom:1px solid #f4f2f8; font-size:12px; }
+.drh-row.latest { background:#fbf9ff; }
+/* Dot + connector: the rail is drawn per row so it never outruns the list. */
+.drh-when { display:flex; gap:7px; min-width:0; }
+.drh-rail { display:flex; flex-direction:column; align-items:center; flex-shrink:0; padding-top:2px; }
+.drh-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+.drh-line { width:1px; flex:1; min-height:14px; background:#e6e2ee; margin-top:3px; }
+.drh-rel { font-size:11px; font-weight:700; color:#3b3550; line-height:1.25; }
+.drh-clock { font-size:9.5px; color:#a6a1b4; margin-top:1px; }
+.drh-ev { display:flex; gap:7px; min-width:0; align-items:flex-start; }
+.drh-ico { width:25px; height:25px; border-radius:7px; display:flex; align-items:center; justify-content:center;
+           flex-shrink:0; font-size:13px; }
+.drh-ev-t { font-size:11.5px; font-weight:700; color:#2e2842; line-height:1.35; word-break:break-word; }
+.drh-ev-m { font-size:10px; color:#8b8598; margin-top:2px; line-height:1.35; }
+.drh-tag { display:inline-block; font-size:9px; font-weight:800; border-radius:4px; padding:1px 5px; margin-top:3px; }
+.drh-tag.latest { background:#ede6fb; color:#5a3a9e; }
+.drh-tag.pub { background:#fff4e0; color:#a3720a; }
+.drh-tag.all { background:#eef3fb; color:#2f5ea8; }
+.drh-by { display:flex; align-items:center; gap:6px; min-width:0; }
+.drh-av { width:22px; height:22px; border-radius:50%; flex-shrink:0; display:flex; align-items:center;
+          justify-content:center; font-size:8.5px; font-weight:800; }
+.drh-by span { font-size:10.5px; color:#6b6878; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.drh-empty { padding:42px 20px; text-align:center; color:#a6a1b4; font-size:12.5px; }
+.drh-empty i { font-size:30px; display:block; margin-bottom:9px; opacity:.55; }
+.drh-load { padding:34px; text-align:center; color:#8b8598; font-size:12px; }
+.drh-foot { flex-shrink:0; padding:9px 15px; border-top:1px solid #e6e2ee; background:#faf9fc;
+            font-size:10.5px; color:#8b8598; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.drh-foot .drh-swap { margin-left:auto; }
+
 @media (max-width:820px) {
     .dr-meta-chips { display:none; }
     .dr-body { padding:10px 10px 0; }
+    .drh-cols, .drh-row { grid-template-columns:74px 1fr; }
+    .drh-by { grid-column:2; padding-left:32px; }
+    .drh-cols span:last-child { display:none; }
 }
 </style>
 </head>
@@ -746,6 +829,13 @@ tfoot.collapsed .dr-cov-row { display:none; }
             </span>
             <?php endif; ?>
         <?php endif; ?>
+        <span class="dr-h-sep"></span>
+        <?php /* Read-only on purpose: history is for everyone who can see the
+                 grid, including view-only heads auditing what the office did. */ ?>
+        <button class="dr-btn ghost" id="dr-history"
+                data-tip="Every create, change, delete and publish in this cutoff — who did it and when. Right-click any cell for just that day.">
+            <i class="ri-history-line"></i> History
+        </button>
         <?php if ($__is_admin): ?>
             <span class="dr-h-sep"></span>
             <?php /* Admin-only, always rendered regardless of $__can_edit — this
@@ -968,9 +1058,14 @@ Nothing is saved on upload. You are shown what would change, then it is painted 
         <span data-tip="Rest day
 Their day off. It is a plotted day, not a blank — the roster is saying they are off, rather than saying nothing. Tick &quot;Rest day too&quot; while painting a shift to keep the rest flag AND assign a shift — for planned duty on someone's day off.">
             <span class="lg-sw dr-cell dr-rest"></span> Rest day</span>
-        <span data-tip="Rest day + shift
-Both at once — a shift is on file for a day that is still marked as their rest day, e.g. planned duty on someone's day off. Painted with the &quot;Rest day too&quot; toggle.">
-            <span class="lg-sw dr-cell dr-rest dr-rest-shift">6-2</span> + Shift</span>
+        <span data-tip="Duty on a day off
+A shift is on file for a day still marked as their rest day — &quot;rest day + shift&quot;. The cell shows the shift's code on the amber rest-day fill, with the moon moved to a corner badge. Painted with the &quot;Rest day too&quot; toggle.">
+            <?php /* CODE, not a real shift code. This is the only swatch whose
+                     content varies per cell, so any specific code here would be
+                     an example pretending to be data — and would start lying the
+                     day that shift is renamed or retired. REST and CLEAR in the
+                     paint palette use the same uppercase word-token convention. */ ?>
+            <span class="lg-sw dr-cell dr-rest dr-rest-shift">CODE</span> Duty on day off</span>
         <span data-tip="Not planned
 No entry on the day grid for this date, so their fixed shift from the Shift Roster applies.">
             <span class="lg-sw dr-cell dr-empty"></span> Not planned</span>
@@ -992,6 +1087,16 @@ A SHIFT is planned on a day this person already has approved leave. They will no
         <span data-tip="Rest clash
 Less than 8 hours between the end of the previous day's shift and the start of this one — a fatigue risk, not just a scheduling oddity.">
             <span class="lg-sw dr-cell dr-restclash"></span> Rest clash</span>
+        <?php /* Holidays are read from the same calendar_events rows the DTR
+                 prices days against, so the grid and payroll can never disagree
+                 about which days are holidays. The two types are kept apart
+                 because they do not cost the same to work. */ ?>
+        <span data-tip="Legal holiday
+A regular holiday from the company calendar. The whole column is tinted and the day number carries a flag — hover the date to read which holiday it is. Rostering someone here is allowed; it is priced at the legal-holiday premium.">
+            <span class="lg-sw lg-holhead lg-hol-legal"><b>1</b><i class="ri-flag-2-fill"></i></span> Legal holiday</span>
+        <span data-tip="Special non-working day
+A special holiday from the company calendar, which pays a lower premium than a legal one. Same marking, softer tint — hover the date for its name.">
+            <span class="lg-sw lg-holhead lg-hol-special"><b>1</b><i class="ri-flag-2-fill"></i></span> Special day</span>
     </div>
     <?php if ($__can_edit): ?>
     <div class="dr-hint ms-auto">
@@ -1090,6 +1195,25 @@ Less than 8 hours between the end of the previous day's shift and the start of t
     <button class="dr-btn primary" id="dr-save"><i class="ri-save-line"></i> Save</button>
 </div>
 <?php endif; ?>
+
+<!-- ── Change history drawer ──────────────────────────────────────────────────
+     employee_day_schedule remembers who last touched a row, but a deleted day
+     takes those columns with it — so "this cell is blank, was it ever rostered?"
+     can only be answered from duty_roster_log. Right-click any cell for that
+     cell's story, or use History in the header for the whole cutoff. -->
+<div class="drh-scrim" id="drh-scrim"></div>
+<aside class="drh-drawer" id="drh-drawer" role="dialog" aria-modal="true" aria-labelledby="drh-title" aria-hidden="true">
+    <header class="drh-head">
+        <div style="min-width:0;">
+            <div class="drh-title" id="drh-title"><i class="ri-history-line"></i> Change history</div>
+            <div class="drh-sub" id="drh-sub">&nbsp;</div>
+        </div>
+        <button type="button" class="drh-x" id="drh-close" title="Close (Esc)"><i class="ri-close-line"></i></button>
+    </header>
+    <div class="drh-cols"><span>When</span><span>Event</span><span>By</span></div>
+    <div class="drh-body" id="drh-body"></div>
+    <footer class="drh-foot" id="drh-foot"></footer>
+</aside>
 
 <?php
 // Shared employee quick-view drawer — the grid's name links carry

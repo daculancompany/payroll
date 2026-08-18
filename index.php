@@ -1362,7 +1362,7 @@ function getRole($login_role)
         <script src="assets2/js/schedule-roster.js?v=1"></script>
     <?php } ?>
     <?php if ($page == 'daily-board') { ?>
-        <script src="assets2/js/daily-board.js?v=3"></script>
+        <script src="assets2/js/daily-board.js?v=4"></script>
     <?php } ?>
     <?php if ($page == 'department') { ?>
         <script src="assets2/js/department.js"></script>

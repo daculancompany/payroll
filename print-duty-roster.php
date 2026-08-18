@@ -60,15 +60,23 @@ for ($t = strtotime($range['from']); $t <= strtotime($range['to']); $t = strtoti
     $days[] = ['date' => date('Y-m-d', $t), 'dom' => (int) date('j', $t), 'dow' => strtoupper(date('D', $t)), 'w' => (int) date('w', $t)];
 }
 
+// type 1 = legal/regular holiday, 3 = special non-working. The premium differs,
+// so the printed sheet names which kind it is rather than tinting both alike —
+// same split the on-screen grid draws.
 $holidays = [];
-$hq = $conn->query("SELECT start_date, end_date, title FROM calendar_events
+$hq = $conn->query("SELECT start_date, end_date, title, type FROM calendar_events
     WHERE type IN (1,3) AND start_date <= '" . $conn->real_escape_string($range['to']) . "'
       AND COALESCE(end_date, start_date) >= '" . $conn->real_escape_string($range['from']) . "'");
 while ($hq && ($h = $hq->fetch_assoc())) {
     for ($t = strtotime($h['start_date']); $t <= strtotime($h['end_date'] ?: $h['start_date']); $t = strtotime('+1 day', $t)) {
-        $holidays[date('Y-m-d', $t)] = $h['title'];
+        $holidays[date('Y-m-d', $t)] = [
+            'title' => (string) $h['title'],
+            'legal' => ((int) $h['type'] === 1),
+        ];
     }
 }
+// Titles only, for the per-cell tooltip that just needs a name.
+$holidayTitle = array_map(function ($x) { return $x['title']; }, $holidays);
 
 // Same shift catalogue + colour ramp export-duty-roster.php and the web grid
 // use — one definition, so a printed 6-2 is the same pale blue everywhere.
@@ -134,7 +142,8 @@ ob_start();
     table.roster thead th { background: #eae5f6; color: #3d2b6b; font-weight: bold; font-size: 7px; }
     table.roster thead th.dom { font-size: 9px; }
     table.roster thead th.we { color: #c1544f; }
-    table.roster thead th.hol { background: #fff4e6; }
+    table.roster thead th.hol { background: #fff4e6; color: #b3590a; }
+    table.roster thead th.hol-legal { background: #ffe9e6; color: #a8332d; }
     table.roster td.namecell b { font-size: 7.5px; }
     table.roster td.namecell .no { font-size: 6px; color: #8a869a; }
     table.roster tbody tr:nth-child(even) td.namecell { background: #faf9fc; }
@@ -171,8 +180,10 @@ ob_start();
     <thead>
         <tr>
             <th class="namehdr" rowspan="2">Employee</th>
-            <?php foreach ($days as $d): $hol = isset($holidays[$d['date']]); $we = ($d['w'] === 0 || $d['w'] === 6); ?>
-                <th class="dom<?= $we ? ' we' : '' ?><?= $hol ? ' hol' : '' ?>"><?= $d['dom'] ?></th>
+            <?php foreach ($days as $d):
+                $hol = $holidays[$d['date']] ?? null;
+                $we  = ($d['w'] === 0 || $d['w'] === 6); ?>
+                <th class="dom<?= $we ? ' we' : '' ?><?= $hol ? ' hol' : '' ?><?= ($hol && $hol['legal']) ? ' hol-legal' : '' ?>"><?= $d['dom'] ?></th>
             <?php endforeach; ?>
         </tr>
         <tr>
@@ -214,7 +225,7 @@ ob_start();
                     else $cls[] = 'onleave';
                 }
             ?>
-            <td class="<?= implode(' ', $cls) ?>" style="<?= $style ?>" title="<?= $h(($lv['name'] ?? '') . ($holidays[$d['date']] ?? '')) ?>"><?= $txt ?></td>
+            <td class="<?= implode(' ', $cls) ?>" style="<?= $style ?>" title="<?= $h(($lv['name'] ?? '') . ($holidayTitle[$d['date']] ?? '')) ?>"><?= $txt ?></td>
             <?php endforeach; ?>
         </tr>
         <?php endforeach; ?>
@@ -227,6 +238,8 @@ ob_start();
     <span><i class="sw" style="background:#f0f0f2;"></i>Grey border — locked (DTR approved)</span>
     <span><i class="sw" style="background:#fdecea;border-color:#e79b98;"></i>Red — shift planned on approved leave</span>
     <span><i class="sw" style="background:#fff;border-bottom:2px solid #b9a3e8;"></i>Purple underline — on approved leave</span>
+    <span><i class="sw" style="background:#ffe9e6;border-color:#e0b3ae;"></i>Date shaded red — legal holiday</span>
+    <span><i class="sw" style="background:#fff4e6;border-color:#e8c79b;"></i>Date shaded amber — special non-working day</span>
 </div>
 
 <h2>Shift Legend</h2>

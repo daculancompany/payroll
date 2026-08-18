@@ -28,6 +28,10 @@ $(document).ready(function () {
     // beats no check at all, and hospitals rarely negotiate this number.
     var MIN_REST_HOURS = 8;
     var dirty = new Map();
+    // Where the pending edits came from. duty_roster_save logs this, so an
+    // imported sheet reads differently in the history than 300 hand-painted
+    // cells. Reset by the first manual paint after an import is loaded.
+    var dirtySource = 'grid';
     // What the next click writes. kind stays null until the planner picks from
     // the palette — nothing is chosen for them. It used to default to 'clear',
     // so a first click ERASED: invisible on an empty grid, destructive on a
@@ -283,7 +287,11 @@ $(document).ready(function () {
         S.days.forEach(function (d) {
             var c = '';
             if (d.w === 0 || d.w === 6) c += ' dr-we';
-            if (S.holidays && S.holidays[d.date]) c += ' dr-hol';
+            // type 1 = legal/regular holiday, 3 = special non-working. They pay
+            // different premiums, so the grid distinguishes them rather than
+            // showing one flat "holiday" band.
+            var hd = S.holidays && S.holidays[d.date];
+            if (hd) c += (hd.type === 1 ? ' dr-hol dr-hol-legal' : ' dr-hol');
             if (d.date === tIso) c += ' dr-today';
             dayCls[d.date] = c;
         });
@@ -304,9 +312,16 @@ $(document).ready(function () {
             var hol = S.holidays && S.holidays[d.date];
             var cls = 'dr-dayhead' + (dayCls[d.date] || '');
             var isToday = d.date === tIso;
-            var tip = hol ? esc(hol.title) : (isToday ? 'Today · click to fill this whole column' : 'Click to fill this whole column');
+            // The tooltip names the holiday AND which kind it is — the colour
+            // says "holiday", but only the words say what it costs to work it.
+            var tip = hol
+                ? esc(hol.title) + ' · ' + (hol.type === 1 ? 'Legal holiday' : 'Special non-working day')
+                    + (CAN_EDIT ? ' · click to fill this whole column' : '')
+                : (isToday ? 'Today · click to fill this whole column' : 'Click to fill this whole column');
             h += '<th class="' + cls + '" data-date="' + d.date + '" title="' + tip + '">'
-               + '<div class="dr-dom">' + d.dom + '</div><div class="dr-dow">' + esc(d.dow) + '</div></th>';
+               + '<div class="dr-dom">' + d.dom + '</div><div class="dr-dow">' + esc(d.dow) + '</div>'
+               + (hol ? '<i class="dr-hol-flag ri-flag-2-fill"></i>' : '')
+               + '</th>';
         });
         h += '</tr>';
         $grid.find('thead').html(h);
@@ -625,6 +640,7 @@ $(document).ready(function () {
 
     function applyPaint(empId, date) {
         if (!CAN_EDIT || !paint.kind) return false;
+        dirtySource = 'grid';
         if (zoneOf(empId, date) === 'locked') return false;
 
         var next = paint.kind === 'rest' ? { s: null, r: 1 }
@@ -951,7 +967,7 @@ $(document).ready(function () {
             cells.push({ e: parseInt(parts[0], 10), d: parts[1], s: v.s, r: v.r });
         });
         var $b = $(this).prop('disabled', true);
-        post('duty_roster_save', { period: S.period, cells: JSON.stringify(cells) })
+        post('duty_roster_save', { period: S.period, cells: JSON.stringify(cells), source: dirtySource })
             .done(function (j) {
                 $b.prop('disabled', false);
                 if (!j.result) { toast('error', 'Error', j.message); return; }
@@ -1226,6 +1242,7 @@ $(document).ready(function () {
         }).then(function (r) {
             if (!r.isConfirmed) return;
             dirty.clear();
+            dirtySource = 'import';
             (j.changes || []).forEach(function (c) {
                 var k = key(c.e, c.d);
                 dirty.set(k, { s: c.s, r: c.r, st: S.cells[k] ? S.cells[k].st : 0 });
@@ -1511,6 +1528,184 @@ $(document).ready(function () {
         window.CustomSelect.refresh($dept[0]);
         window.CustomSelect.refresh($period[0]);
     }, 0);
+
+    /* ── change history drawer ───────────────────────────────────────────── */
+    //
+    // Left-click paints, so history needs its own gesture: right-click a cell.
+    // For read-only roles nothing paints, so a plain left-click opens it too —
+    // those are exactly the people auditing what the scheduling office did.
+    // The header's History button opens the whole cutoff.
+
+    var HIST_META = {
+        create:    { c: '#0f9d58', bg: '#e9f7ef', i: 'ri-add-circle-line',        l: 'Created' },
+        update:    { c: '#d97706', bg: '#fffbeb', i: 'ri-edit-line',              l: 'Changed' },
+        'delete':  { c: '#c62828', bg: '#fdecec', i: 'ri-delete-bin-line',        l: 'Deleted' },
+        publish:   { c: '#2563eb', bg: '#eff6ff', i: 'ri-send-plane-line',        l: 'Published' },
+        copy:      { c: '#0e9594', bg: '#e6f7f6', i: 'ri-file-copy-line',         l: 'Copied' },
+        discard:   { c: '#b3261e', bg: '#fdecec', i: 'ri-delete-bin-7-line',      l: 'Drafts discarded' },
+        recompute: { c: '#7c3aed', bg: '#f5f3ff', i: 'ri-refresh-line',           l: 'Recomputed' },
+        lock:      { c: '#a3720a', bg: '#fff8e1', i: 'ri-lock-line',              l: 'Locked' },
+        unlock:    { c: '#0f9d58', bg: '#e9f7ef', i: 'ri-lock-unlock-line',       l: 'Unlocked' },
+        'default': { c: '#6b7280', bg: '#f5f5f7', i: 'ri-time-line',              l: 'Changed' },
+    };
+
+    function histRel(s) {
+        var t = new Date(String(s).replace(' ', 'T'));
+        var d = Math.floor((Date.now() - t.getTime()) / 1000);
+        if (d < 60)     return 'Just now';
+        if (d < 3600)   return Math.floor(d / 60) + 'm ago';
+        if (d < 86400)  return Math.floor(d / 3600) + 'h ago';
+        if (d < 604800) return Math.floor(d / 86400) + 'd ago';
+        return t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+    function histAbs(s) {
+        var t = new Date(String(s).replace(' ', 'T'));
+        return t.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+    }
+    function histClock(s) {
+        return new Date(String(s).replace(' ', 'T'))
+            .toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    }
+    function initials(n) {
+        return String(n || '?').trim().split(/\s+/).map(function (w) { return w[0]; }).join('').substring(0, 2).toUpperCase();
+    }
+
+    var $drh = $('#drh-drawer'), $drhScrim = $('#drh-scrim');
+    var histScope = null;   // { emp, date } for a cell, or null for the cutoff
+
+    function histOpen() {
+        $drh.addClass('show').attr('aria-hidden', 'false');
+        $drhScrim.addClass('show');
+    }
+    function histClose() {
+        $drh.removeClass('show').attr('aria-hidden', 'true');
+        $drhScrim.removeClass('show');
+    }
+    $('#drh-close').on('click', histClose);
+    $drhScrim.on('click', histClose);
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && $drh.hasClass('show')) histClose();
+    });
+
+    function showHistory(emp, date) {
+        if (!S.period) return;
+        histScope = emp ? { emp: emp, date: date } : null;
+
+        var who = '';
+        if (emp) {
+            var e = S.employees.filter(function (x) { return x.id === emp; })[0];
+            who = (e ? e.name : '#' + emp) + ' · ' + fmtDay(date);
+        }
+        $('#drh-title').html('<i class="ri-history-line"></i> ' + (emp ? 'Day history' : 'Cutoff history'));
+        $('#drh-sub').text(emp ? who : periodLabel());
+        $('#drh-body').html('<div class="drh-load"><i class="ri-loader-4-line"></i> Loading history…</div>');
+        $('#drh-foot').empty();
+        histOpen();
+
+        post('duty_roster_history', emp
+            ? { period: S.period, employee_id: emp, work_date: date }
+            : { period: S.period })
+            .done(function (j) {
+                if (!j.result) { $('#drh-body').html('<div class="drh-empty"><i class="ri-error-warning-line"></i>' + esc(j.message || 'Could not load history.') + '</div>'); return; }
+                renderHistory(j.rows || [], !!emp, j.message);
+            })
+            .fail(function () {
+                $('#drh-body').html('<div class="drh-empty"><i class="ri-wifi-off-line"></i>Could not reach the server.</div>');
+            });
+    }
+
+    function periodLabel() {
+        if (!S.from || !S.to) return S.period;
+        return fmtDay(S.from) + ' – ' + fmtDay(S.to);
+    }
+
+    function renderHistory(rows, isCell, note) {
+        var $b = $('#drh-body');
+        if (!rows.length) {
+            $b.html('<div class="drh-empty"><i class="ri-history-line"></i>'
+                + esc(note || (isCell
+                    ? 'No recorded changes for this day. It has not been touched since history started being kept.'
+                    : 'Nothing has been changed in this cutoff yet.'))
+                + '</div>');
+        } else {
+            // A cell's history carries the cutoff-wide sweeps too, because a
+            // publish is what made the day real. But when the cell has no
+            // entries of its OWN, a bare "Published" row reads as though this
+            // day was published — so say plainly that it was never edited.
+            var own = rows.filter(function (r) { return r.scope === 'cell'; }).length;
+            var lead = (isCell && own === 0)
+                ? '<div class="drh-empty" style="padding:16px 20px;border-bottom:1px solid #f4f2f8;">'
+                  + '<i class="ri-information-line" style="font-size:20px;margin-bottom:6px;"></i>'
+                  + 'This day has never been rostered or edited. What follows happened to the whole cutoff.</div>'
+                : '';
+            $b.html(lead + rows.map(function (r, i) {
+                var m = HIST_META[r.action] || HIST_META['default'];
+                var tags = '';
+                if (i === 0) tags += '<span class="drh-tag latest">Latest</span> ';
+                // A change to a day already handed out is the one an employee may
+                // have turned up for — worth calling out, not just recording.
+                if (r.was_published) tags += '<span class="drh-tag pub">was published</span> ';
+                if (r.scope === 'period') tags += '<span class="drh-tag all">whole cutoff</span> ';
+
+                // In the cutoff view every row needs to say WHO it was about.
+                var subject = '';
+                if (!isCell && r.scope === 'cell') {
+                    subject = esc(r.employee || '—') + ' · ' + (r.work_date ? fmtDay(r.work_date) : '');
+                }
+
+                return '<div class="drh-row' + (i === 0 ? ' latest' : '') + '">'
+                    + '<div class="drh-when">'
+                    +   '<span class="drh-rail">'
+                    +     '<span class="drh-dot" style="background:' + m.c + ';box-shadow:0 0 0 3px ' + m.c + '22;"></span>'
+                    +     (i < rows.length - 1 ? '<span class="drh-line"></span>' : '')
+                    +   '</span>'
+                    +   '<span style="min-width:0;">'
+                    +     '<span class="drh-rel" title="' + esc(histAbs(r.created_at)) + '">' + esc(histRel(r.created_at)) + '</span>'
+                    +     '<span class="drh-clock" style="display:block;">' + esc(histClock(r.created_at)) + '</span>'
+                    +   '</span>'
+                    + '</div>'
+                    + '<div class="drh-ev">'
+                    +   '<span class="drh-ico" style="background:' + m.bg + ';color:' + m.c + ';"><i class="' + m.i + '"></i></span>'
+                    +   '<span style="min-width:0;">'
+                    +     '<span class="drh-ev-t" style="display:block;">' + esc(m.l) + ' — ' + esc(r.detail) + '</span>'
+                    +     (subject ? '<span class="drh-ev-m" style="display:block;">' + subject + '</span>' : '')
+                    +     (r.note ? '<span class="drh-ev-m" style="display:block;"><i class="ri-sticky-note-line"></i> ' + esc(r.note) + '</span>' : '')
+                    +     (tags ? '<span style="display:block;">' + tags + '</span>' : '')
+                    +   '</span>'
+                    + '</div>'
+                    + '<div class="drh-by">'
+                    +   '<span class="drh-av" style="background:' + m.c + '22;border:1px solid ' + m.c + '44;color:' + m.c + ';">' + esc(initials(r.by)) + '</span>'
+                    +   '<span title="' + esc(r.by || 'Unknown') + '">' + esc(r.by || '—') + '</span>'
+                    + '</div>'
+                    + '</div>';
+            }).join(''));
+        }
+
+        // From one day it is one click to the whole cutoff, and back.
+        $('#drh-foot').html(
+            '<span>' + rows.length + ' entr' + (rows.length === 1 ? 'y' : 'ies') + '</span>'
+            + (isCell
+                ? '<a href="javascript:void(0);" class="drh-swap" id="drh-to-period">View the whole cutoff <i class="ri-arrow-right-line"></i></a>'
+                : '<span class="drh-swap">Right-click a cell for one day</span>')
+        );
+        $('#drh-to-period').on('click', function () { showHistory(null); });
+    }
+
+    // Right-click a cell → that day. The browser menu is suppressed only over
+    // the grid's cells, so right-click still works everywhere else on the page.
+    $(document).on('contextmenu', '#dr-grid td.dr-cell', function (e) {
+        e.preventDefault();
+        showHistory($(this).data('emp'), $(this).data('date'));
+    });
+    // Read-only roles paint nothing, so the plain click is free for history.
+    $(document).on('click', '#dr-grid td.dr-cell', function () {
+        if (CAN_EDIT) return;
+        showHistory($(this).data('emp'), $(this).data('date'));
+    });
+    $('#dr-history').on('click', function () {
+        if (!S.period) { toast('info', 'Pick a cutoff first', 'Choose a period and department, then open History.'); return; }
+        showHistory(null);
+    });
 
     // A department may already be restored from localStorage above — populate
     // its areas before the initial load() so the Area filter isn't blank for

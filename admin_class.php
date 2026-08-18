@@ -28,6 +28,16 @@ class Action
         include 'db_connect.php';
 
         $this->db = $conn;
+        // Publish the handle as the global the db_connect.php helpers read
+        // (dtr_late_rules, dtr_early_grace_hours, dept-scope). Included from
+        // inside a method, $conn is a local here and $GLOBALS['conn'] never
+        // gets set on the ajax surface — so every pay_settings-backed rule
+        // silently fell back to its constant default for scans and recomputes
+        // (late brackets read as exact minutes) while the pages showed the
+        // configured values.
+        if (!isset($GLOBALS['conn']) || !($GLOBALS['conn'] instanceof mysqli)) {
+            $GLOBALS['conn'] = $conn;
+        }
     }
 
     function __destruct()

@@ -54,10 +54,12 @@ if ($f_cross) $punches = array_values(array_filter($punches, function ($p) { ret
 $batchUrl = [];
 $ids = array_unique(array_map(function ($p) { return $p['ddtr_id']; }, $punches));
 if ($ids) {
-    $bq = $conn->query("SELECT id, timekeeper_name, device_id, site_id, status FROM DTR WHERE id IN (" . implode(',', array_map('intval', $ids)) . ")");
+    $bq = $conn->query("SELECT DTR.id, timekeeper.name AS timekeeper_name, DTR.device_id, DTR.site_id, DTR.status
+                        FROM DTR LEFT JOIN users AS timekeeper ON DTR.timekeeper_id = timekeeper.id
+                        WHERE DTR.id IN (" . implode(',', array_map('intval', $ids)) . ")");
     while ($bq && ($b = $bq->fetch_assoc())) {
         $batchUrl[(int) $b['id']] = 'dtr-documents.php?id=' . base64_encode($b['id'])
-            . '&timekeeper_name=' . base64_encode($b['timekeeper_name'])
+            . '&timekeeper_name=' . base64_encode($b['timekeeper_name'] ?? '')
             . '&device_id=' . base64_encode($b['device_id'])
             . '&site_id=' . base64_encode($b['site_id'])
             . '&status=' . base64_encode($b['status']);

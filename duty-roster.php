@@ -110,6 +110,11 @@ $__can_publish = function_exists('action_allowed') ? action_allowed('duty_roster
          page; a standalone page has to bring it itself, or its dropdowns fall
          back to the browser's native list with no filter box. -->
     <link rel="stylesheet" href="<?= av('assets2/css/custom-select.css') ?>">
+
+    <!-- App-wide tooltip — one hover style for the whole app; also upgrades any
+         plain title= on this page (assets2/js/app-tooltip.js). -->
+    <link rel="stylesheet" href="<?= av('assets2/css/app-tooltip.css') ?>">
+    <script defer src="<?= av('assets2/js/app-tooltip.js') ?>"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
@@ -193,6 +198,21 @@ body { margin:0; font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif
 .dr-btn.danger { background:#fff; border-color:#f0cfcc; color:#c0453f; }
 .dr-btn.danger:hover:not(:disabled) { background:#fdf0ef; border-color:#e3b0ac; color:#a5322d; }
 /* Links OUT of this page, not actions on it. Quietest of the three tiers. */
+/* Draft count carried on Publish / Discard. Both act on draft days and on
+   nothing else, so how many there are is the one fact that decides whether to
+   press them — it was only in the tooltip and the chip, i.e. behind a hover or
+   off at the other end of the bar. Hidden at zero, when the button is disabled
+   anyway and a "0" would just be noise. */
+.dr-btn .dr-n {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:18px; height:18px; padding:0 5px; border-radius:9px;
+    font-size:10.5px; font-weight:800; line-height:1; letter-spacing:.2px;
+    background:#e0dbec; color:var(--brand-dark);
+}
+.dr-btn.primary .dr-n { background:rgba(255,255,255,.24); color:#fff; }
+.dr-btn.danger  .dr-n { background:#fbe4e2; color:#a5322d; }
+.dr-btn:disabled .dr-n { display:none; }
+
 .dr-btn.ghost { background:transparent; border-color:transparent; color:#6b6878; font-weight:600; }
 .dr-btn.ghost:hover { background:#f2f0f7; border-color:#e5e1ef; color:var(--brand-dark); }
 .dr-h-sep { width:1px; align-self:stretch; margin:2px 2px; background:#e6e2ee; flex-shrink:0; }
@@ -329,17 +349,12 @@ body { margin:0; font-family:'Segoe UI',system-ui,-apple-system,Arial,sans-serif
 .dr-pat-warn { font-size:12px; color:#ad6800; background:#fff8e1; border:1px solid #ffe082;
                border-radius:8px; padding:7px 9px; margin-top:9px; }
 
-/* Tooltip. Parented to <body> and position:fixed because the palette is an
-   overflow-x scroller: anything drawn inside it with ::after is clipped at the
-   strip's edge, which is exactly where a tooltip needs to go. */
-.dr-tip { position:fixed; z-index:4000; max-width:250px; white-space:pre-line;
-          background:#28223b; color:#fff; font-size:11.5px; font-weight:500; line-height:1.5;
-          padding:6px 9px; border-radius:7px; box-shadow:0 6px 20px rgba(40,34,59,.28);
-          pointer-events:none; opacity:0; transform:translateY(-3px);
-          transition:opacity .12s ease, transform .12s ease; }
-.dr-tip.show { opacity:1; transform:none; }
-.dr-tip b { font-weight:700; }
-.dr-tip .k { color:#c9bdf0; }
+/* Tooltips are app-wide now — assets2/css/app-tooltip.css + app-tooltip.js.
+   This page had its own body-parented bubble (the palette is an overflow-x
+   scroller, so a ::after tooltip was clipped at the strip's edge); the global
+   one solves the same problem the same way, and carried this page's
+   heading-then-detail convention over with it. Running both drew the tooltip
+   twice, stacked. */
 
 /* ── Grid ── */
 /* flex:0 1 auto, NOT flex:1 — the card is as tall as its content and no
@@ -717,12 +732,12 @@ tfoot.collapsed .dr-cov-row { display:none; }
                  first and disabling on load makes them flicker live-then-dead. -->
             <button class="dr-btn danger" id="dr-discard" disabled
                     data-tip="Delete every unpublished draft day in this cutoff. Published days are untouched.">
-                <i class="ri-delete-bin-line"></i> Discard drafts
+                <i class="ri-delete-bin-line"></i> Discard drafts <span class="dr-n"></span>
             </button>
             <?php if ($__can_publish): ?>
             <button class="dr-btn primary" id="dr-publish" disabled
                     data-tip="Make draft days real and notify the employees.">
-                <i class="ri-send-plane-line"></i> Publish
+                <i class="ri-send-plane-line"></i> Publish <span class="dr-n"></span>
             </button>
             <?php else: ?>
             <span class="dr-btn" style="cursor:default;opacity:.75;"

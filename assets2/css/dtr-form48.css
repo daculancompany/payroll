@@ -108,40 +108,11 @@
    pre` means a newline in the attribute breaks the tooltip onto a second
    line, so it can lead with the fact and follow with the detail. */
 .dtrf48 [data-tip] { position: relative; }
-.dtrf48 [data-tip]:hover::after,
-.dtrf48 [data-tip]:focus::after {
-    content: attr(data-tip);
-    position: absolute; z-index: 60; pointer-events: none;
-    background: linear-gradient(180deg, #2f4440 0%, #223330 100%);
-    color: #fff; padding: 6px 10px; border-radius: 7px;
-    border: 1px solid rgba(255, 255, 255, .1);
-    font-family: Arial, sans-serif; font-size: 10px; font-weight: 600;
-    letter-spacing: .3px; line-height: 1.5; text-align: left;
-    white-space: pre; text-transform: none;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .2);
-    animation: dtrf48-tip .12s ease-out;
-}
-.dtrf48 [data-tip]:hover::before,
-.dtrf48 [data-tip]:focus::before {
-    content: ''; position: absolute; z-index: 60; pointer-events: none;
-    border: 5px solid transparent;
-}
 /* Focus is what makes these usable on a phone: the markers carry tabindex, so a
    TAP focuses them and the tooltip opens. :hover never fires on touch. */
 .dtrf48 [data-tip]:focus { outline: 2px solid rgba(80, 60, 130, .35); outline-offset: 1px; border-radius: 4px; }
-@keyframes dtrf48-tip { from { opacity: 0; transform: translateY(2px); } }
 
 /* Chips point RIGHT — the day column is leftmost, so there is always room. */
-.dtrf48 .dm[data-tip]:hover::after,
-.dtrf48 .dm[data-tip]:focus::after {
-    left: calc(100% + 8px); top: 50%; transform: translateY(-50%);
-    animation-name: none;
-}
-.dtrf48 .dm[data-tip]:hover::before,
-.dtrf48 .dm[data-tip]:focus::before {
-    left: calc(100% + 3px); top: 50%; transform: translateY(-50%);
-    border-right-color: #2b3f3b;
-}
 /* Marked days: the number stays perfectly centered; chips ride in the right
    gutter (vertically centered) and never displace it. Because the chips are
    absolutely positioned they are out of flow, so a day with a badge and a day
@@ -163,15 +134,6 @@
     cursor: help;
     text-decoration: underline dotted rgba(80, 60, 130, .45);
     text-underline-offset: 2px;
-}
-.dtrf48-table td.day .day-no[data-tip]:hover::after,
-.dtrf48-table td.day .day-no[data-tip]:focus::after {
-    left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
-}
-.dtrf48-table td.day .day-no[data-tip]:hover::before,
-.dtrf48-table td.day .day-no[data-tip]:focus::before {
-    left: calc(100% + 5px); top: 50%; transform: translateY(-50%);
-    border-right-color: #2b3f3b;
 }
 @media print { .dtrf48-table td.day .day-no.has-tip { text-decoration: none; } }
 .dtrf48-table td.day .day-marks {
@@ -206,15 +168,6 @@
     font-family: Arial, sans-serif; font-size: 8px; font-weight: 700; cursor: help;
     vertical-align: baseline;
 }
-.dtrf48-table sup.nextday[data-tip]:hover::after,
-.dtrf48-table sup.nextday[data-tip]:focus::after {
-    left: 50%; bottom: calc(100% + 7px); transform: translateX(-50%);
-}
-.dtrf48-table sup.nextday[data-tip]:hover::before,
-.dtrf48-table sup.nextday[data-tip]:focus::before {
-    left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%);
-    border-top-color: #223330;
-}
 
 /* "!N" on an Arrival whose earlier scans were excluded by the grace window.
    Red rather than the "+1" amber: "+1" explains a punch that IS shown, this
@@ -224,15 +177,6 @@
     background: #fee2e2; color: #b91c1c; border: 1px solid #f3bcbc;
     font-family: Arial, sans-serif; font-size: 8px; font-weight: 700; cursor: help;
     vertical-align: baseline;
-}
-.dtrf48-table sup.dropped[data-tip]:hover::after,
-.dtrf48-table sup.dropped[data-tip]:focus::after {
-    left: 50%; bottom: calc(100% + 7px); transform: translateX(-50%);
-}
-.dtrf48-table sup.dropped[data-tip]:hover::before,
-.dtrf48-table sup.dropped[data-tip]:focus::before {
-    left: 50%; bottom: calc(100% + 2px); transform: translateX(-50%);
-    border-top-color: #223330;
 }
 
 /* ── Shift summary strip (under the table) ─────────────────────────────
@@ -287,30 +231,10 @@
 }
 .dtr-nextday:focus { outline: 2px solid rgba(180, 83, 9, .4); outline-offset: 1px; }
 .dtr-nextday .nx-d { display: none; }
-.dtr-nextday[data-tip]:hover::after,
-.dtr-nextday[data-tip]:focus::after {
-    content: attr(data-tip);
-    position: absolute; left: 50%; bottom: calc(100% + 7px); transform: translateX(-50%);
-    z-index: 1090; pointer-events: none;                 /* above Bootstrap modals */
-    background: linear-gradient(180deg, #2f4440 0%, #223330 100%);
-    color: #fff; padding: 6px 10px; border-radius: 7px;
-    border: 1px solid rgba(255, 255, 255, .1);
-    font-size: 10px; font-weight: 600; line-height: 1.5; letter-spacing: .3px;
-    text-align: left; white-space: pre; text-transform: none;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, .3), 0 1px 3px rgba(0, 0, 0, .2);
-}
-.dtr-nextday[data-tip]:hover::before,
-.dtr-nextday[data-tip]:focus::before {
-    content: ''; position: absolute; left: 50%; bottom: calc(100% + 2px);
-    transform: translateX(-50%); border: 5px solid transparent;
-    border-top-color: #223330; z-index: 1090; pointer-events: none;
-}
 /* No hover on this device: show the date outright instead of hiding it behind
    an interaction the user cannot perform. */
 @media (hover: none) {
     .dtr-nextday .nx-d { display: inline; margin-left: 3px; font-weight: 700; opacity: .85; }
-    .dtr-nextday[data-tip]:hover::after,
-    .dtr-nextday[data-tip]:hover::before { content: none; }
 }
 
 .dtrf48-table tr td.dm-note { font-size: 9px; font-weight: 700; letter-spacing: .3px; }

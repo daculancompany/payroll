@@ -55,41 +55,10 @@ $(document).ready(function () {
 
     /* ── tooltip ─────────────────────────────────────────────────────────── */
 
-    // One body-parented, position:fixed bubble shared by every [data-tip] on the
-    // page. It has to live outside the palette: that strip is an overflow-x
-    // scroller, so a tooltip drawn inside it is clipped at the very edge it
-    // needs to cross. First line is treated as the heading.
-    var $tip = $('<div class="dr-tip"></div>').appendTo('body');
-    var tipTimer = null;
-
-    function showTip($el) {
-        var raw = String($el.attr('data-tip') || '');
-        if (!raw) return;
-        var lines = raw.split('\n');
-        var html = '<b>' + esc(lines[0]) + '</b>';
-        if (lines.length > 1) html += '\n<span class="k">' + esc(lines.slice(1).join('\n')) + '</span>';
-        $tip.html(html);
-
-        var r = $el[0].getBoundingClientRect();
-        $tip.addClass('show');
-        var tw = $tip.outerWidth(), th = $tip.outerHeight();
-        var left = r.left + r.width / 2 - tw / 2;
-        // Clamped to the viewport: the last swatch in the strip and the tools on
-        // the far right would otherwise hang off the edge.
-        left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
-        var top = r.bottom + 8;
-        if (top + th > window.innerHeight - 8) top = r.top - th - 8;
-        $tip.css({ left: left + 'px', top: top + 'px' });
-    }
-    function hideTip() { clearTimeout(tipTimer); $tip.removeClass('show'); }
-
-    $(document).on('mouseenter focus', '[data-tip]', function () {
-        var $el = $(this);
-        clearTimeout(tipTimer);
-        tipTimer = setTimeout(function () { showTip($el); }, 260);
-    });
-    $(document).on('mouseleave blur mousedown', '[data-tip]', hideTip);
-    $(window).on('scroll', hideTip);
+    // Handled app-wide by assets2/js/app-tooltip.js, which this page loads.
+    // It used to own a body-parented bubble of its own; the global engine has
+    // the same architecture (and inherited this page's first-line-is-the-heading
+    // convention), so keeping both only drew every tooltip twice.
 
     // "AM / 7-3 (7AM-3PM)" → "AM". The grid cell is 44px wide, so the label has
     // to be the part a planner actually says out loud.
@@ -263,6 +232,9 @@ $(document).ready(function () {
         if (!CAN_EDIT) return;
         var none = drafts === 0;
         $('#dr-publish, #dr-discard').prop('disabled', none);
+        // The count rides on the buttons themselves. CSS hides the pill while
+        // the button is disabled, so nothing has to clear it at zero.
+        $('#dr-publish .dr-n, #dr-discard .dr-n').text(drafts);
         $('#dr-publish').attr('data-tip', none
             ? 'Nothing to publish\nEvery day in this cutoff is already published. Paint and Save first — new days start as drafts.'
             : 'Publish ' + drafts + ' draft day' + (drafts === 1 ? '' : 's') + '\nMakes them real and notifies the employees.');

@@ -119,7 +119,13 @@ while ($row = $result->fetch_assoc()) {
     $data[] = [
         'date'       => '<div class="att-date-main">' . date('M j, Y', strtotime($row['date_time'])) . '</div>'
                       . '<small class="text-muted">' . date('l', strtotime($row['date_time'])) . '</small>',
-        'employee'   => '<div class="fw-semibold">' . htmlspecialchars($row['lastname'] . ', ' . $row['firstname'] . $mi) . '</div>'
+        // The name opens the shared quick-view drawer rather than jumping
+        // straight to the full employee page — an admin scanning attendance
+        // usually wants to check who this is, not leave the screen. The href is
+        // kept so middle-click / "open in new tab" still reaches the full page.
+        'employee'   => '<div class="fw-semibold"><a href="index.php?page=employee-details&id=' . (int) $row['employee_id'] . '"'
+                      . ' data-emp-quickview="' . (int) $row['employee_id'] . '" class="rpt-emp-link">'
+                      . htmlspecialchars($row['lastname'] . ', ' . $row['firstname'] . $mi) . '</a></div>'
                       . '<small class="att-emp-id">ID: ' . htmlspecialchars($row['employee_no']) . '</small>',
         'site'       => '<span class="att-site-badge">' . htmlspecialchars($row['site_code'] ?? '—') . '</span>'
                       . '<div class="att-site-name">' . htmlspecialchars($row['site_name'] ?? '—') . '</div>'

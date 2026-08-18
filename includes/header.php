@@ -147,6 +147,12 @@ if (!isset($page_title)) {
     <!-- App-wide custom <select> control (assets2/js/custom-select.js) -->
     <link rel="stylesheet" href="<?= av('assets2/css/custom-select.css') ?>">
 
+    <!-- App-wide tooltip. Loaded for every screen (index.php's routed pages and
+         the standalone workbenches all include this header) so one hover style
+         serves the whole app, and a `title=` anywhere is upgraded on the spot. -->
+    <link rel="stylesheet" href="<?= av('assets2/css/app-tooltip.css') ?>">
+    <script defer src="<?= av('assets2/js/app-tooltip.js') ?>"></script>
+
     <!-- The employee quick-view drawer is now component/employee_quick_view.php,
          included by index.php for every routed page (data-emp-quickview="<id>"
          opens it); standalone pages include the component themselves. -->

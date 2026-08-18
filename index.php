@@ -933,6 +933,7 @@ function getRole($login_role)
                 'daily-board'          => 'daily-board',
                 'attendance-requests'  => 'attendance-requests',
                 'biometric-dtr'        => 'biometric-dtr',
+                'punch-logs'           => 'punch-logs',
                 'pay-settings'         => 'pay-settings',
                 'thirteenth-month'     => 'thirteenth-month',
                 'bank-payout'          => 'bank-payout',

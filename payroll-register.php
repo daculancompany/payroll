@@ -125,7 +125,7 @@ function pr_money($v){ return '₱' . number_format((float)$v, 2); }
                         <?php else: $i=1; foreach ($rows as $r): ?>
                             <tr>
                                 <td><?= $i++ ?></td>
-                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
+                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" data-emp-quickview="<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
                                 <td class="rpt-num"><?= pr_money($r['basic']) ?></td>
                                 <td class="rpt-num"><?= pr_money($r['allow']) ?></td>
                                 <td class="rpt-num"><?= pr_money($r['ot']) ?></td>

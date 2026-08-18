@@ -262,33 +262,9 @@ body {
     font-size:11px; font-weight:800; padding:5px 11px; border-radius:20px;
     background:#fdecea; color:#c62828; border:1px solid #f5c6cb;
 }
-/* Instant styled tooltip (native title is flaky in the sticky header) */
-.ddv-exc-pill[data-tip]:hover::after {
-    content:attr(data-tip);
-    position:absolute; top:calc(100% + 8px); right:0; z-index:60;
-    width:250px; max-width:70vw; white-space:normal; text-align:left;
-    background:#342f42; color:#fff; padding:8px 11px; border-radius:8px;
-    font-size:11px; font-weight:600; line-height:1.4; letter-spacing:.2px;
-    box-shadow:0 6px 18px rgba(0,0,0,.28); pointer-events:none;
-}
-.ddv-exc-pill[data-tip]:hover::before {
-    content:''; position:absolute; top:calc(100% + 3px); right:14px; z-index:60;
-    border:5px solid transparent; border-bottom-color:#342f42; pointer-events:none;
-}
-/* Reusable instant tooltip for header buttons (native title is flaky here) */
-.ddv-tip { position:relative; }
-.ddv-tip[data-tip]:hover::after {
-    content:attr(data-tip);
-    position:absolute; top:calc(100% + 8px); right:0; z-index:60;
-    width:250px; max-width:70vw; white-space:normal; text-align:left;
-    background:#342f42; color:#fff; padding:8px 11px; border-radius:8px;
-    font-size:11px; font-weight:600; line-height:1.4; letter-spacing:.2px;
-    box-shadow:0 6px 18px rgba(0,0,0,.28); pointer-events:none;
-}
-.ddv-tip[data-tip]:hover::before {
-    content:''; position:absolute; top:calc(100% + 3px); right:14px; z-index:60;
-    border:5px solid transparent; border-bottom-color:#342f42; pointer-events:none;
-}
+/* Tooltips are app-wide now — assets2/css/app-tooltip.css + app-tooltip.js,
+   loaded by includes/header.php. `.ddv-tip` is kept only as a marker class on
+   existing markup; `data-tip` (or a plain `title`) is what actually drives it. */
 
 /* ── Workspace ── */
 .ddv-wrap {
@@ -661,6 +637,24 @@ body {
 .ddv-mini-btn.no   { background:#fdecea; color:#c62828; border-color:#f5c6cb; }
 .ddv-mini-btn.edit { background:#eef2fb; color:#394b7c; border-color:#c3c9e0; }
 .ddv-mini-btn.sch  { background:#f3ecfc; color:#6642aa; border-color:#dbc7f2; }
+.ddv-mini-btn.pun  { background:#eef4ff; color:#3b5bbf; border-color:#c5d4f2; }
+/* Punch editor rows — one line per scan, newest edits obvious at a glance. */
+.pe-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.pe-row input[type=datetime-local] { flex:1 1 auto; }
+.pe-tag { font-size:9.5px; font-weight:800; padding:2px 8px; border-radius:9px; text-transform:uppercase;
+          letter-spacing:.3px; white-space:nowrap; flex:0 0 auto; }
+.pe-tag.bio { background:#eef4ff; color:#3b5bbf; }
+.pe-tag.manual { background:#fff6e0; color:#c98a00; }
+.pe-del { border:1px solid #f5c6cb; background:#fdecea; color:#c62828; border-radius:7px;
+          width:30px; height:30px; flex:0 0 auto; line-height:1; }
+/* A device scan is evidence: shown, never edited. The lock takes the delete
+   button's slot so the rows stay aligned. */
+.pe-lock { width:30px; height:30px; flex:0 0 auto; display:inline-flex; align-items:center;
+           justify-content:center; color:#9d9baa; cursor:help; }
+input.pe-locked { background:#f6f5f9; color:#6c6880; cursor:not-allowed; }
+.pe-empty { font-size:12px; color:#948ea5; padding:10px 2px; }
+.pe-hint { font-size:11.5px; color:#7a7391; background:#f7f5fc; border:1px solid #e9e4f5;
+           border-radius:9px; padding:8px 11px; margin-bottom:12px; line-height:1.5; }
 .ddv-mini-btn.del  { background:#f3f2f1; color:#605e5c; border-color:#e1dfdd; }
 .ddv-mini-btn.msg  { background:#fff8e1; color:#c98a00; border-color:#ffe082; }
 .ddv-mini-btn.msg.has { box-shadow:0 0 0 1px #ffe082 inset; }
@@ -809,6 +803,11 @@ body {
          for pages routed through index.php; this page renders standalone). -->
     <link rel="stylesheet" href="assets2/css/custom-select.css">
     <script defer src="assets2/js/custom-select.js"></script>
+
+    <!-- App-wide tooltip — one hover style for the whole app; also upgrades any
+         plain title= on this page (assets2/js/app-tooltip.js). -->
+    <link rel="stylesheet" href="assets2/css/app-tooltip.css">
+    <script defer src="assets2/js/app-tooltip.js"></script>
 </head>
 <body>
 <div class="ddv-app"
@@ -1053,9 +1052,9 @@ body {
                     <b id="ddv-bulk-recs">0</b> pending record/s
                 </span>
                 <span class="ddv-bulk-acts">
-                    <button type="button" class="ddv-mini-btn ok" onclick="approvePicked(1)" title="Approve every pending record of the ticked employees"><i class="ri-check-double-line"></i> Approve</button>
-                    <button type="button" class="ddv-mini-btn no" onclick="approvePicked(2)" title="Disapprove every pending record of the ticked employees"><i class="ri-close-line"></i> Reject</button>
-                    <button type="button" class="ddv-mini-btn" onclick="clearPicked()" title="Clear selection"><i class="ri-eraser-line"></i></button>
+                    <button type="button" class="ddv-mini-btn ok ddv-tip" onclick="approvePicked(1)" data-tip="Approve every pending record of the ticked employees"><i class="ri-check-double-line"></i></button>
+                    <button type="button" class="ddv-mini-btn no ddv-tip" onclick="approvePicked(2)" data-tip="Disapprove every pending record of the ticked employees"><i class="ri-close-line"></i></button>
+                    <button type="button" class="ddv-mini-btn ddv-tip" onclick="clearPicked()" data-tip="Clear the current selection"><i class="ri-eraser-line"></i></button>
                 </span>
             </div>
             <div class="ddv-list" id="ddv-list">
@@ -1281,6 +1280,48 @@ body {
                 <div class="modal-footer">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-sm btn-success"><i class="ri-save-line me-1"></i>Save changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit punches for one DTR day — backs save_dtr_punches(). Unlike "Edit
+     record" above, which overwrites the computed figures, this edits the SCANS
+     and lets the shared day math derive the figures from them, so a later
+     Recompute agrees instead of undoing the correction. Any number of punches,
+     each with its own date — that is what lets a night shift's next-morning
+     clock-out be entered on the day the shift started. -->
+<div class="modal fade" id="modal-edit-punches" tabindex="-1">
+    <div class="modal-dialog">
+        <form id="form-edit-punches">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title"><i class="ri-fingerprint-line me-2 text-primary"></i>Edit punches <span id="pe-date-lbl" class="text-muted fw-normal ms-1" style="font-size:12px;"></span></h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="pe-rec-id">
+                    <div class="pe-hint">
+                        <i class="ri-information-line me-1"></i>
+                        The scans themselves &mdash; hours, OT, undertime and late are recalculated from
+                        them against this day's shift. A punch may fall on the <b>next day</b>
+                        (a night shift's clock-out belongs to the day the shift started).
+                        <span class="pe-tag bio">bio</span> rows are device scans and are
+                        <b>locked</b> &mdash; they cannot be retimed or removed. Only
+                        <span class="pe-tag manual">manual</span> entries you add can be edited or
+                        deleted, and they are recorded under your name.
+                        To re-file a device scan on another day, add it from <i>that</i> day's editor
+                        &mdash; it moves across instead of being destroyed.
+                    </div>
+                    <div id="pe-rows"></div>
+                    <button type="button" class="btn btn-sm btn-outline-primary mt-1" onclick="peAddRow('')">
+                        <i class="ri-add-line me-1"></i>Add punch
+                    </button>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-primary"><i class="ri-save-line me-1"></i>Save &amp; recalculate</button>
                 </div>
             </div>
         </form>
@@ -1602,7 +1643,8 @@ function renderSummary(e) {
     let periodDays = 0; eachDay(() => periodDays++);
     const pct = periodDays ? Math.round(daysPresent / periodDays * 100) : 0;
     box.innerHTML = `
-        <a href="index.php?page=employee-details&id=${e.id}" class="ddv-sum-emp" title="View employee details">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></a>
+        <a href="index.php?page=employee-details&id=${e.id}" data-emp-quickview="${e.id}" class="ddv-sum-emp"
+           data-tip="Quick view\n${esc(e.lastname)}, ${esc(e.firstname)} — identity, shift, pay glance. Full details opens in a new tab.">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></a>
         <div class="ddv-sum-sub">${esc(e.no)}${e.position ? ' · ' + esc(e.position) : ''}${e.department ? ' · ' + esc(e.department) : ''}</div>
         <div class="ddv-sum-grid">
             <div class="ddv-sum-tile"><div class="v">${Number(e.totals.wh).toFixed(2)}</div><div class="l">Hours</div></div>
@@ -1797,7 +1839,8 @@ function renderRecords(e) {
             // Conversation thread lives in a single floating popover (openChat),
             // so it never adds height to the record card.
             const msgs = r.msgs || [];
-            const msgBtn = `<button class="ddv-mini-btn msg ${msgs.length ? 'has' : ''}" data-rec="${r.id}" onclick="openChat(${r.id}, this)" title="Conversation with the employee about this date">
+            // The count stays beside the icon — it is data, not a label.
+            const msgBtn = `<button class="ddv-mini-btn msg ddv-tip ${msgs.length ? 'has' : ''}" data-rec="${r.id}" onclick="openChat(${r.id}, this)" data-tip="Conversation with the employee about this date${msgs.length ? ' — ' + msgs.length + ' message(s)' : ''}">
                         <i class="ri-chat-3-line"></i>${msgs.length ? ' ' + msgs.length : ''}
                     </button>`;
             html += `<div class="ddv-rec ${cls}" id="rec-${r.id}">
@@ -1812,12 +1855,13 @@ function renderRecords(e) {
                     <span class="late">Late <b>${Number(r.late).toFixed(2)}</b></span>
                 </div>
                 ${CAN_EDIT ? `<div class="ddv-rec-actions">
-                    <button class="ddv-mini-btn ok"   onclick="decideRecs([${r.id}], 1)" ${r.status === 1 ? 'disabled' : ''}><i class="ri-check-line"></i> Approve</button>
-                    <button class="ddv-mini-btn no"   onclick="decideRecs([${r.id}], 2)" ${r.status === 2 ? 'disabled' : ''}><i class="ri-close-line"></i> Reject</button>
-                    <button class="ddv-mini-btn edit" onclick="editRec(${r.id})" title="Edit hours"><i class="ri-pencil-line"></i></button>
-                    <button class="ddv-mini-btn sch" onclick="changeRecSchedule(${r.id})" title="Change schedule for this day"><i class="ri-calendar-2-line"></i></button>
+                    <button class="ddv-mini-btn ok ddv-tip"   onclick="decideRecs([${r.id}], 1)" ${r.status === 1 ? 'disabled' : ''} data-tip="Approve this day — accept the hours as computed"><i class="ri-check-line"></i></button>
+                    <button class="ddv-mini-btn no ddv-tip"   onclick="decideRecs([${r.id}], 2)" ${r.status === 2 ? 'disabled' : ''} data-tip="Disapprove this day — send it back with a reason"><i class="ri-close-line"></i></button>
+                    <button class="ddv-mini-btn edit ddv-tip" onclick="editRec(${r.id})" data-tip="Edit hours — overwrite the computed work hours, OT, undertime and late by hand"><i class="ri-pencil-line"></i></button>
+                    <button class="ddv-mini-btn pun ddv-tip" onclick="editPunches(${r.id})" data-tip="Edit punches — add or remove the scans themselves; hours are recalculated from them. Device scans are read-only."><i class="ri-fingerprint-line"></i></button>
+                    <button class="ddv-mini-btn sch ddv-tip" onclick="changeRecSchedule(${r.id})" data-tip="Change the shift this day is priced against, then recalculate"><i class="ri-calendar-2-line"></i></button>
                     ${msgBtn}
-                    <button class="ddv-mini-btn del"  onclick="deleteRec(${r.id})" title="Delete record"><i class="ri-delete-bin-6-line"></i></button>
+                    <button class="ddv-mini-btn del ddv-tip"  onclick="deleteRec(${r.id})" data-tip="Delete this attendance record and its punches"><i class="ri-delete-bin-6-line"></i></button>
                 </div>` : (msgs.length ? `<div class="ddv-rec-actions">${msgBtn}</div>` : '')}
             </div>`;
         });
@@ -2193,6 +2237,80 @@ document.getElementById('form-edit-rec').addEventListener('submit', async functi
 // against — without leaving the record for duty-roster.php + a batch Recompute.
 // Writes the duty-roster override for that one employee/date, then re-derives
 // this row's hours/OT/UT/late from its raw logs against the new schedule.
+// ── Punch editor ─────────────────────────────────────────────────────────────
+// Edits the SCANS, not the computed figures. Every row carries the full date as
+// well as the time: a night shift's clock-out is filed under the day the shift
+// STARTED, so "7:03 AM" alone cannot say which day it belongs to.
+let peDate = '';
+
+function peAddRow(dt, bio) {
+    const wrap = $id('pe-rows');
+    const row  = document.createElement('div');
+    row.className = 'pe-row';
+    // A new row defaults to this record's own date so the common case is one
+    // keystroke — the admin types a time, not a date.
+    const val = dt || (peDate + 'T08:00');
+    // A device scan is evidence — readable here, never retimed and never
+    // deleted. Only manual entries can be changed or removed. Re-filing a scan
+    // onto another day IS still possible: add it from THAT day's editor and it
+    // moves across with its provenance intact, rather than being destroyed.
+    row.innerHTML = `<input type="datetime-local" class="form-control form-control-sm pe-dt${bio ? ' pe-locked' : ''}"
+            value="${val}"${bio ? ' readonly' : ''}>
+        <span class="pe-tag ${bio ? 'bio' : 'manual'}">${bio ? 'bio' : 'manual'}</span>
+        ${bio
+            ? `<span class="pe-lock ddv-tip" data-tip="Device scan — it cannot be retimed or removed here, only manual entries can. To re-file it on another day, open that day's punch editor and add it there."><i class="ri-lock-2-line"></i></span>`
+            : `<button type="button" class="pe-del ddv-tip" data-tip="Remove this manual entry"><i class="ri-delete-bin-6-line"></i></button>`}`;
+    const del = row.querySelector('.pe-del');
+    if (del) del.addEventListener('click', function () {
+        row.remove();
+        if (!wrap.children.length) peRenderEmpty();
+    });
+    const empty = wrap.querySelector('.pe-empty');
+    if (empty) empty.remove();
+    wrap.appendChild(row);
+}
+
+function peRenderEmpty() {
+    $id('pe-rows').innerHTML = '<div class="pe-empty"><i class="ri-information-line me-1"></i>No punches — saving now leaves the day blank.</div>';
+}
+
+function editPunches(recId) {
+    const hit = findRec(recId);
+    if (!hit) return;
+    peDate = hit.date;
+    $id('pe-rec-id').value = recId;
+    $id('pe-date-lbl').textContent = '· ' + new Date(hit.date + 'T00:00:00')
+        .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    $id('pe-rows').innerHTML = '';
+    const logs = hit.r.logs || [];
+    if (!logs.length) peRenderEmpty();
+    else logs.forEach(l => peAddRow(l.dt || '', !!l.bio));
+    bootstrap.Modal.getOrCreateInstance($id('modal-edit-punches')).show();
+}
+
+document.getElementById('form-edit-punches').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const recId = parseInt($id('pe-rec-id').value, 10);
+    const punches = [...document.querySelectorAll('#pe-rows .pe-dt')]
+        .map(i => i.value).filter(Boolean).map(dt => ({ dt: dt }));
+    try {
+        const resp = await $.ajax({
+            url: 'ajax.php?action=save_dtr_punches', method: 'POST', dataType: 'JSON',
+            data: { detail_id: recId, punches: punches },
+        });
+        if (!(resp && resp.result)) throw new Error((resp && resp.message) || 'Save failed');
+        bootstrap.Modal.getInstance($id('modal-edit-punches'))?.hide();
+        // Refetch rather than hand-patch: the punches drive the Form 48 Arrival/
+        // Departure cells as well as the record card, and those live in
+        // e.days[date], not on the record — the same trap changeRecSchedule hit.
+        await loadPage(st.sel);
+        await refreshBatch();    // the day went back to Pending — counts moved
+        Swal.fire({ icon: 'success', title: 'Punches saved', text: resp.message, timer: 2600, showConfirmButton: false });
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Could not save', text: err.message || String(err) });
+    }
+});
+
 function changeRecSchedule(recId) {
     const hit = findRec(recId);
     if (!hit) return;
@@ -2745,6 +2863,17 @@ document.addEventListener('keydown', ev => {
 
 loadPage();
 </script>
+
+<?php
+// Shared employee quick-view drawer — the summary panel's name carries
+// data-emp-quickview, and this component binds it globally. Standalone
+// workbenches include it themselves; index.php does it for the routed pages.
+// Full details opens in a NEW TAB here: this page is a workbench holding an
+// unsaved review position (selected employee, scroll, pending decisions), and
+// navigating away from it to read an ID number loses all of that.
+$eqv_full_target = '_blank';
+include 'component/employee_quick_view.php';
+?>
 
 </body>
 </html>

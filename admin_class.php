@@ -10759,6 +10759,220 @@ class Action
         return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Saved'];
     }
 
+    /**
+     * Replace one DTR day's punch list outright — any number of punches, each
+     * with its own full date and time.
+     *
+     * edit_dtr_time() next door can only express ONE in and ONE out, both on the
+     * row's own date. That covers a plain day shift and nothing else: a split
+     * shift, a forgotten mid-day scan, a double-tap to remove, and above all a
+     * night shift whose clock-out lands the NEXT morning all need either more
+     * than two punches or a punch on another date. Admins were left correcting
+     * the computed hours by hand instead of the punches that produce them, which
+     * a later Recompute then silently overwrote.
+     *
+     * Each punch keeps its own provenance: a scan the admin did not touch stays
+     * 'bio', anything added or edited becomes 'manual' and carries who
+     * authorised it. Relabelling an untouched device scan as manual would
+     * destroy the one thing that makes the raw log worth keeping.
+     *
+     * Figures come from dtr_compute_day in STAMP mode — the same math as the
+     * manual time edit and the incident repair — so this corrects the punches,
+     * not the shift. Changing the shift is dtr_set_day_schedule's job.
+     */
+    function save_dtr_punches()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $id = (int) ($_POST['detail_id'] ?? 0);
+        if (!$id) return ['result' => false, 'message' => 'Missing record id'];
+
+        $row = $this->db->query(
+            "SELECT d.employee_id, d.date_time, d.logs, b.status AS batch_status
+             FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+             WHERE d.id = $id LIMIT 1"
+        );
+        $row = $row ? $row->fetch_assoc() : null;
+        if (!$row) return ['result' => false, 'message' => 'Record not found.'];
+        if ((int) $row['batch_status'] === 2) {
+            return ['result' => false, 'message' => 'This DTR batch is already final-approved and locked — reopen it before editing punches.'];
+        }
+
+        $employee_id = (int) $row['employee_id'];
+        $date        = date('Y-m-d', strtotime($row['date_time']));
+        $author      = mb_substr(trim((string) ($_SESSION['login_name'] ?? $_SESSION['name'] ?? 'Admin')), 0, 80);
+
+        // Which stamps were already on the row, so an untouched one keeps 'bio'.
+        $wasBio = [];
+        foreach ((json_decode((string) $row['logs'], true) ?: []) as $lg) {
+            $t = strtotime($lg['dateTime'] ?? '');
+            if ($t !== false && ($lg['type'] ?? '') === 'bio') $wasBio[date('Y-m-d H:i', $t)] = true;
+        }
+
+        $in = $_POST['punches'] ?? [];
+        if (!is_array($in)) $in = [];
+        if (count($in) > 12) return ['result' => false, 'message' => 'A day can hold at most 12 punches.'];
+
+        $ts = [];
+        foreach ($in as $p) {
+            $raw = trim((string) (is_array($p) ? ($p['dt'] ?? '') : $p));
+            if ($raw === '') continue;
+            $t = strtotime(str_replace('T', ' ', $raw));
+            if ($t === false) return ['result' => false, 'message' => 'Could not read the time "' . htmlspecialchars($raw) . '".'];
+            // A punch belongs to the shift that started on this row's date. Two
+            // days either side is generous for even a 12-hour shift plus OT, and
+            // it stops a typo'd year from silently landing on a random day.
+            $off = (int) round(($t - strtotime($date)) / 86400);
+            if ($off < -1 || $off > 2) {
+                return ['result' => false, 'message' => 'Punch ' . date('M j, g:i A', $t) . ' is too far from ' . date('M j', strtotime($date)) . ' to belong to that day.'];
+            }
+            $ts[] = $t;
+        }
+        sort($ts);
+        $ts = array_values(array_unique($ts));
+
+        // A device scan is evidence: the editor may not drop or retime one, only
+        // manual entries. Enforced here and not just by the read-only field, so
+        // a crafted POST cannot erase what the machine recorded.
+        //
+        // Re-filing a scan onto ANOTHER day is deliberately still allowed — that
+        // happens by adding it from the other day's editor, which moves it (see
+        // the adoption pass below). The scan survives; only its date changes.
+        $have = [];
+        foreach ($ts as $t) $have[date('Y-m-d H:i', $t)] = true;
+        $lost = array_diff(array_keys($wasBio), array_keys($have));
+        if ($lost) {
+            return ['result' => false, 'message' => 'The device scan at '
+                . date('M j, g:i A', strtotime((string) reset($lost)))
+                . ' cannot be removed or retimed — only manual entries can. If it belongs on another day, add it from that day\'s punch editor and it will move across.'];
+        }
+
+        // A punch typed onto this row that already exists as a scan on a
+        // NEIGHBOURING day is the same punch being re-filed, not a new one —
+        // exactly what an admin does to put a night shift's 7:03 AM clock-out
+        // back onto the day the shift started. So MOVE it: keep whatever
+        // provenance it had, and take it off the day it came from. Copying
+        // would leave one scan counted on two days at once, and retyping it as
+        // 'manual' would erase the fact that a device recorded it.
+        $adopt = $strip = [];
+        $want  = [];
+        foreach ($ts as $t) {
+            $k = date('Y-m-d H:i', $t);
+            if (!isset($wasBio[$k])) $want[$k] = $t;
+        }
+        if ($want) {
+            $nq = $this->db->query(
+                "SELECT d.id, d.date_time, d.logs FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+                 WHERE d.employee_id = $employee_id AND d.id <> $id AND b.status <> 2
+                   AND d.date_time BETWEEN '" . $this->db->real_escape_string(date('Y-m-d', strtotime('-2 day', strtotime($date)))) . "'
+                                       AND '" . $this->db->real_escape_string(date('Y-m-d', strtotime('+2 day', strtotime($date)))) . "'"
+            );
+            while ($nq && ($nr = $nq->fetch_assoc())) {
+                $keep = [];
+                $hit  = false;
+                foreach ((json_decode((string) $nr['logs'], true) ?: []) as $lg) {
+                    $t = strtotime($lg['dateTime'] ?? '');
+                    $k = $t !== false ? date('Y-m-d H:i', $t) : null;
+                    if ($k !== null && isset($want[$k]) && !isset($adopt[$k])) {
+                        $adopt[$k] = $lg;   // provenance travels with the punch
+                        $hit = true;
+                        continue;           // and it leaves this row
+                    }
+                    $keep[] = $lg;
+                }
+                if ($hit) $strip[(int) $nr['id']] = ['date' => date('Y-m-d', strtotime($nr['date_time'])), 'logs' => $keep];
+            }
+        }
+
+        $logs = [];
+        $manual = false;
+        foreach ($ts as $t) {
+            $key = date('Y-m-d H:i', $t);
+            if (isset($wasBio[$key])) {
+                $logs[] = ['dateTime' => date('Y-m-d H:i:s', $t), 'type' => 'bio'];
+            } elseif (isset($adopt[$key])) {
+                $lg = $adopt[$key];
+                $lg['dateTime'] = date('Y-m-d H:i:s', $t);
+                if (($lg['type'] ?? '') !== 'bio') $manual = true;
+                $logs[] = $lg;
+            } else {
+                $manual = true;
+                $logs[] = ['dateTime' => date('Y-m-d H:i:s', $t), 'type' => 'manual', 'authorized_by' => $author];
+            }
+        }
+
+        $c    = dtr_compute_day($this->db, $employee_id, $date, $ts);
+        $json = json_encode($logs);
+        $atype = $manual ? 'manual' : 'biometric';
+
+        $this->db->begin_transaction();
+        try {
+            // Edited punches void any earlier decision — back to pending, exactly
+            // as the figure edits next door do.
+            $stmt = $this->db->prepare(
+                "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?,
+                 day_type=?, is_complete=?, attendance_type=?,
+                 schedule_id=?, day_hours=?, is_rest_day=?, sched_start=?, sched_end=?, sched_break=?, sched_graveyard=?,
+                 status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+            );
+            $stmt->bind_param(
+                'sdddddsisidissiii',
+                $json, $c['work_hours'], $c['overtime'], $c['undertime'], $c['late'], $c['nsd_hours'],
+                $c['day_type'], $c['is_complete'], $atype,
+                $c['schedule_id'], $c['day_hours'], $c['is_rest_day'],
+                $c['sched_start'], $c['sched_end'], $c['sched_break'], $c['sched_graveyard'], $id
+            );
+            if (!$stmt->execute()) throw new Exception($stmt->error);
+
+            // Each day a punch was taken from has to be re-derived too, or it
+            // keeps the hours it earned from a scan it no longer holds.
+            foreach ($strip as $nid => $n) {
+                $nts = [];
+                foreach ($n['logs'] as $lg) {
+                    $t = strtotime($lg['dateTime'] ?? '');
+                    if ($t !== false) $nts[] = $t;
+                }
+                sort($nts);
+                $nc = dtr_compute_day($this->db, $employee_id, $n['date'], $nts);
+                $nj = json_encode($n['logs']);
+                $ns = $this->db->prepare(
+                    "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, undertime=?, late=?, nsd_hours=?,
+                     day_type=?, is_complete=?, status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+                );
+                $ns->bind_param('sdddddsii', $nj, $nc['work_hours'], $nc['overtime'], $nc['undertime'],
+                                $nc['late'], $nc['nsd_hours'], $nc['day_type'], $nc['is_complete'], $nid);
+                if (!$ns->execute()) throw new Exception($ns->error);
+            }
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Save failed — nothing was changed. ' . $e->getMessage()];
+        }
+
+        $movedFrom = array_values(array_unique(array_map(function ($n) {
+            return date('M j', strtotime($n['date']));
+        }, $strip)));
+
+        return [
+            'moved_from' => $movedFrom,
+            'result'      => true,
+            'work_hours'  => (float) $c['work_hours'],
+            'overtime'    => (float) $c['overtime'],
+            'undertime'   => (float) $c['undertime'],
+            'late'        => (float) $c['late'],
+            'is_complete' => (int) $c['is_complete'],
+            'logs'        => array_map(function ($l) {
+                $t = strtotime($l['dateTime']);
+                return ['t' => date('g:i A', $t), 'dt' => date('Y-m-d\TH:i', $t), 'bio' => $l['type'] === 'bio'];
+            }, $logs),
+            'message'     => (count($logs)
+                    ? count($logs) . ' punch(es) saved — the day was recalculated and sent back to Pending.'
+                    : 'All punches removed — the day is now blank and back to Pending.')
+                . ($movedFrom ? ' Moved off ' . implode(' and ', $movedFrom) . ', which was recalculated too.' : ''),
+        ];
+    }
+
     function finalize_dtr()
     {
         $id   = intval($_POST['id'] ?? 0);
@@ -11166,12 +11380,11 @@ class Action
         $rows = [];
         while ($row = $res->fetch_assoc()) $rows[] = $row;
 
-        // A night shift whose clock-out ingestion filed on the NEXT day has to be
-        // re-paired before anything is re-derived: dtr_compute_day reads a row's
-        // OWN logs, so otherwise both days recompute from punches sitting on the
-        // wrong rows. May append the next-day rows it emptied, so they recompute
-        // here too.
-        $this->repairOvernightSpill($rows);
+        // Punches ingestion filed under the wrong day have to be re-dated before
+        // anything is re-derived: dtr_compute_day reads a row's OWN logs, so
+        // otherwise both days recompute from punches sitting on the wrong rows.
+        // May append (or open) neighbouring rows, so they recompute here too.
+        $this->repairPunchDates($rows);
 
         $scanned = $changed = $repending = 0;
         $affectedEmp = [];
@@ -11296,36 +11509,46 @@ class Action
     }
 
     /**
-     * Re-date a night shift's clock-out that ingestion filed on the NEXT day.
+     * Re-date punches that ingestion filed under the wrong day.
      *
      * Ingestion decides which day a punch belongs to from the roster AS IT STOOD
-     * at scan time (Action::save_biometric_attendance). Correct a day to a night
-     * shift AFTER the fact — the ordinary "wrong shift, fix it and Recompute"
-     * flow — and the morning clock-out is already sitting on its own next-day
-     * row. The night is then left open with no departure, and the morning after
-     * reads as a second, impossible arrival: 11:00 PM–7:00 AM shows as "in
-     * 10:57 PM" on one row and "in 7:03 AM" on the next, both days zero hours.
+     * at scan time (Action::save_biometric_attendance). Change the shift AFTER
+     * the fact — the ordinary "wrong shift, fix it and Recompute" flow — and the
+     * punches stay where the old roster put them. Recompute alone cannot help:
+     * it re-derives each row from its own logs and never moves a punch.
      *
-     * Recompute alone cannot fix that — it re-derives each row from its own logs
-     * and never moves a punch between rows. This pass does exactly the re-dating
-     * ingestion would have done had the roster been right at the time, and only
-     * that: same overnight predicate, same 12-hour post-shift OT ceiling.
+     * The rule this pass enforces, in both directions: **the logs must end up
+     * where ingestion would have put them had the roster been right at the
+     * time.** Same overnight predicate, same 12-hour post-shift OT ceiling, so
+     * a repaired day is indistinguishable from one recorded correctly.
      *
-     * Deliberately conservative — a punch is moved only when
-     *   • the night row holds exactly ONE punch (an arrival with nothing to
-     *     close it; two already make a day, none means the shift never started),
-     *   • it lands after that arrival and within the shift's end + 12h, and
-     *   • the next day cannot plausibly own it — that day is a rest day, or the
-     *     punch falls before its own shift's start (early-arrival grace
-     *     included).
-     * Anything ambiguous is left where it is: a wrongly merged punch is worse
-     * than an unmerged one, since it pays one day's hours on another.
+     * PULL — the day became a night shift. Its clock-out is sitting on its own
+     * next-day row, so the night reads as an arrival with no departure and the
+     * morning after as a second, impossible arrival (10:57 PM and 7:03 AM on
+     * two rows, both zero hours). The punch is pulled back onto the night, but
+     * only when the night row holds exactly ONE punch (two already make a day,
+     * none means the shift never started) and the next day cannot plausibly own
+     * it — that day is a rest day, or the punch falls before its own shift's
+     * start with early-arrival grace. Anything ambiguous is left alone: a
+     * wrongly merged punch is worse than an unmerged one, since it pays one
+     * day's hours on another.
      *
-     * Writes the moved logs straight away (the caller's transaction covers it)
-     * and appends any next-day row it touched to $rows so the caller re-derives
-     * that row's figures too.
+     * PUSH — the day stopped being a night shift. Its after-midnight punch
+     * stays put and the row reads as one impossible day: on an 8AM–4PM shift,
+     * in at 10:57 PM (late 14.95) and out at 7:03 AM (OT 15.06), work hours 0.
+     * A day shift CAN legitimately run past midnight on overtime, so the same
+     * 12h ceiling decides — within it the punch is that day's OT and stays;
+     * beyond it, it goes back to its own calendar date. The destination row is
+     * opened if it does not exist, in the source row's own batch and only when
+     * that batch's cutoff covers the date; a punch with nowhere safe to go
+     * stays where it is rather than being filed into the wrong payroll period.
+     *
+     * Final-approved batches (status 2) are never touched on either side —
+     * those figures are locked and paid. Writes straight away (the caller's
+     * transaction covers it) and puts every row it touched into $rows, so the
+     * caller re-derives their figures too.
      */
-    private function repairOvernightSpill(array &$rows): void
+    private function repairPunchDates(array &$rows): void
     {
         if (!$rows) return;
 
@@ -11355,46 +11578,126 @@ class Action
             return $out;
         };
         $encode = function (array $es) {
+            usort($es, function ($a, $b) { return $a['t'] <=> $b['t']; });
             return json_encode(array_map(function ($e) { return $e['lg']; }, $es));
         };
 
-        // $rows grows as emptied neighbours are appended, so walk it by position.
+        // The row for one employee-day: from the working set when it is already
+        // there, else off the database. Returns [position|null, row|null].
+        $rowAt = function ($eid, $d) use (&$rows, &$index, $cols) {
+            $key = $eid . '|' . $d;
+            if (isset($index[$key])) return [$index[$key], $rows[$index[$key]]];
+            $q = $this->db->query(
+                "SELECT $cols FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+                 WHERE d.employee_id = " . (int) $eid . "
+                   AND d.date_time = '" . $this->db->real_escape_string($d) . "'
+                   AND b.status <> 2 ORDER BY d.id DESC LIMIT 1"
+            );
+            return [null, $q ? $q->fetch_assoc() : null];
+        };
+
+        // Open the row a pushed-back punch needs, in the SOURCE row's batch —
+        // and only when that batch's cutoff actually covers the date. Guessing a
+        // batch for a date outside it would file the day in the wrong payroll
+        // period, which is worse than leaving the punch where it is.
+        $openRow = function ($eid, $srcId, $d) use ($cols) {
+            $b = $this->db->query(
+                "SELECT d.ddtr_id, b.date_from, b.date_to, b.status
+                 FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+                 WHERE d.id = " . (int) $srcId . " LIMIT 1"
+            );
+            $b = $b ? $b->fetch_assoc() : null;
+            if (!$b || (int) $b['status'] === 2) return null;
+            if ($d < $b['date_from'] || $d > $b['date_to']) return null;
+
+            $ins = $this->db->prepare(
+                "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs,
+                                          attendance_type, day_type, nsd_hours, is_complete, status)
+                 VALUES (?, ?, ?, 0, '[]', 'biometric', 'regular', 0, 0, 0)"
+            );
+            $bid = (int) $b['ddtr_id'];
+            $e   = (int) $eid;
+            $ins->bind_param('iis', $bid, $e, $d);
+            if (!$ins->execute()) throw new Exception('Opening row for ' . $d . ': ' . $ins->error);
+
+            $q = $this->db->query("SELECT $cols FROM DTR_details d WHERE d.id = " . (int) $this->db->insert_id);
+            return $q ? $q->fetch_assoc() : null;
+        };
+
+        // Put a row back into the working set so the caller re-derives it too.
+        $attach = function ($pos, array $row) use (&$rows, &$index) {
+            if ($pos !== null) { $rows[$pos] = $row; return; }
+            $index[(int) $row['employee_id'] . '|' . date('Y-m-d', strtotime($row['date_time']))] = count($rows);
+            $rows[] = $row;
+        };
+
+        $write = function ($id, $json) use ($setLogs) {
+            $i = (int) $id;
+            $setLogs->bind_param('si', $json, $i);
+            if (!$setLogs->execute()) throw new Exception('Row ' . $i . ': ' . $setLogs->error);
+        };
+        $note = function ($id, $text) use ($setNote) {
+            $i = (int) $id;
+            $setNote->bind_param('si', $text, $i);
+            $setNote->execute();
+        };
+
+        // $rows grows as neighbours are attached, so walk it by position.
         for ($i = 0; $i < count($rows); $i++) {
             $eid  = (int) $rows[$i]['employee_id'];
             $date = date('Y-m-d', strtotime($rows[$i]['date_time']));
 
             $sched = resolve_employee_schedule($this->db, $eid, $date);
             if (!$sched) continue;
+
             // Same overnight test as ingestion and dtr_compute_day: the flag, or
             // an end time that wraps past midnight without the flag being ticked.
-            if (!$sched['is_graveyard'] && $sched['end_time'] > $sched['start_time']) continue;
+            $overnight = $sched['is_graveyard'] || $sched['end_time'] <= $sched['start_time'];
+            $end       = strtotime($date . ' ' . $sched['end_time']);
+            if ($overnight) $end = strtotime('+1 day', $end);
+            $ceiling   = $end + 12 * 3600;      // the OT ceiling ingestion allows
 
             $own = $entries($rows[$i]['logs']);
-            if (count($own) !== 1) continue;
 
-            $end = strtotime($date . ' ' . $sched['end_time']);
-            if ($sched['end_time'] <= $sched['start_time']) $end = strtotime('+1 day', $end);
+            // ── PUSH: punches stranded past this day's shift + OT ceiling ──
+            if (!$overnight) {
+                $keep = $push = [];
+                foreach ($own as $e) {
+                    if ($e['t'] > $ceiling) $push[date('Y-m-d', $e['t'])][] = $e;
+                    else                    $keep[] = $e;
+                }
+                if (!$push) continue;
+
+                $landed = [];
+                foreach ($push as $tgtDate => $es) {
+                    [$pos, $trow] = $rowAt($eid, $tgtDate);
+                    if (!$trow) $trow = $openRow($eid, $rows[$i]['id'], $tgtDate);
+                    if (!$trow) { $keep = array_merge($keep, $es); continue; }  // nowhere safe to file it
+
+                    $json = $encode(array_merge($entries($trow['logs']), $es));
+                    $write($trow['id'], $json);
+                    $trow['logs'] = $json;
+                    $attach($pos, $trow);
+                    $landed[] = $tgtDate;
+                }
+                if (!$landed) continue;
+
+                $json = $encode($keep);
+                $write($rows[$i]['id'], $json);
+                $rows[$i]['logs'] = $json;
+                if (!$keep) {
+                    $note($rows[$i]['id'], 'Punch moved to ' . date('M j', strtotime($landed[0])) . ' — filed on its own day');
+                }
+                continue;
+            }
+
+            // ── PULL: a night shift left open, its clock-out on the next row ──
+            if (count($own) !== 1) continue;
             if ($own[0]['t'] >= $end) continue;      // lone punch is already past the shift
-            $ceiling = $end + 12 * 3600;
 
             $next = date('Y-m-d', strtotime('+1 day', strtotime($date)));
-            $key  = $eid . '|' . $next;
-            if (isset($index[$key])) {
-                $ni   = $index[$key];
-                $nrow = $rows[$ni];
-            } else {
-                // Outside the recomputed set — a single-day recompute, or the
-                // next day fell into the following cutoff. A final-approved
-                // batch is excluded: its figures are locked and paid.
-                $q = $this->db->query(
-                    "SELECT $cols FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
-                     WHERE d.employee_id = $eid AND d.date_time = '" . $this->db->real_escape_string($next) . "'
-                       AND b.status <> 2 ORDER BY d.id DESC LIMIT 1"
-                );
-                $nrow = $q ? $q->fetch_assoc() : null;
-                if (!$nrow) continue;
-                $ni = null;
-            }
+            [$pos, $nrow] = $rowAt($eid, $next);
+            if (!$nrow) continue;
 
             $nlogs = $entries($nrow['logs']);
             if (!$nlogs) continue;
@@ -11421,36 +11724,19 @@ class Action
             }
             if (!$move) continue;
 
-            $merged = array_merge($own, $move);
-            usort($merged, function ($a, $b) { return $a['t'] <=> $b['t']; });
-
-            $nightJson = $encode($merged);
+            $nightJson = $encode(array_merge($own, $move));
             $nextJson  = $encode($keep);
-            $nightId   = (int) $rows[$i]['id'];
-            $nextId    = (int) $nrow['id'];
-
-            $setLogs->bind_param('si', $nightJson, $nightId);
-            if (!$setLogs->execute()) throw new Exception('Row ' . $nightId . ': ' . $setLogs->error);
-            $setLogs->bind_param('si', $nextJson, $nextId);
-            if (!$setLogs->execute()) throw new Exception('Row ' . $nextId . ': ' . $setLogs->error);
+            $write($rows[$i]['id'], $nightJson);
+            $write($nrow['id'], $nextJson);
 
             $rows[$i]['logs'] = $nightJson;
             $nrow['logs']     = $nextJson;
 
             // Say where the punch went, so the day it left doesn't just read as
             // an unexplained blank on the sheet. varchar(100) — keep it short.
-            if (!$keep) {
-                $note = 'Punch moved to ' . date('M j', strtotime($date)) . ' — night shift clock-out';
-                $setNote->bind_param('si', $note, $nextId);
-                $setNote->execute();
-            }
+            if (!$keep) $note($nrow['id'], 'Punch moved to ' . date('M j', strtotime($date)) . ' — night shift clock-out');
 
-            if ($ni !== null) {
-                $rows[$ni] = $nrow;
-            } else {
-                $index[$key] = count($rows);
-                $rows[]      = $nrow;
-            }
+            $attach($pos, $nrow);
         }
     }
 

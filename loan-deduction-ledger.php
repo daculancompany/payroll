@@ -177,7 +177,7 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
                                     <button type="button" class="btn btn-sm btn-link p-0" onclick="ldlToggle('<?= $r['key'] ?>', this)" title="Payment history"><i class="ri-arrow-right-s-line"></i></button>
                                     <?php endif; ?>
                                 </td>
-                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
+                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" data-emp-quickview="<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
                                 <td><span class="badge <?= $r['kind']==='Loan'?'bg-danger':'bg-warning text-dark' ?>"><?= $r['kind'] ?></span></td>
                                 <td><?= htmlspecialchars($r['name']) ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['original']) ?></td>

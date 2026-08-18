@@ -620,6 +620,30 @@ if ($today_att) {
     $td_type_cls = in_array($td_t1, ['P','A','H','S','O']) ? 'att-'.$td_t1 : 'att-P';
 }
 
+// ── My Logs tab: the employee's own raw punches ─────────────────
+// Deliberately separate from the Attendance tab. Attendance shows the DAY —
+// in, out, hours, as payroll read them. This shows the SCANS, exactly as the
+// device recorded them, so an employee can check "did my clock-out register?"
+// without having to understand which shift day it was counted toward. Same
+// decoder the admin Punch Logs screen uses (dtr_punch_feed in db_connect.php).
+$logs_from = date('Y-m-01', strtotime($_GET['lmonth'] ?? 'now'));
+$logs_to   = date('Y-m-t',  strtotime($logs_from));
+$my_punches = dtr_punch_feed($conn, ['employee_id' => $emp_id, 'from' => $logs_from, 'to' => $logs_to]);
+// Grouped by the day the scan HAPPENED on — that is the day the employee
+// remembers. Which shift day it counts toward is shown per punch instead.
+$my_punch_days = [];
+foreach ($my_punches as $p) $my_punch_days[date('Y-m-d', $p['ts'])][] = $p;
+krsort($my_punch_days);
+// Months to offer in the picker: every month this employee has punches in.
+$my_punch_months = [];
+$pmq = $conn->prepare("SELECT DISTINCT DATE_FORMAT(date_time, '%Y-%m-01') AS m
+                       FROM DTR_details WHERE employee_id = ? ORDER BY m DESC LIMIT 24");
+$pmq->bind_param('i', $emp_id);
+$pmq->execute();
+$pmr = $pmq->get_result();
+while ($pmr && ($m = $pmr->fetch_assoc())) $my_punch_months[] = $m['m'];
+if (!in_array($logs_from, $my_punch_months, true)) array_unshift($my_punch_months, $logs_from);
+
 // ── Active loans ────────────────────────────────────────────────
 $s4 = $conn->prepare("
     SELECT l.*, COALESCE(clt.loan_type,'Loan') AS type_name
@@ -858,6 +882,30 @@ body{
 .mydtr-btn{border:0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
 .mydtr-btn.primary{background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;}
 .mydtr-btn.ghost{background:#f2f1f5;color:#4e3483;}
+
+/* ── My Logs tab ── raw scans, grouped by the day they happened on ── */
+.mylog-bar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap;}
+.mylog-bar label{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:#8a83a0;}
+.mylog-bar select{border:1px solid #e2dced;border-radius:9px;padding:7px 11px;font-size:13px;font-weight:700;color:#4e3483;background:#fff;}
+.mylog-count{margin-left:auto;font-size:11.5px;color:#999;font-weight:700;}
+.mylog-day{display:flex;gap:12px;background:#fff;border:1px solid #f0eff3;border-radius:14px;padding:12px 14px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.04);}
+.mylog-date{flex:0 0 52px;display:flex;align-items:center;gap:7px;border-right:1px solid #f2f0f6;padding-right:10px;}
+.mylog-date .d{font-size:22px;font-weight:800;color:#4e3483;line-height:1;}
+.mylog-date .m{font-size:9px;font-weight:800;color:#b3aec2;letter-spacing:.4px;line-height:1.25;}
+.mylog-punches{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:7px;}
+.mylog-p{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+.mylog-p .t{font-size:14px;font-weight:800;color:#3a285d;min-width:78px;}
+.mylog-p .src{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:9px;text-transform:uppercase;letter-spacing:.3px;background:#eef4ff;color:#3b5bbf;}
+.mylog-p .src.manual{background:#fff6e0;color:#c98a00;}
+.mylog-p .seq{font-size:10.5px;color:#b3aec2;font-weight:700;}
+.mylog-p .carry{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:9px;display:inline-flex;align-items:center;gap:4px;}
+.mylog-p .carry.noc{background:#efe9fb;color:#5b3ea8;}
+.mylog-p .carry.odd{background:#fdecea;color:#c62828;}
+@media (max-width:767.98px){
+    .mylog-day{padding:11px 12px;gap:10px;}
+    .mylog-date{flex-basis:46px;}
+    .mylog-p .t{font-size:13.5px;min-width:72px;}
+}
 /* Review modal table */
 .drev-prev{font-size:12px;font-weight:700;padding:9px 12px;border-radius:10px;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
 .drev-prev.ok{background:#eafaf0;color:#0f9d58;} .drev-prev.dis{background:#fdecea;color:#c62828;}
@@ -2175,6 +2223,11 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
          for pages routed through index.php; this page renders standalone). -->
     <link rel="stylesheet" href="assets2/css/custom-select.css">
     <script defer src="assets2/js/custom-select.js"></script>
+
+    <!-- App-wide tooltip — one hover style for the whole app; also upgrades any
+         plain title= on this page (assets2/js/app-tooltip.js). -->
+    <link rel="stylesheet" href="assets2/css/app-tooltip.css">
+    <script defer src="assets2/js/app-tooltip.js"></script>
 </head>
 <body>
 
@@ -2240,6 +2293,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <i class="ri-draft-line"></i><span class="tab-label">My DTR</span>
             <?php if ($dtr_review_pending_count): ?><span class="badge-count" style="background:#e6a817;"><?= $dtr_review_pending_count ?></span><?php endif; ?>
         </button>
+        <button class="tab-btn tab-secondary" id="tabbtn-logs" onclick="switchTab('logs',this)">
+            <i class="ri-scan-line"></i><span class="tab-label">My Logs</span>
+        </button>
         <button class="tab-btn tab-secondary" id="tabbtn-att-requests" onclick="switchTab('att-requests',this)">
             <i class="ri-timer-flash-line"></i><span class="tab-label">Requests</span>
             <?php if ($att_req_pending_count): ?><span class="badge-count"><?= $att_req_pending_count ?></span><?php endif; ?>
@@ -2282,6 +2338,10 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <span class="more-ic" style="background:#fff6e0;color:#c98a00;"><i class="ri-draft-line"></i></span>
                 <span class="more-lbl">My DTR</span>
                 <?php if ($dtr_review_pending_count): ?><span class="more-dot"><?= $dtr_review_pending_count ?></span><?php endif; ?>
+            </button>
+            <button type="button" class="more-item" id="moreitem-logs" onclick="goMore('logs')">
+                <span class="more-ic" style="background:#efe9fb;color:#5b3ea8;"><i class="ri-scan-line"></i></span>
+                <span class="more-lbl">My Logs</span>
             </button>
             <button type="button" class="more-item" id="moreitem-att-requests" onclick="goMore('att-requests')">
                 <span class="more-ic" style="background:#e6f7fb;color:#0891b2;"><i class="ri-timer-flash-line"></i></span>
@@ -3487,6 +3547,61 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <div class="empty-state"><div class="empty-ic"><i class="ri-calendar-event-line"></i></div><p>You haven't filed any leave requests yet.</p></div>
         <?php endif; ?>
         </div>
+    </div>
+
+    <!-- ── Tab: My Logs ──
+         The scans themselves, not the day they were folded into. An employee
+         asking "did my time-out register?" should not have to read a computed
+         DTR row to find out. -->
+    <div class="tab-panel" id="tab-logs">
+        <div class="sec"><i class="ri-scan-line"></i>My Logs</div>
+        <div class="mydtr-intro">
+            Every scan the device recorded for you, exactly as it came in &mdash; this is not your
+            computed attendance. <b>Counts toward</b> shows which shift day a scan was applied to;
+            for a night shift that is the day the shift <i>started</i>, so a morning time-out
+            correctly counts toward the night before.
+            Something missing or on the wrong day? File it under <b>Requests</b>.
+        </div>
+
+        <form method="get" class="mylog-bar">
+            <input type="hidden" name="tab" value="logs">
+            <label for="lmonth">Month</label>
+            <select name="lmonth" id="lmonth" onchange="this.form.submit()">
+                <?php foreach ($my_punch_months as $m): ?>
+                <option value="<?= htmlspecialchars($m) ?>" <?= $m === $logs_from ? 'selected' : '' ?>><?= date('F Y', strtotime($m)) ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span class="mylog-count"><?= count($my_punches) ?> scan<?= count($my_punches) === 1 ? '' : 's' ?></span>
+        </form>
+
+        <?php if (!$my_punch_days): ?>
+            <div class="empty-state"><div class="empty-ic"><i class="ri-scan-line"></i></div><p>No scans recorded for <?= date('F Y', strtotime($logs_from)) ?>.</p></div>
+        <?php else: foreach ($my_punch_days as $day => $items): ?>
+            <div class="mylog-day">
+                <div class="mylog-date">
+                    <span class="d"><?= date('j', strtotime($day)) ?></span>
+                    <span class="m"><?= strtoupper(date('D', strtotime($day))) ?><br><?= strtoupper(date('M', strtotime($day))) ?></span>
+                </div>
+                <div class="mylog-punches">
+                    <?php foreach ($items as $p):
+                        $off = (int) $p['day_offset'];
+                        $noc = (int) $p['sched_graveyard'] === 1;
+                    ?>
+                    <div class="mylog-p">
+                        <span class="t"><?= date('g:i A', $p['ts']) ?></span>
+                        <span class="src <?= htmlspecialchars($p['source']) ?>"><?= $p['source'] === 'bio' ? 'Scanned' : 'Manual' ?></span>
+                        <span class="seq"><?= $p['seq'] ?> of <?= $p['of'] ?></span>
+                        <?php if ($off != 0): ?>
+                            <span class="carry <?= $noc ? 'noc' : 'odd' ?>">
+                                <i class="<?= $noc ? 'ri-moon-line' : 'ri-error-warning-line' ?>"></i>
+                                Counts toward <?= date('M j', strtotime($p['assigned_date'])) ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        <?php endforeach; endif; ?>
     </div>
 
     <!-- ── Tab: Holidays & Activities ── -->
@@ -4763,7 +4878,7 @@ wireAjaxForm('att-request-form', 'submit_attendance_request', function (res) {
 <?php
 // Deep-link support for staff notification links (employee-portal.php?tab=mydtr etc).
 // Whitelisted so a stray query value can never be interpolated unsafely into the script.
-$valid_portal_tabs = ['overview','payslips','attendance','leave','mydtr','att-requests','compare','loans','contrib','holidays','info','help'];
+$valid_portal_tabs = ['overview','payslips','attendance','leave','mydtr','logs','att-requests','compare','loans','contrib','holidays','info','help'];
 $req_tab = $_GET['tab'] ?? null;
 if ($req_tab !== null && in_array($req_tab, $valid_portal_tabs, true)):
     // Optional deep-link into a specific attendance record (from a message push).

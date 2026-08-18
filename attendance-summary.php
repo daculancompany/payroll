@@ -112,7 +112,7 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
                         <?php else: $i=1; foreach ($rows as $r): ?>
                             <tr>
                                 <td><?= $i++ ?></td>
-                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
+                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" data-emp-quickview="<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
                                 <td class="rpt-num"><?= (int)$r['present_days'] ?></td>
                                 <td class="rpt-num"><?= as_num($r['hours']) ?></td>
                                 <td class="rpt-num"><?= as_num($r['ot']) ?></td>

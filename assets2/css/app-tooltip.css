@@ -1,0 +1,103 @@
+/* ==========================================================================
+   App-wide tooltip — the single visual style for every hint in the app.
+
+   Driven by assets2/js/app-tooltip.js. ONE element parented to <body> and
+   positioned fixed, because the obvious implementation does not work: a CSS
+   ::after on the trigger is clipped by every scrolling or overflow:hidden
+   ancestor, and no z-index can rescue it — clipping is resolved before
+   stacking. Panels, cards, sticky toolbars and modals all clipped their own
+   tooltips, so the hint that explained a button was cut in half by the panel
+   the button lived in.
+
+   Markup contract: put `data-tip="…"` on anything. A plain `title=""` is
+   adopted automatically (see the JS), so existing markup needs no edits.
+   Opt out of adoption with `data-no-tip`.
+   ========================================================================== */
+
+#app-tip {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 2400;               /* over Bootstrap modals (1055) and app overlays (1200) */
+    display: none;
+
+    /* Shrink to the text, but never grow into a banner. A fixed width made
+       "Clear selection" render in a box sized for a paragraph. */
+    width: max-content;
+    max-width: min(280px, 70vw);
+    white-space: normal;
+    text-align: left;
+
+    background: #342f42;
+    color: #fff;
+    padding: 8px 11px;
+    border-radius: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: .2px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .28);
+    pointer-events: none;        /* never eat the hover that opened it */
+
+    opacity: 0;
+    transform: translateY(-2px);
+    transition: opacity .12s ease, transform .12s ease;
+}
+
+#app-tip.show {
+    display: block;
+}
+
+#app-tip.in {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Multi-line hints keep their newlines — several callers build a two- or
+   three-line explanation and rely on them (dtr-form48's shift chips). */
+#app-tip {
+    white-space: pre-line;
+}
+
+/* Line 1 is the heading, the rest is supporting detail. Callers across the app
+   already write to that shape ("the fact, then why"), so the tooltip renders it
+   rather than making every line shout equally. */
+#app-tip b {
+    font-weight: 700;
+}
+
+#app-tip .app-tip-k {
+    color: #c9bdf0;
+    font-weight: 500;
+}
+
+/* The arrow. `--arrow` is set by the JS to the trigger's centre, so it still
+   points at the button after the tooltip has been clamped inside the viewport. */
+#app-tip::before {
+    content: '';
+    position: absolute;
+    bottom: 100%;
+    left: var(--arrow, 14px);
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-bottom-color: #342f42;
+}
+
+/* Flipped above the trigger when there is no room below it. */
+#app-tip.flip::before {
+    bottom: auto;
+    top: 100%;
+    border-bottom-color: transparent;
+    border-top-color: #342f42;
+}
+
+/* Keyboard users get the same hint: anything with a tip is focusable-visible. */
+[data-tip]:focus-visible {
+    outline: 2px solid rgba(80, 60, 130, .45);
+    outline-offset: 1px;
+    border-radius: 4px;
+}
+
+@media print {
+    #app-tip { display: none !important; }
+}

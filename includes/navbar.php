@@ -153,7 +153,7 @@ $__lv_pill = $__lv_pending > 0
                      index.php routes through — so a visible menu item and an
                      openable URL are guaranteed to be the same set. -->
                 <?php
-                $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests'];
+                $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests','punch-logs'];
                 $att_shown  = array_filter($att_pages, 'page_allowed');
                 $sched_shown = array_filter(['work-schedules','schedule-roster','duty-roster'], 'page_allowed');
                 ?>
@@ -209,6 +209,14 @@ $__lv_pill = $__lv_pending > 0
                             <li class="nav-item">
                                 <a href="dtr" class="nav-link <?= in_array($page, ['dtr','dtr-details']) ? 'active' : '' ?>">
                                     <i class="ri-fingerprint-line me-1"></i>DTR Review
+                                </a>
+                            </li>
+                            <?php endif; ?>
+                            <?php if (page_allowed('punch-logs')): ?>
+                            <li class="nav-item">
+                                <!-- The raw scans behind the DTR — one row per punch, not per day. -->
+                                <a href="punch-logs" class="nav-link <?= $page === 'punch-logs' ? 'active' : '' ?>">
+                                    <i class="ri-scan-line me-1"></i>Punch Logs
                                 </a>
                             </li>
                             <?php endif; ?>

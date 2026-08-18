@@ -108,7 +108,7 @@ $active = 0; foreach ($rows as $r) if ((int)$r['status'] === 1) $active++;
                         <?php else: foreach ($rows as $r): ?>
                             <tr>
                                 <td style="font-weight:600;"><?= htmlspecialchars($r['employee_no']) ?></td>
-                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars(trim($r['name'])) ?></a></td>
+                                <td><a href="index.php?page=employee-details&id=<?= (int)$r['id'] ?>" data-emp-quickview="<?= (int)$r['id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars(trim($r['name'])) ?></a></td>
                                 <td><?= htmlspecialchars($r['position'] ?? '—') ?></td>
                                 <td><?= htmlspecialchars($r['department'] ?? '—') ?></td>
                                 <td><?= htmlspecialchars($r['classification'] ?? '—') ?></td>

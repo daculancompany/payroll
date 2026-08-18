@@ -720,6 +720,10 @@ if ($action == 'th13_set_final') {
 }
 
 // ── DTR Review ──
+if ($action == 'save_dtr_punches') {
+    echo json_encode($crud->save_dtr_punches());
+}
+
 if ($action == 'edit_dtr_time') {
     echo json_encode($crud->edit_dtr_time());
 }

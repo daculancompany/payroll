@@ -207,6 +207,7 @@ if (!defined('ADMIN_ONLY_PAGES')) {
         'dtr-documents',          // standalone DTR workbench (not an index.php route)
         'compare-dtr',
         'biometric-dtr',
+        'punch-logs',             // raw scans behind the DTR — same sensitivity
     ]);
 }
 
@@ -383,6 +384,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'delete_dtr_note' => 'dtr', 'delete_dtr_record' => 'dtr', 'edit_dtr_time' => 'dtr',
         'finalize_dtr' => 'dtr', 'finalize_dtr_bulk' => 'dtr', 'message_dtr_record' => 'dtr',
         'recompute_dtr' => 'dtr', 'save_dtr_note' => 'dtr', 'update_dtr_logs' => 'dtr',
+        'save_dtr_punches' => 'dtr',
         'dtr_set_day_schedule' => 'dtr',
         // Scoped recompute rides the schedule-assign flow (employee-details
         // modal), so it carries that page's permission, not the DTR screen's.
@@ -1333,6 +1335,105 @@ if (!function_exists('dtr_punch_time')) {
              . '<sup class="dtr-nextday" tabindex="0" role="note" data-tip="'
              . htmlspecialchars($lead . ' — punched after midnight' . "\n" . date('D, M j, Y · g:i A', $ts))
              . '">+' . $days . '<span class="nx-d">' . date('M j', $ts) . '</span></sup>';
+    }
+}
+
+// ── Raw punch feed (GLOBAL) ─────────────────────────────────────────────
+// Every punch AS A PUNCH: flat, chronological, decoded out of the
+// DTR_details.logs JSON they are currently stored in.
+//
+// A punch has no record of its own. It exists only as an element of one day
+// row's JSON, which means WHICH DAY IT BELONGS TO is encoded by which row
+// happens to hold it — the assignment *is* the storage. Every attendance
+// screen in the app reads the day row, so a punch filed under the wrong day is
+// invisible except on the wrong day. That is what made a night shift's 7:03 AM
+// clock-out, stranded on the following morning's row, so hard to spot: the
+// only symptom was the next day showing a lone, impossible arrival.
+//
+// This is the interim view over today's storage. When punches get a table of
+// their own (migrations/PLAN_punch_logs.md) this becomes a plain SELECT and
+// its callers do not change.
+//
+// $opt keys: employee_id (int|null = everyone), from, to (Y-m-d, matched on the
+//            PUNCH's own date, not the row's), limit, with_names (bool).
+//
+// Each punch: employee_id, employee, punched_at, source, authorized_by,
+//   assigned_date, day_offset (calendar days from assigned_date to the punch —
+//   the diagnostic), seq/of (position among that day's punches), detail_id,
+//   ddtr_id, batch_status, sched_start, sched_end, sched_graveyard, notes.
+if (!function_exists('dtr_punch_feed')) {
+    function dtr_punch_feed(mysqli $db, array $opt = []): array
+    {
+        $from  = !empty($opt['from']) ? date('Y-m-d', strtotime($opt['from'])) : date('Y-m-01');
+        $to    = !empty($opt['to'])   ? date('Y-m-d', strtotime($opt['to']))   : date('Y-m-t');
+        $eid   = isset($opt['employee_id']) && $opt['employee_id'] ? (int) $opt['employee_id'] : 0;
+        $limit = isset($opt['limit']) ? max(1, (int) $opt['limit']) : 5000;
+
+        // Widen the ROW window by a day on each side: a punch made on $from can
+        // be filed under $from-1 (a night shift's clock-out) and one made on $to
+        // under $to+1. Narrowing back to the punch's own date happens below.
+        $rFrom = date('Y-m-d', strtotime('-1 day', strtotime($from)));
+        $rTo   = date('Y-m-d', strtotime('+1 day', strtotime($to)));
+
+        $names = !empty($opt['with_names']);
+        $sql = "SELECT d.id, d.employee_id, d.date_time, d.logs, d.notes, d.ddtr_id,
+                       d.sched_start, d.sched_end, d.sched_graveyard, b.status AS batch_status"
+             . ($names ? ", CONCAT(e.lastname, ', ', e.firstname) AS employee, e.employee_no" : "")
+             . " FROM DTR_details d
+                  INNER JOIN DTR b ON b.id = d.ddtr_id"
+             . ($names ? " INNER JOIN employee e ON e.id = d.employee_id" : "")
+             . " WHERE d.date_time BETWEEN '" . $db->real_escape_string($rFrom) . "'
+                                        AND '" . $db->real_escape_string($rTo) . "'"
+             . ($eid ? " AND d.employee_id = $eid" : "");
+
+        $out = [];
+        $res = $db->query($sql);
+        while ($res && ($r = $res->fetch_assoc())) {
+            $logs = json_decode((string) $r['logs'], true);
+            if (!is_array($logs) || !$logs) continue;
+
+            // Sort so seq/of describe the punch's real position in the day,
+            // whatever order the JSON happens to be written in.
+            usort($logs, function ($a, $b) {
+                return strtotime($a['dateTime'] ?? '') <=> strtotime($b['dateTime'] ?? '');
+            });
+            $n       = count($logs);
+            $rowDate = date('Y-m-d', strtotime($r['date_time']));
+
+            foreach ($logs as $i => $lg) {
+                $ts = strtotime($lg['dateTime'] ?? '');
+                if (!$ts) continue;
+                $pDate = date('Y-m-d', $ts);
+                if ($pDate < $from || $pDate > $to) continue;
+
+                $out[] = [
+                    'employee_id'   => (int) $r['employee_id'],
+                    'employee'      => $names ? $r['employee'] : null,
+                    'employee_no'   => $names ? $r['employee_no'] : null,
+                    'punched_at'    => date('Y-m-d H:i:s', $ts),
+                    'ts'            => $ts,
+                    'source'        => $lg['type'] ?? 'bio',
+                    'authorized_by' => $lg['authorized_by'] ?? null,
+                    'assigned_date' => $rowDate,
+                    // Date-only diff — a raw /86400 would be off by an hour under DST.
+                    'day_offset'    => (int) (new DateTime($rowDate))->diff(new DateTime($pDate))->format('%r%a'),
+                    'seq'           => $i + 1,
+                    'of'            => $n,
+                    'detail_id'     => (int) $r['id'],
+                    'ddtr_id'       => (int) $r['ddtr_id'],
+                    'batch_status'  => (int) $r['batch_status'],
+                    'sched_start'   => $r['sched_start'],
+                    'sched_end'     => $r['sched_end'],
+                    'sched_graveyard' => $r['sched_graveyard'] === null ? null : (int) $r['sched_graveyard'],
+                    'notes'         => $r['notes'],
+                ];
+            }
+        }
+
+        usort($out, function ($a, $b) {
+            return $a['ts'] <=> $b['ts'] ?: strcmp((string) $a['employee'], (string) $b['employee']);
+        });
+        return array_slice($out, 0, $limit);
     }
 }
 

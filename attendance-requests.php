@@ -161,7 +161,7 @@ $reasonLabels = [
                                         <tr data-status="<?= (int)$row['status'] ?>">
                                             <td><?= date('M d, Y', strtotime($row['created_at'])) ?></td>
                                             <td>
-                                                <a href="index.php?page=employee-details&id=<?= (int)$row['employee_id'] ?>" class="rpt-emp-link fw-semibold" title="View employee details"><?= htmlspecialchars($row['employee_name']) ?></a>
+                                                <a href="index.php?page=employee-details&id=<?= (int)$row['employee_id'] ?>" data-emp-quickview="<?= (int)$row['employee_id'] ?>" class="rpt-emp-link fw-semibold" title="View employee details"><?= htmlspecialchars($row['employee_name']) ?></a>
                                                 <div class="text-muted" style="font-size:11px;"><i class="ri-hashtag"></i><?= htmlspecialchars($row['employee_no']) ?></div>
                                             </td>
                                             <td>

@@ -216,7 +216,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                         <tr>
                             <td style="color:#aaa;"><?= $i ?></td>
                             <td>
-                                <div><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['name']) ?></a></div>
+                                <div><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" data-emp-quickview="<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['name']) ?></a></div>
                                 <div class="rpt-gov">
                                     <?= htmlspecialchars($r['employee_no']) ?>
                                     <?php if ($r['sss_no']): ?> &bull; SSS <?= htmlspecialchars($r['sss_no']) ?><?php endif; ?>

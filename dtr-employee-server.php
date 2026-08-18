@@ -496,7 +496,10 @@ if ($action === 'docs') {
                     $E['_logs'][$date][] = $ts;
                     $isBio = (($lg->type ?? '') === 'bio');
                     if (!$isBio) $hasManual = true;
-                    $recLogs[] = ['t' => date('g:i A', $ts), 'bio' => $isBio];
+                    // `dt` carries the full stamp, not just the clock time: the
+                    // punch editor has to round-trip a night shift's next-day
+                    // clock-out, and "7:03 AM" alone cannot say which day it is.
+                    $recLogs[] = ['t' => date('g:i A', $ts), 'dt' => date('Y-m-d\TH:i', $ts), 'bio' => $isBio];
                 }
                 $D['logs']++;
             }

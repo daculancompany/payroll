@@ -50,7 +50,7 @@ $payroll_setting_sections = [
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 <i class="ri-list-settings-line me-1"></i>Deductions to apply
                             </label>
-                            <div style="max-height:250px;overflow-y:auto;border:1px solid #e8eaf6;border-radius:6px;padding:10px;background:#fafaff;">
+                            <div style="border:1px solid #e8eaf6;border-radius:6px;padding:12px;background:#fafaff;">
                                 <?php foreach ($payroll_setting_sections as $i => $sec):
                                     $rows = $conn->query($sec['query']); ?>
                                     <?= $i > 0 ? '<hr class="my-2">' : '' ?>

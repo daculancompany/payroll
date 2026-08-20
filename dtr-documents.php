@@ -289,6 +289,64 @@ body {
    loaded by includes/header.php. `.ddv-tip` is kept only as a marker class on
    existing markup; `data-tip` (or a plain `title`) is what actually drives it. */
 
+/* ── Payroll preview modal (full-width simulation sheet) ── */
+#modal-preview-pay .modal-dialog { max-width:calc(100vw - 28px); width:calc(100vw - 28px); margin:14px auto; height:calc(100vh - 28px); }
+#modal-preview-pay .modal-content { height:100%; border:0; border-radius:14px; overflow:hidden; box-shadow:0 24px 60px rgba(40,20,90,.35); }
+#modal-preview-pay .modal-header {
+    background:linear-gradient(120deg, var(--brand-dark) 0%, var(--brand) 60%, #8a63d2 100%);
+    color:#fff; border:0; padding:14px 22px; align-items:center; gap:14px;
+}
+#modal-preview-pay .modal-header .btn-close { filter:invert(1) brightness(2); opacity:.85; }
+.ppv-hd-icon { width:40px; height:40px; border-radius:10px; background:rgba(255,255,255,.16); display:grid; place-items:center; font-size:20px; }
+.ppv-hd-title { font-size:16px; font-weight:800; letter-spacing:.01em; line-height:1.15; }
+.ppv-hd-sub { font-size:11.5px; opacity:.85; margin-top:2px; display:flex; gap:12px; flex-wrap:wrap; }
+.ppv-hd-sub i { margin-right:3px; }
+.ppv-sim-tag { margin-left:auto; background:#fff3cd; color:#7a4b00; border:1px solid #ffe08a; font-size:11px; font-weight:800; letter-spacing:.06em; padding:4px 11px; border-radius:20px; display:inline-flex; align-items:center; gap:6px; }
+#modal-preview-pay .modal-body { padding:16px 22px; background:#f8f7fb; display:flex; flex-direction:column; gap:14px; overflow:hidden; }
+#modal-preview-pay .modal-footer { border-top:1px solid #e6e2ef; background:#fff; padding:10px 22px; }
+.ppv-banner { display:flex; align-items:center; gap:10px; padding:10px 14px; border-radius:10px; font-size:12.5px; font-weight:600;
+    background:#fff8e1; color:#7a4b00; border:1px solid #ffe082; }
+.ppv-banner i { font-size:18px; color:#c98a00; }
+.ppv-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; }
+.ppv-tile { background:#fff; border:1px solid #e6e2ef; border-radius:12px; padding:12px 14px; position:relative; overflow:hidden; box-shadow:0 1px 2px rgba(40,20,90,.04); }
+.ppv-tile::before { content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:#cfc4e6; }
+.ppv-tile .l { font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#8478a0; }
+.ppv-tile .v { font-size:19px; font-weight:800; color:#2d1f4d; font-variant-numeric:tabular-nums; margin-top:3px; line-height:1.15; }
+.ppv-tile .s { font-size:11px; color:#8478a0; margin-top:2px; }
+.ppv-tile.gross::before { background:var(--brand); }
+.ppv-tile.ded::before { background:#e53935; } .ppv-tile.ded .v { color:#b71c1c; }
+.ppv-tile.net { background:linear-gradient(135deg,#e8f5e9,#f3fbf4); border-color:#a5d6a7; } .ppv-tile.net::before { background:#0f9d58; } .ppv-tile.net .v { color:#1b5e20; font-size:22px; }
+.ppv-toolbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.ppv-search { position:relative; flex:0 0 280px; }
+.ppv-search i { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:#8478a0; }
+.ppv-search input { width:100%; padding:7px 10px 7px 30px; border:1px solid #ddd9e7; border-radius:8px; font-size:12.5px; background:#fff; }
+.ppv-search input:focus { outline:none; border-color:var(--brand); box-shadow:0 0 0 3px rgba(102,66,170,.12); }
+.ppv-zero-toggle { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#5b5273; cursor:pointer; margin:0; }
+.ppv-count { font-size:12px; color:#8478a0; margin-left:auto; }
+.ppv-scroll { flex:1; min-height:0; overflow:auto; border:1px solid #e6e2ef; border-radius:12px; background:#fff; }
+.ppv-tbl { width:100%; border-collapse:separate; border-spacing:0; font-size:12.5px; }
+.ppv-tbl th, .ppv-tbl td { padding:8px 12px; border-bottom:1px solid #f0edf5; white-space:nowrap; }
+.ppv-tbl th { font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:#8478a0; text-align:right; background:#faf9fc; position:sticky; top:0; z-index:1; border-bottom:1px solid #e6e2ef; }
+.ppv-tbl th:first-child, .ppv-tbl td:first-child { text-align:left; }
+.ppv-tbl th:nth-child(2), .ppv-tbl td:nth-child(2) { text-align:center; width:60px; color:#8478a0; }
+.ppv-tbl td { text-align:right; font-variant-numeric:tabular-nums; }
+.ppv-tbl tbody tr:hover td { background:#f8f5fd; }
+.ppv-tbl td.name { font-weight:700; color:#2d1f4d; }
+.ppv-tbl td.net { font-weight:800; color:#1b5e20; }
+.ppv-tbl td.neg { color:#b71c1c; }
+.ppv-tbl td.muted { color:#b3abc4; }
+.ppv-tbl tfoot td { font-weight:800; background:#f4f1f9; border-top:2px solid #ddd9e7; border-bottom:0; position:sticky; bottom:0; }
+.ppv-src { font-size:11.5px; color:#8478a0; }
+.ppv-hide-zero tr.ppv-zero { display:none; }
+.ppv-sheet { flex:1; min-height:0; border:1px solid #e6e2ef; border-radius:12px; overflow:hidden; background:#fff; }
+.ppv-sheet iframe { width:100%; height:100%; border:0; display:block; }
+.ppv-viewseg { display:inline-flex; border:1px solid #ddd9e7; border-radius:8px; overflow:hidden; background:#fff; }
+.ppv-viewseg button { border:0; background:transparent; padding:6px 12px; font-size:12px; font-weight:700; color:#5b5273; cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+.ppv-viewseg button.on { background:#e1dcec; color:#4f3288; }
+.ppv-pend-chip { display:inline-block; font-size:10px; font-weight:800; padding:1px 7px; border-radius:10px; background:#fff8e1; color:#c98a00; border:1px solid #ffe082; margin-left:6px; vertical-align:middle; }
+@media (max-width:1100px){ .ppv-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@media (max-width:640px){ .ppv-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } #modal-preview-pay .modal-dialog { width:100vw; max-width:100vw; margin:0; height:100vh; } #modal-preview-pay .modal-content { border-radius:0; } .ppv-search { flex:1 1 100%; } }
+
 /* ── Workspace ── */
 .ddv-wrap {
     flex:1; min-height:0;
@@ -471,6 +529,7 @@ body {
 /* Zoom: --dtr-zoom is set inline on #ddv-paper by setZoom() */
 #ddv-paper { zoom: var(--dtr-zoom, 1); }
 .ddv-doc-zoom { display:flex; align-items:center; gap:5px; }
+.ddv-zoom-print { margin-left:8px; height:27px; padding:0 10px; }
 .ddv-doc-legend { display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:10px; font-weight:600; color:#827d91; }
 .ddv-doc-legend > span { display:inline-flex; align-items:center; gap:3px; }
 .ddv-zoom-val {
@@ -970,7 +1029,6 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                 <div class="ddv-meta-chips">
                     <span class="ddv-meta-chip"><i class="ri-calendar-2-line"></i><?= date('M d', strtotime($dtr['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($dtr['date_to'])) ?></span>
                     <span class="ddv-meta-chip"><i class="ri-calendar-event-line"></i><?= $periodDays ?> day<?= $periodDays !== 1 ? 's' : '' ?></span>
-                    <span class="ddv-meta-chip"><i class="ri-building-line"></i><?= htmlspecialchars($dtr['site_name']) ?> (<?= htmlspecialchars($dtr['site_code']) ?>)</span>
                     <span class="ddv-meta-chip"><i class="ri-user-2-line"></i><?= htmlspecialchars($dtr['employer_name']) ?></span>
                     <?php if ($timekeeper_name): ?><span class="ddv-meta-chip"><i class="ri-shield-user-line"></i><?= htmlspecialchars($timekeeper_name) ?></span><?php endif; ?>
                 </div>
@@ -1010,6 +1068,15 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                     <i class="ri-refresh-line"></i> Recompute<?php if ($schedMM['rows']): ?> <span class="ddv-recompute-dot"><?= (int)$schedMM['rows'] ?></span><?php endif; ?>
                 </button>
             <?php endif; ?>
+            <?php if ($batchStatus !== 0 && function_exists('page_allowed') && page_allowed('payroll')): ?>
+                <!-- Payroll PREVIEW: runs the real calculate_payroll() in dry-run mode
+                     over THIS batch (pending records included as if approved) and
+                     rolls back — nothing is saved. Shown to users who may open Payroll. -->
+                <button class="ddv-btn ddv-tip" id="ddv-preview-pay-btn" onclick="previewPayroll()"
+                    data-tip="Simulate this batch's payroll with the real payroll computation. Pending records are counted as if approved. Nothing is saved.">
+                    <i class="ri-calculator-line"></i> Preview Payroll
+                </button>
+            <?php endif; ?>
             <!-- Paper ⇄ Table. The left panel (search, filters, pager, bulk bar)
                  stays put in both — only the reading surface changes. -->
             <div class="ddv-viewseg" role="group" aria-label="View mode">
@@ -1017,7 +1084,6 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                 <button type="button" class="ddv-tip" data-view="table" onclick="setViewMode('table')" data-tip="Every employee on this page as one row — totals, approval counts and flags side by side."><i class="ri-table-2"></i> Table</button>
             </div>
             <button class="ddv-btn ddv-tip" id="ddv-excel-btn" onclick="exportExcel()" data-tip="Download the whole batch as .xlsx — a Summary sheet and a day-by-day matrix. Honours the filters you have on."><i class="ri-file-excel-2-line"></i> Excel</button>
-            <button class="ddv-btn ddv-tip" id="ddv-print" onclick="window.print()" data-tip="Print the selected employee's DTR sheet."><i class="ri-printer-line"></i> Print</button>
             <button class="ddv-btn ddv-tip" id="ddv-print-all-btn" onclick="printAll()" data-tip="Print every employee's DTR sheet in this batch."><i class="ri-printer-cloud-line"></i> Print All</button>
         </div>
     </div>
@@ -1232,6 +1298,8 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                     <button class="ddv-pg-btn" id="ddv-zoom-out" title="Zoom out (Ctrl+scroll or −)"><i class="ri-zoom-out-line"></i></button>
                     <button type="button" class="ddv-zoom-val" id="ddv-zoom-val" title="Reset zoom (0)">100%</button>
                     <button class="ddv-pg-btn" id="ddv-zoom-in" title="Zoom in (Ctrl+scroll or +)"><i class="ri-zoom-in-line"></i></button>
+                    <!-- Print sits with the paper controls — it prints the sheet being viewed. -->
+                    <button class="ddv-btn ddv-tip ddv-zoom-print" id="ddv-print" onclick="window.print()" data-tip="Print the selected employee's DTR sheet."><i class="ri-printer-line"></i> Print</button>
                 </div>
             </div>
             <div class="ddv-paper-scroll">
@@ -1442,6 +1510,29 @@ body.view-table .ddv-drawer-btn { display:none !important; }
 <!-- Edit record (work hours / OT / UT / late) — same modal markup as
      employee-details.php's Assign Schedule modal: one shared form, fields
      re-populated per record right before it opens. -->
+<!-- Payroll preview (simulation — nothing saved). Filled by previewPayroll(). -->
+<div class="modal fade" id="modal-preview-pay" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="ppv-hd-icon"><i class="ri-calculator-line"></i></div>
+                <div>
+                    <div class="ppv-hd-title">Payroll Preview</div>
+                    <div class="ppv-hd-sub" id="ppv-title"></div>
+                </div>
+                <span class="ppv-sim-tag"><i class="ri-flask-line"></i> SIMULATION · NOTHING SAVED</span>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="ppv-body"></div>
+            <div class="modal-footer">
+                <span class="me-auto text-muted" style="font-size:11.5px;"><i class="ri-information-line"></i> Figures come from the same computation as the real payroll and may change once pending records are decided.</span>
+                <button type="button" class="ddv-btn" onclick="previewPayroll()"><i class="ri-refresh-line"></i> Re-run</button>
+                <button type="button" class="ddv-btn primary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="modal-edit-rec" tabindex="-1">
     <div class="modal-dialog">
         <form id="form-edit-rec">
@@ -2710,6 +2801,154 @@ function sendForReview() {
     });
 }
 
+// ── Payroll preview (dry-run of the real calculate_payroll; nothing saved) ──
+function previewPayroll() {
+    const btn = document.getElementById('ddv-preview-pay-btn');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="ri-loader-4-line ri-spin"></i> Simulating…'; }
+    const restore = () => { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ri-calculator-line"></i> Preview Payroll'; } };
+    $.ajax({
+        url: 'ajax.php?action=preview_payroll_from_dtr', method: 'POST', dataType: 'JSON',
+        data: { ddtr_id: DDTR_ID },
+        success: r => {
+            restore();
+            if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Preview failed', text: (r && r.message) || 'Failed.' });
+            renderPayrollPreview(r);
+        },
+        error: () => { restore(); Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }); },
+    });
+}
+function renderPayrollPreview(r) {
+    const peso = n => { n = Number(n || 0); return (n < 0 ? '-' : '') + '₱' + Math.abs(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    const num  = (n, d = 2) => Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 0, maximumFractionDigits: d });
+    const esc  = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const t = r.totals || {};
+    const b = r.batch || {};
+    const fmtD = d => { const x = new Date(d + 'T00:00:00'); return x.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); };
+    document.getElementById('ppv-title').innerHTML =
+        `<span><i class="ri-building-line"></i>${esc(b.site_name || '')} (${esc(b.site_code || '')})</span>` +
+        `<span><i class="ri-calendar-2-line"></i>${fmtD(b.date_from)} – ${fmtD(b.date_to)}</span>` +
+        `<span><i class="ri-user-3-line"></i>${num(t.employees, 0)} employees in batch</span>`;
+
+    let banner = '<div class="ppv-banner"><i class="ri-flask-line"></i><span>';
+    banner += r.included_pending > 0
+        ? `<b>${num(r.included_pending, 0)}</b> pending record(s) were counted <u>as if approved</u>.`
+        : 'Every record in this batch is already decided.';
+    if (r.excluded_disapproved > 0) banner += ` ${num(r.excluded_disapproved, 0)} disapproved record(s) excluded.`;
+    if (b.status !== 2) banner += ' This batch is not yet Final-Approved, so nothing here is in a real payroll yet.';
+    banner += '</span></div>';
+
+    const all   = r.rows || [];
+    const paid  = all.filter(x => Number(x.gross) || Number(x.net)).length;
+    const zeros = all.length - paid;
+    const avg   = paid ? t.net / paid : 0;
+    const tiles = `
+        <div class="ppv-grid">
+            <div class="ppv-tile"><div class="l">Employees with pay</div><div class="v">${num(paid, 0)}</div><div class="s">of ${num(t.employees, 0)} in batch</div></div>
+            <div class="ppv-tile"><div class="l">Days present</div><div class="v">${num(t.present)}</div><div class="s">total across employees</div></div>
+            <div class="ppv-tile"><div class="l">Late / Undertime</div><div class="v">${num(t.late, 0)} <span style="font-size:12px;color:#8478a0;">/</span> ${num(t.under_time, 0)}</div><div class="s">minutes</div></div>
+            <div class="ppv-tile"><div class="l">Overtime</div><div class="v">${num(t.ot)}</div><div class="s">hours</div></div>
+            <div class="ppv-tile gross"><div class="l">Gross</div><div class="v">${peso(t.gross)}</div><div class="s">basic + premiums + allowances</div></div>
+            <div class="ppv-tile ded"><div class="l">Deductions</div><div class="v">${peso(t.deductions)}</div><div class="s">contributions · loans · tax</div></div>
+            <div class="ppv-tile net"><div class="l">Estimated net pay</div><div class="v">${peso(t.net)}</div><div class="s">avg ${peso(avg)} / employee</div></div>
+        </div>`;
+
+    const cell = (v, fmt, cls = '') => `<td class="${cls}${Number(v) ? '' : ' muted'}">${fmt(v)}</td>`;
+    const rows = all.map((x, i) => `<tr class="${(Number(x.gross) || Number(x.net)) ? '' : 'ppv-zero'}" data-n="${esc(x.name).toLowerCase()}">
+        <td class="name">${esc(x.name)}</td><td class="ppv-idx"></td>
+        ${cell(x.present, num)}${cell(x.late, v => num(v, 0))}${cell(x.under_time, v => num(v, 0))}${cell(x.ot, num)}
+        ${cell(x.gross, peso)}${cell(x.deductions, peso)}<td class="net${Number(x.net) < 0 ? ' neg' : ''}">${peso(x.net)}</td></tr>`).join('');
+    const hasSheet = !!r.sheet_html;
+    const toolbar = `
+        <div class="ppv-toolbar">
+            <div class="ppv-search"><i class="ri-search-line"></i><input type="search" id="ppv-q" placeholder="Search employee…" oninput="ppvFilter()"></div>
+            ${zeros ? `<label class="ppv-zero-toggle"><input type="checkbox" id="ppv-hide-zero" checked onchange="document.getElementById('ppv-body').classList.toggle('ppv-hide-zero', this.checked); ppvFilter();"> Hide ${num(zeros, 0)} with ₱0 (no worked days)</label>` : ''}
+            ${hasSheet ? `<div class="ppv-viewseg" role="group">
+                <button type="button" class="on" data-pv="sheet" onclick="ppvView('sheet')"><i class="ri-file-excel-2-line"></i> Payroll sheet</button>
+                <button type="button" data-pv="summary" onclick="ppvView('summary')"><i class="ri-list-check"></i> Summary</button>
+            </div>` : ''}
+            <span class="ppv-count" id="ppv-count"></span>
+        </div>`;
+    const table = `
+        <div class="ppv-scroll" id="ppv-summary" ${hasSheet ? 'style="display:none;"' : ''}><table class="ppv-tbl">
+            <thead><tr><th>Employee</th><th>#</th><th>Days</th><th>Late (min)</th><th>UT (min)</th><th>OT (hrs)</th><th>Gross</th><th>Deductions</th><th>Net</th></tr></thead>
+            <tbody id="ppv-rows">${rows || '<tr><td colspan="9" class="text-center text-muted">No employees.</td></tr>'}</tbody>
+            <tfoot><tr><td>Total</td><td></td><td>${num(t.present)}</td><td>${num(t.late, 0)}</td><td>${num(t.under_time, 0)}</td><td>${num(t.ot)}</td>
+                <td>${peso(t.gross)}</td><td>${peso(t.deductions)}</td><td class="net">${peso(t.net)}</td></tr></tfoot>
+        </table></div>`;
+    // The real Payroll sheet (same template + CSS as the Payroll page), in an
+    // iframe so its stylesheet can't leak into this page. srcdoc resolves
+    // relative asset URLs against this document, so the app's CSS loads.
+    const sheet = hasSheet ? `<div class="ppv-sheet" id="ppv-sheet"><iframe id="ppv-sheet-frame" title="Payroll sheet preview"></iframe></div>` : '';
+
+    const src = r.source && r.source.kind === 'payroll'
+        ? `Computed with the settings of existing payroll <b>${esc(r.source.ref_no)}</b> (unlocked) — that payroll was <u>not</u> modified.`
+        : 'Computed with default payroll settings (all contributions / deductions / loans / refunds enabled) — no payroll exists for this period yet.';
+    const body = document.getElementById('ppv-body');
+    body.classList.add('ppv-hide-zero');
+    body.innerHTML = banner + tiles + toolbar + sheet + table + `<div class="ppv-src"><i class="ri-settings-3-line"></i> ${src}</div>`;
+    window.__ppvZeroItems = new Set(all.filter(x => !(Number(x.gross) || Number(x.net))).map(x => String(x.item_id)));
+    if (hasSheet) {
+        const f = document.getElementById('ppv-sheet-frame');
+        f.srcdoc = `<!doctype html><html><head><meta charset="utf-8">
+            <link href="assets/css/bootstrap.min.css" rel="stylesheet">
+            <link href="assets/css/icons.min.css" rel="stylesheet">
+            <link href="assets2/css/my-style.css" rel="stylesheet">
+            <link href="assets2/css/payroll_calculations.css" rel="stylesheet">
+            <style>
+              html,body{height:100%;} body{margin:0;overflow:hidden;background:#fff !important;background-image:none !important;}
+              .table-responsive2{height:100% !important;max-height:none;border:0;border-radius:0;}
+              #table-1 thead th{position:sticky;top:0;z-index:11;} #table-1 thead tr:nth-child(2) th{top:var(--h1,34px);}
+              #table-1 tbody tr:hover td{filter:brightness(.98);}
+              [data-emp-quickview]{cursor:default;}
+            </style></head><body>
+            <div class="table-responsive2" id="table-responsive2">${r.sheet_html}</div>
+            <script>
+              // Second header row sticks under the first.
+              addEventListener('load', () => { const tr2 = document.querySelector('#table-1 thead tr:nth-child(2)'); if (tr2) document.documentElement.style.setProperty('--h1', tr2.offsetTop + 'px'); });
+            <\/script></body></html>`;
+        f.addEventListener('load', ppvFilter, { once: true });
+    }
+    ppvFilter();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-preview-pay')).show();
+}
+function ppvView(which) {
+    document.querySelectorAll('.ppv-viewseg button').forEach(b => b.classList.toggle('on', b.dataset.pv === which));
+    const sh = document.getElementById('ppv-sheet'), su = document.getElementById('ppv-summary');
+    if (sh) sh.style.display = which === 'sheet' ? '' : 'none';
+    if (su) su.style.display = which === 'sheet' ? 'none' : '';
+    ppvFilter();
+}
+function ppvFilter() {
+    const q = (document.getElementById('ppv-q')?.value || '').trim().toLowerCase();
+    const hideZero = document.getElementById('ppv-body').classList.contains('ppv-hide-zero');
+    const zeroItems = window.__ppvZeroItems || new Set();
+    let shown = 0, total = 0;
+    // Summary table
+    document.querySelectorAll('#ppv-rows tr[data-n]').forEach(tr => {
+        total++;
+        const vis = (!q || tr.dataset.n.includes(q)) && !(hideZero && tr.classList.contains('ppv-zero'));
+        tr.style.display = vis ? '' : 'none';
+        if (vis) { shown++; const ix = tr.querySelector('.ppv-idx'); if (ix) ix.textContent = shown; }
+    });
+    // Real payroll sheet inside the iframe (same-origin srcdoc → direct DOM access).
+    const f = document.getElementById('ppv-sheet-frame');
+    const doc = f && f.contentDocument;
+    if (doc && doc.querySelector('#table-1')) {
+        let n = 0;
+        doc.querySelectorAll('#table-1 tbody tr[data-row-id]').forEach(tr => {
+            const name = (tr.dataset.name || '');
+            const zero = zeroItems.has(String(tr.dataset.rowId));
+            const vis = (!q || name.includes(q)) && !(hideZero && zero);
+            tr.style.display = vis ? '' : 'none';
+            if (vis) { n++; const first = tr.querySelector('td:first-child b'); if (first) first.textContent = n; }
+        });
+        const sheetOn = document.getElementById('ppv-sheet') && document.getElementById('ppv-sheet').style.display !== 'none';
+        if (sheetOn) { shown = n; }
+    }
+    const c = document.getElementById('ppv-count');
+    if (c) c.textContent = `Showing ${shown} of ${total}`;
+}
+
 function finalApprove() {
     Swal.fire({
         title: 'Final approve this DTR?',
@@ -3414,10 +3653,7 @@ loadPage();
 // Shared employee quick-view drawer — the summary panel's name carries
 // data-emp-quickview, and this component binds it globally. Standalone
 // workbenches include it themselves; index.php does it for the routed pages.
-// Full details opens in a NEW TAB here: this page is a workbench holding an
-// unsaved review position (selected employee, scroll, pending decisions), and
-// navigating away from it to read an ID number loses all of that.
-$eqv_full_target = '_blank';
+// Full details opens in the same tab (per user preference — no target=_blank).
 include 'component/employee_quick_view.php';
 
 // Shared "Review request" modal — the same form the requests queue decides

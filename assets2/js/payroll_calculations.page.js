@@ -10,6 +10,10 @@
 (function () {
     var D = window.PCW_DATA || [];
     var M = window.PCW_META || {};
+    // Locked batch (status 2) = paid history. The page is a plain viewer: no
+    // selection checkboxes, no bulk bar, no review-mark control. The server
+    // refuses these writes too, so this is only about not offering them.
+    var LOCKED = !!M.locked || Number(M.status) === 2;
     // S.ps holds the payslip selection ({id: true}) — the card list is the only
     // selection UI now that the table preview has no checkbox column.
     var S = { q: '', dept: '', area: '', pos: '', rate: '', sch: '', has: '', rv: '', erv: '', lock: '', exc: '', sel: null, zoom: 1, list: [], ps: {} };
@@ -153,7 +157,7 @@
                     + ' their payslip with a message — click to read"><i class="ri-chat-3-fill"></i></button>';
             }
             html += '<div class="pcw-item' + (S.sel == e.id ? ' active' : '') + (rvm ? ' ' + rvm.cls : '') + '" data-eid="' + e.id + '">'
-                + '<input type="checkbox" data-ps="' + e.id + '"' + (chk && chk.checked ? ' checked' : '') + ' title="Select this employee for bulk actions">'
+                + (LOCKED ? '' : '<input type="checkbox" data-ps="' + e.id + '"' + (chk && chk.checked ? ' checked' : '') + ' title="Select this employee for bulk actions">')
                 + '<div class="pcw-item-avwrap"><div class="pcw-item-av rv-' + e.rv + '">' + esc(initials(e)) + '</div>' + rvBadge + '</div>'
                 + '<div class="pcw-item-main"><div class="pcw-item-name">' + esc(e.name) + '</div>'
                 + '<div class="pcw-item-sub">' + esc(e.no) + (e.pos ? ' · ' + esc(e.pos) : '') + '</div>'
@@ -916,7 +920,7 @@
             + '<div class="pcw-sum-actions">'
             + '<button type="button" class="pcw-btn" onclick="openPayslipPreview(' + e.id + ')"><i class="ri-file-pdf-2-line"></i> Payslip PDF</button>'
             + '<button type="button" class="pcw-btn" onclick="pcwOpenDtr(' + e.id + ')"><i class="ri-calendar-check-line"></i> DTR Details (' + e.dtr_days + ')</button>'
-            + '<button type="button" class="pcw-btn" onclick="openReviewMark(' + e.id + ')"><i class="ri-checkbox-multiple-line"></i> Review Mark</button>'
+            + (LOCKED ? '' : '<button type="button" class="pcw-btn" onclick="openReviewMark(' + e.id + ')"><i class="ri-checkbox-multiple-line"></i> Review Mark</button>')
             + unlockButton(e)
             + '<a class="pcw-btn" href="javascript:void(0);" data-emp-quickview="' + e.emp + '" title="Employee quick view — Full details opens from the drawer"><i class="ri-user-3-line"></i> Profile</a>'
             + '</div>';
@@ -1686,6 +1690,7 @@
 
     // ── Bulk: set the reviewer mark on every selected employee ──
     window.pcwBulkReview = function (statusVal) {
+        if (LOCKED) return;
         var ids = psIds();
         if (!ids.length) return;
         var meta = RV_META[statusVal];
@@ -1805,8 +1810,9 @@
         if (it) select(parseInt(it.getAttribute('data-eid'), 10));
     });
 
-    // "All" ticks every employee currently listed (respects the active filters)
-    byId('pcw-sel-all').addEventListener('change', function () {
+    // "All" ticks every employee currently listed (respects the active filters).
+    // Absent on a locked batch, hence the guard.
+    if (byId('pcw-sel-all')) byId('pcw-sel-all').addEventListener('change', function () {
         var on = this.checked;
         S.list.forEach(function (e) { S.ps[e.id] = on; });
         document.querySelectorAll('#pcw-list input[data-ps]').forEach(function (c) { c.checked = on; });

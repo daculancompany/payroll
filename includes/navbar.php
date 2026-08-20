@@ -64,7 +64,7 @@ $__ar_pill = $__ar_pending > 0
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a href="payroll-list" class="nav-link menu-link <?= in_array($page, ['payroll','payroll_items','payroll_calculations']) ? 'active' : '' ?>">
+                    <a href="payroll-list" class="nav-link menu-link <?= in_array($page, ['payroll','payroll-list','payroll_items','payroll_calculations']) ? 'active' : '' ?>">
                         <i class="ri-calculator-line"></i> <span>Payroll List</span>
                     </a>
                 </li>
@@ -319,7 +319,7 @@ $__ar_pill = $__ar_pending > 0
 
                 <?php if (page_allowed('payroll')): ?>
                 <li class="nav-item">
-                    <a class="nav-link menu-link <?= (in_array($page, ['payroll','payroll_items','payroll_calculations']) && (!isset($_GET['p2']) || $_GET['p2'] === 'false')) ? 'active' : '' ?>"
+                    <a class="nav-link menu-link <?= (in_array($page, ['payroll','payroll-list','payroll_items','payroll_calculations']) && (!isset($_GET['p2']) || $_GET['p2'] === 'false')) ? 'active' : '' ?>"
                         href="payroll-list">
                         <i class="ri-calculator-line"></i> <span>Payroll List</span>
                     </a>

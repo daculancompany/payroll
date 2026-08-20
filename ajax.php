@@ -303,6 +303,10 @@ if ($action == "calculate_payroll") {
 	$save = $crud->calculate_payroll();
 	echo json_encode($save);
 }
+if ($action == "preview_payroll_from_dtr") {
+	$save = $crud->preview_payroll_from_dtr();
+	echo json_encode($save);
+}
 
 if ($action == "save_contribution") {
 	$save = $crud->save_contribution();

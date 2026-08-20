@@ -1540,7 +1540,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                         </div>
                         <div class="card-body py-2" style="max-height:260px;overflow-y:auto;">
                             <?php if (count($upcoming_events)): ?>
-                                <?php foreach ($upcoming_events as $ev): $st = strtotime($ev['start_date']); $isHol = $ev['type'] == 1; ?>
+                                <?php foreach ($upcoming_events as $ev): $st = strtotime($ev['start_date']); $t = (int) $ev['type']; $isHol = $t == 1; $isSpl = $t == 3; ?>
                                 <div class="ev-row">
                                     <div class="ev-date"><div class="d"><?= date('d', $st) ?></div><div class="m"><?= date('M', $st) ?></div></div>
                                     <div style="min-width:0;">
@@ -1551,7 +1551,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                                         <div style="font-size:11px;color:#aaa;"><?= htmlspecialchars(mb_strimwidth($ev['note'], 0, 40, '…')) ?></div>
                                         <?php endif; ?>
                                     </div>
-                                    <div class="bday-day" style="<?= $isHol ? 'background:#fdecea;color:#c62828;' : 'background:#e6f7fb;color:#0891b2;' ?>"><?= $isHol ? 'Holiday' : 'Activity' ?></div>
+                                    <div class="bday-day" style="<?= $isHol ? 'background:#fdecea;color:#c62828;' : ($isSpl ? 'background:#fff4e5;color:#c76a00;' : 'background:#e6f7fb;color:#0891b2;') ?>"><?= $isHol ? 'Legal Holiday' : ($isSpl ? 'Special Holiday' : 'Activity') ?></div>
                                 </div>
                                 <?php endforeach; ?>
                             <?php else: ?>

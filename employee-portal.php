@@ -897,6 +897,14 @@ body{
 .mydtr-badge{font-size:10px;font-weight:800;padding:3px 10px;border-radius:11px;white-space:nowrap;}
 .mydtr-badge.review{background:#fff6e0;color:#c98a00;} .mydtr-badge.ok{background:#eafaf0;color:#0f9d58;}
 .mydtr-badge.dispute{background:#fdecea;color:#c62828;} .mydtr-badge.done{background:#f0eff3;color:#666;}
+.mydtr-badge.pending{background:#fff6e0;color:#c98a00;} .mydtr-badge.open{background:#eef3ff;color:#3b5bdb;}
+.mydtr-badge i{font-size:11px;vertical-align:-1px;margin-right:2px;}
+.drev-status{display:flex;align-items:center;gap:8px;font-size:12px;color:#666;background:#fff;border:1px solid #ece9f3;border-radius:12px;padding:8px 12px;margin-bottom:10px;}
+.drev-status.review{border-color:#f5d98a;background:#fffaf0;color:#8a6100;}
+.drev-status.pending{border-color:#f5d98a;background:#fffaf0;color:#8a6100;}
+.drev-status.open{border-color:#c9d6ff;background:#f3f6ff;color:#3b5bdb;}
+.drev-status.done{border-color:#c6ecd6;background:#f1fbf5;color:#0f7a43;}
+.drev-status i{font-size:15px;}
 .mydtr-btn{border:0;border-radius:9px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
 .mydtr-btn.primary{background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;}
 .mydtr-btn.ghost{background:#f2f1f5;color:#4e3483;}
@@ -1965,6 +1973,8 @@ clock-timepicker{
 .evt-pill{margin-left:auto;flex-shrink:0;border-radius:10px;padding:2px 9px;font-size:10px;font-weight:700;}
 .evt-pill.hol{background:#fff0f0;color:#c62828;}
 .evt-pill.act{background:#e8f0ff;color:#0d6efd;}
+.evt-pill.spl{background:#fff4e5;color:#c76a00;}
+.holm-list{display:none;} /* mobile-only; shown by portal-mobile.css */
 
 /* Leave credit mini bars (Overview) */
 .lvc-row{padding:7px 0;border-bottom:1px dashed #ece4d2;}
@@ -2882,7 +2892,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <a href="javascript:void(0)" onclick="switchTab('holidays',null)" style="font-size:10px;color:#6642aa;font-weight:700;text-decoration:none;">See all →</a>
                 </div>
                 <?php foreach (array_slice($calendar_events_portal, 0, 5) as $ev):
-                    $isHol = $ev['type'] == 1; $st = strtotime($ev['start_date']); ?>
+                    $t = (int) $ev['type']; $isHol = $t == 1; $isSpl = $t == 3; $st = strtotime($ev['start_date']); ?>
                 <div class="evt-row">
                     <div class="evt-date"><div class="d"><?= date('d', $st) ?></div><div class="m"><?= date('M', $st) ?></div></div>
                     <div style="min-width:0;">
@@ -2893,7 +2903,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         <div class="evt-note"><?= htmlspecialchars(mb_strimwidth($ev['note'], 0, 50, '…')) ?></div>
                         <?php endif; ?>
                     </div>
-                    <span class="evt-pill <?= $isHol ? 'hol' : 'act' ?>"><?= $isHol ? 'Holiday' : 'Activity' ?></span>
+                    <span class="evt-pill <?= $isHol ? 'hol' : ($isSpl ? 'spl' : 'act') ?>"><?= $isHol ? 'Legal Holiday' : ($isSpl ? 'Special Holiday' : 'Activity') ?></span>
                 </div>
                 <?php endforeach; ?>
             </div>
@@ -3626,19 +3636,41 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
     <div class="tab-panel" id="tab-holidays">
         <div class="sec"><i class="ri-calendar-2-line"></i>Holidays &amp; Activities</div>
         <?php if (count($calendar_events_portal)): ?>
-        <div class="paper" style="border-radius:14px;overflow:hidden;margin-bottom:18px;">
+        <!-- Mobile: card list (desktop table below is hidden by portal-mobile.css) -->
+        <div class="holm-list">
+            <?php foreach ($calendar_events_portal as $ev):
+                $t = (int) $ev['type']; $isHol = $t == 1; $isSpl = $t == 3;
+                $st = strtotime($ev['start_date']);
+                $multi = $ev['end_date'] && $ev['end_date'] != $ev['start_date'];
+                $kind = $isHol ? 'hol' : ($isSpl ? 'spl' : 'act');
+                $label = $isHol ? 'Legal Holiday' : ($isSpl ? 'Special Holiday' : 'Activity');
+            ?>
+            <div class="holm-card <?= $kind ?>" style="--ev:<?= htmlspecialchars($ev['color']) ?>;">
+                <div class="holm-date"><div class="d"><?= date('d', $st) ?></div><div class="m"><?= date('M', $st) ?></div><div class="y"><?= date('Y', $st) ?></div></div>
+                <div class="holm-body">
+                    <div class="holm-title"><?= htmlspecialchars($ev['title']) ?></div>
+                    <div class="holm-meta">
+                        <span class="holm-pill <?= $kind ?>"><?= $label ?></span>
+                        <?php if ($multi): ?><span class="holm-until"><i class="ri-arrow-right-line"></i> until <?= date('M d, Y', strtotime($ev['end_date'])) ?></span><?php endif; ?>
+                    </div>
+                    <?php if ($ev['note']): ?><div class="holm-note"><?= htmlspecialchars($ev['note']) ?></div><?php endif; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <div class="paper holm-desktop" style="border-radius:14px;overflow:hidden;margin-bottom:18px;">
             <div class="table-responsive">
             <table class="ps-hist-table no-click">
                 <thead><tr><th>Date</th><th>Event</th><th>Type</th></tr></thead>
                 <tbody>
                 <?php foreach ($calendar_events_portal as $ev):
-                    $isHol = $ev['type'] == 1;
+                    $t = (int) $ev['type']; $isHol = $t == 1; $isSpl = $t == 3;
                     $range = date('M d, Y', strtotime($ev['start_date'])) . ($ev['end_date'] && $ev['end_date'] != $ev['start_date'] ? ' – ' . date('M d, Y', strtotime($ev['end_date'])) : '');
                 ?>
                 <tr>
                     <td data-label="Date" style="white-space:nowrap;"><span style="border-left:4px solid <?= htmlspecialchars($ev['color']) ?>;padding-left:8px;"><?= $range ?></span></td>
-                    <td data-label="Event"><b><?= $isHol ? '🛑' : '📌' ?> <?= htmlspecialchars($ev['title']) ?></b><?php if ($ev['note']): ?><div style="font-size:11px;color:#999;"><?= htmlspecialchars($ev['note']) ?></div><?php endif; ?></td>
-                    <td data-label="Type"><?php if ($isHol): ?><span style="background:#fff0f0;color:#c62828;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Holiday</span><?php else: ?><span style="background:#e8f0ff;color:#0d6efd;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Activity</span><?php endif; ?></td>
+                    <td data-label="Event"><b><?= $isHol ? '🛑' : ($isSpl ? '🟡' : '📌') ?> <?= htmlspecialchars($ev['title']) ?></b><?php if ($ev['note']): ?><div style="font-size:11px;color:#999;"><?= htmlspecialchars($ev['note']) ?></div><?php endif; ?></td>
+                    <td data-label="Type"><?php if ($isHol): ?><span style="background:#fff0f0;color:#c62828;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Legal Holiday</span><?php elseif ($isSpl): ?><span style="background:#fff4e5;color:#c76a00;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Special Holiday</span><?php else: ?><span style="background:#e8f0ff;color:#0d6efd;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700;">Activity</span><?php endif; ?></td>
                 </tr>
                 <?php endforeach; ?>
                 </tbody>
@@ -4862,6 +4894,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ── AJAX submit: Leave / LWOP / Attendance requests (no page reload) ─────────
 function ajaxSubmitForm(form, action, onSuccess) {
+    // Double-submit guard: a second tap while the first request is still in
+    // flight would file a duplicate leave/attendance request. Mark the form
+    // busy, disable its submit button and show a blocking Swal loader until
+    // the server answers (success/error Swal below replaces the loader).
+    if (form.dataset.submitting === '1') return;
+    form.dataset.submitting = '1';
+    var submitBtn = form.querySelector('button[type="submit"],input[type="submit"]');
+    if (submitBtn) submitBtn.disabled = true;
+    var release = function () {
+        delete form.dataset.submitting;
+        if (submitBtn) submitBtn.disabled = false;
+    };
+    Swal.fire({
+        title: 'Submitting…',
+        text: 'Please wait while your request is being saved.',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: function () { Swal.showLoading(); }
+    });
     var fd = new FormData(form);
     // A form carrying a real file must go up as multipart — flattening it into
     // URL-encoded params silently drops the file. CSRF rides the X-CSRF-Token
@@ -4878,6 +4930,7 @@ function ajaxSubmitForm(form, action, onSuccess) {
         opts.body = params.toString();
     }
     fetch('emp-portal-ajax.php?action=' + action, opts).then(function (r) { return r.json(); }).then(function (res) {
+        release();
         if (res.result) {
             Swal.fire({ icon: 'success', title: 'Done', text: res.message, timer: 2500, showConfirmButton: false });
             onSuccess(res);
@@ -4885,6 +4938,7 @@ function ajaxSubmitForm(form, action, onSuccess) {
             Swal.fire({ icon: 'error', title: 'Error', text: res.message || 'Something went wrong.' });
         }
     }).catch(function () {
+        release();
         Swal.fire({ icon: 'error', title: 'Error', text: 'Network error. Please try again.' });
     });
 }
@@ -5122,7 +5176,7 @@ function loadMyDtr() {
         .then(function (r) { return r.json(); })
         .then(function (res) {
             if (!res.result || !res.rows.length) {
-                box.innerHTML = '<div class="mydtr-empty"><i class="ri-inbox-line"></i> No DTRs to review right now.</div>';
+                box.innerHTML = '<div class="mydtr-empty"><i class="ri-inbox-line"></i> No DTR records yet.</div>';
                 return;
             }
             box.innerHTML = res.rows.map(function (d) {
@@ -5132,6 +5186,7 @@ function loadMyDtr() {
                 // The whole card is the tap target — no per-row "View" button.
                 // A chevron carries the affordance; awaiting-review rows get a
                 // highlighted card so the one that needs action still stands out.
+                var st = parseInt(d.status, 10);
                 var badge, needsAction = false;
                 if (isReview && rv === null) {
                     badge = '<span class="mydtr-badge review">Awaiting your review</span>';
@@ -5140,8 +5195,14 @@ function loadMyDtr() {
                     badge = '<span class="mydtr-badge ok">You confirmed</span>';
                 } else if (rv === 2) {
                     badge = '<span class="mydtr-badge dispute">You disputed</span>';
-                } else {
+                } else if (st === 2) {
                     badge = '<span class="mydtr-badge done">Approved</span>';
+                } else if (st === 1) {
+                    // Timekeeping done, waiting on HR — same word the admin list uses.
+                    badge = '<span class="mydtr-badge pending"><i class="ri-time-line"></i> Pending approval</span>';
+                } else {
+                    // Still being filled by the timekeeper (status 0 / open).
+                    badge = '<span class="mydtr-badge open"><i class="ri-loader-2-line"></i> In progress</span>';
                 }
                 return '<div class="mydtr-card' + (needsAction ? ' needs-action' : '') + '" role="button" tabindex="0"'
                     + ' onclick="openDtrReview(' + d.id + ')"'
@@ -5169,6 +5230,7 @@ function openDtrReview(id) {
     document.getElementById('dtr-review-body').innerHTML = '<div class="mydtr-empty"><i class="ri-loader-4-line"></i> Loading…</div>';
     document.getElementById('dtr-review-comment').value = '';
     document.getElementById('dtr-review-sub').textContent = '';
+    var f = document.getElementById('dtr-review-footer'); if (f) f.style.display = 'none';   // shown by renderDtrReview for status 3
     fetch('emp-portal-ajax.php?action=my_dtr_details', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -5216,6 +5278,18 @@ function renderDtrReview(res) {
         marks: res.marks || {}
     });
 
+    // Batch status strip at the top of the sheet, and the confirm / dispute
+    // footer only while the sheet is actually out for the employee's review.
+    var bst = parseInt(res.dtr.status, 10);
+    var stripCls, stripIcon, stripText;
+    if (bst === 3)      { stripCls = 'review';  stripIcon = 'ri-user-received-2-line'; stripText = 'Ready for your review — confirm if correct, or dispute with a note.'; }
+    else if (bst === 2) { stripCls = 'done';    stripIcon = 'ri-checkbox-circle-line'; stripText = 'Approved by HR.'; }
+    else if (bst === 1) { stripCls = 'pending'; stripIcon = 'ri-time-line';            stripText = 'Pending HR approval — figures may still change.'; }
+    else                { stripCls = 'open';    stripIcon = 'ri-loader-2-line';        stripText = 'In progress — timekeeping is still filling in this period.'; }
+    var statusStrip = '<div class="drev-status ' + stripCls + '"><i class="' + stripIcon + '"></i><span>' + stripText + '</span></div>';
+    var footer = document.getElementById('dtr-review-footer');
+    if (footer) footer.style.display = (bst === 3) ? '' : 'none';
+
     var reviewedNote = '';
     if (res.review) {
         var s = parseInt(res.review.status, 10);
@@ -5258,7 +5332,7 @@ function renderDtrReview(res) {
     // scrolls sideways inside its own wrapper — contained by the card's content
     // box instead of spilling over the card's padding and border.
     document.getElementById('dtr-review-body').innerHTML =
-        reviewedNote + '<div class="drev-f48-card"><div class="drev-f48-wrap">' + form48 + '</div></div>' + fab;
+        statusStrip + reviewedNote + '<div class="drev-f48-card"><div class="drev-f48-wrap">' + form48 + '</div></div>' + fab;
 
     // Fill the message screen now (not on open) so sendDtrReply can always find
     // its thread list — a hidden Bootstrap modal keeps its DOM in place.

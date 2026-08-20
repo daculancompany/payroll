@@ -93,6 +93,14 @@ $pcwUnlockedCount = $pcwHasUnlockCol
 // to bring them into existence.
 $pcwCanSave = in_array((int)$status, [1, 3], true);
 
+// A LOCKED batch (status 2) is paid history: the page becomes a plain viewer.
+// Every control that *changes* something — the selection checkboxes, the bulk
+// bar and its review marks, the per-employee Review Mark button — is dropped
+// from the markup rather than merely disabled, so there is nothing to click.
+// Read-only affordances (filters, Table View, PDFs, Remittance, History,
+// answering an employee's message) stay.
+$pcwLocked = ((int)$status === 2);
+
 // The sign-off conversation, keyed by employee: what the employee wrote when
 // they confirmed or disputed, and HR's reply if one was sent. The panel and
 // the left list show only a name + chat icon; this feeds the popup behind it.
@@ -717,6 +725,7 @@ $refund_names = [];   // refund id => display name
                             </div>
                         </div>
                         <div class="pcw-list" id="pcw-list"></div>
+                        <?php if (!$pcwLocked): ?>
                         <!-- ── Bulk actions for the ticked employees ── -->
                         <div class="pcw-bulk" id="pcw-bulk">
                             <div class="pcw-bulk-head">
@@ -756,6 +765,7 @@ $refund_names = [];   // refund id => display name
                                 <i class="ri-checkbox-multiple-line"></i> <span class="pcw-count-pill" id="pcw-ps-count">0</span> selected
                             </span>
                         </div>
+                        <?php endif; ?>
                     </div>
 
                     <!-- CENTER: pay computation sheet -->
@@ -2094,6 +2104,8 @@ $refund_names = [];   // refund id => display name
                                                                       // actually edits this field (typing is what queues a save). ?>
                                                                 <input type="text" value="<?= round((float)$row['present'], 2) ?>" data-id="<?= $row['id'] ?>" data-type="present" class="form-control input-class"<?= $rowRO ?> placeholder="No. of Days" aria-describedby="basic-addon2">
                                                             </div>
+                                                        <?php } else { ?>
+                                                            <b><?= number_format((float)$row['present'], 2) ?></b>
                                                         <?php } ?>
                                                     </td>
                                                     <td style="min-width: 90px;" class="text-right">
@@ -3042,6 +3054,7 @@ function openPdfPreview(url, title) {
 }
 </script>
 
+<?php if (!$pcwLocked): ?>
 <!-- Review Mark Modal — color-code a payroll row + reviewer comment -->
 <div class="modal fade" id="modal-review-mark" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered" style="max-width:420px;">
@@ -3081,12 +3094,15 @@ function openPdfPreview(url, title) {
         </div>
     </div>
 </div>
+<?php endif; ?>
 <script>
 // ── Reviewer color marks: green = okay (locks row inputs), orange = issue, blue = reviewing ──
 var rvCurrentItem = null;
 var rvClassMap = { 1: 'review-ok', 2: 'review-issue', 3: 'review-checking' };
 
 function openReviewMark(itemId) {
+    // Locked batches ship no modal at all — bail before touching it.
+    if (!document.getElementById('modal-review-mark')) return;
     var tr = document.querySelector('tr[data-row-id="' + itemId + '"]');
     if (!tr) return;
     rvCurrentItem = itemId;
@@ -3515,6 +3531,8 @@ window.PCW_AREAS = <?= json_encode(['all' => $pay_areas, 'by_dept' => $pay_areas
 window.PCW_META = <?= json_encode([
     'id'         => (int)$id,
     'status'     => (int)$status,
+    // Paid history — the page renders as a viewer, with no control that writes.
+    'locked'     => $pcwLocked ? 1 : 0,
     'type'       => (int)$payroll_type,
     'from'       => date('M j, Y', strtotime($payroll['date_from'])),
     'to'         => date('M j, Y', strtotime($payroll['date_to'])),
@@ -3534,9 +3552,8 @@ window.PCW_META = <?= json_encode([
 <script defer src="assets2/js/payroll_calculations.js"></script>
 
 <?php
-// Employee quick-view drawer (avatar / name clicks on the sheet). This page is
-// a standalone workbench, so "Full details" opens in a new tab.
-$eqv_full_target = '_blank';
+// Employee quick-view drawer (avatar / name clicks on the sheet). "Full
+// details" opens in the same tab (per user preference — no target=_blank).
 include __DIR__ . '/component/employee_quick_view.php';
 ?>
 </body>

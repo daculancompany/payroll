@@ -5096,7 +5096,17 @@ class Action
     }
 
     //  calcute tax https://chatgpt.com/c/67c55173-83e0-800f-b6a2-58fa42f159db
-    function calculate_payroll()
+    /**
+     * @param bool $dryRun  Payroll PREVIEW mode (preview_payroll_from_dtr).
+     *   Same computation, two differences: (1) DTR batches that are still
+     *   Pending / Ready-for-Review and records still undecided are included
+     *   as if approved, so an admin can see the estimated payroll before the
+     *   batch is Final-Approved; (2) NOTHING is committed — the caller owns
+     *   the transaction and rolls it back after reading the figures. This
+     *   function neither begins nor commits when $dryRun is set, otherwise a
+     *   nested START TRANSACTION would implicitly commit the caller's work.
+     */
+    function calculate_payroll($dryRun = false)
     {
         $id = $this->db->real_escape_string($_POST['id']);
         $type = isset($_POST['type']) ? $this->db->real_escape_string($_POST['type']) : '';
@@ -5109,7 +5119,13 @@ class Action
             return ['result' => false, 'message' => 'Cannot recalculate a locked payroll. Unlock it first.'];
         }
         $week = $this->db->real_escape_string($pay['type']);
-        $this->db->begin_transaction(); // Start transaction
+        if (!$dryRun) $this->db->begin_transaction(); // Start transaction (preview: caller's)
+        // Which DTR rows feed the run. Real payroll: approved batches, approved
+        // records only. Preview: also Pending / Ready-for-Review batches and
+        // undecided records — disapproved records and Open batches never count.
+        $dtrWhere = $dryRun
+            ? "DTR.status IN (1,2,3) AND DTR_details.status IN (0,1)"
+            : "DTR.status = 2 AND DTR_details.status = 1";
         $site_ids_string = $pay['site_ids'];
         // Weekly payroll was removed: runs no longer partition employees by a
         // weekly/semi-monthly flag, so every employee with approved DTR in the
@@ -5170,8 +5186,7 @@ class Action
                 FROM DTR_details
                 INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
                 INNER JOIN employee ON  DTR_details.employee_id = employee.id
-                WHERE date(DTR_details.date_time) BETWEEN ? AND ?  AND DTR.status = 2
-                AND DTR_details.status = 1
+                WHERE date(DTR_details.date_time) BETWEEN ? AND ?  AND $dtrWhere
                 AND DTR.site_id IN ($commaSeparatedSites) $exclude_clause";
 
             $stmt = $this->db->prepare($sql);
@@ -5692,7 +5707,7 @@ class Action
                             FROM DTR_details 
                             INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id  
                             INNER JOIN employee ON  DTR_details.employee_id = employee.id  
-                            WHERE date(DTR_details.date_time) BETWEEN ? AND ?  AND DTR.status = 2  AND DTR_details.status = 1   AND DTR.site_id NOT IN ($commaSeparatedSites)
+                            WHERE date(DTR_details.date_time) BETWEEN ? AND ?  AND $dtrWhere   AND DTR.site_id NOT IN ($commaSeparatedSites)
                             AND employee_id = $employee_id ORDER BY date_time DESC
                             ";
                     $stmt2 = $this->db->prepare($sql2);
@@ -6100,16 +6115,224 @@ class Action
                 // Last, once every figure the net depends on is in place: store
                 // a net that matches the gross this run just produced.
                 $this->resync_payroll_nets($id);
+                if ($dryRun) return ['result' => true, 'message' => 'preview']; // caller rolls back
                 $this->db->commit();
                 return ['result' => true, 'message' => 'save'];
             }
 
-            $this->db->rollback();
+            if (!$dryRun) $this->db->rollback();
             return ['result' => false, 'message' => 'Calculation failed: no DTR records and no fixed-salary employees for this period.'];
         } catch (mysqli_sql_exception $e) {
+            if ($dryRun) throw $e; // let preview_payroll_from_dtr roll back
             return ['result' => false, 'message' => $e->getMessage()];
         }
         return ['result' => false, 'message' => 'save'];
+    }
+
+    /**
+     * Payroll PREVIEW for one DTR batch (DTR Documents → "Preview Payroll").
+     *
+     * Runs the real calculate_payroll() in dry-run mode so the estimate is
+     * produced by the same code path as the actual payroll — no second copy of
+     * the rules — then ROLLS BACK. Nothing lands in payroll, payroll_items,
+     * loan_history or payroll_history.
+     *
+     * The run needs a payroll row to compute against. If an unlocked payroll
+     * already covers this batch's site and period it is used (its settings
+     * apply); otherwise a temporary payroll row scoped to the batch's site and
+     * dates is inserted inside the same transaction and vanishes with the
+     * rollback. Only the batch's own employees are reported.
+     */
+    function preview_payroll_from_dtr()
+    {
+        $ddtrId = (int) ($_POST['ddtr_id'] ?? 0);
+        if ($ddtrId <= 0) return ['result' => false, 'message' => 'Invalid DTR batch.'];
+
+        $dtr = $this->db->query("SELECT DTR.*, s.site_code, s.site_name
+                                 FROM DTR LEFT JOIN sites s ON s.id = DTR.site_id
+                                 WHERE DTR.id = $ddtrId")->fetch_assoc();
+        if (!$dtr) return ['result' => false, 'message' => 'DTR batch not found.'];
+        $siteId   = (int) $dtr['site_id'];
+        $dateFrom = date('Y-m-d', strtotime($dtr['date_from']));
+        $dateTo   = date('Y-m-d', strtotime($dtr['date_to']));
+
+        // What the preview will treat as approved that isn't (yet).
+        $pend = $this->db->query("SELECT SUM(status = 0) AS pending, SUM(status = 2) AS disapproved,
+                                         COUNT(DISTINCT employee_id) AS emps
+                                  FROM DTR_details WHERE ddtr_id = $ddtrId")->fetch_assoc() ?: [];
+        $batchEmpIds = [];
+        $eq = $this->db->query("SELECT DISTINCT employee_id FROM DTR_details WHERE ddtr_id = $ddtrId");
+        if ($eq) while ($e = $eq->fetch_assoc()) $batchEmpIds[(int) $e['employee_id']] = true;
+
+        // Reuse an unlocked payroll that already spans this site + period, if any.
+        $existing = null;
+        $pq = $this->db->query("SELECT id, ref_no, site_ids, settings, status FROM payroll
+                                WHERE status IN (0,1) AND date_from <= '$dateFrom' AND date_to >= '$dateTo'
+                                ORDER BY id DESC");
+        if ($pq) while ($p = $pq->fetch_assoc()) {
+            $sites = json_decode($p['site_ids'], true);
+            if (is_array($sites) && in_array($siteId, array_map('intval', $sites), true)) { $existing = $p; break; }
+        }
+
+        $savedPost = $_POST;
+        $this->db->begin_transaction();
+        try {
+            if ($existing) {
+                $payId = (int) $existing['id'];
+                $_POST = ['id' => $payId, 'type' => 'recalculate']; // rebuild items in-transaction (rolled back)
+            } else {
+                $settings = $this->db->real_escape_string(json_encode($this->defaultPayrollSettings()));
+                $ok = $this->db->query("INSERT INTO payroll SET employer_id = 1, ref_no = 'PREVIEW-$ddtrId',
+                        date_from = '$dateFrom', date_to = '$dateTo', type = 1, status = 0, deferential = 0,
+                        site_ids = '[$siteId]', category = 1, settings = '$settings', p2 = 'no', date_created = NOW()");
+                if (!$ok) throw new Exception('Could not stage preview: ' . $this->db->error);
+                $payId = (int) $this->db->insert_id;
+                $_POST = ['id' => $payId];
+            }
+
+            $calc = $this->calculate_payroll(true);
+            $summary = null;
+            if (!empty($calc['result'])) {
+                $_POST = ['payroll_id' => $payId];
+                $data = $this->get_payroll_rows_data();
+                // Names + employee ids for the rows (rows_data returns item ids only).
+                $meta = [];
+                $mq = $this->db->query("SELECT pi.id, pi.employee_id, pi.site_id, pi.present, pi.ot, pi.under_time,
+                                               CONCAT(e.lastname, ', ', e.firstname) AS name
+                                        FROM payroll_items pi INNER JOIN employee e ON e.id = pi.employee_id
+                                        WHERE pi.payroll_id = $payId");
+                if ($mq) while ($m = $mq->fetch_assoc()) $meta[(int) $m['id']] = $m;
+
+                $rows = []; $t = ['employees' => 0, 'present' => 0.0, 'late' => 0.0, 'under_time' => 0.0, 'ot' => 0.0,
+                                  'gross' => 0.0, 'deductions' => 0.0, 'net' => 0.0];
+                foreach (($data['rows'] ?? []) as $r) {
+                    $m = $meta[(int) $r['id']] ?? null;
+                    if (!$m || !isset($batchEmpIds[(int) $m['employee_id']])) continue; // this batch's people only
+                    $rows[] = [
+                        'item_id'     => (int) $r['id'],
+                        'employee_id' => (int) $m['employee_id'],
+                        'name'        => $m['name'],
+                        'present'     => (float) $r['present'],
+                        'late'        => (float) $r['late'],
+                        'under_time'  => (float) $m['under_time'],
+                        'ot'          => (float) $m['ot'],
+                        'gross'       => round((float) $r['gross'], 2),
+                        'deductions'  => round((float) $r['total_deductions'], 2),
+                        'net'         => round((float) $r['net'], 2),
+                    ];
+                    $t['employees']++;
+                    $t['present']    += (float) $r['present'];
+                    $t['late']       += (float) $r['late'];
+                    $t['under_time'] += (float) $m['under_time'];
+                    $t['ot']         += (float) $m['ot'];
+                    $t['gross']      += (float) $r['gross'];
+                    $t['deductions'] += (float) $r['total_deductions'];
+                    $t['net']        += (float) $r['net'];
+                }
+                usort($rows, fn($a, $b) => strcmp($a['name'], $b['name']));
+                foreach (['gross', 'deductions', 'net'] as $k) $t[$k] = round($t[$k], 2);
+                $summary = ['rows' => $rows, 'totals' => $t];
+
+                // The real Payroll sheet, rendered by payroll_calculations.php
+                // itself against the staged (soon rolled back) run — so the
+                // preview shows exactly the columns the Payroll page shows, from
+                // the same template. Status is dropped to 0 first so the sheet
+                // renders plain cells rather than edit inputs. Only the batch's
+                // employees are kept (rows carry data-row-id = payroll_items.id).
+                $summary['sheet_html'] = null;
+                if (function_exists('page_allowed') && page_allowed('payroll_calculations')) {
+                    $this->db->query("UPDATE payroll SET status = 0 WHERE id = $payId");
+                    $page = $this->capture_payroll_page($payId);
+                    $summary['sheet_html'] = $this->extract_payroll_sheet($page, $batchEmpIds, $meta);
+                }
+            }
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            $_POST = $savedPost;
+            return ['result' => false, 'message' => 'Preview failed: ' . $e->getMessage()];
+        }
+        // Always discard — this is a simulation.
+        $this->db->rollback();
+        $_POST = $savedPost;
+
+        if ($summary === null) {
+            return ['result' => false, 'message' => $calc['message'] ?? 'Nothing to preview for this batch.'];
+        }
+        return [
+            'result'  => true,
+            'preview' => true,
+            'batch'   => [
+                'id'        => $ddtrId,
+                'site_code' => $dtr['site_code'],
+                'site_name' => $dtr['site_name'],
+                'date_from' => $dateFrom,
+                'date_to'   => $dateTo,
+                'status'    => (int) $dtr['status'],
+            ],
+            'source'  => $existing
+                ? ['kind' => 'payroll', 'id' => (int) $existing['id'], 'ref_no' => $existing['ref_no']]
+                : ['kind' => 'temp',    'settings' => 'default'],
+            'included_pending'   => (int) ($pend['pending'] ?? 0),
+            'excluded_disapproved' => (int) ($pend['disapproved'] ?? 0),
+        ] + $summary;
+    }
+
+    /**
+     * Render payroll_calculations.php for $payId into a string. Lives in its own
+     * method on purpose: the page declares dozens of variables ($summary, $rows,
+     * $id, ...) and an include shares the including scope, so running it inside
+     * preview_payroll_from_dtr() clobbered that method's locals.
+     */
+    private function capture_payroll_page($payId)
+    {
+        $keepGet = $_GET;
+        $_GET = ['id' => (int) $payId];
+        $conn = $this->db; // the page expects $conn in scope (else it re-includes db_connect.php)
+        $cwd = getcwd(); chdir(__DIR__);
+        ob_start();
+        try { include __DIR__ . '/payroll_calculations.php'; } catch (\Throwable $e) { /* sheet is optional */ }
+        $page = ob_get_clean();
+        chdir($cwd);
+        $_GET = $keepGet;
+        return $page;
+    }
+
+    /**
+     * Pull the rendered #table-1 out of a captured payroll_calculations.php page
+     * and drop rows that don't belong to the previewed DTR batch. Returns null
+     * when the table can't be found.
+     */
+    private function extract_payroll_sheet($page, array $batchEmpIds, array $meta)
+    {
+        $start = strpos($page, '<table cellspacing="0" id="table-1">');
+        if ($start === false) return null;
+        $end = strpos($page, '</table>', $start);
+        if ($end === false) return null;
+        $table = substr($page, $start, $end - $start + 8);
+
+        // Rows whose payroll_items.id maps to an employee outside the batch → remove.
+        $dropped = 0;
+        $table = preg_replace_callback('#<tr class="name-(\d+)[^"]*"[^>]*>.*?</tr>#s', function ($m) use ($batchEmpIds, $meta, &$dropped) {
+            $itemId = (int) $m[1];
+            $empId  = isset($meta[$itemId]) ? (int) $meta[$itemId]['employee_id'] : 0;
+            if (isset($batchEmpIds[$empId])) return $m[0];
+            $dropped++;
+            return '';
+        }, $table);
+        // The sheet's own footer totals were summed over every row, including
+        // the ones just dropped — remove it rather than show wrong totals; the
+        // preview tiles carry the batch-scoped totals.
+        if ($dropped > 0) $table = preg_replace('#<tfoot>.*?</tfoot>#s', '', $table);
+        // Nothing interactive survives: quick-view links become plain text, the
+        // sheet's hidden form inputs go, and so do comments + indentation (the
+        // template is ~75% whitespace — this keeps the JSON payload sane).
+        $table = preg_replace('#<a href="javascript:void\(0\);"([^>]*)>#', '<span$1>', $table);
+        $table = preg_replace('#</a>#', '</span>', $table);
+        $table = preg_replace('#<input\b[^>]*>#i', '', $table);
+        $table = preg_replace('#<!--.*?-->#s', '', $table);
+        $table = preg_replace('#\s+#', ' ', $table);
+        $table = preg_replace('#>\s+<#', '><', $table);
+        return $table;
     }
 
     /**
@@ -8053,8 +8276,8 @@ class Action
                     // Same shared paid-time maths as dtr_compute_day
                     // (dtr_shift_figures, db_connect.php): break overlap
                     // excluded, late priced by the pay_settings grace /
-                    // bracket / half-day rules, work capped so worked + late +
-                    // UT == the day. Anything computed here by hand drifted
+                    // bracket / half-day rules, work = hours actually rendered
+                    // inside the shift. Anything computed here by hand drifted
                     // from the recompute path sooner or later.
                     $fig        = dtr_shift_figures($earliest, $latest, $sched_start, $sched_end, $schedule);
                     $late       = $fig['late'];
@@ -8573,6 +8796,15 @@ class Action
         $status = (int) ($_POST['review_status'] ?? 0);
         $comment = trim($_POST['review_comment'] ?? '');
         if ($id <= 0 || !in_array($status, [0, 1, 2, 3])) {
+            return 0;
+        }
+        // A LOCKED batch (payroll.status = 2) is paid history — the reviewer
+        // mark is frozen with everything else. The page drops the control, but
+        // a stale tab (or a hand-rolled POST) must not slip past it.
+        $own = $this->db->query("SELECT p.status FROM payroll_items i
+                INNER JOIN payroll p ON p.id = i.payroll_id
+                WHERE i.id = $id")->fetch_assoc();
+        if (!$own || (int) $own['status'] === 2) {
             return 0;
         }
         $stmt = $this->db->prepare("UPDATE payroll_items SET review_status = ?, review_comment = ? WHERE id = ?");
@@ -12637,7 +12869,7 @@ class Action
             $end_excl = date('Y-m-d', strtotime($end . ' +1 day'));
             $events[] = [
                 'id'    => $r['id'],
-                'title' => ($r['type'] == 1 ? '🛑 ' : '📌 ') . $r['title'],
+                'title' => ($r['type'] == 1 ? '🛑 ' : ($r['type'] == 3 ? '🟡 ' : '📌 ')) . $r['title'],
                 'start' => $r['start_date'],
                 'end'   => $end_excl,
                 'color' => $r['color'],

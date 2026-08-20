@@ -368,6 +368,7 @@ if (!defined('ACTION_PAGE_MAP')) {
     define('ACTION_PAGE_MAP', [
         // payroll batches & computation
         'calculate_payroll' => 'payroll', 'save_payroll' => 'payroll',
+        'preview_payroll_from_dtr' => 'payroll', // DTR Documents preview shows pay figures → payroll access
         'delete_payroll' => 'payroll', 'save_payroll_amount' => 'payroll',
         'update_payroll_item' => 'payroll', 'update_payroll_item_new' => 'payroll',
         'update_payroll_print' => 'payroll', 'update_payroll_status' => 'payroll',
@@ -810,17 +811,18 @@ if (!function_exists('dtr_break_overlap')) {
 //
 // Everything is measured in PAID time — the break window is excluded from
 // late, undertime and work alike — so on a complete day
-//     work_hours + late + undertime == total_hours
-// always holds, which is what payroll's whole-day credit relies on
-// (worked fraction + (late + UT) / day_hours == 1).
+//     work_hours + late_raw + undertime == total_hours
+// (raw minutes late, not the bracket charge). Payroll's whole-day credit is
+// min(1, worked + late + UT), so a bracket/half-day charge that exceeds the
+// raw minutes still lands on exactly one day; the charge itself is deducted
+// in pesos on the payroll's own late line, never by shaving work_hours.
 //
 //   late       hours CHARGED for the late arrival (dtr_charge_late)
 //   late_raw   paid minutes actually late — what the charge was decided from
 //   late_rule  'none' | 'exact' | 'bracket' | 'half_day'
-//   work_hours presence inside the shift minus break overlap, capped at the day
-//              and at (day − late − undertime): a bracket charge takes its hours
-//              out of the day, so an employee charged 1 hr for 16 min cannot
-//              also be credited those 44 minutes as worked.
+//   work_hours presence inside the shift minus break overlap, capped at the
+//              day length. NOT reduced by the late charge — the hours actually
+//              rendered stay on the sheet; the charge is priced by payroll.
 if (!function_exists('dtr_shift_figures')) {
     function dtr_shift_figures(int $in_ts, int $out_ts, int $sched_start, int $sched_end, array $schedule): array
     {
@@ -851,7 +853,12 @@ if (!function_exists('dtr_shift_figures')) {
         $eff_out = min($out_ts, $sched_end);
         $work    = ($eff_out - $eff_in) - dtr_break_overlap($win, $eff_in, $eff_out);
         $work_hours = round(max(0, $work / 3600), 2);
-        $work_hours = round(min($work_hours, $day_hours, max(0, $day_hours - $late - $undertime)), 2);
+        // Capped at the day length only. The late CHARGE is deliberately NOT
+        // taken out of work_hours: the sheet shows the hours actually rendered
+        // (7.68 on an 8:19 arrival), and payroll deducts the charged late in
+        // pesos on its own line — its day credit is min(1, worked + late + UT),
+        // so a bracket charge can never add up to more than one day.
+        $work_hours = round(min($work_hours, $day_hours), 2);
 
         return [
             'work_hours' => $work_hours,
@@ -1995,7 +2002,7 @@ if (!function_exists('dtr_compute_day')) {
             // Late / undertime / overtime / work hours — the shared paid-time
             // maths (dtr_shift_figures): break overlap excluded from all of
             // them, late priced by the grace/bracket/half-day rules in
-            // pay_settings, work capped so worked + late + UT == the day.
+            // pay_settings, work = hours actually rendered inside the shift.
             $fig        = dtr_shift_figures($in_ts, $out_ts, $sched_start, $sched_end, $schedule);
             $late       = $fig['late'];
             $undertime  = $fig['undertime'];

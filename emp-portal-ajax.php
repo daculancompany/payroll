@@ -95,7 +95,12 @@ switch ($action) {
 
     // ── DTR review: list this employee's DTR batches that are ready / done ──
     case 'my_dtr_list': {
-        // Batches the employee has records in, that are in review (3) or approved (2).
+        // Every batch the employee has records in — open (0), pending (1),
+        // ready for review (3) and approved (2). Employees asked to see their
+        // DTR as soon as timekeeping starts filling it, not only after HR
+        // releases it; the card carries the batch status so a still-open sheet
+        // reads as "in progress", and confirm/dispute stays limited to status 3
+        // (enforced again in submit_dtr_review).
         $rows = [];
         $sql = "SELECT DTR.id, DTR.date_from, DTR.date_to, DTR.status,
                     sites.site_code, sites.site_name,
@@ -106,9 +111,9 @@ switch ($action) {
                 INNER JOIN DTR ON DTR.id = dd.ddtr_id
                 LEFT JOIN sites ON sites.id = DTR.site_id
                 LEFT JOIN dtr_employee_reviews r ON r.ddtr_id = DTR.id AND r.employee_id = ?
-                WHERE dd.employee_id = ? AND DTR.status IN (2, 3)
+                WHERE dd.employee_id = ?
                 GROUP BY DTR.id
-                ORDER BY (DTR.status = 3) DESC, DTR.id DESC
+                ORDER BY (DTR.status = 3) DESC, DTR.date_from DESC, DTR.id DESC
                 LIMIT 60";
         $st = $conn->prepare($sql);
         $st->bind_param('ii', $emp_id, $emp_id);
@@ -382,6 +387,59 @@ switch ($action) {
                 'sh'  => (int) date('G', strtotime($shift['start_time'])),
                 'inf' => $inf,
             ];
+        }
+
+        // Holidays and leaves — the same 'holiday' / 'leave' marks the admin
+        // Form 48 sheet carries (dtr-employee-server.php), so the employee sees
+        // why a day has no punch. Leaves include pending (0) — the shared
+        // template labels those "(PENDING)" so the employee knows to follow up
+        // before payroll — as well as approved (1); rejected are never shown.
+        $hq = $conn->prepare("SELECT title, start_date, end_date, type FROM calendar_events
+                              WHERE type IN (1,3) AND start_date <= ? AND COALESCE(end_date, start_date) >= ?");
+        $hq->bind_param('ss', $pTo, $pFrom);
+        $hq->execute();
+        foreach ($hq->get_result()->fetch_all(MYSQLI_ASSOC) as $h) {
+            $hs = max(strtotime($h['start_date']), strtotime($pFrom));
+            $he = min(strtotime($h['end_date'] ?: $h['start_date']), strtotime($pTo));
+            for ($d = $hs; $d <= $he; $d = strtotime('+1 day', $d)) {
+                $ymd = date('Y-m-d', $d);
+                // A date carrying both kinds reads as the legal holiday.
+                if (!isset($marks[$ymd])) $marks[$ymd] = [];
+                $already = null;
+                foreach ($marks[$ymd] as $i => $mk) if ($mk['k'] === 'holiday') $already = $i;
+                $hm = ['k' => 'holiday', 't' => ((int) $h['type'] === 1 ? 'legal' : 'special'), 'lbl' => $h['title']];
+                if ($already === null) array_unshift($marks[$ymd], $hm);
+                elseif ($hm['t'] === 'legal') $marks[$ymd][$already] = $hm;
+            }
+        }
+
+        $lq = $conn->prepare("SELECT lr.dates, lr.date_from, lr.date_to, lr.status, lr.is_half_day, lr.half_date,
+                                     lt.name AS type_name
+                              FROM leave_requests lr
+                              INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                              WHERE lr.employee_id = ? AND lr.status IN (0,1)
+                                AND lr.date_from <= ? AND lr.date_to >= ?");
+        $lq->bind_param('iss', $emp_id, $pTo, $pFrom);
+        $lq->execute();
+        foreach ($lq->get_result()->fetch_all(MYSQLI_ASSOC) as $lv) {
+            $lvDays = json_decode((string) ($lv['dates'] ?? ''), true);
+            if (!is_array($lvDays) || !$lvDays) {
+                $lvDays = [];
+                for ($d = strtotime($lv['date_from']); $d <= strtotime($lv['date_to']); $d = strtotime('+1 day', $d)) {
+                    $lvDays[] = date('Y-m-d', $d);
+                }
+            }
+            foreach ($lvDays as $dy) {
+                $ymd = date('Y-m-d', strtotime($dy));
+                if ($ymd < $pFrom || $ymd > $pTo) continue;
+                $marks[$ymd][] = [
+                    'k'    => 'leave',
+                    'lbl'  => $lv['type_name'],
+                    's'    => (int) $lv['status'],
+                    'half' => ((int) $lv['is_half_day'] === 1 && !empty($lv['half_date'])
+                               && date('Y-m-d', strtotime($lv['half_date'])) === $ymd),
+                ];
+            }
         }
 
         // Attendance requests (incident/OT) — same 'req' mark the admin sheet

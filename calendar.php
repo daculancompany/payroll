@@ -24,10 +24,13 @@ $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
 
                 <div class="col-xl-8">
                     <div class="card">
-                        <div class="card-header d-flex align-items-center">
+                        <div class="card-header d-flex align-items-center flex-wrap gap-2">
                             <h5 class="card-title mb-0 flex-grow-1"><i class="ri-calendar-2-line me-2 text-success"></i>Calendar</h5>
-                            <span class="badge me-2" style="background:#dc3545;">🛑 Holiday (blocks leave)</span>
-                            <span class="badge" style="background:#0d6efd;">📌 Activity</span>
+                            <div class="cal-legend">
+                                <span class="cal-legend-item"><i class="cal-legend-dot" style="background:#dc3545;"></i><b>Legal Holiday</b><small>200% pay · blocks leave</small></span>
+                                <span class="cal-legend-item"><i class="cal-legend-dot" style="background:#fd7e14;"></i><b>Special Holiday</b><small>130% pay</small></span>
+                                <span class="cal-legend-item"><i class="cal-legend-dot" style="background:#0d6efd;"></i><b>Activity</b><small>informational</small></span>
+                            </div>
                             <?php if ($can_edit_cal): ?>
                             <button class="btn btn-success btn-sm ms-2" id="cal-add"><i class="ri-add-line me-1"></i>Add Event</button>
                             <?php endif; ?>
@@ -47,13 +50,13 @@ $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
                                     <?php
                                     $up = $conn->query("SELECT * FROM calendar_events WHERE YEAR(start_date) = YEAR(CURDATE()) AND COALESCE(end_date,start_date) >= CURDATE() ORDER BY start_date ASC LIMIT 30");
                                     if ($up && $up->num_rows) while ($e = $up->fetch_assoc()):
-                                        $isHol = $e['type'] == 1;
+                                        $isHol = $e['type'] == 1; $isSpl = $e['type'] == 3;
                                         $range = date('M d, Y', strtotime($e['start_date'])) . ($e['end_date'] && $e['end_date'] != $e['start_date'] ? ' – ' . date('M d, Y', strtotime($e['end_date'])) : '');
                                     ?>
                                     <tr>
                                         <td style="width:6px;background:<?= htmlspecialchars($e['color']) ?>;padding:0;"></td>
                                         <td>
-                                            <div style="font-weight:700;"><?= $isHol ? '🛑' : '📌' ?> <?= htmlspecialchars($e['title']) ?></div>
+                                            <div style="font-weight:700;"><?= $isHol ? '🛑' : ($isSpl ? '🟡' : '📌') ?> <?= htmlspecialchars($e['title']) ?></div>
                                             <div class="text-muted" style="font-size:11px;"><i class="ri-calendar-line me-1"></i><?= $range ?>
                                                 <?php if ($e['blocks_leave']): ?><span class="badge bg-danger-subtle text-danger ms-1">No leave</span><?php endif; ?>
                                             </div>
@@ -147,6 +150,29 @@ $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
 </div>
 <?php endif; ?>
 
+<style>
+/* Calendar legend — one swatch per event type, readable at a glance. */
+.cal-legend{display:flex;flex-wrap:wrap;gap:6px;}
+.cal-legend-item{display:inline-flex;align-items:center;gap:6px;background:#f5f6f8;border:1px solid #e3e6ea;border-radius:20px;padding:3px 10px 3px 6px;font-size:12px;line-height:1.2;color:#333;white-space:nowrap;}
+.cal-legend-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 2px #fff inset;}
+.cal-legend-item b{font-weight:700;}
+.cal-legend-item small{color:#7a8290;font-size:11px;}
+/* Event chips inside FullCalendar */
+/* Outlined chips: white background, the event colour only on the border,
+   left accent bar and text (FullCalendar puts the colour on border-color +
+   background-color; we override the fill and use the border colour). */
+#calendar .fc-daygrid-event{border-radius:6px;padding:3px 6px 3px 8px;font-size:12px;font-weight:600;line-height:1.3;background:#fff !important;border-width:1px;border-style:solid;border-left-width:4px;box-shadow:0 1px 2px rgba(0,0,0,.05);}
+#calendar .fc-daygrid-event .fc-event-title{white-space:normal;overflow:visible;}
+#calendar .fc-daygrid-block-event .fc-event-title{padding:0;}
+#calendar .fc-h-event .fc-event-main{color:#333;}
+#calendar .fc-list-event-dot{border-width:6px;}
+#calendar .cal-ev{color:#333;}
+#calendar .cal-ev-title{font-weight:700;white-space:normal;}
+#calendar .cal-ev-type{font-size:10px;font-weight:700;border-radius:4px;padding:0 5px;margin-top:2px;display:inline-block;letter-spacing:.2px;background:#f3f4f6;color:#555;}
+#calendar .cal-ev-type.t1{background:#fdecea;color:#c62828;}
+#calendar .cal-ev-type.t3{background:#fff4e5;color:#c76a00;}
+#calendar .cal-ev-type.t2{background:#e8f0ff;color:#0d6efd;}
+</style>
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
 <script>
 (function () {
@@ -160,6 +186,22 @@ $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
             height: 620,
             headerToolbar: { left: 'prev,next today', center: 'title', right: 'dayGridMonth,listMonth' },
             events: 'ajax.php?action=get_calendar_events',
+            // Show the event type inside the day cell as well, not only in the
+            // legend — a colour alone is hard to read at a glance.
+            eventContent: function (arg) {
+                const t = Number(arg.event.extendedProps.type);
+                const label = t === 1 ? 'Legal Holiday' : (t === 3 ? 'Special Holiday' : 'Activity');
+                const wrap = document.createElement('div');
+                wrap.className = 'cal-ev';
+                const title = document.createElement('div');
+                title.className = 'cal-ev-title';
+                title.textContent = arg.event.title;
+                const tag = document.createElement('div');
+                tag.className = 'cal-ev-type t' + (t === 1 || t === 3 ? t : 2);
+                tag.textContent = label;
+                wrap.appendChild(title); wrap.appendChild(tag);
+                return { domNodes: [wrap] };
+            },
             eventClick: function (info) {
                 if (!canEdit) return;
                 const p = info.event.extendedProps;
@@ -225,7 +267,13 @@ $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
     function openModal(ev) {
         document.getElementById('ev-id').value = ev.id || '';
         document.getElementById('ev-title').value = ev.title || '';
-        document.getElementById('ev-type').value = ev.type || 1;
+        // The global custom-select control only re-syncs its label on 'change',
+        // so setting .value alone leaves it showing the previous type
+        // ("Legal Holiday" on first open). Fire change here — before the
+        // blocks_leave checkbox is set, since that handler also toggles it.
+        const typeSel = document.getElementById('ev-type');
+        typeSel.value = String(ev.type || 1);
+        typeSel.dispatchEvent(new Event('change', { bubbles: true }));
         // Drop the previous event's range limits first, or they clamp the dates
         // being loaded now.
         if (evPickers) { evPickers.start.maxDate(false); evPickers.end.minDate(false); }

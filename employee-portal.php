@@ -458,9 +458,14 @@ foreach ($dtr_flag_rows as $__row) {
     $__rest = ((int)($__row['is_rest_day'] ?? 0) === 1);
     $__f    = [];
 
-    // Blocking problems first — these change the paid figure outright.
-    if (count($__logs) < 2)  $__f[] = ['k' => 'no_out',   'sev' => 'bad',  'txt' => 'No time out recorded'];
-    if ($__wh <= 0)          $__f[] = ['k' => 'zero',     'sev' => 'bad',  'txt' => 'No work hours credited'];
+    // Blocking problems first — these change the paid figure outright. Both
+    // need at least one punch to be about anything: a row with none is the
+    // shell left after a night shift's clock-out was re-filed onto the day the
+    // shift started, so the punch is accounted for on the other day. Same
+    // guard as the admin view in dtr-employee-server.php.
+    $__has = count($__logs) > 0;
+    if ($__has && count($__logs) < 2) $__f[] = ['k' => 'no_out', 'sev' => 'bad', 'txt' => 'No time out recorded'];
+    if ($__has && $__wh <= 0)         $__f[] = ['k' => 'zero',   'sev' => 'bad', 'txt' => 'No work hours credited'];
     // Hours worked but never filed: without an approved request they are
     // logged yet unpaid, and this is the flag with the shortest fuse. The
     // ceiling itself decides what is fileable and under which type, so the
@@ -2256,6 +2261,11 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
          plain title= on this page (assets2/js/app-tooltip.js). -->
     <link rel="stylesheet" href="assets2/css/app-tooltip.css">
     <script defer src="assets2/js/app-tooltip.js"></script>
+
+    <!-- Global Material component skin (buttons/inputs/selects/cards, Paper-style).
+         Must be the LAST stylesheet: it wins cascade ties against the inline
+         styles, portal-mobile.css and custom-select.css it re-skins. -->
+    <link href="<?= av('assets2/css/portal-md.css') ?>" rel="stylesheet">
 </head>
 <body>
 
@@ -4461,17 +4471,24 @@ function prependLeaveRow(req) {
     var now = new Date();
     var filedAt = now.toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' })
         + ' · ' + now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    // Same card/head/pill shape leave_timeline_html() builds server-side, so the
+    // optimistic trail shown right after filing matches the one that comes back
+    // on the next page load.
     var tl = '<ul class="lvtl">'
-        + '<li><span class="lvtl-dot filed"><i class="ri-flag-line"></i></span>'
-        + '<span class="lvtl-stage">Filed</span><div class="lvtl-meta">' + filedAt + '</div></li>';
+        + '<li class="is-filed"><span class="lvtl-dot filed"><i class="ri-flag-line"></i></span>'
+        + '<div class="lvtl-card"><div class="lvtl-head"><span class="lvtl-stage">Filed</span>'
+        + '<span class="lvtl-pill ok">Submitted</span></div>'
+        + '<div class="lvtl-time"><i class="ri-time-line"></i>' + filedAt + '</div></div></li>';
     LEAVE_STAGES.forEach(function (lbl, i) {
         if (i === 0) {
-            tl += '<li><span class="lvtl-dot wait"><i class="ri-time-line"></i></span>'
-                + '<span class="lvtl-stage">' + escapeHtml(lbl) + '</span><span class="lvtl-badge">Awaiting</span></li>';
+            tl += '<li class="is-wait"><span class="lvtl-dot wait"><i class="ri-time-line"></i></span>'
+                + '<div class="lvtl-card"><div class="lvtl-head"><span class="lvtl-stage">' + escapeHtml(lbl) + '</span>'
+                + '<span class="lvtl-pill wait">Awaiting</span></div></div></li>';
         } else {
-            tl += '<li><span class="lvtl-dot"><i class="ri-more-line"></i></span>'
-                + '<span class="lvtl-stage" style="color:#9aa3b2;">' + escapeHtml(lbl) + '</span>'
-                + '<div class="lvtl-meta">Pending earlier approval</div></li>';
+            tl += '<li class="is-next"><span class="lvtl-dot"><i class="ri-more-line"></i></span>'
+                + '<div class="lvtl-card"><div class="lvtl-head"><span class="lvtl-stage">' + escapeHtml(lbl) + '</span>'
+                + '<span class="lvtl-pill next">Pending</span></div>'
+                + '<div class="lvtl-meta">Waiting on the stage before this</div></div></li>';
         }
     });
     tl += '</ul>';
@@ -7225,5 +7242,7 @@ jQuery(function ($) {
 <!-- Native-app interactions: swipe tab navigation, bottom-sheet drag, notification
      swipe-to-dismiss, per-screen titles. Loads last so it can wrap switchTab & co. -->
 <script src="<?= av('assets2/js/portal-mobile.js') ?>"></script>
+<!-- Material touch ripple for the component skin (assets2/css/portal-md.css) -->
+<script src="<?= av('assets2/js/portal-md.js') ?>"></script>
 </body>
 </html>

@@ -1,0 +1,343 @@
+/* ════════════════════════════════════════════════════════════════════════
+   Portal MD — global Material-style component skin (React-Native-Paper feel)
+   Reusable on any page: load AFTER the page's own styles (and after
+   portal-mobile.css on the employee portal) together with portal-md.js,
+   which adds the touch ripple. Scoped to the same mobile condition as the
+   app layer, so desktop keeps its existing look.
+
+   Covers: buttons, text inputs, textareas, native selects, the custom-select
+   component (menu becomes a bottom sheet), checkboxes/radios/switches,
+   cards & surfaces, chips/pills, bottom navigation, SweetAlert dialogs.
+   ════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+
+    /* ── Design tokens (Material 3, tuned to the portal's purple brand) ── */
+    :root {
+        --md-primary: #5b34a8;
+        --md-on-primary: #ffffff;
+        --md-primary-container: #ece5fb;
+        --md-on-primary-container: #45327a;
+        --md-surface: #ffffff;
+        --md-surface-2: #f7f5fa;          /* surface-container */
+        --md-field: #f2eef8;              /* filled text-field bg */
+        --md-field-focus: #ebe4f6;
+        --md-outline: #cac3d6;
+        --md-outline-strong: #8b8399;
+        --md-on-surface: #1c1b1f;
+        --md-on-surface-var: #6b6478;
+        --md-error: #b3261e;
+        --md-elev-1: 0 1px 2px rgba(28, 20, 48, .10), 0 1px 3px 1px rgba(28, 20, 48, .06);
+        --md-elev-2: 0 1px 2px rgba(28, 20, 48, .12), 0 2px 6px 2px rgba(28, 20, 48, .08);
+    }
+
+    body { font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+                        'Helvetica Neue', Arial, sans-serif; }
+
+    /* ── Ripple (spans injected by portal-md.js) ─────────────────────────
+       Hosts get containment here so the JS never has to mutate styles. */
+    .btn:not(.btn-close), .qa-btn, .mydtr-btn, .lv-dur-btn, .more-item,
+    .na-item, .tab-btn, .faq-q, .cs-trigger, .cs-opt, .ptop-icbtn,
+    .ptop-logout, .att-range-picker, .swal2-styled, .holm-card, .psm-card,
+    .attm-card, .areq-card, .mydtr-card, .help-card, .ins-box, .ytd-box,
+    .loan-c {
+        position: relative;
+        overflow: hidden;
+    }
+    .md-ripple {
+        position: absolute;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: .16;
+        transform: scale(0);
+        pointer-events: none;
+        z-index: 1;
+        animation: md-ripple .5s cubic-bezier(.2, .6, .35, 1) forwards;
+    }
+    @keyframes md-ripple {
+        60%  { transform: scale(1); opacity: .12; }
+        100% { transform: scale(1); opacity: 0; }
+    }
+
+    /* ── Buttons — Paper: full-pill, weighty label, tonal variants ─────── */
+    .btn {
+        border-radius: 100px;
+        min-height: 44px;
+        padding: 10px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: .15px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        transition: background .15s, box-shadow .15s, transform .1s;
+    }
+    .btn:active { transform: scale(.97); }
+    .btn-sm { min-height: 36px; padding: 6px 16px; font-size: 12.5px; }
+    /* Contained (filled) primary — brand purple with MD elevation.
+       .btn-success is the login page's submit; it joins the brand color. */
+    .btn-primary, .btn-primary:hover, .btn-primary:focus, .btn-primary:active,
+    .btn-primary:focus-visible, .btn-primary:active:focus,
+    .btn-success, .btn-success:hover, .btn-success:focus, .btn-success:active,
+    .btn-success:focus-visible, .btn-success:active:focus {
+        background: var(--md-primary);
+        border-color: var(--md-primary);
+        color: var(--md-on-primary);
+        box-shadow: var(--md-elev-1);
+    }
+    .btn-primary:active, .btn-success:active { box-shadow: none; }
+    /* Text button (Paper "text" mode) — e.g. the password-eye toggle on the
+       login page, which sits absolutely inside its field: no pill padding. */
+    .btn-link { min-height: 0; padding: 6px 10px; box-shadow: none; }
+    /* Outlined — transparent, hairline outline, primary label */
+    .btn-outline-secondary, .btn-outline-primary {
+        background: transparent;
+        border-color: var(--md-outline);
+        color: var(--md-primary);
+    }
+    .btn-outline-secondary:hover, .btn-outline-secondary:active,
+    .btn-outline-primary:hover, .btn-outline-primary:active {
+        background: var(--md-primary-container);
+        border-color: var(--md-outline);
+        color: var(--md-on-primary-container);
+    }
+    .btn-outline-danger { border-color: var(--md-outline); }
+    /* Sheet action bars: pill overrides the app layer's 14px radius */
+    .modal .modal-footer .btn { border-radius: 100px; }
+
+    /* Portal-specific tappables pick up the same language */
+    .mydtr-btn { border-radius: 100px; }
+    .att-range-picker { border-radius: 100px; }
+    .ptop-logout:active { transform: scale(.94); }
+
+    /* Duration toggles (leave/LWOP forms) → MD filter chips */
+    .lv-dur-btn {
+        border-radius: 100px !important;
+        border: 1px solid var(--md-outline) !important;
+        background: transparent;
+        font-weight: 600;
+    }
+    .lv-dur-btn.active, .lv-dur-btn.sel {
+        background: var(--md-primary-container) !important;
+        border-color: transparent !important;
+        color: var(--md-on-primary-container) !important;
+        box-shadow: none;
+    }
+
+    /* ── Text fields — Paper filled style: soft fill, underline, focus ───
+       Selector list mirrors portal-mobile.css so this file (loaded later)
+       wins the !important tie on radius. */
+    .form-control, .form-select,
+    .modal .form-control, .modal .form-select,
+    .modal select.form-control, .modal input.form-control,
+    .modal textarea.form-control {
+        /* !important matches the portal's inline modal-field rules so this
+           later-loaded file wins the tie */
+        background: var(--md-field) !important;
+        border: 1.5px solid transparent !important;
+        border-bottom-color: var(--md-outline-strong) !important;
+        border-radius: 16px 16px 6px 6px !important;
+        color: var(--md-on-surface) !important;
+        transition: background .15s, border-color .15s, box-shadow .15s;
+    }
+    .form-control:focus, .form-select:focus,
+    .modal .form-control:focus, .modal .form-select:focus,
+    .modal select.form-control:focus, .modal input.form-control:focus,
+    .modal textarea.form-control:focus {
+        background: var(--md-field-focus) !important;
+        border-color: transparent !important;
+        border-bottom-color: var(--md-primary) !important;
+        /* second px of the MD "grown" focus underline, without layout shift */
+        box-shadow: inset 0 -1.5px 0 var(--md-primary) !important;
+        outline: none;
+    }
+    .form-control::placeholder { color: #948da3; }
+    /* Thumb-sized fields everywhere, not only in sheets (16px = no iOS zoom).
+       Same numbers portal-mobile.css already uses for modal fields. */
+    .form-control, .form-select {
+        min-height: 48px;
+        font-size: 16px;
+        padding: 12px 14px;
+    }
+    textarea.form-control { min-height: 84px; }
+    .form-control:disabled, .form-select:disabled {
+        background: var(--md-surface-2) !important;
+        border-bottom-color: var(--md-outline) !important;
+        color: var(--md-on-surface-var) !important;
+    }
+    /* Field label tracks focus like Paper's floating label color */
+    label { color: var(--md-on-surface-var); font-weight: 600; letter-spacing: .3px; }
+    div:focus-within > label, .form-group:focus-within > label,
+    .mb-2:focus-within > label, .mb-3:focus-within > label {
+        color: var(--md-primary);
+    }
+
+    /* Native selects: purple MD dropdown arrow, no native chrome */
+    select.form-control, .form-select {
+        -webkit-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='%235b34a8'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        background-size: 22px;
+        padding-right: 40px;
+    }
+
+    /* Selection controls: brand the native accent (checkboxes/radios/switch) */
+    input[type="checkbox"], input[type="radio"] { accent-color: var(--md-primary); }
+    .form-check-input:checked { background-color: var(--md-primary); border-color: var(--md-primary); }
+    .form-check-input:focus { border-color: var(--md-primary); box-shadow: 0 0 0 3px rgba(91, 52, 168, .18); }
+
+    /* ── Custom-select component ─────────────────────────────────────────
+       Trigger reads as a filled field; the body-parented menu turns into a
+       native bottom sheet (its inline top/left/width from JS are overridden). */
+    .cs-trigger {
+        min-height: 48px;
+        background: var(--md-field) !important;
+        border: 1px solid transparent !important;
+        border-bottom: 1.5px solid var(--md-outline-strong) !important;
+        border-radius: 16px 16px 6px 6px !important;
+        font-size: 15px;
+    }
+    .cs-select.open .cs-trigger, .cs-trigger:focus {
+        background: var(--md-field-focus) !important;
+        border-bottom-color: var(--md-primary) !important;
+        box-shadow: inset 0 -1.5px 0 var(--md-primary);
+    }
+    .cs-menu {
+        top: auto !important;
+        bottom: 0 !important;
+        left: 0 !important;
+        right: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        margin: 0;
+        border: 0;
+        border-radius: 22px 22px 0 0;
+        padding: 18px 12px calc(12px + env(safe-area-inset-bottom, 0px));
+        /* elevation + full-screen scrim in one shadow list */
+        box-shadow: 0 -12px 40px rgba(20, 16, 35, .28), 0 0 0 100vmax rgba(28, 20, 48, .32);
+        transform: translateY(100%);
+        transform-origin: bottom center;
+        transition: transform .3s cubic-bezier(.32, .72, .24, 1), opacity .2s,
+                    visibility 0s linear .3s;
+    }
+    .cs-menu.cs-menu-up { transform: translateY(100%); }
+    .cs-menu.open { transform: translateY(0); }
+    .cs-menu::before {                              /* grab handle */
+        content: '';
+        position: absolute;
+        top: 8px; left: 50%;
+        width: 42px; height: 4px;
+        border-radius: 2px;
+        background: rgba(127, 120, 140, .45);
+        transform: translateX(-50%);
+    }
+    .cs-menu .cs-opts { max-height: min(52dvh, 420px) !important; }
+    .cs-opt {
+        min-height: 48px;
+        border-radius: 12px;
+        padding: 11px 12px;
+        font-size: 14.5px;
+    }
+    .cs-opt.sel {
+        background: var(--md-primary-container);
+        color: var(--md-on-primary-container);
+    }
+    .cs-search input { min-height: 42px; font-size: 16px; }  /* 16px = no iOS zoom */
+
+    /* bootstrap-select (leave form) menu rows: thumb-sized, MD selected row */
+    .bootstrap-select .dropdown-menu { border-radius: 16px; box-shadow: var(--md-elev-2); }
+    .bootstrap-select .dropdown-menu li a.active,
+    .bootstrap-select .dropdown-menu li a:active {
+        background: var(--md-primary-container);
+        color: var(--md-on-primary-container);
+    }
+
+    /* ── Cards & surfaces — MD elevation-1, no hairline borders ────────── */
+    .card {                       /* bootstrap cards (login page, etc.) */
+        border: 0;
+        border-radius: 24px;
+        box-shadow: var(--md-elev-2);
+    }
+    .paper, .emp-hdr, .ps-card, .trend-card, .today-att, .info-section,
+    .empty-state, .psm-card, .attm-card, .areq-card, .mydtr-card, .loan-c,
+    .ytd-box, .ins-box, .con-box, .qa-btn, .help-card, .holm-card {
+        background: var(--md-surface);
+        border-color: transparent;
+        box-shadow: var(--md-elev-1);
+    }
+    .holm-card { border-left: 5px solid var(--ev, #0d6efd); }  /* keep event accent */
+    /* Pressed cards sink instead of lifting (Paper touchable feedback) */
+    .psm-card:active, .attm-card:active, .areq-card:active, .mydtr-card:active,
+    .qa-btn:active, .help-card:active, .holm-card:active, .loan-c:active {
+        box-shadow: 0 1px 2px rgba(28, 20, 48, .08);
+    }
+
+    /* ── Chips & pills ──────────────────────────────────────────────────── */
+    .holm-pill, .badge { border-radius: 8px; font-weight: 600; letter-spacing: .2px; }
+
+    /* ── Bottom navigation — MD3 navigation bar ─────────────────────────
+       Icon sits in an animated pill indicator; the label gains weight and
+       color when active, and count badges switch to the MD error badge. */
+    .tab-strip {
+        border-top: 0;
+        box-shadow: 0 -1px 0 rgba(28, 20, 48, .06), 0 -8px 28px rgba(28, 20, 48, .08);
+    }
+    .tab-btn { color: #6f687d; }
+    .tab-btn i { transition: transform .18s cubic-bezier(.2, .6, .35, 1); }
+    .tab-btn:active i { transform: scale(.88); }
+    .tab-btn span.tab-label {
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: .3px;
+        transition: color .15s;
+    }
+    .tab-btn.active { color: var(--md-on-primary-container); }
+    .tab-btn.active span.tab-label { font-weight: 800; color: var(--md-primary); }
+    .tab-btn.active::before {
+        width: 58px; height: 30px;
+        border-radius: 15px;
+        background: var(--md-primary-container);
+        animation: md-navpill .22s cubic-bezier(.2, .6, .35, 1);
+    }
+    @keyframes md-navpill {
+        from { transform: translateX(-50%) scaleX(.5); opacity: .4; }
+        to   { transform: translateX(-50%) scaleX(1);  opacity: 1; }
+    }
+    /* Count badge → MD notification badge (error red, floats on the icon) */
+    .tab-btn .badge-count, .tab-btn.active .badge-count {
+        background: var(--md-error);
+        color: #fff;
+        border: 2px solid var(--md-surface);
+        top: 1px; right: 50%;
+        margin-right: -22px;
+        min-width: 17px; height: 17px;
+        line-height: 13px;
+        border-radius: 9px;
+        font-size: 9px;
+        font-weight: 800;
+    }
+
+    /* ── Dialogs (SweetAlert2 + sheets) match the component language ───── */
+    .swal2-popup { border-radius: 24px !important; }
+    .swal2-styled { border-radius: 100px !important; font-weight: 600; }
+    .swal2-styled.swal2-confirm {
+        background: var(--md-primary) !important;
+        box-shadow: var(--md-elev-1) !important;
+    }
+    .modal .modal-content { box-shadow: var(--md-elev-2); }
+    .modal .modal-title { font-weight: 700; letter-spacing: -.2px; }
+
+    /* Validation messages read as MD error text on light surfaces */
+    .parsley-errors-list { color: var(--md-error); font-size: 12px; font-weight: 600; }
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .md-ripple { display: none; }
+    .btn, .cs-menu, .tab-btn i { transition: none !important; }
+    .tab-btn.active::before { animation: none !important; }
+}

@@ -137,7 +137,10 @@ $__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin'
 <!-- Add/Edit Modal -->
 <div class="modal fade" id="modal-department" tabindex="-1">
     <div class="modal-dialog">
-        <form id="form-department">
+        <!-- novalidate hands validation to Parsley — without it the browser's own
+             "Please fill out this field" bubble fires first and the styled
+             .parsley-errors-list message never shows. -->
+        <form id="form-department" data-parsley-validate novalidate>
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="dept-modal-title">
@@ -149,7 +152,11 @@ $__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin'
                     <input type="hidden" id="dept-id" name="id" value="">
                     <div class="mb-3">
                         <label class="form-label">Department Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="dept-name" name="name" placeholder="Enter department name" required>
+                        <input type="text" class="form-control" id="dept-name" name="name" placeholder="Enter department name"
+                               data-parsley-required-message="Department name is required."
+                               data-parsley-maxlength="100"
+                               data-parsley-maxlength-message="Keep the name under 100 characters."
+                               required>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -185,18 +192,50 @@ document.getElementById('modal-department').addEventListener('hidden.bs.modal', 
     document.getElementById('dept-id').value = '';
     document.getElementById('dept-name').value = '';
     document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:#673bb6;"></i>Add Department';
+    // Clear the error list too, or the next open still shows the last message.
+    if (window.jQuery && jQuery.fn.parsley) jQuery('#form-department').parsley().reset();
 });
 
 document.getElementById('form-department').addEventListener('submit', async function (e) {
     e.preventDefault();
-    const data = new FormData(this);
-    const res = await fetch('ajax.php?action=save_department', { method: 'POST', body: new URLSearchParams(data) });
-    const json = await res.json();
-    if (json?.result) {
-        bootstrap.Modal.getInstance(document.getElementById('modal-department')).hide();
-        location.reload();
-    } else {
-        Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to save.' });
+
+    // Same gate the other CRUD pages use (position.js, sites.js, clusters.js).
+    if (window.jQuery && jQuery.fn.parsley) {
+        const form = jQuery(this);
+        form.parsley().validate();
+        if (!form.parsley().isValid()) return;
+    }
+
+    const name = document.getElementById('dept-name');
+    name.value = name.value.trim();          // "   " must not pass as a name
+    if (!name.value) { if (window.jQuery && jQuery.fn.parsley) jQuery(this).parsley().validate(); return; }
+
+    const btn = this.querySelector('button[type="submit"]');
+    const label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+
+    try {
+        const data = new FormData(this);
+        const res  = await fetch('ajax.php?action=save_department', { method: 'POST', body: new URLSearchParams(data) });
+        // save_department() returns a bare 1 (inserted) or 2 (updated) — not JSON.
+        const body = (await res.text()).trim();
+
+        if (body === '1' || body === '2') {
+            bootstrap.Modal.getInstance(document.getElementById('modal-department')).hide();
+            Swal.fire({
+                icon: 'success', title: 'Success',
+                text: body === '1' ? 'New department saved.' : 'Department updated.',
+                timer: 1200, showConfirmButton: false
+            }).then(() => location.reload());
+        } else {
+            Swal.fire({ icon: 'error', title: 'Error', text: body || 'Failed to save.' });
+        }
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Error', text: 'Could not reach the server.' });
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = label;
     }
 });
 

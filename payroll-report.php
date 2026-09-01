@@ -59,9 +59,31 @@ function plr_status($s) {
 function plr_money($v){ return '₱' . number_format((float)$v, 2); }
 ?>
 <style>
-    .plr-filter-bar { background:#673bb6; color:#fff; border-radius:6px; padding:9px 16px; margin-bottom:12px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; font-size:12px; }
-    .plr-filter-bar .val { font-weight:700; }
+    /* The filter bar itself is .rpt-filter-bar in assets2/css/reports.css — shared
+       with the other report headers so they stay in step. */
     .plr-ref { font-weight:700; color:#1976d2; font-family:monospace; }
+
+    /* Fixed layout + a declared width per column. Auto layout re-measures every
+       cell whenever the available width changes, so the columns used to shuffle
+       as soon as the vertical scrollbar appeared, and again on any filter that
+       changed the longest employer name. .rpt-scroll's scrollbar-gutter keeps
+       the container width steady; these widths keep the columns steady inside
+       it. min-width means a narrow screen scrolls sideways instead of crushing
+       the money column.
+
+       The widths sit on the header row only: under fixed layout the first row
+       sizes the columns and later rows are ignored, so the tfoot's colspan="3"
+       TOTAL cell cannot disturb them. */
+    #report-table { table-layout: fixed; min-width: 760px; }
+    #report-table thead th:nth-child(1) { width: 14%; }   /* Payroll ID */
+    #report-table thead th:nth-child(2) { width: 26%; }   /* Employer   */
+    #report-table thead th:nth-child(3) { width: 20%; }   /* Period     */
+    #report-table thead th:nth-child(4) { width: 10%; }   /* Employees  */
+    #report-table thead th:nth-child(5) { width: 18%; }   /* Net Total  */
+    #report-table thead th:nth-child(6) { width: 12%; }   /* Status     */
+    /* Long employer names wrap rather than widen the column (fixed layout would
+       otherwise let an unbroken string spill over the cell border). */
+    #report-table td { overflow-wrap: anywhere; }
 </style>
 
 <div class="main-content">
@@ -87,7 +109,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
                 <?php endif; ?>
                 <button type="button" onclick="repExportCSV('report-table','payroll-list-report.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
                 <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
-                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-add">
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-payrolllist">
                     <i class="ri-filter-3-line me-1"></i>Filter
                 </button>
             </div>
@@ -95,7 +117,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
         <div class="card-body">
 
             <?php if ($has_filter): ?>
-            <div class="plr-filter-bar">
+            <div class="rpt-filter-bar">
                 <i class="ri-filter-3-line" style="opacity:.85;"></i>
                 <?php if ($f_from !== '' || $f_to !== ''): ?>
                     <span>Period: <span class="val"><?= $f_from !== '' ? htmlspecialchars($f_from) : '…' ?> &ndash; <?= $f_to !== '' ? htmlspecialchars($f_to) : '…' ?></span></span>
@@ -152,7 +174,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
 </div>
 
 <!-- Filter modal (date range picker + searchable selects) -->
-<div class="modal fade" id="modal-filter-add" tabindex="-1" role="dialog">
+<div class="modal fade" id="modal-filter-payrolllist" tabindex="-1" role="dialog">
     <form method="get" action="" novalidate>
         <input type="hidden" name="page" value="payroll-report">
         <div class="modal-dialog" role="document">
@@ -217,7 +239,7 @@ function plr_money($v){ return '₱' . number_format((float)$v, 2); }
         if (!$picker.length || !$.fn.daterangepicker) return;
         var opts = {
             autoUpdateInput: false,
-            parentEl: '#modal-filter-add',
+            parentEl: '#modal-filter-payrolllist',
             opens: 'center',
             showDropdowns: true,
             locale: { format: 'YYYY-MM-DD', cancelLabel: 'Clear', applyLabel: 'Apply' },

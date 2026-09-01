@@ -332,9 +332,12 @@ if ($action === 'docs') {
     $flagF = (string)($_GET['flag'] ?? '');
     if ($flagF !== '') {
         $otMax = (float)DTR_HIGH_OT_HOURS;
+        // A punchless row raises neither blocker (see the flag block below), so
+        // its employee must not be pulled in by these two chips either.
+        $hasLog = "JSON_VALID(logs) AND JSON_LENGTH(logs) > 0";
         $flagConds = [
-            'no_out'      => "NOT (JSON_VALID(logs) AND JSON_LENGTH(logs) >= 2)",
-            'zero_hours'  => "work_hours <= 0",
+            'no_out'      => "$hasLog AND JSON_LENGTH(logs) < 2",
+            'zero_hours'  => "$hasLog AND work_hours <= 0",
             'high_ot'     => "overtime > $otMax",
             'manual'      => "(logs LIKE '%\"manual\"%' OR logs LIKE '%\"incident\"%')",
             'rest_worked' => "is_rest_day = 1 AND work_hours > 0",
@@ -352,10 +355,14 @@ if ($action === 'docs') {
     // record with an exception flag, or attendance below the batch minimum.
     if (!empty($_GET['flagged'])) {
         $idInt  = (int)$ddtrId;
+        // Same two blockers as the flag block: high OT always counts, while the
+        // missing-out / zero-hours pair needs at least one punch to be about
+        // anything. A punchless row is a shell, not a record needing a decision.
         $recBad = "SELECT DISTINCT employee_id FROM DTR_details
                    WHERE ddtr_id = $idInt AND status = 0
-                     AND NOT (work_hours > 0 AND overtime <= " . (float)DTR_HIGH_OT_HOURS . "
-                              AND JSON_VALID(logs) AND JSON_LENGTH(logs) >= 2)";
+                     AND (overtime > " . (float)DTR_HIGH_OT_HOURS . "
+                          OR (JSON_VALID(logs) AND JSON_LENGTH(logs) > 0
+                              AND (JSON_LENGTH(logs) < 2 OR work_hours <= 0)))";
         $where .= " AND (e.id IN ($recBad)";
         if ($minDays > 0) {
             $where .= " OR e.id IN (SELECT employee_id FROM DTR_details WHERE ddtr_id = $idInt
@@ -513,15 +520,24 @@ if ($action === 'docs') {
             // shared with dtr_clean_condition_sql); 'manual' and 'rest_worked'
             // are informational — a rest day with hours on it is an expected,
             // priced outcome (base + 30% premium), not a data problem.
+            //
+            // A row with NO punches at all is not a record to review, so it
+            // raises neither blocker. It is normally the shell left behind
+            // after repairPunchDates() re-filed a lone clock-out onto the night
+            // shift that started the previous day — the punch is accounted for,
+            // just on the other row. Flagging it says "only one scan on this
+            // day" and "the scans compute to zero" about a day with no scans.
             $wh = (float)$row['work_hours'];
             $ot = (float)$row['overtime'];
+            $hasPunch = count($recLogs) > 0;
             $flags = [];
-            if (count($recLogs) < 2)                        $flags[] = 'no_out';
-            if ($wh <= 0)                                   $flags[] = 'zero_hours';
+            if ($hasPunch && count($recLogs) < 2)           $flags[] = 'no_out';
+            if ($hasPunch && $wh <= 0)                      $flags[] = 'zero_hours';
             if ($ot > DTR_HIGH_OT_HOURS)                     $flags[] = 'high_ot';
             if ($hasManual)                                 $flags[] = 'manual';
             if ((int)($row['is_rest_day'] ?? 0) === 1 && $wh > 0) $flags[] = 'rest_worked';
-            $isException = (count($recLogs) < 2 || $wh <= 0 || $ot > DTR_HIGH_OT_HOURS);
+            $isException = ($hasPunch && (count($recLogs) < 2 || $wh <= 0))
+                || $ot > DTR_HIGH_OT_HOURS;
             if ($isException && $s !== 1 && $s !== 2) $E['exc']++;
 
             $D['recs'][] = [

@@ -33,6 +33,10 @@ $q = $conn->query("
 ");
 while ($r = $q->fetch_assoc()) $rows[] = $r;
 $active = 0; foreach ($rows as $r) if ((int)$r['status'] === 1) $active++;
+
+// "Active" is the default view, so it alone is not a filter worth echoing back.
+$has_filter = ($f_dept !== 0 || $f_q !== '' || $f_status !== 'active');
+$status_lbl = ['active' => 'Active', 'inactive' => 'Inactive', 'all' => 'All'];
 ?>
 
 <div class="main-content">
@@ -49,50 +53,37 @@ $active = 0; foreach ($rows as $r) if ((int)$r['status'] === 1) $active++;
         </div>
     </div></div>
 
-    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
-        <div class="card-body py-3">
-            <form method="get" class="row g-2 align-items-end">
-                <input type="hidden" name="page" value="employee-masterlist">
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Search</label>
-                    <input type="text" name="q" value="<?= htmlspecialchars($f_q) ?>" class="form-control" placeholder="Name or employee no…">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Department</label>
-                    <select name="dept" class="form-control">
-                        <option value="0">All departments</option>
-                        <?php foreach ($depts as $d): ?>
-                        <option value="<?= $d['id'] ?>" <?= $f_dept==$d['id']?'selected':'' ?>><?= htmlspecialchars($d['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Status</label>
-                    <select name="status" class="form-control">
-                        <option value="active"   <?= $f_status==='active'?'selected':'' ?>>Active</option>
-                        <option value="inactive" <?= $f_status==='inactive'?'selected':'' ?>>Inactive</option>
-                        <option value="all"      <?= $f_status==='all'?'selected':'' ?>>All</option>
-                    </select>
-                </div>
-                <div class="col-md-2 d-flex gap-2">
-                    <button type="submit" class="btn btn-sm w-100" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Filter</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <div class="row g-3 mb-3">
         <div class="col-md-3 col-6"><div class="card rpt-card"><div class="card-body py-2"><div style="font-size:10px;color:#9aa3ad;text-transform:uppercase;">Employees Shown</div><div style="font-size:18px;font-weight:800;color:#673bb6;"><?= count($rows) ?></div></div></div></div>
         <div class="col-md-3 col-6"><div class="card rpt-card"><div class="card-body py-2"><div style="font-size:10px;color:#9aa3ad;text-transform:uppercase;">Active</div><div style="font-size:18px;font-weight:800;color:#2e7d32;"><?= $active ?></div></div></div></div>
     </div>
 
-    <div class="d-flex justify-content-end gap-2 mb-2">
-        <button type="button" onclick="repExportCSV('ml-table','employee-masterlist.csv')" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-file-excel-2-line me-1"></i>Export CSV</button>
-        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line me-1"></i>Print</button>
-    </div>
-
     <div class="card rpt-card mb-4">
-        <div class="card-body p-0">
+        <div class="card-header align-items-center d-flex">
+            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-team-line me-1" style="color:#673bb6;"></i>Employee Roster</h5>
+            <div class="d-flex gap-2">
+                <?php if ($has_filter): ?>
+                <a href="index.php?page=employee-masterlist" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
+                <?php endif; ?>
+                <button type="button" onclick="repExportCSV('ml-table','employee-masterlist.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-masterlist">
+                    <i class="ri-filter-3-line me-1"></i>Filter
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+
+            <?php if ($has_filter): ?>
+            <div class="rpt-filter-bar">
+                <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                <?php if ($f_q !== ''): ?><span>Search: <span class="val"><?= htmlspecialchars($f_q) ?></span></span><?php endif; ?>
+                <?php if ($f_dept): foreach ($depts as $d) if ($d['id']==$f_dept): ?><span>Department: <span class="val"><?= htmlspecialchars($d['name']) ?></span></span><?php endif; endif; ?>
+                <span>Status: <span class="val"><?= $status_lbl[$f_status] ?? 'Active' ?></span></span>
+                <span class="ms-auto"><span class="val"><?= count($rows) ?></span> employee(s)</span>
+            </div>
+            <?php endif; ?>
+
             <div class="rpt-scroll">
                 <table class="table table-sm mb-0 rpt-table" id="ml-table">
                     <thead>
@@ -129,6 +120,48 @@ $active = 0; foreach ($rows as $r) if ((int)$r['status'] === 1) $active++;
 
 </div>
 </div>
+</div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter -->
+<div class="modal fade" id="modal-filter-masterlist" tabindex="-1" role="dialog">
+    <form method="get" action="" novalidate>
+        <input type="hidden" name="page" value="employee-masterlist">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Employee Masterlist</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-search-line me-1"></i>Search <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" name="q" value="<?= htmlspecialchars($f_q) ?>" class="form-control" placeholder="Name or employee no…">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-building-2-line me-1"></i>Department</label>
+                        <select name="dept" class="form-control" data-cs-icon="ri-building-2-line">
+                            <option value="0">— All Departments —</option>
+                            <?php foreach ($depts as $d): ?>
+                            <option value="<?= $d['id'] ?>" <?= $f_dept==$d['id']?'selected':'' ?>><?= htmlspecialchars($d['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-pulse-line me-1"></i>Status</label>
+                        <select name="status" class="form-control" data-cs-icon="ri-pulse-line">
+                            <option value="active"   <?= $f_status==='active'?'selected':'' ?>>Active</option>
+                            <option value="inactive" <?= $f_status==='inactive'?'selected':'' ?>>Inactive</option>
+                            <option value="all"      <?= $f_status==='all'?'selected':'' ?>>All</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#f8f9fa;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                </div>
+            </div>
+        </div>
+    </form>
 </div>
 
 <script>

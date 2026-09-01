@@ -29,56 +29,81 @@ if (!function_exists('leave_timeline_css')) {
         $done = true;
         ?>
         <style>
-        .lvtl{list-style:none;margin:0;padding:4px 2px 2px;position:relative;}
+        .lvtl{list-style:none;margin:0;padding:0;position:relative;}
 
-        /* Each stage is a card so the row the request is sitting on can be
-           lifted out of the list visually instead of only by dot colour. */
-        .lvtl li{position:relative;padding:2px 10px 16px 34px;font-size:12px;line-height:1.4;}
-        .lvtl li:last-child{padding-bottom:2px;}
-        .lvtl li .lvtl-card{border-radius:10px;padding:5px 10px 6px;margin-left:-6px;
-            background:transparent;border:1px solid transparent;transition:background .15s,border-color .15s;}
-        .lvtl li:hover .lvtl-card{background:#f7f8fb;border-color:#eef1f6;}
+        /* Each stage is a card, so scanning the list is reading a stack of
+           records rather than hunting coloured dots down a bare rail. */
+        .lvtl li{position:relative;padding:0 0 8px 34px;font-size:12px;line-height:1.45;}
+        .lvtl li:last-child{padding-bottom:0;}
+        .lvtl .lvtl-card{border:1px solid #e9edf4;background:#fbfcfe;border-radius:10px;padding:8px 12px;
+            transition:background .15s,border-color .15s,box-shadow .15s;}
+        .lvtl li:hover .lvtl-card{background:#fff;border-color:#dde4ee;box-shadow:0 1px 3px rgba(20,25,45,.06);}
 
         /* Connector: solid through decided stages, dashed once the chain runs
            out of decisions — the trail stops being a record and starts being a
            forecast at exactly that point. */
-        .lvtl li::before{content:'';position:absolute;left:10px;top:22px;bottom:-2px;width:2px;
-            background:linear-gradient(#dfe4ec,#e8ecf3);border-radius:2px;}
-        .lvtl li.is-ok::before,.lvtl li.is-filed::before{background:linear-gradient(#4e3483,#6c4bb0);opacity:.55;}
+        .lvtl li::before{content:'';position:absolute;left:11px;top:28px;bottom:-2px;width:2px;
+            background:#e3e8f0;border-radius:2px;}
+        .lvtl li.is-ok::before,.lvtl li.is-filed::before{background:#c9bde6;}
         .lvtl li.is-no::before{background:#f0b6bd;}
         .lvtl li.is-next::before{background:repeating-linear-gradient(#dfe4ec 0 4px,transparent 4px 8px);}
         .lvtl li:last-child::before{display:none;}
 
-        .lvtl .lvtl-dot{position:absolute;left:1px;top:4px;width:20px;height:20px;border-radius:50%;
-            display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff;background:#c2c9d6;
+        .lvtl .lvtl-dot{position:absolute;left:1px;top:7px;width:22px;height:22px;border-radius:50%;
+            display:flex;align-items:center;justify-content:center;font-size:12px;color:#fff;background:#c2c9d6;
             box-shadow:0 0 0 3px #fff,0 1px 3px rgba(20,25,45,.18);z-index:1;}
         .lvtl .lvtl-dot.ok{background:linear-gradient(135deg,#5b3d96,#4e3483);}
         .lvtl .lvtl-dot.no{background:linear-gradient(135deg,#e4606d,#dc3545);}
         .lvtl .lvtl-dot.wait{background:linear-gradient(135deg,#ff9a3c,#fd7e14);
             box-shadow:0 0 0 3px #fff,0 0 0 6px rgba(253,126,20,.16),0 1px 3px rgba(20,25,45,.18);}
         .lvtl .lvtl-dot.filed{background:linear-gradient(135deg,#3d8bfd,#0d6efd);}
+        .lvtl .lvtl-dot.skip{background:#eceff1;color:#78909c;box-shadow:0 0 0 3px #fff;}
 
-        /* The awaiting stage is the one thing a reader is looking for. */
-        .lvtl li.is-wait .lvtl-card{background:#fff9f2;border-color:#ffe3c4;}
-        .lvtl li.is-wait:hover .lvtl-card{background:#fff5e9;border-color:#ffd7ab;}
-        .lvtl li.is-no .lvtl-card{background:#fff5f6;border-color:#f7d6da;}
+        /* Tint only the cards that need attention or explain a problem. */
+        .lvtl li.is-wait .lvtl-card{background:#fffaf3;border-color:#ffe0bd;}
+        .lvtl li.is-wait:hover .lvtl-card{background:#fff6ec;border-color:#ffd4a3;}
+        .lvtl li.is-no .lvtl-card{background:#fff6f7;border-color:#f6d3d7;}
+        .lvtl li.is-skip .lvtl-card{background:#f8f9fb;border-color:#eceff4;}
+        .lvtl li.is-next .lvtl-card{background:#fcfdfe;border-style:dashed;}
 
-        .lvtl-stage{font-weight:700;color:#242a35;letter-spacing:.1px;}
-        .lvtl li.is-wait .lvtl-stage{color:#b35b00;}
-        .lvtl-meta{color:#8a94a6;font-size:11px;margin-top:1px;}
-        .lvtl-name{color:#4e3483;font-weight:600;}
-        .lvtl-who{color:#5c6b85;font-weight:600;}
-        .lvtl-nobody{color:#c77700;font-weight:600;}
-        .lvtl-rej{color:#dc3545;font-weight:600;}
-        .lvtl-remark{color:#c0303d;background:#fdf1f2;border-left:2px solid #f0b6bd;border-radius:0 5px 5px 0;
-            font-size:11px;margin-top:4px;padding:3px 7px;}
-        .lvtl li.is-skip .lvtl-remark{color:#5f6b7a;background:#f2f4f7;border-left-color:#cfd6e0;}
-        .lvtl-badge{display:inline-block;font-size:10px;font-weight:700;border-radius:20px;padding:1px 8px;margin-left:5px;
-            background:#fff3e0;color:#e07500;border:1px solid #ffd9ab;vertical-align:1px;}
-        .lvtl-badge::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;
+        /* Stage name and outcome share one row: the label reads down the left
+           edge, the verdict lines up down the right. */
+        .lvtl-head{display:flex;align-items:center;gap:8px;}
+        .lvtl-stage{font-weight:700;color:#242a35;letter-spacing:.1px;flex:1 1 auto;min-width:0;}
+        .lvtl li.is-next .lvtl-stage{color:#9aa3b2;font-weight:600;}
+        .lvtl li.is-skip .lvtl-stage{color:#78909c;}
+
+        .lvtl-pill{flex:0 0 auto;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;
+            border-radius:20px;padding:2px 9px;border:1px solid transparent;white-space:nowrap;}
+        .lvtl-pill.ok  {background:#e8f6ed;color:#1b7a43;border-color:#c9e9d5;}
+        .lvtl-pill.no  {background:#fdecee;color:#c62828;border-color:#f7ccd1;}
+        .lvtl-pill.wait{background:#fff3e0;color:#c76b00;border-color:#ffd9ab;}
+        .lvtl-pill.skip{background:#eef1f5;color:#68758a;border-color:#e0e5ec;}
+        .lvtl-pill.next{background:#f4f6f9;color:#9aa3b2;border-color:#e6eaf1;}
+        .lvtl-pill.wait::before{content:'';display:inline-block;width:5px;height:5px;border-radius:50%;
             background:#fd7e14;margin-right:5px;vertical-align:1px;animation:lvtl-pulse 1.6s ease-in-out infinite;}
         @keyframes lvtl-pulse{0%,100%{opacity:1;}50%{opacity:.25;}}
-        @media (prefers-reduced-motion:reduce){.lvtl-badge::before{animation:none;}}
+        @media (prefers-reduced-motion:reduce){.lvtl-pill.wait::before{animation:none;}}
+
+        .lvtl-name{color:#3f4a5a;font-weight:600;margin-top:3px;}
+        .lvtl-meta{color:#8a94a6;font-size:11px;margin-top:2px;}
+
+        /* Timestamps are the column a reader scans to answer "how long did this
+           sit?", so they get one consistent shape everywhere instead of being
+           loose grey text that blends into the names above them. */
+        .lvtl-time{display:inline-flex;align-items:center;gap:5px;margin-top:5px;
+            font-size:10.5px;font-weight:600;color:#77839a;font-variant-numeric:tabular-nums;
+            background:#f1f4f8;border:1px solid #e6ebf2;border-radius:20px;padding:2px 9px;}
+        .lvtl-time i{font-size:11px;line-height:1;color:#98a3b6;}
+        .lvtl li.is-no .lvtl-time{background:#fdeef0;border-color:#f6d3d7;color:#b4525c;}
+        .lvtl li.is-no .lvtl-time i{color:#d08b93;}
+        .lvtl li.is-filed .lvtl-time{background:#eef4ff;border-color:#d8e5fb;color:#4a6fa5;}
+        .lvtl li.is-filed .lvtl-time i{color:#7a9cd0;}
+        .lvtl-who{color:#4e3483;font-weight:600;}
+        .lvtl-nobody{color:#c77700;font-weight:600;}
+        .lvtl-remark{color:#c0303d;background:#fdf1f2;border-left:2px solid #f0b6bd;border-radius:0 5px 5px 0;
+            font-size:11px;margin-top:6px;padding:4px 8px;}
+        .lvtl li.is-skip .lvtl-remark{color:#5f6b7a;background:#f2f4f7;border-left-color:#cfd6e0;}
         </style>
         <?php
     }
@@ -94,12 +119,21 @@ if (!function_exists('leave_timeline_html')) {
         };
         $esc = static fn($v) => htmlspecialchars((string) $v);
 
+        // Every timestamp in the trail renders through here, so the clock chip
+        // stays identical on the Filed node and on each decided stage.
+        $stamp = static function ($dt) use ($fmt, $esc): string {
+            $t = $fmt($dt);
+            return $t === '' ? '' : '<div class="lvtl-time"><i class="ri-time-line"></i>' . $esc($t) . '</div>';
+        };
+
         // "Filed" node — first thing that happened.
         $filed_at = $row['created_at'] ?? $row['date_applied'] ?? null;
         $h  = '<ul class="lvtl">';
         $h .= '<li class="is-filed"><span class="lvtl-dot filed"><i class="ri-flag-line"></i></span>'
-            . '<div class="lvtl-card"><span class="lvtl-stage">Filed</span>'
-            . ($filed_at ? '<div class="lvtl-meta">' . $esc($fmt($filed_at)) . '</div>' : '')
+            . '<div class="lvtl-card">'
+            . '<div class="lvtl-head"><span class="lvtl-stage">Filed</span>'
+            . '<span class="lvtl-pill ok">Submitted</span></div>'
+            . $stamp($filed_at)
             . '</div></li>';
 
         $current = leave_current_stage($row); // stage awaiting action right now
@@ -128,31 +162,35 @@ if (!function_exists('leave_timeline_html')) {
             // decision nobody made. A real approval always stamps {key}_by.
             $skipped = ($status === 1 && ($row[$key . '_by'] ?? null) === null && $remark !== '');
 
+            // One shape for every state: stage name and verdict on the head row,
+            // then who, then when. Only the pill and the tint change.
+            $head = static fn(string $pill, string $text): string =>
+                '<div class="lvtl-head"><span class="lvtl-stage">' . $label . '</span>'
+                . '<span class="lvtl-pill ' . $pill . '">' . $text . '</span></div>';
+
             if ($skipped) {
                 $cls  = 'is-skip';
-                $dot  = '<span class="lvtl-dot" style="background:#eceff1;color:#78909c;box-shadow:0 0 0 3px #fff;"><i class="ri-skip-forward-line"></i></span>';
-                $line = '<span class="lvtl-stage" style="color:#78909c;">' . $label . '</span> '
-                      . '<span class="lvtl-name" style="color:#78909c;">Skipped</span>'
+                $dot  = '<span class="lvtl-dot skip"><i class="ri-skip-forward-line"></i></span>';
+                $line = $head('skip', 'Skipped')
                       . '<div class="lvtl-remark"><i class="ri-information-line"></i> ' . $esc($remark) . '</div>';
             } elseif ($status === 1) {    // approved
                 $cls  = 'is-ok';
                 $dot  = '<span class="lvtl-dot ok"><i class="ri-check-line"></i></span>';
-                $line = '<span class="lvtl-stage">' . $label . '</span> '
-                      . '<span class="lvtl-name">Approved' . ($name ? ' · ' . $esc($name) : '') . '</span>'
-                      . ($at ? '<div class="lvtl-meta">' . $esc($fmt($at)) . '</div>' : '');
+                $line = $head('ok', 'Approved')
+                      . ($name ? '<div class="lvtl-name">' . $esc($name) . '</div>' : '')
+                      . $stamp($at);
             } elseif ($status === 2) {    // rejected
                 $cls  = 'is-no';
                 $dot  = '<span class="lvtl-dot no"><i class="ri-close-line"></i></span>';
-                $line = '<span class="lvtl-stage">' . $label . '</span> '
-                      . '<span class="lvtl-rej">Rejected' . ($name ? ' · ' . $esc($name) : '') . '</span>'
-                      . ($at ? '<div class="lvtl-meta">' . $esc($fmt($at)) . '</div>' : '')
+                $line = $head('no', 'Rejected')
+                      . ($name ? '<div class="lvtl-name">' . $esc($name) . '</div>' : '')
+                      . $stamp($at)
                       . ($remark ? '<div class="lvtl-remark"><i class="ri-information-line"></i> ' . $esc($remark) . '</div>' : '');
             } elseif ($key === $current) { // awaiting this stage now
                 $who  = $whoFor($key);
                 $cls  = 'is-wait';
                 $dot  = '<span class="lvtl-dot wait"><i class="ri-time-line"></i></span>';
-                $line = '<span class="lvtl-stage">' . $label . '</span>'
-                      . '<span class="lvtl-badge">Awaiting</span>'
+                $line = $head('wait', 'Awaiting')
                       . '<div class="lvtl-meta">' . ($who !== ''
                             ? 'To be approved by <span class="lvtl-who">' . $esc($who) . '</span>'
                             : '<span class="lvtl-nobody">No approver assigned</span>') . '</div>';
@@ -161,8 +199,8 @@ if (!function_exists('leave_timeline_html')) {
                 $cls  = 'is-next';
                 $icon = $esc($s['icon'] ?? 'ri-more-line');
                 $dot  = '<span class="lvtl-dot"><i class="' . $icon . '"></i></span>';
-                $line = '<span class="lvtl-stage" style="color:#9aa3b2;">' . $label . '</span>'
-                      . '<div class="lvtl-meta">Pending earlier approval'
+                $line = $head('next', 'Pending')
+                      . '<div class="lvtl-meta">Waiting on the stage before this'
                       . ($who !== '' ? ' · <span class="lvtl-who">' . $esc($who) . '</span>' : '')
                       . '</div>';
             }

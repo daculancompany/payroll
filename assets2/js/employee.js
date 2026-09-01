@@ -50,9 +50,10 @@ function quick_edit_employee(id) {
 //     .select2('val', x) method path already uses 'refresh', not 'render'.
 //   - CustomSelect: a plain .trigger('change') isn't seen at all, since it
 //     listens with a native addEventListener, not a jQuery-bound one.
-// Area never gets select2()'d (see fillAddEmployeeForm below), so it's always
-// the CustomSelect case; department/position/classification are normally
-// bootstrap-select, so it's the 'refresh' case.
+// Area, position and classification are never select2()'d, so they're always
+// the CustomSelect case; department is bootstrap-select, so it's the 'refresh'
+// case. Handling both here is what lets a select switch skins without every
+// caller having to care which one it currently wears.
 function refreshSelectDisplay($el) {
     var el = $el[0];
     if (!el) return;
@@ -262,15 +263,12 @@ let tschedhist = safeDataTable("#table-schedule-history", { order: [[3, "desc"]]
 // });
 
 $(function () {
-    $("#position-select").select2({
-        dropdownParent: $("#addemployee"),
-    });
+    // Position and classification are left to the global CustomSelect sweep,
+    // the same control the Area picker uses. Only department still goes through
+    // the .select2() → bootstrap-select shim.
     $("#department-select").select2({
         dropdownParent: $("#addemployee"),
         allowClear: true,
-    });
-    $("#clasification-select").select2({
-        dropdownParent: $("#addemployee"),
     });
     $(".fa-spinner-button").hide();
     //$(".select2").select2();

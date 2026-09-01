@@ -2903,7 +2903,7 @@ if (APP_ENV === 'prod') {
 $servername = getenv('DB_HOST') ?: "localhost";
 $username   = getenv('DB_USER') ?: "root";
 $password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : "";
-$dbname     = getenv('DB_NAME') ?: "payroll";
+$dbname     = getenv('DB_NAME') ?: "payroll_live_db";
 
 // Biometric scanner API key. Prefer the environment: a literal here is readable
 // by anyone who obtains the source or the git history, and rotating it means

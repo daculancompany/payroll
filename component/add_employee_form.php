@@ -27,7 +27,7 @@
                                 <i class="ri-shield-check-line me-1"></i>Classification <span class="text-danger">*</span>
                             </label>
                             <select id="clasification-select" class="form-control select2" name="clasification_id"
-                                data-placeholder="Select classification" data-live-search="true"
+                                data-placeholder="Select classification"
                                 data-parsley-required-message="Please select classification." required>
                                 <option value="">Select a classification</option>
                                 <?php
@@ -131,7 +131,7 @@
                                 <i class="ri-briefcase-4-line me-1"></i>Position <span class="text-danger">*</span>
                             </label>
                             <select id="position-select" class="form-control select2" name="position_id"
-                                data-placeholder="Select position" data-live-search="true"
+                                data-placeholder="Select position"
                                 data-parsley-required-message="Please select position." required>
                                 <option value="">Select a position</option>
                                 <?php

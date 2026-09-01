@@ -78,6 +78,12 @@ if ($dedIds) {
     while ($h = $dh->fetch_assoc()) $hist['D' . $h['k']][] = $h;
 }
 function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
+
+// "Active (unpaid)" + "All types" is the default view, so it alone is not a
+// filter worth echoing back in the summary bar.
+$has_filter = ($f_q !== '' || $f_kind !== 'all' || $f_status !== 'active');
+$kind_lbl   = ['all' => 'All', 'loan' => 'Loans only', 'deduction' => 'Deductions only'];
+$status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => 'All'];
 ?>
 <style>
     .ldl-stat { background:#fff; border:1px solid #e9eef5; border-radius:12px; padding:14px 16px; box-shadow:0 1px 6px rgba(0,0,0,.05); height:100%; }
@@ -104,38 +110,6 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
         </div>
     </div></div>
 
-    <!-- Filters -->
-    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
-        <div class="card-body py-3">
-            <form method="get" class="row g-2 align-items-end">
-                <input type="hidden" name="page" value="loan-deduction-ledger">
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Search</label>
-                    <input type="text" name="q" value="<?= htmlspecialchars($f_q) ?>" class="form-control" placeholder="Employee, ID or item…">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Type</label>
-                    <select name="kind" class="form-control">
-                        <option value="all"       <?= $f_kind==='all'?'selected':'' ?>>All</option>
-                        <option value="loan"      <?= $f_kind==='loan'?'selected':'' ?>>Loans only</option>
-                        <option value="deduction" <?= $f_kind==='deduction'?'selected':'' ?>>Deductions only</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Status</label>
-                    <select name="status" class="form-control">
-                        <option value="active" <?= $f_status==='active'?'selected':'' ?>>Active (unpaid)</option>
-                        <option value="paid"   <?= $f_status==='paid'?'selected':'' ?>>Fully paid</option>
-                        <option value="all"    <?= $f_status==='all'?'selected':'' ?>>All</option>
-                    </select>
-                </div>
-                <div class="col-md-2 d-flex gap-2">
-                    <button type="submit" class="btn btn-sm w-100" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Filter</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <!-- Summary -->
     <div class="row g-3 mb-3">
         <div class="col-md-3 col-6"><div class="ldl-stat"><div class="lbl">Accounts</div><div class="val" style="color:#673bb6;"><?= count($view) ?></div></div></div>
@@ -144,13 +118,32 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
         <div class="col-md-3 col-6"><div class="ldl-stat"><div class="lbl">Outstanding</div><div class="val" style="color:#d32f2f;"><?= ldl_money($t_bal) ?></div></div></div>
     </div>
 
-    <div class="d-flex justify-content-end gap-2 mb-2">
-        <button type="button" onclick="repExportCSV('ldl-table','loan-deduction-ledger.csv')" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-file-excel-2-line me-1"></i>Export CSV</button>
-        <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line me-1"></i>Print</button>
-    </div>
-
     <div class="card rpt-card mb-4">
-        <div class="card-body p-0">
+        <div class="card-header align-items-center d-flex">
+            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-bank-card-line me-1" style="color:#673bb6;"></i>Ledger Accounts</h5>
+            <div class="d-flex gap-2">
+                <?php if ($has_filter): ?>
+                <a href="index.php?page=loan-deduction-ledger" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
+                <?php endif; ?>
+                <button type="button" onclick="repExportCSV('ldl-table','loan-deduction-ledger.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-ledger">
+                    <i class="ri-filter-3-line me-1"></i>Filter
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+
+            <?php if ($has_filter): ?>
+            <div class="rpt-filter-bar">
+                <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                <?php if ($f_q !== ''): ?><span>Search: <span class="val"><?= htmlspecialchars($f_q) ?></span></span><?php endif; ?>
+                <span>Type: <span class="val"><?= $kind_lbl[$f_kind] ?? 'All' ?></span></span>
+                <span>Status: <span class="val"><?= $status_lbl[$f_status] ?? 'Active (unpaid)' ?></span></span>
+                <span class="ms-auto"><span class="val"><?= count($view) ?></span> account(s)</span>
+            </div>
+            <?php endif; ?>
+
             <div class="rpt-scroll">
                 <table class="table table-sm mb-0 rpt-table" id="ldl-table">
                     <thead>
@@ -227,6 +220,47 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
 
 </div>
 </div>
+</div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter -->
+<div class="modal fade" id="modal-filter-ledger" tabindex="-1" role="dialog">
+    <form method="get" action="" novalidate>
+        <input type="hidden" name="page" value="loan-deduction-ledger">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Loan &amp; Deduction Ledger</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-search-line me-1"></i>Search <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" name="q" value="<?= htmlspecialchars($f_q) ?>" class="form-control" placeholder="Employee, ID or item…">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-price-tag-3-line me-1"></i>Type</label>
+                        <select name="kind" class="form-control" data-cs-icon="ri-price-tag-3-line">
+                            <option value="all"       <?= $f_kind==='all'?'selected':'' ?>>All</option>
+                            <option value="loan"      <?= $f_kind==='loan'?'selected':'' ?>>Loans only</option>
+                            <option value="deduction" <?= $f_kind==='deduction'?'selected':'' ?>>Deductions only</option>
+                        </select>
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-pulse-line me-1"></i>Status</label>
+                        <select name="status" class="form-control" data-cs-icon="ri-pulse-line">
+                            <option value="active" <?= $f_status==='active'?'selected':'' ?>>Active (unpaid)</option>
+                            <option value="paid"   <?= $f_status==='paid'?'selected':'' ?>>Fully paid</option>
+                            <option value="all"    <?= $f_status==='all'?'selected':'' ?>>All</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#f8f9fa;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                </div>
+            </div>
+        </div>
+    </form>
 </div>
 
 <script>

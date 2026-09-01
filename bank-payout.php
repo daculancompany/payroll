@@ -70,35 +70,47 @@ if ($sel_id) {
                 </div>
 
                 <div class="col-12">
-                    <div class="card">
-                        <div class="card-header d-flex flex-wrap align-items-center gap-2">
-                            <select class="form-select form-select-sm" style="max-width:340px;"
-                                onchange="location.href='index.php?page=bank-payout&id=' + this.value">
-                                <option value="">— Select payroll period —</option>
-                                <?php foreach ($payrolls as $p): ?>
-                                    <option value="<?= (int) $p['id'] ?>" <?= (int) $p['id'] === $sel_id ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($p['ref_no']) ?> — <?= date('M j', strtotime($p['date_from'])) ?>–<?= date('M j, Y', strtotime($p['date_to'])) ?>
-                                        <?= (int) $p['status'] === 2 ? ' (Locked)' : '' ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php if ($rows): ?>
-                                <a class="btn btn-sm btn-success" href="export-bank-payout.php?id=<?= $sel_id ?>">
-                                    <i class="ri-download-2-line me-1"></i>Download CSV
-                                </a>
-                                <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
-                                    <i class="ri-printer-line me-1"></i>Print
+                    <div class="card rpt-card">
+                        <div class="card-header align-items-center d-flex">
+                            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-bank-line me-1" style="color:#673bb6;"></i>Bank Payout Register</h5>
+                            <div class="d-flex gap-2">
+                                <?php if ($sel_id): ?>
+                                <a href="index.php?page=bank-payout" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
+                                <?php endif; ?>
+                                <?php if ($rows): ?>
+                                <a class="btn btn-sm btn-outline-success" href="export-bank-payout.php?id=<?= $sel_id ?>"><i class="ri-file-excel-2-line me-1"></i>CSV</a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="ri-printer-line"></i></button>
+                                <?php endif; ?>
+                                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-bankpayout">
+                                    <i class="ri-filter-3-line me-1"></i>Filter
                                 </button>
-                            <?php endif; ?>
-                            <?php if ($sel_pay && (int) $sel_pay['status'] !== 2): ?>
-                                <span class="badge bg-warning text-dark ms-auto"><i class="ri-alert-line me-1"></i>Payroll not yet locked — amounts may still change</span>
-                            <?php endif; ?>
+                            </div>
                         </div>
                         <div class="card-body">
+                            <?php if ($sel_pay): ?>
+                            <div class="rpt-filter-bar">
+                                <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                                <span>Payroll: <span class="val"><?= htmlspecialchars($sel_pay['ref_no']) ?></span></span>
+                                <span>Period: <span class="val"><?= date('M j', strtotime($sel_pay['date_from'])) ?> &ndash; <?= date('M j, Y', strtotime($sel_pay['date_to'])) ?></span></span>
+                                <span>Status: <span class="val"><?= (int) $sel_pay['status'] === 2 ? 'Locked' : 'Not locked' ?></span></span>
+                                <span class="ms-auto"><span class="val"><?= count($rows) ?></span> employee(s)</span>
+                            </div>
+                            <?php endif; ?>
+
+                            <?php if ($sel_pay && (int) $sel_pay['status'] !== 2): ?>
+                                <div class="alert alert-warning py-2 d-flex align-items-center gap-2" style="font-size:12.5px;">
+                                    <i class="ri-alert-line fs-16"></i>
+                                    <span>Payroll not yet locked — amounts may still change.</span>
+                                </div>
+                            <?php endif; ?>
+
                             <?php if (!$sel_id): ?>
                                 <div class="text-center text-muted py-5">
                                     <i class="ri-bank-line" style="font-size:42px;"></i>
-                                    <p class="mt-2">Select a payroll period to build the payout list.</p>
+                                    <p class="mt-2">Pick a payroll period from <b>Filter</b> to build the payout list.</p>
+                                    <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-bankpayout">
+                                        <i class="ri-filter-3-line me-1"></i>Choose payroll period
+                                    </button>
                                 </div>
                             <?php elseif (!$rows): ?>
                                 <div class="text-center text-muted py-5">No payroll items found for this period.</div>
@@ -168,4 +180,36 @@ if ($sel_id) {
             </div>
         </div>
     </div>
+</div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter -->
+<div class="modal fade" id="modal-filter-bankpayout" tabindex="-1" role="dialog">
+    <form method="get" action="" novalidate>
+        <input type="hidden" name="page" value="bank-payout">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Bank Payout</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-1">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Payroll Period</label>
+                        <select name="id" class="form-control" data-cs-icon="ri-calendar-range-line" data-cs-search="true">
+                            <option value="">— Select payroll period —</option>
+                            <?php foreach ($payrolls as $p): ?>
+                                <option value="<?= (int) $p['id'] ?>" <?= (int) $p['id'] === $sel_id ? 'selected' : '' ?>>
+                                    <?= htmlspecialchars($p['ref_no']) ?> — <?= date('M j', strtotime($p['date_from'])) ?>–<?= date('M j, Y', strtotime($p['date_to'])) ?><?= (int) $p['status'] === 2 ? ' (Locked)' : '' ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#f8f9fa;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                </div>
+            </div>
+        </div>
+    </form>
 </div>

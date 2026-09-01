@@ -21,6 +21,10 @@
     overflow: auto;
     border-radius: 0 0 12px 12px;
     background: #fff;
+    /* Reserve the scrollbar's width whether or not it is showing. These tables
+       size their columns automatically, so without this the bar's arrival at
+       row N steals ~12px and every column re-flows mid-scroll. */
+    scrollbar-gutter: stable;
     /* Colours come from assets2/css/theme.css — recolour there, not here. */
     scrollbar-width: thin;                    /* Firefox */
     scrollbar-color: var(--sb-thumb) var(--sb-track);
@@ -102,3 +106,21 @@
 /* Clickable employee name → employee details */
 .rpt-emp-link { font-weight: 600; color: var(--app-primary); text-decoration: none; }
 .rpt-emp-link:hover { color: var(--app-primary-dark); text-decoration: underline; }
+
+/* ── Active-filter summary bar ──
+   Sits at the top of the card body on report pages whose filters live in a
+   modal, echoing back what the visitor picked. Pair it with a "Filter" button
+   in the card header + a filter modal (see payroll-report, employee-masterlist). */
+.rpt-filter-bar {
+    background: #673bb6;
+    color: #fff;
+    border-radius: 6px;
+    padding: 9px 16px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 12px;
+}
+.rpt-filter-bar .val { font-weight: 700; }

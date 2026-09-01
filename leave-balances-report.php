@@ -26,6 +26,17 @@ $qs = http_build_query([
     'ineligible' => $f['ineligible'] ? 1 : 0,
 ]);
 
+// Anything beyond "this year, everyone" counts as a narrowed view — that is
+// what puts the Clear button in the card header.
+$lb_has_filter = ($f['dept'] || $f['type'] || $f['search'] !== '' || $f['view'] !== 'all' || $f['ineligible']);
+$lb_view_lbl = [
+    'all'       => 'All employees',
+    'remaining' => 'With remaining',
+    'exhausted' => 'Fully consumed',
+    'unused'    => 'No leave taken',
+    'pending'   => 'Has pending',
+];
+
 // Watchlists — the two rosters HR actually acts on.
 $exhausted = array_values(array_filter($rows, fn($r) => $r['tot']['remaining'] <= 0));
 $untouched = array_values(array_filter($rows, fn($r) => $r['tot']['used'] <= 0 && $r['tot']['credits'] > 0));
@@ -91,74 +102,31 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
     </div></div>
 
     <!-- ── Filters ─────────────────────────────────────────────────────── -->
-    <div class="card rpt-card mb-3 lb-noprint" style="border-top:3px solid #673bb6;">
-        <div class="card-body py-3">
-            <form method="get" action="index.php" class="row g-2 align-items-end">
-                <input type="hidden" name="page" value="leave-balances-report">
-                <div class="col-md-2 col-6">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Leave Year</label>
-                    <select name="year" class="form-select form-select-sm">
-                        <?php $cy = (int) date('Y'); for ($y = $cy + 1; $y >= $cy - 5; $y--): ?>
-                            <option value="<?= $y ?>" <?= $y === (int) $f['year'] ? 'selected' : '' ?>><?= $y ?></option>
-                        <?php endfor; ?>
-                    </select>
-                </div>
-                <div class="col-md-3 col-6">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Department</label>
-                    <select name="dept" class="form-select form-select-sm">
-                        <option value="0">All departments</option>
-                        <?php foreach ($departments as $d): ?>
-                            <option value="<?= (int) $d['id'] ?>" <?= $f['dept'] == $d['id'] ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-2 col-6">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Leave Type</label>
-                    <select name="type" class="form-select form-select-sm">
-                        <option value="0">All types</option>
-                        <?php foreach ($allTypes as $t): ?>
-                            <option value="<?= (int) $t['id'] ?>" <?= $f['type'] == $t['id'] ? 'selected' : '' ?>><?= htmlspecialchars($t['name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-2 col-6">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">View</label>
-                    <select name="view" class="form-select form-select-sm">
-                        <?php foreach ([
-                            'all'       => 'All employees',
-                            'remaining' => 'With remaining',
-                            'exhausted' => 'Fully consumed',
-                            'unused'    => 'No leave taken',
-                            'pending'   => 'Has pending',
-                        ] as $k => $lbl): ?>
-                            <option value="<?= $k ?>" <?= $f['view'] === $k ? 'selected' : '' ?>><?= $lbl ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Search</label>
-                    <div class="input-group input-group-sm">
-                        <span class="input-group-text"><i class="ri-search-line"></i></span>
-                        <input type="text" name="search" value="<?= htmlspecialchars($f['search']) ?>" class="form-control" placeholder="Name or employee no.">
-                    </div>
-                </div>
-                <div class="col-12 d-flex flex-wrap align-items-center gap-2 pt-1">
-                    <div class="form-check form-switch me-2">
-                        <input class="form-check-input" type="checkbox" role="switch" id="lb-inelig" name="ineligible" value="1" <?= $f['ineligible'] ? 'checked' : '' ?>>
-                        <label class="form-check-label" for="lb-inelig" style="font-size:12px;">Include non-eligible employees</label>
-                    </div>
-                    <button type="submit" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Apply Filters</button>
-                    <a href="index.php?page=leave-balances-report" class="btn btn-sm btn-outline-secondary"><i class="ri-refresh-line me-1"></i>Reset</a>
-                    <div class="vr d-none d-md-block mx-1"></div>
-                    <a href="export-leave-balances.php?format=xlsx&<?= htmlspecialchars($qs) ?>" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>Excel</a>
-                    <a href="export-leave-balances.php?format=pdf&<?= htmlspecialchars($qs) ?>" class="btn btn-sm btn-outline-danger"><i class="ri-download-2-line me-1"></i>PDF</a>
-                    <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line me-1"></i>Print</button>
-                    <span class="ms-auto text-muted" style="font-size:11.5px;">
-                        <i class="ri-information-line"></i>
-                        <?= count($rows) ?> employee(s) listed<?= $T['ineligible'] ? ' · ' . $T['ineligible'] . ' non-eligible hidden' : '' ?>
-                    </span>
-                </div>
-            </form>
+    <div class="card rpt-card mb-3 lb-noprint">
+        <div class="card-header align-items-center d-flex">
+            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-coins-line me-1" style="color:#673bb6;"></i>Leave Balances <?= (int) $f['year'] ?></h5>
+            <div class="d-flex gap-2">
+                <?php if ($lb_has_filter): ?>
+                <a href="index.php?page=leave-balances-report" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
+                <?php endif; ?>
+                <a href="export-leave-balances.php?format=xlsx&<?= htmlspecialchars($qs) ?>" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>Excel</a>
+                <a href="export-leave-balances.php?format=pdf&<?= htmlspecialchars($qs) ?>" class="btn btn-sm btn-outline-danger"><i class="ri-download-2-line me-1"></i>PDF</a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-leavebal">
+                    <i class="ri-filter-3-line me-1"></i>Filter
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="rpt-filter-bar mb-0">
+                <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                <span>Year: <span class="val"><?= (int) $f['year'] ?></span></span>
+                <?php if ($f['dept']): foreach ($departments as $d) if ($d['id'] == $f['dept']): ?><span>Department: <span class="val"><?= htmlspecialchars($d['name']) ?></span></span><?php endif; endif; ?>
+                <?php if ($f['type']): foreach ($allTypes as $t) if ($t['id'] == $f['type']): ?><span>Leave type: <span class="val"><?= htmlspecialchars($t['name']) ?></span></span><?php endif; endif; ?>
+                <?php if ($f['search'] !== ''): ?><span>Search: <span class="val"><?= htmlspecialchars($f['search']) ?></span></span><?php endif; ?>
+                <span>View: <span class="val"><?= $lb_view_lbl[$f['view']] ?? 'All employees' ?></span></span>
+                <span class="ms-auto"><span class="val"><?= count($rows) ?></span> employee(s)<?= $T['ineligible'] ? ' · ' . $T['ineligible'] . ' non-eligible hidden' : '' ?></span>
+            </div>
         </div>
     </div>
 
@@ -399,4 +367,67 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
 
 </div>
 </div>
+</div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter -->
+<div class="modal fade lb-noprint" id="modal-filter-leavebal" tabindex="-1" role="dialog">
+    <form method="get" action="index.php" novalidate>
+        <input type="hidden" name="page" value="leave-balances-report">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Leave Balances</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Leave Year</label>
+                        <select name="year" class="form-control" data-cs-icon="ri-calendar-2-line">
+                            <?php $cy = (int) date('Y'); for ($y = $cy + 1; $y >= $cy - 5; $y--): ?>
+                                <option value="<?= $y ?>" <?= $y === (int) $f['year'] ? 'selected' : '' ?>><?= $y ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-building-2-line me-1"></i>Department</label>
+                        <select name="dept" class="form-control" data-cs-icon="ri-building-2-line">
+                            <option value="0">— All Departments —</option>
+                            <?php foreach ($departments as $d): ?>
+                                <option value="<?= (int) $d['id'] ?>" <?= $f['dept'] == $d['id'] ? 'selected' : '' ?>><?= htmlspecialchars($d['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-file-list-2-line me-1"></i>Leave Type</label>
+                        <select name="type" class="form-control" data-cs-icon="ri-file-list-2-line">
+                            <option value="0">— All Types —</option>
+                            <?php foreach ($allTypes as $t): ?>
+                                <option value="<?= (int) $t['id'] ?>" <?= $f['type'] == $t['id'] ? 'selected' : '' ?>><?= htmlspecialchars($t['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-eye-line me-1"></i>View</label>
+                        <select name="view" class="form-control" data-cs-icon="ri-eye-line">
+                            <?php foreach ($lb_view_lbl as $k => $lbl): ?>
+                                <option value="<?= $k ?>" <?= $f['view'] === $k ? 'selected' : '' ?>><?= $lbl ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-search-line me-1"></i>Search <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" name="search" value="<?= htmlspecialchars($f['search']) ?>" class="form-control" placeholder="Name or employee no.">
+                    </div>
+                    <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" role="switch" id="lb-inelig" name="ineligible" value="1" <?= $f['ineligible'] ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="lb-inelig" style="font-size:12px;">Include non-eligible employees</label>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#f8f9fa;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                </div>
+            </div>
+        </div>
+    </form>
 </div>

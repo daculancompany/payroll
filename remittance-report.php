@@ -122,46 +122,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
         </div>
     </div></div>
 
-    <!-- Period selector -->
-    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
-        <div class="card-body py-3">
-            <form method="get" class="row g-2 align-items-end">
-                <input type="hidden" name="page" value="remittance-report">
-                <div class="col-md-6">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
-                        <i class="ri-calendar-2-line me-1"></i>Payroll Period
-                    </label>
-                    <select name="id" id="rr-period" class="form-control" data-cs-icon="ri-calendar-2-line" onchange="this.form.submit()">
-                        <?php foreach ($payrolls as $p): ?>
-                        <option value="<?= $p['id'] ?>" <?= $sel_id == $p['id'] ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?>
-                            <?= $p['status'] == 2 ? '(Locked)' : '(Open)' ?>
-                        </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-auto">
-                    <?php if ($sel_id && $sel_pay): ?>
-                    <a href="remittance-export.php?id=<?= $sel_id ?>" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;">
-                        <i class="ri-file-excel-2-line me-1"></i>Export CSV
-                    </a>
-                    <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary">
-                        <i class="ri-printer-line me-1"></i>Print
-                    </button>
-                    <?php endif; ?>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <?php if (!$sel_id): ?>
-        <div class="card rpt-card"><div class="card-body text-center py-5 text-muted">
-            <i class="ri-government-line" style="font-size:40px;opacity:.4;display:block;margin-bottom:8px;"></i>
-            Select a payroll period to view SSS, PhilHealth, Pag-IBIG and Tax remittances.
-        </div></div>
-    <?php elseif (!$sel_pay): ?>
-        <div class="alert alert-warning">Payroll period not found.</div>
-    <?php else: ?>
+    <?php if ($sel_id && $sel_pay): ?>
 
     <!-- Summary cards -->
     <div class="row g-3 mb-3">
@@ -186,15 +147,53 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
     <!-- Grand total banner -->
     <div style="background:linear-gradient(135deg,#673bb6,#4e3483);border-radius:12px;padding:14px 20px;display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:14px;">
         <div>
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.85;">Total Remittance — <?= htmlspecialchars($sel_pay['ref_no']) ?></div>
-            <div style="font-size:11px;opacity:.8;margin-top:2px;"><?= date('M d', strtotime($sel_pay['date_from'])) ?> – <?= date('M d, Y', strtotime($sel_pay['date_to'])) ?> &bull; <?= count($rows) ?> employees</div>
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.85;">Total Remittance</div>
+            <div style="font-size:11px;opacity:.8;margin-top:2px;"><?= count($rows) ?> employees</div>
         </div>
         <div style="font-size:24px;font-weight:900;"><?= rr_money($totals['grand']) ?></div>
     </div>
+    <?php endif; ?>
 
     <!-- Detail table -->
     <div class="card rpt-card mb-4">
-        <div class="card-body p-0">
+        <div class="card-header align-items-center d-flex">
+            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-government-line me-1" style="color:#673bb6;"></i>Remittance Detail</h5>
+            <div class="d-flex gap-2">
+                <?php if ($sel_id): ?>
+                <a href="index.php?page=remittance-report" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
+                <?php endif; ?>
+                <?php if ($sel_id && $sel_pay): ?>
+                <a href="remittance-export.php?id=<?= $sel_id ?>" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</a>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
+                <?php endif; ?>
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-remittance">
+                    <i class="ri-filter-3-line me-1"></i>Filter
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+
+            <?php if ($sel_pay): ?>
+            <div class="rpt-filter-bar">
+                <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                <span>Payroll: <span class="val"><?= htmlspecialchars($sel_pay['ref_no']) ?></span></span>
+                <span>Period: <span class="val"><?= date('M d', strtotime($sel_pay['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($sel_pay['date_to'])) ?></span></span>
+                <span>Status: <span class="val"><?= (int)$sel_pay['status'] === 2 ? 'Locked' : 'Open' ?></span></span>
+                <span class="ms-auto"><span class="val"><?= count($rows) ?></span> employee(s)</span>
+            </div>
+            <?php endif; ?>
+
+            <?php if (!$sel_id): ?>
+                <div class="text-center text-muted py-5">
+                    <i class="ri-government-line" style="font-size:40px;opacity:.4;display:block;margin-bottom:8px;"></i>
+                    <p class="mt-2">Pick a payroll period from <b>Filter</b> to view SSS, PhilHealth, Pag-IBIG and Tax remittances.</p>
+                    <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-remittance">
+                        <i class="ri-filter-3-line me-1"></i>Choose payroll period
+                    </button>
+                </div>
+            <?php elseif (!$sel_pay): ?>
+                <div class="alert alert-warning mb-0">Payroll period not found.</div>
+            <?php else: ?>
             <div class="rpt-scroll">
                 <table class="table table-sm mb-0 rpt-table" id="rr-table">
                     <thead>
@@ -245,9 +244,41 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                     </tfoot>
                 </table>
             </div>
+            <?php endif; ?>
         </div>
     </div>
 
-    <?php endif; ?>
-
 </div></div></div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter -->
+<div class="modal fade" id="modal-filter-remittance" tabindex="-1" role="dialog">
+    <form method="get" action="" novalidate>
+        <input type="hidden" name="page" value="remittance-report">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Remittance Report</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-1">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Payroll Period</label>
+                        <select name="id" id="rr-period" class="form-control" data-cs-icon="ri-calendar-2-line" data-cs-search="true">
+                            <option value="">— Select payroll period —</option>
+                            <?php foreach ($payrolls as $p): ?>
+                            <option value="<?= $p['id'] ?>" <?= $sel_id == $p['id'] ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?>
+                                <?= $p['status'] == 2 ? '(Locked)' : '(Open)' ?>
+                            </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#f8f9fa;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>

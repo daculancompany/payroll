@@ -48,6 +48,10 @@ if ($q) while ($r = $q->fetch_assoc()) {
     $tot['late'] += (float)$r['late'];
 }
 function as_num($v, $d = 2){ return number_format((float)$v, $d); }
+
+// This month + all sites is the default view — "Clear" only makes sense once
+// the visitor has moved off it.
+$has_filter = ($f_site !== 0 || $f_from !== $as_this_month_first || $f_to !== $as_this_month_last);
 ?>
 <div class="main-content">
 <div class="page-content">
@@ -63,40 +67,33 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
         </div>
     </div></div>
 
-    <div class="card rpt-card mb-3" style="border-top:3px solid #673bb6;">
-        <div class="card-body py-3">
-            <form method="get" class="row g-2 align-items-end">
-                <input type="hidden" name="page" value="attendance-summary">
-                <div class="col-md-4">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
-                    <div id="as-daterange" class="att-range-picker">
-                        <i class="ri-calendar-2-line"></i>
-                        <span id="as-range-label"><?= htmlspecialchars($as_range_label) ?></span>
-                        <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
-                    </div>
-                    <input type="hidden" name="from" id="from" value="<?= htmlspecialchars($f_from) ?>">
-                    <input type="hidden" name="to" id="to" value="<?= htmlspecialchars($f_to) ?>">
-                </div>
-                <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;">Site</label>
-                    <select name="site" class="form-control" data-placeholder="All sites">
-                        <option value="0">All sites</option>
-                        <?php foreach ($sites as $s): ?>
-                        <option value="<?= $s['id'] ?>" <?= $f_site==$s['id']?'selected':'' ?>><?= htmlspecialchars($s['site_name']) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-3 d-flex gap-2">
-                    <button type="submit" class="btn btn-sm" style="background:#673bb6;color:#fff;font-weight:700;"><i class="ri-filter-3-line me-1"></i>Filter</button>
-                    <button type="button" onclick="repExportCSV('as-table','attendance-summary.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
-                    <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <div class="card rpt-card mb-4">
-        <div class="card-body p-0">
+        <div class="card-header align-items-center d-flex">
+            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-time-line me-1" style="color:#673bb6;"></i>Attendance Summary</h5>
+            <div class="d-flex gap-2">
+                <?php if ($has_filter): ?>
+                <a href="index.php?page=attendance-summary" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
+                <?php endif; ?>
+                <button type="button" onclick="repExportCSV('as-table','attendance-summary.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
+                <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-attsummary">
+                    <i class="ri-filter-3-line me-1"></i>Filter
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+
+            <div class="rpt-filter-bar">
+                <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                <span>Period: <span class="val"><?= htmlspecialchars($as_range_label) ?></span></span>
+                <span>Site: <span class="val"><?php
+                    $site_name = 'All sites';
+                    foreach ($sites as $s) if ($s['id'] == $f_site) $site_name = $s['site_name'];
+                    echo htmlspecialchars($site_name);
+                ?></span></span>
+                <span class="ms-auto"><span class="val"><?= count($rows) ?></span> employee(s)</span>
+            </div>
+
             <div class="rpt-scroll">
                 <table class="table table-sm mb-0 rpt-table" id="as-table">
                     <thead>
@@ -138,6 +135,46 @@ function as_num($v, $d = 2){ return number_format((float)$v, $d); }
 
 </div>
 </div>
+</div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter -->
+<div class="modal fade" id="modal-filter-attsummary" tabindex="-1" role="dialog">
+    <form method="get" action="" novalidate>
+        <input type="hidden" name="page" value="attendance-summary">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Attendance Summary</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
+                        <div id="as-daterange" class="att-range-picker">
+                            <i class="ri-calendar-2-line"></i>
+                            <span id="as-range-label"><?= htmlspecialchars($as_range_label) ?></span>
+                            <i class="ri-arrow-down-s-line" style="margin-left:auto;color:#aaa;"></i>
+                        </div>
+                        <input type="hidden" name="from" id="from" value="<?= htmlspecialchars($f_from) ?>">
+                        <input type="hidden" name="to" id="to" value="<?= htmlspecialchars($f_to) ?>">
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-map-pin-line me-1"></i>Site</label>
+                        <select name="site" class="form-control" data-cs-icon="ri-map-pin-line" data-placeholder="All sites">
+                            <option value="0">— All Sites —</option>
+                            <?php foreach ($sites as $s): ?>
+                            <option value="<?= $s['id'] ?>" <?= $f_site==$s['id']?'selected':'' ?>><?= htmlspecialchars($s['site_name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#f8f9fa;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                </div>
+            </div>
+        </div>
+    </form>
 </div>
 
 <script>

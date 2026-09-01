@@ -124,27 +124,27 @@ unset($a);
                 </div>
 
                 <div class="col-12">
-                    <div class="card">
-                        <div class="card-header d-flex flex-wrap align-items-center gap-2">
-                            <select class="form-select form-select-sm" style="width:110px;"
-                                onchange="location.href='index.php?page=bir-alphalist&year=' + this.value">
-                                <?php foreach ($al_years as $y): ?>
-                                    <option value="<?= $y ?>" <?= $y === $al_year ? 'selected' : '' ?>><?= $y ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <?php if ($al_rows): ?>
-                                <a class="btn btn-sm btn-success" href="export-bir-alphalist.php?year=<?= $al_year ?>">
-                                    <i class="ri-download-2-line me-1"></i>Download CSV
-                                </a>
-                                <button class="btn btn-sm btn-outline-secondary" onclick="window.print()">
-                                    <i class="ri-printer-line me-1"></i>Print
+                    <div class="card rpt-card">
+                        <div class="card-header align-items-center d-flex">
+                            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-government-line me-1" style="color:#673bb6;"></i>BIR Alphalist</h5>
+                            <div class="d-flex gap-2">
+                                <?php if ($al_rows): ?>
+                                <a class="btn btn-sm btn-outline-success" href="export-bir-alphalist.php?year=<?= $al_year ?>"><i class="ri-file-excel-2-line me-1"></i>CSV</a>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="ri-printer-line"></i></button>
+                                <?php endif; ?>
+                                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-alphalist">
+                                    <i class="ri-filter-3-line me-1"></i>Filter
                                 </button>
-                            <?php endif; ?>
-                            <span class="ms-auto text-muted" style="font-size:11px;">
-                                Annex to Form 1604-C &middot; 13th month exempt up to &#8369;<?= number_format(BIR_13TH_CAP, 0) ?>
-                            </span>
+                            </div>
                         </div>
                         <div class="card-body">
+                            <div class="rpt-filter-bar">
+                                <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                                <span>Year: <span class="val"><?= $al_year ?></span></span>
+                                <span>Annex to Form 1604-C &middot; 13th month exempt up to <span class="val">&#8369;<?= number_format(BIR_13TH_CAP, 0) ?></span></span>
+                                <span class="ms-auto"><span class="val"><?= count($al_rows) ?></span> employee(s)</span>
+                            </div>
+
                             <?php if ($al_no_tin > 0): ?>
                                 <div class="alert alert-warning py-2 d-flex align-items-center gap-2" style="font-size:12.5px;">
                                     <i class="ri-error-warning-line fs-16"></i>
@@ -222,4 +222,33 @@ unset($a);
             </div>
         </div>
     </div>
+</div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter -->
+<div class="modal fade" id="modal-filter-alphalist" tabindex="-1" role="dialog">
+    <form method="get" action="" novalidate>
+        <input type="hidden" name="page" value="bir-alphalist">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter BIR Alphalist</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-1">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Calendar Year</label>
+                        <select name="year" class="form-control" data-cs-icon="ri-calendar-2-line">
+                            <?php foreach ($al_years as $y): ?>
+                            <option value="<?= $y ?>" <?= $y === $al_year ? 'selected' : '' ?>><?= $y ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#f8f9fa;">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                    <button type="submit" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-search-line me-1"></i>Apply Filter</button>
+                </div>
+            </div>
+        </div>
+    </form>
 </div>

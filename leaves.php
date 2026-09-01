@@ -233,9 +233,15 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 && leave_user_can_act($conn, $my_uid, $cur_stage, (int) $row['employee_id']);
                                             $leave_timelines[$row['id']] = leave_timeline_html($row);
                                             $leave_meta[$row['id']] = [
-                                                'emp'  => $row['employee_name'],
-                                                'type' => $row['leave_type_name'],
-                                                'dur'  => rtrim(rtrim(number_format($row['duration'], 1), '0'), '.'),
+                                                'emp'   => $row['employee_name'],
+                                                'type'  => $row['leave_type_name'],
+                                                'dur'   => rtrim(rtrim(number_format($row['duration'], 1), '0'), '.'),
+                                                // Subject header of the timeline modal — it has to name the
+                                                // request, or the trail is a list of dates with no owner.
+                                                'no'    => $row['employee_no'],
+                                                'range' => date('M d', strtotime($row['date_from'])) . ' – ' . date('M d, Y', strtotime($row['date_to'])),
+                                                'stat'  => (int) $row['status'],
+                                                'stage' => $cur_stage ? ($leave_stage_defs[$cur_stage]['label'] ?? '') : '',
                                             ];
                                         ?>
                                         <tr>
@@ -378,14 +384,37 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
 
 <?php leave_timeline_css(); ?>
 <!-- Approval Timeline Modal -->
+<style>
+    /* Subject header — names the request the trail belongs to. Without it the
+       modal is a column of dates with no stated owner. */
+    .lvtl-subject{background:linear-gradient(135deg,#f7f5fc,#fdfcff);border-bottom:1px solid #ece7f6;
+        padding:14px 18px;display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;}
+    .lvtl-subject .sub-emp{font-size:14px;font-weight:800;color:#2b2f36;line-height:1.25;}
+    .lvtl-subject .sub-no{font-size:11px;color:#8a94a6;font-family:ui-monospace,monospace;margin-top:1px;}
+    .lvtl-subject .sub-facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
+    .lvtl-subject .sub-fact{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
+        color:#4c5768;background:#fff;border:1px solid #e6e1f3;border-radius:20px;padding:3px 10px;}
+    .lvtl-subject .sub-fact i{font-size:12px;color:#673bb6;}
+    .lvtl-outcome{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;
+        font-size:11px;font-weight:800;letter-spacing:.3px;border-radius:20px;padding:5px 12px;border:1px solid transparent;}
+    .lvtl-outcome i{font-size:13px;}
+    .lvtl-outcome.ok  {background:#e8f6ed;color:#1b7a43;border-color:#c9e9d5;}
+    .lvtl-outcome.no  {background:#fdecee;color:#c62828;border-color:#f7ccd1;}
+    .lvtl-outcome.wait{background:#fff3e0;color:#c76b00;border-color:#ffd9ab;}
+    #modal-leave-timeline .modal-body{padding:16px 18px;}
+</style>
 <div class="modal fade" id="modal-leave-timeline" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h6 class="modal-title"><i class="ri-history-line me-2" style="color:#673bb6;"></i>Approval Timeline</h6>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+            <div class="lvtl-subject" id="leave-timeline-subject"></div>
             <div class="modal-body" id="leave-timeline-body"></div>
+            <div class="modal-footer" style="background:#f8f9fa;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -409,7 +438,38 @@ var leaveFp = null;
 // Action column sits after the fixed columns + one per approval stage.
 var LEAVE_ACTION_COL = <?= 6 + count($leave_stage_defs) ?>;
 
+// Names and leave-type labels are free text from the database, so they are
+// escaped before going anywhere near innerHTML.
+function lvEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+}
+
 function openLeaveTimeline(id) {
+    var m = LEAVE_META[id] || {};
+    var sub = document.getElementById('leave-timeline-subject');
+
+    // Outcome chip: the one-line answer, before the reader walks the stages.
+    var out;
+    if (m.stat === 1)      out = { c: 'ok',   i: 'ri-checkbox-circle-fill', t: 'Fully approved' };
+    else if (m.stat === 2) out = { c: 'no',   i: 'ri-close-circle-fill',    t: 'Rejected' };
+    else                   out = { c: 'wait', i: 'ri-time-fill',            t: m.stage ? 'Awaiting ' + m.stage : 'Pending' };
+
+    sub.innerHTML = m.emp
+        ? '<div>'
+            + '<div class="sub-emp">' + lvEsc(m.emp) + '</div>'
+            + (m.no ? '<div class="sub-no">#' + lvEsc(m.no) + '</div>' : '')
+            + '<div class="sub-facts">'
+              + '<span class="sub-fact"><i class="ri-price-tag-3-line"></i>' + lvEsc(m.type || '—') + '</span>'
+              + '<span class="sub-fact"><i class="ri-calendar-event-line"></i>' + lvEsc(m.range || '—') + '</span>'
+              + '<span class="sub-fact"><i class="ri-hourglass-line"></i>' + lvEsc(m.dur || '0') + ' day(s)</span>'
+            + '</div>'
+          + '</div>'
+          + '<span class="lvtl-outcome ' + out.c + '"><i class="' + out.i + '"></i>' + lvEsc(out.t) + '</span>'
+        : '';
+    sub.style.display = m.emp ? '' : 'none';
+
     document.getElementById('leave-timeline-body').innerHTML = LEAVE_TIMELINES[id] || '<div class="text-muted">No timeline available.</div>';
     new bootstrap.Modal(document.getElementById('modal-leave-timeline')).show();
 }

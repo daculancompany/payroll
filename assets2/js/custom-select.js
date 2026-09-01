@@ -48,6 +48,54 @@
 
     var openWrap = null;         // only one menu open at a time
 
+    /* ---- Parsley error placement -------------------------------------------
+       Parsley's default is $element.after(errorList): the message becomes the
+       validated field's next sibling. For a bare input that lands it under the
+       field, which is what everyone expects. Two very common wrappers in this
+       app break that assumption, both by putting something between the field
+       and where the eye expects the message:
+
+       1. Skinned selects. The native <select> is still the validated node, but
+          every skin keeps it as the FIRST child of a wrapper, ahead of the
+          visible control, hidden in a way that takes up no space (.cs-native is
+          position:absolute; bootstrap-select clips its own). The message lands
+          between the hidden select and the control, and paints ABOVE it.
+       2. .input-group (the ₱ prefix on every money field). The group is
+          display:flex, so a message inserted after the input becomes a third
+          flex item and paints BESIDE it.
+
+       Returning a container makes Parsley append() into that instead. For the
+       skins, the wrapper itself is right: their popup menus are absolutely
+       positioned, so the message still renders directly under the control. Both
+       skins are covered — this file's .cs-select and the .bootstrap-select from
+       the .select2() shim in index.php (which this file deliberately skips, see
+       isEligible). For input groups, the message goes in a plain block inserted
+       immediately after the group, so it clears the flex row and still sits
+       above any help text that follows.
+
+       Anything unwrapped matches neither and keeps Parsley's default.
+
+       Parsley loads before this file in index.php; the guard is for pages that
+       do not include it at all. */
+    if (window.Parsley && window.jQuery) {
+        window.Parsley.options.errorsContainer = function (field) {
+            var $ = window.jQuery;
+
+            var skin = field.$element.closest('.cs-select, .bootstrap-select');
+            if (skin.length) return skin;
+
+            var group = field.$element.closest('.input-group');
+            if (group.length) {
+                // Parsley inserts once per field, so this box is built once.
+                var box = group.next('.parsley-errors-box');
+                if (!box.length) box = $('<div class="parsley-errors-box"></div>').insertAfter(group);
+                return box;
+            }
+
+            return undefined;
+        };
+    }
+
     // ---- helpers ------------------------------------------------------------
 
     function el(tag, cls, html) {

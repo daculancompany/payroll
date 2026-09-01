@@ -2513,11 +2513,13 @@ function findRec(recId) {
     return null;
 }
 // Mirrors the server's flag rules (blockers first, 'manual' informational)
-// so flags stay correct after client-side edits without a refetch.
+// so flags stay correct after client-side edits without a refetch. A row with
+// no punches at all raises no blocker — see the note on the server copy.
 function recFlags(r) {
     const f = [];
-    if ((r.logs || []).length < 2) f.push('no_out');
-    if (r.wh <= 0) f.push('zero_hours');
+    const hasPunch = (r.logs || []).length > 0;
+    if (hasPunch && (r.logs || []).length < 2) f.push('no_out');
+    if (hasPunch && r.wh <= 0) f.push('zero_hours');
     if (r.ot > OT_HOURS) f.push('high_ot');
     if ((r.logs || []).some(l => !l.bio)) f.push('manual');
     if (r.is_rest_day && r.wh > 0) f.push('rest_worked');

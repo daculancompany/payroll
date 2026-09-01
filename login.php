@@ -87,6 +87,10 @@
         }
     </style>
 
+    <!-- Global Material component skin (shared with the employee portal).
+         Mobile-scoped; must be the LAST stylesheet so it wins cascade ties. -->
+    <link href="assets2/css/portal-md.css?v=<?= htmlspecialchars(APP_VERSION) ?>" rel="stylesheet">
+
 </head>
 
 <body>
@@ -266,6 +270,8 @@
             });
         });
     </script>
+    <!-- Material touch ripple for the component skin (mobile only) -->
+    <script src="assets2/js/portal-md.js?v=<?= htmlspecialchars(APP_VERSION) ?>"></script>
 </body>
 
 </html>

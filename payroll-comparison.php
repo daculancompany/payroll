@@ -12,11 +12,8 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
 <style>
     /* ── Payroll Comparison — brand purple ── */
     .pc-wrap { --pc:#6642aa; --pc-d:#4e3483; }
-    .pc-selectbar { background:#fff; border:1px solid #e2e8f0; border-top:3px solid var(--pc); border-radius:10px; box-shadow:0 1px 6px rgba(102,66,170,.07); }
-    .pc-flabel { font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.5px; color:var(--pc); margin-bottom:4px; display:block; }
-    .pc-vs { width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,var(--pc),var(--pc-d)); color:#fff; font-weight:800; font-size:12px; display:flex; align-items:center; justify-content:center; box-shadow:0 3px 8px rgba(102,66,170,.35); }
-    .pc-btn { background:linear-gradient(135deg,var(--pc),var(--pc-d)); color:#fff; font-weight:700; border:none; }
-    .pc-btn:hover { opacity:.92; color:#fff; }
+    /* The period pickers moved into #modal-filter-comparison — the old
+       .pc-selectbar / .pc-vs / .pc-btn bar styles went with them. */
 
     /* Summary cards */
     .pc-stat { background:#fff; border:1px solid #e9eef5; border-radius:12px; padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 6px rgba(0,0,0,.05); height:100%; }
@@ -69,38 +66,6 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
         </div>
     </div>
 
-    <!-- Period selectors -->
-    <div class="pc-selectbar mb-3">
-        <div class="p-3">
-            <div class="row g-3 align-items-end">
-                <div class="col-md-5">
-                    <label class="pc-flabel"><i class="ri-calendar-line me-1"></i>Period A</label>
-                    <select id="sel-a" class="form-control" data-cs-icon="ri-calendar-line">
-                        <?php foreach ($payrolls as $p): ?>
-                        <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-auto d-none d-md-flex justify-content-center pb-1">
-                    <div class="pc-vs">VS</div>
-                </div>
-                <div class="col-md-5">
-                    <label class="pc-flabel"><i class="ri-calendar-line me-1"></i>Period B</label>
-                    <select id="sel-b" class="form-control" data-cs-icon="ri-calendar-line">
-                        <?php foreach ($payrolls as $p): ?>
-                        <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?></option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-auto">
-                    <button onclick="loadComparison()" class="btn btn-sm pc-btn w-100">
-                        <i class="ri-arrow-left-right-line me-1"></i>Compare
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Summary strip -->
     <div id="cmp-summary" style="display:none;" class="row g-3 mb-3">
         <div class="col-6 col-md-3">
@@ -146,7 +111,21 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
     </div>
 
     <!-- Results table -->
-    <div class="card">
+    <div class="card rpt-card">
+        <div class="card-header align-items-center d-flex">
+            <h5 class="card-title mb-0 flex-grow-1"><i class="ri-arrow-left-right-line me-1" style="color:#6642aa;"></i>Period Comparison</h5>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-comparison">
+                    <i class="ri-filter-3-line me-1"></i>Filter
+                </button>
+            </div>
+        </div>
+        <div class="rpt-filter-bar mx-3 mt-3" id="cmp-filter-bar" style="display:none;">
+            <i class="ri-filter-3-line" style="opacity:.85;"></i>
+            <span>Period A: <span class="val" id="cmp-bar-a"></span></span>
+            <span>Period B: <span class="val" id="cmp-bar-b"></span></span>
+            <span class="ms-auto"><span class="val" id="cmp-bar-count">0</span> employee(s)</span>
+        </div>
         <div class="pc-toolbar" id="cmp-tools" style="display:none;">
             <span style="font-size:11px;color:#888;"><span id="cmp-count">0</span> employees</span>
             <select id="cmp-emp" class="form-select form-select-sm" style="max-width:240px;">
@@ -168,7 +147,10 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
                     <tbody id="cmp-body">
                         <tr><td colspan="10" class="text-center py-5" style="color:#bbb;">
                             <i class="ri-arrow-left-right-line" style="font-size:38px;display:block;margin-bottom:8px;opacity:.5;"></i>
-                            Select two payroll periods above and click <b>Compare</b>
+                            <div class="mb-3">Pick two payroll periods from <b>Filter</b> to compare them.</div>
+                            <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-comparison">
+                                <i class="ri-filter-3-line me-1"></i>Choose periods
+                            </button>
                         </td></tr>
                     </tbody>
                 </table>
@@ -177,6 +159,41 @@ while ($r = $payrolls_res->fetch_assoc()) $payrolls[] = $r;
     </div>
 
 </div></div></div>
+
+<!-- Filter modal — same shape as the Payroll List Report's filter. The compare
+     runs over AJAX, so Apply calls loadComparison() instead of submitting. -->
+<div class="modal fade" id="modal-filter-comparison" tabindex="-1" role="dialog">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title mb-0"><i class="ri-filter-3-line me-2" style="color:#673bb6;"></i>Filter Payroll Comparison</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-line me-1"></i>Period A</label>
+                    <select id="sel-a" class="form-control" data-cs-icon="ri-calendar-line" data-cs-search="true">
+                        <?php foreach ($payrolls as $p): ?>
+                        <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="mb-1">
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-line me-1"></i>Period B</label>
+                    <select id="sel-b" class="form-control" data-cs-icon="ri-calendar-line" data-cs-search="true">
+                        <?php foreach ($payrolls as $p): ?>
+                        <option value="<?= $p['id'] ?>"><?= htmlspecialchars($p['ref_no']) ?> | <?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer" style="background:#f8f9fa;">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal"><i class="ri-close-line me-1"></i>Cancel</button>
+                <button type="button" onclick="loadComparison()" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"><i class="ri-arrow-left-right-line me-1"></i>Compare</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script>
 function fmt(v){ return '₱'+parseFloat(v||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}); }
@@ -200,6 +217,10 @@ function loadComparison(){
     if(!idA||!idB){ Swal.fire({icon:'info',title:'Select both periods',timer:1600,showConfirmButton:false}); return; }
     if(idA===idB){ Swal.fire({icon:'info',title:'Pick two different periods',timer:1600,showConfirmButton:false}); return; }
 
+    // Inputs are valid — dismiss the filter modal so the result is visible.
+    var fm = document.getElementById('modal-filter-comparison');
+    if (fm && window.bootstrap) { var inst = bootstrap.Modal.getInstance(fm); if (inst) inst.hide(); }
+
     document.getElementById('cmp-body').innerHTML='<tr><td colspan="10" class="text-center py-4"><div class="spinner-border spinner-border-sm text-success"></div> Loading…</td></tr>';
 
     fetch('ajax.php?action=compare_payrolls',{
@@ -217,6 +238,10 @@ function loadComparison(){
         renderSummary();
         renderMovers();
         document.getElementById('cmp-tools').style.display='flex';
+        document.getElementById('cmp-bar-a').textContent = CMP.labelA;
+        document.getElementById('cmp-bar-b').textContent = CMP.labelB;
+        document.getElementById('cmp-bar-count').textContent = CMP.rows.length;
+        document.getElementById('cmp-filter-bar').style.display='flex';
     });
 }
 

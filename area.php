@@ -132,7 +132,10 @@ $__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin'
 <!-- Add / Edit area -->
 <div class="modal fade" id="modal-area" tabindex="-1">
     <div class="modal-dialog">
-        <form id="form-area">
+        <!-- novalidate hands validation to Parsley — without it the browser's own
+             "Please fill out this field" bubble fires first and the styled
+             .parsley-errors-list message never shows. -->
+        <form id="form-area" data-parsley-validate novalidate>
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="area-modal-title"><i class="ri-node-tree me-2" style="color:#673bb6;"></i>Add Area</h6>
@@ -142,11 +145,16 @@ $__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin'
                     <input type="hidden" id="area-id" name="id" value="">
                     <div class="mb-3">
                         <label class="form-label">Area Name <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="area-name" name="name" placeholder="e.g. NURSE STATION 4" required>
+                        <input type="text" class="form-control" id="area-name" name="name" placeholder="e.g. NURSE STATION 4"
+                               data-parsley-required-message="Area name is required."
+                               data-parsley-maxlength="100"
+                               data-parsley-maxlength-message="Keep the name under 100 characters."
+                               required>
                     </div>
                     <div class="mb-1">
                         <label class="form-label">Department <span class="text-danger">*</span></label>
-                        <select class="form-control" id="area-dept" name="department_id" required>
+                        <select class="form-control" id="area-dept" name="department_id"
+                                data-parsley-required-message="Pick the department this area belongs to." required>
                             <option value="">— Select department —</option>
                             <?php
                             $dq = $conn->query("SELECT id, name FROM department ORDER BY name ASC");
@@ -243,6 +251,8 @@ document.getElementById('modal-area').addEventListener('hidden.bs.modal', functi
     document.getElementById('form-area').reset();
     document.getElementById('area-id').value = '';
     document.getElementById('area-modal-title').innerHTML = '<i class="ri-node-tree me-2" style="color:#673bb6;"></i>Add Area';
+    // Clear the error list too, or the next open still shows the last message.
+    if (window.jQuery && jQuery.fn.parsley) jQuery('#form-area').parsley().reset();
 });
 
 function editApprovers(a) {
@@ -263,9 +273,31 @@ async function postForm(action, form) {
 
 document.getElementById('form-area').addEventListener('submit', async function (e) {
     e.preventDefault();
-    const json = await postForm('save_area', this);
-    if (json && json.result) { location.reload(); }
-    else { Swal.fire({ icon: 'error', title: 'Error', text: (json && json.message) || 'Failed to save.' }); }
+
+    // Same gate the other CRUD pages use (position.js, sites.js, clusters.js).
+    if (window.jQuery && jQuery.fn.parsley) {
+        const form = jQuery(this);
+        form.parsley().validate();
+        if (!form.parsley().isValid()) return;
+    }
+
+    const name = document.getElementById('area-name');
+    name.value = name.value.trim();          // "   " must not pass as a name
+    if (!name.value) { if (window.jQuery && jQuery.fn.parsley) jQuery(this).parsley().validate(); return; }
+
+    const btn = this.querySelector('button[type="submit"]');
+    const label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+
+    try {
+        const json = await postForm('save_area', this);
+        if (json && json.result) { location.reload(); return; }
+        Swal.fire({ icon: 'error', title: 'Error', text: (json && json.message) || 'Failed to save.' });
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = label;
+    }
 });
 
 document.getElementById('form-approvers').addEventListener('submit', async function (e) {

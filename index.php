@@ -1365,9 +1365,9 @@ function getRole($login_role)
     <?php if ($page == 'daily-board') { ?>
         <script src="assets2/js/daily-board.js?v=4"></script>
     <?php } ?>
-    <?php if ($page == 'department') { ?>
-        <script src="assets2/js/department.js"></script>
-    <?php } ?>
+    <?php // department.js was written against the old markup (#form-add, #data-table,
+          // #modal, #name). department.php now ships its own inline handler, so the
+          // file matched nothing — it only leaked the globals `id` and `btnText`. ?>
     <?php if ($page == 'branch') { ?>
         <script src="assets2/js/branch.js"></script>
     <?php } ?>

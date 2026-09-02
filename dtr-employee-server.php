@@ -217,11 +217,17 @@ if ($action === 'docs') {
     $params = [$ddtrId];
 
     if ($q !== '') {
-        $where .= " AND (e.lastname LIKE ? OR e.firstname LIKE ? OR e.middlename LIKE ?
-                         OR e.employee_no LIKE ? OR p.name LIKE ? OR dep.name LIKE ?)";
-        $like = '%' . $q . '%';
-        $types .= 'ssssss';
-        array_push($params, $like, $like, $like, $like, $like, $like);
+        // Token search, not whole-string: names get typed off the paper sheet as
+        // "ABALLE, JUNELYN", which no single column contains. Split on spaces and
+        // commas and require EVERY token to hit one of the fields, so
+        // "ABALLE, JUNELYN", "JUNELYN ABALLE" and plain "ABALLE" all find her.
+        foreach (preg_split('/[\s,]+/', $q, -1, PREG_SPLIT_NO_EMPTY) as $tk) {
+            $where .= " AND (e.lastname LIKE ? OR e.firstname LIKE ? OR e.middlename LIKE ?
+                             OR e.employee_no LIKE ? OR p.name LIKE ? OR dep.name LIKE ?)";
+            $like = '%' . $tk . '%';
+            $types .= 'ssssss';
+            array_push($params, $like, $like, $like, $like, $like, $like);
+        }
     }
 
     // status filter → employees by their approval state within this batch:
@@ -336,7 +342,14 @@ if ($action === 'docs') {
         // its employee must not be pulled in by these two chips either.
         $hasLog = "JSON_VALID(logs) AND JSON_LENGTH(logs) > 0";
         $flagConds = [
-            'no_out'      => "$hasLog AND JSON_LENGTH(logs) < 2",
+            // is_complete is stamped by the SAME pairing that applies the
+            // early-punch grace filter, so it is the truth about "did an out
+            // ever pair". A raw count of 2 can still be an open shift when one
+            // punch is a discarded leftover of the previous night — those rows
+            // slipped through a plain < 2 and the filter missed exactly the
+            // days it exists to surface. The < 2 net stays for rows predating
+            // the column.
+            'no_out'      => "$hasLog AND (JSON_LENGTH(logs) < 2 OR is_complete = 0)",
             'zero_hours'  => "$hasLog AND work_hours <= 0",
             'high_ot'     => "overtime > $otMax",
             'manual'      => "(logs LIKE '%\"manual\"%' OR logs LIKE '%\"incident\"%')",
@@ -455,7 +468,7 @@ if ($action === 'docs') {
             $E = &$byEmp[$eid];
             $date = $row['attendance_date'];
             if (!isset($E['days'][$date])) {
-                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => '', 'sched_id' => null, 'sched_start' => null, 'day_hours' => null];
+                $E['days'][$date] = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0, 'status' => 1, 'logs' => 0, 'recs' => [], 'note' => '', 'sched_id' => null, 'sched_start' => null, 'day_hours' => null, 'brk' => null];
                 $E['_logs'][$date] = [];
             }
             $D = &$E['days'][$date];
@@ -482,6 +495,13 @@ if ($action === 'docs') {
             // (late == day_hours / 2) when explaining the Late cell.
             if ($D['day_hours'] === null && $row['day_hours'] !== null) {
                 $D['day_hours'] = (float) $row['day_hours'];
+            }
+            // Stamped unpaid break, in minutes — the Time & Attendance export
+            // prints it as its own "Tot Hrs Break" column, and like every other
+            // figure on that sheet it has to be the one frozen on the row, not
+            // whatever the shift carries today.
+            if ($D['brk'] === null && $row['sched_break'] !== null) {
+                $D['brk'] = (int) $row['sched_break'];
             }
             $D['wh']   += (float)$row['work_hours'];
             $D['ot']   += (float)$row['overtime'];
@@ -531,7 +551,10 @@ if ($action === 'docs') {
             $ot = (float)$row['overtime'];
             $hasPunch = count($recLogs) > 0;
             $flags = [];
-            if ($hasPunch && count($recLogs) < 2)           $flags[] = 'no_out';
+            // Effective, not raw: a leftover punch the grace filter discards
+            // still sits in $recLogs, so an open shift can carry two raw
+            // punches. is_complete says whether an out actually PAIRED.
+            if ($hasPunch && (count($recLogs) < 2 || !(int) $row['is_complete'])) $flags[] = 'no_out';
             if ($hasPunch && $wh <= 0)                      $flags[] = 'zero_hours';
             if ($ot > DTR_HIGH_OT_HOURS)                     $flags[] = 'high_ot';
             if ($hasManual)                                 $flags[] = 'manual';
@@ -957,11 +980,17 @@ if ($action === 'list') {
     $params = [$ddtrId];
 
     if ($q !== '') {
-        $where .= " AND (e.lastname LIKE ? OR e.firstname LIKE ? OR e.middlename LIKE ?
-                         OR e.employee_no LIKE ? OR p.name LIKE ? OR dep.name LIKE ?)";
-        $like = '%' . $q . '%';
-        $types .= 'ssssss';
-        array_push($params, $like, $like, $like, $like, $like, $like);
+        // Token search, not whole-string: names get typed off the paper sheet as
+        // "ABALLE, JUNELYN", which no single column contains. Split on spaces and
+        // commas and require EVERY token to hit one of the fields, so
+        // "ABALLE, JUNELYN", "JUNELYN ABALLE" and plain "ABALLE" all find her.
+        foreach (preg_split('/[\s,]+/', $q, -1, PREG_SPLIT_NO_EMPTY) as $tk) {
+            $where .= " AND (e.lastname LIKE ? OR e.firstname LIKE ? OR e.middlename LIKE ?
+                             OR e.employee_no LIKE ? OR p.name LIKE ? OR dep.name LIKE ?)";
+            $like = '%' . $tk . '%';
+            $types .= 'ssssss';
+            array_push($params, $like, $like, $like, $like, $like, $like);
+        }
     }
 
     $countSql = "SELECT COUNT(DISTINCT e.id) AS total

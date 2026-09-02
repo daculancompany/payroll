@@ -295,7 +295,7 @@ CREATE TABLE `clusters` (
 /*!40101 SET character_set_client = utf8 */;
 CREATE TABLE `contribution_loan_types` (
   `clt_id` int(20) NOT NULL AUTO_INCREMENT,
-  `loan_type` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `loan_type` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   PRIMARY KEY (`clt_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -1261,8 +1261,8 @@ INSERT INTO `contributions` (`id`, `contribution`) VALUES (3,'HDMF');
 -- Dumping data for table `contribution_loan_types`
 --
 
-INSERT INTO `contribution_loan_types` (`clt_id`, `loan_type`) VALUES (1,'SSS\r\nS-LOAN');
-INSERT INTO `contribution_loan_types` (`clt_id`, `loan_type`) VALUES (2,'HDMF\r\nMPL-LOA\r\nN');
+INSERT INTO `contribution_loan_types` (`clt_id`, `loan_type`) VALUES (1,'SSS S-LOAN');
+INSERT INTO `contribution_loan_types` (`clt_id`, `loan_type`) VALUES (2,'HDMF MPL-LOAN');
 
 --
 -- Dumping data for table `deductions`

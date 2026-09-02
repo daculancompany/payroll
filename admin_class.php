@@ -7950,7 +7950,25 @@ class Action
                         // yesterday's shift end could not be resolved at all.
                         $merge_ceiling = $prev_end !== null ? $prev_end + 12 * 3600
                             : ($lastTs ? $lastTs + 16 * 3600 : null);
-                        if ($gap > 0 && $merge_ceiling !== null && $scan_ts <= $merge_ceiling) {
+                        // A punch landing on TODAY's own rostered shift start is that
+                        // shift's TIME-IN, not yesterday's time-out. Back-to-back
+                        // night shifts make the two indistinguishable by ceiling
+                        // alone: a 7PM–7AM shift's 12h OT ceiling runs to 7PM the
+                        // next day — exactly when the next 7PM shift begins — so an
+                        // 18:57 arrival merged backwards, handed the previous day
+                        // ~12h of overtime nobody worked, and left the new shift with
+                        // no row at all. Whichever scheduled boundary the punch is
+                        // NEARER to wins, the same tie-break repairPunchDates uses.
+                        // Only a rostered DUTY day may claim it — a fallback shift is
+                        // a guess and a rest day is not a shift.
+                        $today_start = (isset($schedule['day_is_rest'])
+                                        && (int) $schedule['day_is_rest'] === 0)
+                            ? strtotime($scan_date . ' ' . $schedule['start_time'])
+                            : null;
+                        $is_today_timein = $today_start !== null && $prev_end !== null
+                            && abs($scan_ts - $today_start) < abs($scan_ts - $prev_end);
+                        if (!$is_today_timein && $gap > 0 && $merge_ceiling !== null
+                            && $scan_ts <= $merge_ceiling) {
                             $scan_date = $prev_date;   // case 1: time-out
                         }
                     } elseif ($gap >= 0 && $gap < 300) {
@@ -7961,7 +7979,24 @@ class Action
                 // Was `<`: an out-punch at EXACTLY the scheduled end (06:00:00 on a
                 // 10PM–6AM shift) failed the strict compare and opened a next-day —
                 // next-cutoff — orphan row. `<=` keeps it on the shift's own day.
-                if ($scan_ts <= $prev_end) $scan_date = $prev_date;                   // case 3: late time-in
+                //
+                // Yesterday has no row yet, so there is nothing to merge into — but
+                // the punch can still belong to yesterday's shift, and the bare
+                // scheduled end leaves it no overtime at all. When yesterday is on
+                // the published roster and TODAY is not, today's shift is only an
+                // employee_schedules fallback — a guess at which shift they would be
+                // on, not a statement that they were on duty — so it cannot outrank
+                // a real rostered night shift still missing its clock-out. Give the
+                // punch the same 12h OT ceiling case 1 grants a row that exists.
+                // Without this a 7:40 AM clock-out from a 7PM–7AM shift opened its
+                // own day forty minutes past the shift end, in the NEXT payroll
+                // cutoff, leaving the night shift with no time-out and zero hours.
+                $prev_rostered  = isset($prev_schedule['day_is_rest']);
+                $today_rostered = isset($schedule['day_is_rest']);
+                $ceiling3 = ($prev_is_overnight && $prev_rostered && !$today_rostered)
+                    ? $prev_end + 12 * 3600
+                    : $prev_end;
+                if ($prev_end !== null && $scan_ts <= $ceiling3) $scan_date = $prev_date;   // case 3: late time-in
             }
 
             // The re-dated day may fall under a different schedule assignment —
@@ -9985,6 +10020,99 @@ class Action
             $this->db->query("UPDATE loans set " . $data . " where loan_id=" . $id);
             return 2;
         }
+    }
+
+    /**
+     * Loan type master list (contribution_loan_types). Create when `id` is
+     * empty, otherwise rename. Names are trimmed, inner whitespace collapsed
+     * (the seed rows carried literal CR/LF), capped at the column width and
+     * must be unique case-insensitively.
+     *
+     * @return array{status:string, id?:int, message?:string}
+     */
+    function save_loan_type()
+    {
+        $id   = (int) ($_POST['id'] ?? 0);
+        $name = trim(preg_replace('/\s+/u', ' ', (string) ($_POST['loan_type'] ?? '')));
+
+        if ($name === '') {
+            return ['status' => 'error', 'message' => 'Loan type name is required.'];
+        }
+        if (mb_strlen($name) > 100) {
+            return ['status' => 'error', 'message' => 'Loan type name must be 100 characters or fewer.'];
+        }
+
+        $dup = $this->db->prepare(
+            "SELECT clt_id FROM contribution_loan_types WHERE LOWER(loan_type) = LOWER(?) AND clt_id <> ? LIMIT 1"
+        );
+        $dup->bind_param('si', $name, $id);
+        $dup->execute();
+        $exists = $dup->get_result()->fetch_assoc();
+        $dup->close();
+        if ($exists) {
+            return ['status' => 'error', 'message' => "A loan type named \"$name\" already exists."];
+        }
+
+        if ($id > 0) {
+            $st = $this->db->prepare("UPDATE contribution_loan_types SET loan_type = ? WHERE clt_id = ?");
+            $st->bind_param('si', $name, $id);
+            $ok = $st->execute();
+            $st->close();
+            if (!$ok) {
+                return ['status' => 'error', 'message' => 'Could not update the loan type.'];
+            }
+            return ['status' => 'ok', 'id' => $id, 'updated' => true];
+        }
+
+        $st = $this->db->prepare("INSERT INTO contribution_loan_types (loan_type) VALUES (?)");
+        $st->bind_param('s', $name);
+        $ok = $st->execute();
+        $newId = (int) $this->db->insert_id;
+        $st->close();
+        if (!$ok) {
+            return ['status' => 'error', 'message' => 'Could not save the loan type.'];
+        }
+        return ['status' => 'ok', 'id' => $newId, 'updated' => false];
+    }
+
+    /**
+     * Remove a loan type. Refused while any loan (active or paid) still points
+     * at it — those rows would otherwise show "—" on payslips and reports.
+     * Endpoint is live but the Loan Types card shows no Delete button for now.
+     *
+     * @return array{status:string, message?:string}
+     */
+    function delete_loan_type()
+    {
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id <= 0) {
+            return ['status' => 'error', 'message' => 'Invalid loan type.'];
+        }
+
+        $st = $this->db->prepare("SELECT COUNT(*) AS n FROM loans WHERE loan_type = ?");
+        $st->bind_param('i', $id);
+        $st->execute();
+        $used = (int) $st->get_result()->fetch_assoc()['n'];
+        $st->close();
+        if ($used > 0) {
+            return [
+                'status'  => 'error',
+                'message' => "This loan type is used by $used loan record" . ($used === 1 ? '' : 's') . " and cannot be deleted.",
+            ];
+        }
+
+        $st = $this->db->prepare("DELETE FROM contribution_loan_types WHERE clt_id = ?");
+        $st->bind_param('i', $id);
+        $ok = $st->execute();
+        $gone = $st->affected_rows;
+        $st->close();
+        if (!$ok) {
+            return ['status' => 'error', 'message' => 'Could not delete the loan type.'];
+        }
+        if ($gone < 1) {
+            return ['status' => 'error', 'message' => 'Loan type not found. It may have already been deleted.'];
+        }
+        return ['status' => 'ok'];
     }
 
     function active_employee_loan()
@@ -12555,11 +12683,65 @@ class Action
                 continue;
             }
 
-            // ── PULL: a night shift left open, its clock-out on the next row ──
-            if (count($own) !== 1) continue;
-            if ($own[0]['t'] >= $end) continue;      // lone punch is already past the shift
+            // ── PUSH (overnight): the NEXT shift's time-in swallowed by this row ──
+            // Back-to-back night shifts leave ingestion nothing to separate them by:
+            // a 7PM–7AM shift's 12h OT ceiling runs to 7PM the next day, exactly when
+            // the next 7PM shift begins, so the new shift's time-in was merged
+            // backwards. That handed this row ~12h of overtime nobody worked and left
+            // the next day with no row at all. Same tie-break used everywhere else —
+            // a punch nearer the NEXT day's rostered start than this row's own end is
+            // that shift's time-in and belongs on its own day. Only a rostered DUTY
+            // day may claim it: a fallback shift is a guess, a rest day is no shift.
+            // Runs before the PULL below so a row carrying both problems is repaired
+            // in one pass, and the freshly opened day is re-derived with the rest.
+            $nextDate = date('Y-m-d', strtotime('+1 day', strtotime($date)));
+            if (count($own) >= 2) {
+                $nsch = resolve_employee_schedule($this->db, $eid, $nextDate);
+                if ($nsch !== null && isset($nsch['day_is_rest']) && (int) $nsch['day_is_rest'] === 0) {
+                    $nStart = strtotime($nextDate . ' ' . $nsch['start_time']);
+                    $lastOwn = $own[count($own) - 1];
+                    if (abs($lastOwn['t'] - $nStart) < abs($lastOwn['t'] - $end)) {
+                        [$tpos, $trow] = $rowAt($eid, $nextDate);
+                        $opened = false;
+                        if (!$trow) { $trow = $openRow($eid, $rows[$i]['id'], $nextDate); $opened = (bool) $trow; }
+                        if ($trow) {                       // no safe home → leave it put
+                            $tjson = $encode(array_merge($entries($trow['logs']), [$lastOwn]));
+                            $write($trow['id'], $tjson);
+                            $trow['logs'] = $tjson;
+                            $attach($tpos, $trow);
+                            if ($opened) {
+                                $note($trow['id'], 'Time-in moved from ' . date('M j', strtotime($date)) . ' — own shift starts here');
+                            }
+                            $own  = array_slice($own, 0, count($own) - 1);
+                            $json = $encode($own);
+                            $write($rows[$i]['id'], $json);
+                            $rows[$i]['logs'] = $json;
+                        }
+                    }
+                }
+            }
 
-            $next = date('Y-m-d', strtotime('+1 day', strtotime($date)));
+            // ── PULL: a night shift left open, its clock-out on the next row ──
+            // Count what actually PAIRS, not the raw list. dtr_compute_day drops
+            // punches more than the grace window before the shift start, so a row
+            // can hold two raw punches and still be an open shift — the extra one
+            // is a leftover (usually the previous night's clock-out) that pairing
+            // never sees. Counting raw made the rule skip the very rows it exists
+            // to repair: an in at 7:31 PM with a discarded 7:00 AM leftover read as
+            // a two-punch day and kept its real clock-out stranded on tomorrow.
+            // The leftover stays on the row for audit; it just does not vote.
+            // Mirrors the filter's own fallback: when every punch precedes the
+            // cutoff the filter is skipped and all punches stand.
+            $pair = $own;
+            if (!empty($sched['start_time'])) {
+                $cut  = strtotime($date . ' ' . $sched['start_time']) - dtr_early_grace_hours() * 3600;
+                $kept = array_values(array_filter($own, function ($e) use ($cut) { return $e['t'] >= $cut; }));
+                if ($kept) $pair = $kept;
+            }
+            if (count($pair) !== 1) continue;
+            if ($pair[0]['t'] >= $end) continue;     // lone punch is already past the shift
+
+            $next = $nextDate;
             [$pos, $nrow] = $rowAt($eid, $next);
             if (!$nrow) continue;
 
@@ -12569,7 +12751,13 @@ class Action
             // Can the next day own the punch itself? A rest day cannot, and
             // neither can a shift that had not started yet.
             $nsched = resolve_employee_schedule($this->db, $eid, $next);
-            if ($nsched !== null && isset($nsched['day_is_rest'])) {
+            // A published duty-roster row is what makes a day's shift a FACT;
+            // `day_is_rest` is set only when one exists. Without it the shift is
+            // an employee_schedules fallback — a guess at which shift they would
+            // be on, not a statement that they were on duty.
+            $nRostered    = ($nsched !== null && isset($nsched['day_is_rest']));
+            $thisRostered = isset($sched['day_is_rest']);
+            if ($nRostered) {
                 $nrest = (int) $nsched['day_is_rest'];
             } else {
                 $csv   = (string) ($nsched['rest_days'] ?? '');
@@ -12579,12 +12767,45 @@ class Action
             $nstart = ($nsched && !$nrest)
                 ? strtotime($next . ' ' . $nsched['start_time']) - dtr_early_grace_hours() * 3600
                 : null;
+            // The next day's shift start WITHOUT the grace window. Both shifts
+            // can reach the same punch — the grace reaches backwards from the
+            // morning, the night shift's OT ceiling reaches forwards past its
+            // end — so the tie has to be broken on the boundaries themselves,
+            // not on the window around one of them.
+            $nstartExact = ($nsched && !$nrest)
+                ? strtotime($next . ' ' . $nsched['start_time'])
+                : null;
 
             $keep = $move = [];
+            $claimed = false;                 // a night shift has only one clock-out
             foreach ($nlogs as $e) {
                 $ownable = $nstart !== null && $e['t'] >= $nstart;
-                if (!$ownable && $e['t'] > $own[0]['t'] && $e['t'] <= $ceiling) $move[] = $e;
-                else $keep[] = $e;
+                // Contested punch — both shifts can reach it. The still-open night
+                // shift takes priority outright when the next day is NOT on the
+                // published roster: a fallback shift is a guess and cannot outrank
+                // a real rostered shift whose clock-out is still missing. When the
+                // next day IS rostered both claims are real, so the nearer
+                // scheduled boundary decides.
+                //
+                // Before this the grace window won outright, so a 7:02 AM punch two
+                // minutes past a 7PM–7AM shift's end read as a four-hours-early
+                // arrival for an 8AM day shift — the night shift kept no clock-out
+                // and computed to zero, and the morning kept an arrival for a day
+                // that was never worked.
+                if ($ownable && !$claimed) {
+                    if ($thisRostered && !$nRostered) {
+                        $ownable = false;
+                    } elseif ($nstartExact !== null
+                        && abs($e['t'] - $end) < abs($e['t'] - $nstartExact)) {
+                        $ownable = false;
+                    }
+                }
+                if (!$ownable && $e['t'] > $pair[0]['t'] && $e['t'] <= $ceiling) {
+                    $move[]  = $e;
+                    $claimed = true;
+                } else {
+                    $keep[] = $e;
+                }
             }
             if (!$move) continue;
 

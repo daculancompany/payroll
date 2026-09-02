@@ -28,6 +28,18 @@ $loans_res = $conn->query("
     WHERE l.loan_status = 0 AND l.loan_balance > 0
     ORDER BY l.loan_balance DESC
 ");
+
+// Loan type master list with usage counts (all loans, active or paid).
+// Add + rename only in the UI for now; the delete_loan_type endpoint exists
+// (refuses types still referenced by a loan) but has no button here yet.
+$loan_types_res = $conn->query("
+    SELECT clt.clt_id, clt.loan_type, COUNT(l.loan_id) AS in_use
+    FROM contribution_loan_types clt
+    LEFT JOIN loans l ON l.loan_type = clt.clt_id
+    GROUP BY clt.clt_id, clt.loan_type
+    ORDER BY clt.loan_type ASC
+");
+$loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
 ?>
 
 <div class="main-content">
@@ -91,6 +103,51 @@ $loans_res = $conn->query("
                                 <div style="font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.4px;">Deducted / Period</div>
                             </div>
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loan Types (master list behind the Add Loan dropdown) -->
+            <div class="card" id="loan-types-card">
+                <div class="card-header d-flex align-items-center py-2">
+                    <h6 class="card-title mb-0 flex-grow-1"><i class="ri-price-tag-3-line me-2" style="color:#6642aa;"></i>Loan Types</h6>
+                    <?php if ($loan_types_editable): ?>
+                        <button type="button" class="btn btn-sm" style="background:#6642aa;color:#fff;" onclick="loanTypeOpen()">
+                            <i class="ri-add-line align-bottom me-1"></i>Add Loan Type
+                        </button>
+                    <?php endif; ?>
+                </div>
+                <div class="card-body py-2">
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0" id="loan-types-table">
+                            <thead>
+                                <tr>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Loan Type</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;width:140px;">Loans Using It</th>
+                                    <?php if ($loan_types_editable): ?>
+                                        <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;width:100px;">Action</th>
+                                    <?php endif; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($loan_types_res->num_rows === 0): ?>
+                                    <tr><td colspan="3" class="text-center text-muted" style="padding:14px;font-size:12px;">No loan types yet. Add one so it appears in the Add Loan dropdown.</td></tr>
+                                <?php endif; ?>
+                                <?php while ($t = $loan_types_res->fetch_assoc()): $inUse = (int) $t['in_use']; ?>
+                                    <tr>
+                                        <td style="padding:8px 12px;">
+                                            <span style="background:#f0ecf6;color:#4e3483;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;"><?= htmlspecialchars($t['loan_type']) ?></span>
+                                        </td>
+                                        <td style="padding:8px 12px;text-align:right;font-size:12px;color:<?= $inUse ? '#4e3483' : '#aaa' ?>;font-weight:<?= $inUse ? '700' : '400' ?>;"><?= number_format($inUse) ?></td>
+                                        <?php if ($loan_types_editable): ?>
+                                            <td style="padding:6px 12px;text-align:right;white-space:nowrap;">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loanTypeOpen(<?= (int) $t['clt_id'] ?>, this)" data-name="<?= htmlspecialchars($t['loan_type'], ENT_QUOTES) ?>">Edit</button>
+                                            </td>
+                                        <?php endif; ?>
+                                    </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -173,3 +230,117 @@ $loans_res = $conn->query("
         }
     });
 </script>
+
+<?php if ($loan_types_editable): ?>
+<!-- Loan Type add / edit modal -->
+<div class="modal fade" id="modal-loan-type" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <form class="modal-content" id="form-loan-type" method="post" novalidate>
+            <input type="hidden" name="id" id="loan-type-id" value="">
+            <div class="modal-header">
+                <h6 class="modal-title" id="loan-type-title"><i class="ri-price-tag-3-line me-2" style="color:#6642aa;"></i>Add Loan Type</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label fw-semibold" for="loan-type-name" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                    Loan Type Name <span class="text-danger">*</span>
+                </label>
+                <input type="text" class="form-control" id="loan-type-name" name="loan_type" maxlength="100" placeholder="e.g. SSS Calamity Loan" autocomplete="off" required>
+                <div class="form-text" style="font-size:11px;">Shown in the Add Loan dropdown, payslips and loan reports.</div>
+                <div class="text-danger mt-2 d-none" id="loan-type-error" style="font-size:12px;"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-sm" id="loan-type-submit" style="background:#6642aa;color:#fff;">Save Loan Type</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    (function() {
+        var modalEl, modal, form, nameInput, idInput, titleEl, errorEl, submitBtn;
+
+        function els() {
+            if (modalEl) return true;
+            modalEl   = document.getElementById('modal-loan-type');
+            if (!modalEl) return false;
+            form      = document.getElementById('form-loan-type');
+            nameInput = document.getElementById('loan-type-name');
+            idInput   = document.getElementById('loan-type-id');
+            titleEl   = document.getElementById('loan-type-title');
+            errorEl   = document.getElementById('loan-type-error');
+            submitBtn = document.getElementById('loan-type-submit');
+            modal     = (window.bootstrap && bootstrap.Modal) ? bootstrap.Modal.getOrCreateInstance(modalEl) : null;
+
+            form.addEventListener('submit', onSubmit);
+            modalEl.addEventListener('shown.bs.modal', function() { nameInput.focus(); nameInput.select(); });
+            modalEl.addEventListener('hidden.bs.modal', function() { showError(''); form.reset(); idInput.value = ''; });
+            return true;
+        }
+
+        function showError(msg) {
+            if (!errorEl) return;
+            errorEl.textContent = msg || '';
+            errorEl.classList.toggle('d-none', !msg);
+        }
+
+        function setBusy(busy) {
+            submitBtn.disabled = busy;
+            submitBtn.innerHTML = busy ? '<i class="ri-loader-4-line ri-spin me-1"></i>Saving…' : 'Save Loan Type';
+        }
+
+        function postForm(action, data) {
+            var body = new URLSearchParams(data);
+            return fetch('ajax.php?action=' + action, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+                body: body.toString(),
+                credentials: 'same-origin'
+            }).then(function(r) {
+                return r.json().catch(function() {
+                    return { status: 'error', message: r.status === 403 ? 'Your role cannot manage loan types.' : 'Unexpected server response.' };
+                });
+            });
+        }
+
+        function toast(icon, title, text) {
+            if (window.Swal) return Swal.fire({ icon: icon, title: title, text: text || '' });
+            alert(title + (text ? '\n' + text : ''));
+            return Promise.resolve();
+        }
+
+        function onSubmit(e) {
+            e.preventDefault();
+            var name = nameInput.value.replace(/\s+/g, ' ').trim();
+            if (!name) { showError('Loan type name is required.'); nameInput.focus(); return; }
+            showError('');
+            setBusy(true);
+            postForm('save_loan_type', { id: idInput.value, loan_type: name }).then(function(resp) {
+                setBusy(false);
+                if (resp && resp.status === 'ok') {
+                    if (modal) modal.hide();
+                    toast('success', resp.updated ? 'Loan type updated' : 'Loan type added', '"' + name + '" ' + (resp.updated ? 'has been renamed.' : 'is now available in the Add Loan dropdown.'))
+                        .then(function() { window.location.reload(); });
+                } else {
+                    showError((resp && resp.message) || 'Could not save the loan type.');
+                }
+            }).catch(function() {
+                setBusy(false);
+                showError('Network error. Please try again.');
+            });
+        }
+
+        // Open for add (no id) or edit (id + button carrying data-name).
+        window.loanTypeOpen = function(id, btn) {
+            if (!els()) return;
+            var editing = !!id;
+            idInput.value = editing ? id : '';
+            nameInput.value = editing && btn ? (btn.getAttribute('data-name') || '') : '';
+            titleEl.innerHTML = '<i class="ri-price-tag-3-line me-2" style="color:#6642aa;"></i>' + (editing ? 'Edit Loan Type' : 'Add Loan Type');
+            showError('');
+            if (modal) modal.show(); else modalEl.style.display = 'block';
+        };
+    })();
+</script>
+<?php endif; ?>

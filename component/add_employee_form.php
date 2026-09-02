@@ -625,6 +625,9 @@
                         <div class="col-md-6">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Loan Type <span class="text-danger">*</span>
+                                <?php if (function_exists('can_edit') && can_edit('loans')): ?>
+                                    <a href="loans#loan-types-card" target="_blank" rel="noopener" class="ms-1 text-decoration-none" style="font-size:10px;font-weight:600;color:#6642aa;text-transform:none;letter-spacing:0;" title="Add or rename loan types (opens Active Loans)">Manage types <i class="ri-external-link-line"></i></a>
+                                <?php endif; ?>
                             </label>
                             <select id="loan-select" class="form-control select2" name="loan_type"
                                 data-placeholder="Select loan type"

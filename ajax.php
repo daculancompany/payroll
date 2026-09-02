@@ -457,6 +457,18 @@ if ($action == "save_employee_loan") {
 		echo $save;
 }
 
+// Loan type master list (Payroll → Active Loans → Loan Types)
+if ($action == "save_loan_type") {
+	header('Content-Type: application/json');
+	echo json_encode($crud->save_loan_type());
+	return;
+}
+if ($action == "delete_loan_type") {
+	header('Content-Type: application/json');
+	echo json_encode($crud->delete_loan_type());
+	return;
+}
+
 if ($action == "active_employee_loan") {
 	$save = $crud->active_employee_loan();
 	if ($save)

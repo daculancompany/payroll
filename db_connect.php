@@ -420,6 +420,8 @@ if (!defined('ACTION_PAGE_MAP')) {
         'employee_quick_view' => 'employee-details',
         'save_employee_loan' => 'employee-details', 'active_employee_loan' => 'employee-details',
         'loan_history_details' => 'employee-details',
+        // Loan type master list, managed from the Active Loans screen
+        'save_loan_type' => 'loans', 'delete_loan_type' => 'loans',
         'save_employee_allowance' => 'employee-details', 'delete_employee_allowance' => 'employee-details',
         'save_employee_deduction' => 'employee-details', 'delete_employee_deduction' => 'employee-details',
         'save_employee_contribution' => 'employee-details', 'delete_employee_contribution' => 'employee-details',

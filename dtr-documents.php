@@ -2129,9 +2129,19 @@ document.addEventListener('keydown', ev => {
 // — including every filter currently applied.
 async function exportExcel() {
     const btn = $id('ddv-excel-btn');
-    const old = btn.innerHTML;
+    let waitingForDownload = false;
     btn.disabled = true;
-    btn.innerHTML = '<i class="ri-loader-4-line"></i> Preparing…';
+    // The progress lives in a SweetAlert loading modal rather than on the
+    // button: reading pages, building the workbook and waiting for the
+    // download are all long enough to deserve a blocking "working…" surface.
+    Swal.fire({
+        title: 'Preparing export…',
+        html: 'Reading the batch with your current filters.',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        didOpen: () => Swal.showLoading(),
+    });
     try {
         const LIM = 100;
         const all = [];
@@ -2147,13 +2157,33 @@ async function exportExcel() {
         }
         if (!all.length) { Swal.fire('Nothing to export', 'No employees match the current filters.', 'info'); return; }
 
-        // Slim the payload to what the workbook prints — the raw per-day punch
-        // cells and mark metadata would multiply the POST size for nothing.
+        // Slim the payload to what the workbook prints — the mark metadata and
+        // per-record decision trail would multiply the POST size for nothing.
+        // The punch TIMES do go: the Time & Attendance sheet prints every scan
+        // in its In 1 … Out 6 grid, and re-reading them server-side would mean a
+        // second copy of the merge-and-order rules the endpoint already applies.
         const rows = all.map(e => {
             const days = {};
             Object.keys(e.days).forEach(d => {
                 const x = e.days[d];
-                days[d] = { wh: +x.wh || 0, ot: +x.ot || 0, ut: +x.ut || 0, late: +x.late || 0, logs: x.logs || 0 };
+                // Every scan on the day, in order, across however many records
+                // the date carries (a split shift files as two).
+                const p = [];
+                (x.recs || []).forEach(r => (r.logs || []).forEach(l => p.push(l.dt)));
+                p.sort();
+                days[d] = {
+                    wh: +x.wh || 0, ot: +x.ot || 0, ut: +x.ut || 0, late: +x.late || 0, logs: x.logs || 0,
+                    req: x.day_hours == null ? null : +x.day_hours,
+                    brk: x.brk == null ? null : +x.brk,
+                    // Full stamps, not clock times — the writer re-applies the
+                    // early-punch filter, and "7:22" alone cannot say whether it
+                    // is this morning's stray tap or tomorrow's clock-out.
+                    p,
+                    st: x.sched_start || null,
+                    // Rest day per the shift STAMPED on the record — the sheet
+                    // prints a day off as a blank line, not as a 0.00 absence.
+                    rest: (x.recs || []).some(r => r.is_rest_day) ? 1 : 0,
+                };
             });
             return {
                 no: e.no, last: e.lastname, first: e.firstname, mid: e.middlename || '',
@@ -2172,14 +2202,48 @@ async function exportExcel() {
         add('csrf_token', document.querySelector('meta[name="csrf-token"]').content);
         add('id', DDTR_ID);
         add('payload', JSON.stringify({ from: DATE_FROM, to: DATE_TO, rows }));
+
+        // A form-submit download never tells the page it finished, so on its
+        // own the button would look idle while the server is still building
+        // the workbook (only the browser tab spinner moves). The writer echoes
+        // this token back as a `dtr_export_done` cookie ON the download
+        // response, so polling document.cookie is how the button knows the
+        // file has actually started arriving.
+        const token = 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+        add('download_token', token);
+
         document.body.appendChild(f);
+        Swal.update({
+            title: 'Building workbook…',
+            html: 'The download starts by itself when the file is ready.',
+        });
+        Swal.showLoading();   // Swal.update() swaps the loader out; put it back
         f.submit();
         setTimeout(() => f.remove(), 2000);
+
+        waitingForDownload = true;
+        const startedAt = Date.now();
+        const poll = setInterval(() => {
+            const done = document.cookie.split('; ').some(c => c === 'dtr_export_done=' + token);
+            // 3-minute ceiling: if the download response never lands (server
+            // error page, cookie blocked), close the modal anyway.
+            if (done || Date.now() - startedAt > 180000) {
+                clearInterval(poll);
+                document.cookie = 'dtr_export_done=; Max-Age=0; path=/';
+                btn.disabled = false;
+                Swal.close();
+            }
+        }, 400);
     } catch (err) {
         Swal.fire('Export failed', err.message || String(err), 'error');
     } finally {
-        btn.disabled = false;
-        btn.innerHTML = old;
+        // When the form was submitted, the cookie poller above owns the
+        // button and the modal — the download is still in flight here. On the
+        // early exits the info/error Swal.fire has already replaced the
+        // loading modal, so only the button needs giving back.
+        if (!waitingForDownload) {
+            btn.disabled = false;
+        }
     }
 }
 

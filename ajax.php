@@ -757,6 +757,11 @@ if ($action == 'th13_set_final') {
 if ($action == 'save_dtr_punches') {
     echo json_encode($crud->save_dtr_punches());
 }
+// Attendance for a day with no record yet — creates the row, then saves the
+// punches through save_dtr_punches.
+if ($action == 'dtr_add_day') {
+    echo json_encode($crud->dtr_add_day());
+}
 
 if ($action == 'edit_dtr_time') {
     echo json_encode($crud->edit_dtr_time());

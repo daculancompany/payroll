@@ -289,6 +289,21 @@
 /* Keep the gutters symmetric when the column narrows, so the number stays centered. */
 .dtrf48.is-compact .dtrf48-table td.day { width: 68px; min-width: 68px; padding-left: 19px; padding-right: 19px; }
 
+/* Opt-in "+" on a blank day (admin workbench, opt.addDay). Sits in the day
+   cell's right gutter so the day number stays centred; never printed. */
+.dtrf48-table td.day { position: relative; }
+.dtrf48-table td.day .dtrf48-add {
+    position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+    width: 16px; height: 16px; padding: 0; line-height: 14px; font-size: 12px; font-weight: 700;
+    border-radius: 50%; border: 1px solid #c0b5d5; background: #fff; color: #6642aa;
+    cursor: pointer; opacity: .45; font-family: system-ui, Arial, sans-serif;
+    transition: opacity .12s, background .12s, color .12s;
+}
+.dtrf48-table tr:hover td.day .dtrf48-add,
+.dtrf48-table td.day .dtrf48-add:focus-visible { opacity: 1; }
+.dtrf48-table td.day .dtrf48-add:hover { background: #6642aa; border-color: #6642aa; color: #fff; }
+@media print { .dtrf48-table td.day .dtrf48-add { display: none !important; } }
+
 @media (max-width: 575.98px) {
     .dtrf48 .p-name { margin: 0 6px; padding: 0 6px 2px; }
     .dtrf48-table { font-size: 9.5px; }

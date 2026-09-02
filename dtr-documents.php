@@ -748,6 +748,12 @@ body {
            justify-content:center; color:#9d9baa; cursor:help; }
 input.pe-locked { background:#f6f5f9; color:#6c6880; cursor:not-allowed; }
 .pe-empty { font-size:12px; color:#948ea5; padding:10px 2px; }
+/* "Add day" bar at the top of the Records list — attendance for a date that
+   has no record (and so no card below). */
+.ddv-addday { display:flex; align-items:center; justify-content:space-between; gap:8px;
+              margin-bottom:8px; padding:6px 9px; border:1px dashed #d7d3e3; border-radius:9px;
+              background:#faf9fc; font-size:10.5px; font-weight:600; color:#827d91; }
+.ddv-addday .ddv-mini-btn { flex:0 0 auto; padding:0 9px; }
 .pe-hint { font-size:11.5px; color:#7a7391; background:#f7f5fc; border:1px solid #e9e4f5;
            border-radius:9px; padding:8px 11px; margin-bottom:12px; line-height:1.5; }
 .ddv-mini-btn.del  { background:#f3f2f1; color:#605e5c; border-color:#e1dfdd; }
@@ -1582,11 +1588,14 @@ body.view-table .ddv-drawer-btn { display:none !important; }
         <form id="form-edit-punches">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title"><i class="ri-fingerprint-line me-2 text-primary"></i>Edit punches <span id="pe-date-lbl" class="text-muted fw-normal ms-1" style="font-size:12px;"></span></h6>
+                    <h6 class="modal-title"><i class="ri-fingerprint-line me-2 text-primary"></i><span id="pe-title-lbl">Edit punches</span> <span id="pe-date-lbl" class="text-muted fw-normal ms-1" style="font-size:12px;"></span></h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <input type="hidden" id="pe-rec-id">
+                    <!-- Set when the editor is opened for a day with no record yet
+                         (addDayPunches): Save then creates the row with the punches. -->
+                    <input type="hidden" id="pe-new-date">
                     <div class="pe-hint">
                         <i class="ri-information-line me-1"></i>
                         The scans themselves &mdash; hours, OT, undertime and late are recalculated from
@@ -1598,6 +1607,9 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                         deleted, and they are recorded under your name.
                         To re-file a device scan on another day, add it from <i>that</i> day's editor
                         &mdash; it moves across instead of being destroyed.
+                        On a <b>night shift</b>, adding a time-in here also pulls that shift's
+                        clock-out scans from the next morning automatically, so the day closes
+                        with the right hours.
                     </div>
                     <div id="pe-rows"></div>
                     <button type="button" class="btn btn-sm btn-outline-primary mt-1" onclick="peAddRow('')">
@@ -1681,6 +1693,9 @@ const DDTR_ID   = root.dataset.id;
 const DATE_FROM = root.dataset.from;
 const DATE_TO   = root.dataset.to;
 const CAN_EDIT  = root.dataset.canEdit === '1';
+const BATCH_STATUS = parseInt(root.dataset.status, 10) || 0;
+// Admin may add attendance for a day with no record while the batch is not locked.
+const CAN_ADD_DAY = CAN_EDIT && BATCH_STATUS !== 2;
 // Subtitle for the Recompute modal — same period label the header chip shows.
 const RECOMPUTE_PERIOD = <?= json_encode(
     htmlspecialchars($dtr['site_code'] ?? '', ENT_QUOTES) . ' · ' .
@@ -1873,11 +1888,12 @@ const utSplit = ut => { const h = Math.floor(ut); return [h, Math.round((ut - h)
 // Column layout follows DTR_LOG_MODE: 'single' = one Arrival/Departure pair per
 // day; 'ampm' = the classic 4-punch Form 48. Returns HTML so Print All can
 // render every employee with the same markup.
-function docHTML(e) {
+function docHTML(e, extra) {
     // Delegate to the shared global Form 48 template so the admin sheet and the
     // employee portal render identically (now with Work Hrs / OT / Late columns
-    // and a full totals row).
-    return window.DTRForm48.render({
+    // and a full totals row). `extra` carries workbench-only options (the "+"
+    // on blank days) — Print All and the full-view modal pass nothing.
+    return window.DTRForm48.render(Object.assign({
         name: `${e.lastname}, ${e.firstname} ${e.middlename || ''}`.trim(),
         periodLabel: fmtPeriod(),
         dateFrom: DATE_FROM,
@@ -1886,13 +1902,21 @@ function docHTML(e) {
         days: e.days,
         totals: e.totals,
         marks: e.marks,
-    });
+    }, extra || {}));
 }
 
 function renderDoc(e) {
     const paper = $id('ddv-paper');
-    paper.innerHTML = e ? docHTML(e) : '<div class="ddv-doc-empty">Select an employee to view their Daily Time Record.</div>';
+    paper.innerHTML = e ? docHTML(e, { addDay: CAN_ADD_DAY }) : '<div class="ddv-doc-empty">Select an employee to view their Daily Time Record.</div>';
 }
+
+// "+" on a blank day of the sheet → add attendance for that date.
+$id('ddv-paper').addEventListener('click', ev => {
+    const b = ev.target.closest('.dtrf48-add');
+    if (!b) return;
+    ev.preventDefault();
+    addDayPunches(b.dataset.addDate);
+});
 
 function fmtPeriod() {
     const f = new Date(DATE_FROM + 'T00:00:00'), t = new Date(DATE_TO + 'T00:00:00');
@@ -2565,7 +2589,47 @@ function renderRecords(e) {
     });
     $id('ddv-rec-count').textContent = n || '';
     positionInk();   // the count pill changes the Records tab's width
-    box.innerHTML = html || '<div style="font-size:11.5px;color:#948ea5;padding:8px;">No records.</div>';
+    // Days with no record are invisible in this list — the bar above it is
+    // where attendance for such a day gets added.
+    const missing = missingDays(e);
+    const addBar = CAN_ADD_DAY
+        ? `<div class="ddv-addday">
+                <span>${missing.length ? missing.length + ' day(s) without a record' : 'Every day has a record'}</span>
+                <button type="button" class="ddv-mini-btn pun ddv-tip" onclick="pickDayToAdd()" ${missing.length ? '' : 'disabled'}
+                    data-tip="Add attendance for a day the employee never scanned — pick the date, type the punches, and the day is created with them."><i class="ri-calendar-event-line"></i> Add day</button>
+           </div>`
+        : '';
+    box.innerHTML = addBar + (html || '<div style="font-size:11.5px;color:#948ea5;padding:8px;">No records.</div>');
+}
+
+// Period dates this employee has no DTR_details row for.
+function missingDays(e) {
+    const out = [];
+    if (!e) return out;
+    eachDay(iso => { if (!e.days[iso]) out.push(iso); });
+    return out;
+}
+
+const fmtDayLong = iso => new Date(iso + 'T00:00:00')
+    .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+function pickDayToAdd() {
+    const e = st.emps[st.sel];
+    if (!e) return;
+    const missing = missingDays(e);
+    if (!missing.length) {
+        Swal.fire({ icon: 'info', title: 'Nothing to add', text: 'Every day in this period already has a record — use Edit punches on the day instead.' });
+        return;
+    }
+    const opts = {};
+    missing.forEach(iso => { opts[iso] = fmtDayLong(iso); });
+    Swal.fire({
+        title: 'Add attendance',
+        text: `${e.lastname}, ${e.firstname} — pick the day to add.`,
+        input: 'select', inputOptions: opts, inputPlaceholder: 'Select a day…',
+        inputValidator: v => v ? undefined : 'Pick a day.',
+        showCancelButton: true, confirmButtonColor: '#6642aa', confirmButtonText: 'Next',
+    }).then(r => { if (r.isConfirmed && r.value) addDayPunches(r.value); });
 }
 
 // ── Local mutation helpers ───────────────────────────────────────────────────
@@ -3128,8 +3192,9 @@ function editPunches(recId) {
     if (!hit) return;
     peDate = hit.date;
     $id('pe-rec-id').value = recId;
-    $id('pe-date-lbl').textContent = '· ' + new Date(hit.date + 'T00:00:00')
-        .toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    $id('pe-new-date').value = '';
+    $id('pe-title-lbl').textContent = 'Edit punches';
+    $id('pe-date-lbl').textContent = '· ' + fmtDayLong(hit.date);
     $id('pe-rows').innerHTML = '';
     const logs = hit.r.logs || [];
     if (!logs.length) peRenderEmpty();
@@ -3137,16 +3202,44 @@ function editPunches(recId) {
     bootstrap.Modal.getOrCreateInstance($id('modal-edit-punches')).show();
 }
 
+// The same editor in "new day" mode: no record yet — the row is created on
+// Save together with the punches (dtr_add_day), never empty.
+function addDayPunches(date) {
+    const e = st.emps[st.sel];
+    if (!e || !date || !CAN_ADD_DAY) return;
+    if (e.days[date]) { editPunches((e.days[date].recs || [])[0]?.id); return; }   // stale sheet — it exists after all
+    peDate = date;
+    $id('pe-rec-id').value = '';
+    $id('pe-new-date').value = date;
+    $id('pe-title-lbl').textContent = 'Add attendance';
+    $id('pe-date-lbl').textContent = '· ' + fmtDayLong(date);
+    $id('pe-rows').innerHTML = '';
+    peAddRow('', false);               // one manual row to start typing into
+    bootstrap.Modal.getOrCreateInstance($id('modal-edit-punches')).show();
+    setTimeout(() => $id('pe-rows').querySelector('.pe-dt')?.focus(), 250);
+}
+
 document.getElementById('form-edit-punches').addEventListener('submit', async function (e) {
     e.preventDefault();
-    const recId = parseInt($id('pe-rec-id').value, 10);
+    const recId   = parseInt($id('pe-rec-id').value, 10);
+    const newDate = $id('pe-new-date').value;
     const punches = [...document.querySelectorAll('#pe-rows .pe-dt')]
         .map(i => i.value).filter(Boolean).map(dt => ({ dt: dt }));
+    if (newDate && !punches.length) {
+        Swal.fire({ icon: 'warning', title: 'Add at least one punch', text: 'A day is only created together with its punches.' });
+        return;
+    }
     try {
-        const resp = await $.ajax({
-            url: 'ajax.php?action=save_dtr_punches', method: 'POST', dataType: 'JSON',
-            data: { detail_id: recId, punches: punches },
-        });
+        const emp = st.emps[st.sel];
+        const resp = newDate
+            ? await $.ajax({
+                url: 'ajax.php?action=dtr_add_day', method: 'POST', dataType: 'JSON',
+                data: { ddtr_id: DDTR_ID, employee_id: emp ? emp.id : 0, date: newDate, punches: punches },
+              })
+            : await $.ajax({
+                url: 'ajax.php?action=save_dtr_punches', method: 'POST', dataType: 'JSON',
+                data: { detail_id: recId, punches: punches },
+              });
         if (!(resp && resp.result)) throw new Error((resp && resp.message) || 'Save failed');
         bootstrap.Modal.getInstance($id('modal-edit-punches'))?.hide();
         // Refetch rather than hand-patch: the punches drive the Form 48 Arrival/

@@ -144,6 +144,10 @@
         var sat     = opt.saturdays || 'as required';
         var oa      = opt.officialArrival || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
         var od      = opt.officialDeparture || '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
+        // Opt-in (admin workbench only): a blank day gets a "+" so attendance
+        // can be added for a date the employee never scanned. The host page
+        // binds the click (data-add-date); the portal never passes this.
+        var addDay  = !!opt.addDay;
 
         // Today, so the row for it can be marked when the period contains it.
         var now = new Date();
@@ -210,8 +214,12 @@
                     : (ampm
                         ? '<td class="t-col"></td><td class="t-col"></td><td class="t-col"></td><td class="t-col"></td>'
                         : '<td class="t-col"></td><td class="t-col"></td>');
-                rows += '<tr class="absent' + wkend + '"><td class="day">'
-                    + '<span class="day-no">' + dayNo + '</span>' + dowTag + '</td>' + blankTimes
+                var addBtn = addDay
+                    ? '<button type="button" class="dtrf48-add" data-add-date="' + iso + '"'
+                      + ' title="Add attendance for ' + esc(fmtDay(iso)) + '" aria-label="Add attendance">+</button>'
+                    : '';
+                rows += '<tr class="absent' + wkend + '"' + (addDay ? ' data-date="' + iso + '"' : '') + '><td class="day">'
+                    + '<span class="day-no">' + dayNo + '</span>' + dowTag + addBtn + '</td>' + blankTimes
                     + '<td class="x-col num"></td><td class="x-col num ot"></td>'
                     + '<td class="ut"></td><td class="ut"></td>'
                     + '<td class="x-col num late"></td></tr>';

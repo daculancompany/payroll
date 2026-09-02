@@ -387,7 +387,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'review_similarity_report' => 'similarity-reports', 'delete_similarity_report' => 'similarity-reports',
         'finalize_dtr' => 'dtr', 'finalize_dtr_bulk' => 'dtr', 'message_dtr_record' => 'dtr',
         'recompute_dtr' => 'dtr', 'save_dtr_note' => 'dtr', 'update_dtr_logs' => 'dtr',
-        'save_dtr_punches' => 'dtr',
+        'save_dtr_punches' => 'dtr', 'dtr_add_day' => 'dtr',
         'dtr_set_day_schedule' => 'dtr',
         // Scoped recompute rides the schedule-assign flow (employee-details
         // modal), so it carries that page's permission, not the DTR screen's.

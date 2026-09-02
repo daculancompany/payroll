@@ -11780,7 +11780,8 @@ class Action
         if (!$id) return ['result' => false, 'message' => 'Missing record id'];
 
         $row = $this->db->query(
-            "SELECT d.employee_id, d.date_time, d.logs, b.status AS batch_status
+            "SELECT d.employee_id, d.date_time, d.logs, b.status AS batch_status,
+                    d.schedule_id, d.sched_start, d.sched_end, d.sched_graveyard
              FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
              WHERE d.id = $id LIMIT 1"
         );
@@ -11837,6 +11838,92 @@ class Action
             return ['result' => false, 'message' => 'The device scan at '
                 . date('M j, g:i A', strtotime((string) reset($lost)))
                 . ' cannot be removed or retimed — only manual entries can. If it belongs on another day, add it from that day\'s punch editor and it will move across.'];
+        }
+
+        // ── Schedule-aware spill adoption ────────────────────────────────
+        // A night shift's clock-out lands the NEXT morning. When the employee
+        // never scanned IN and the admin types the time-in here afterwards,
+        // the scanner has long since filed that clock-out on the next day: it
+        // had no open row to merge into, and save_biometric_attendance case 3
+        // only reaches back as far as the scheduled end when the next day is
+        // itself a duty day. Typing the clock-out time here as well is what the
+        // adoption pass below expects — but nobody knows that time by heart.
+        // So look it up the way ingestion would have: this day's shift is
+        // overnight, the day is still open after the edit, and the next day's
+        // row holds scans that sit within the same 12h OT ceiling past the
+        // scheduled end and nearer to this shift's end than to the next shift's
+        // start. Those are appended to $ts and the adoption pass moves them.
+        $autoAdopted = [];
+        if ($ts) {
+            // The shift frozen on the row is what dtr_compute_day will price the
+            // day against, so it decides here too; rows predating the stamp
+            // columns resolve from the roster, exactly as compute does.
+            $shift = null;
+            if (!empty($row['schedule_id']) && $row['sched_start'] !== null && $row['sched_end'] !== null) {
+                $shift = ['start_time' => $row['sched_start'], 'end_time' => $row['sched_end'],
+                          'is_graveyard' => (int) $row['sched_graveyard']];
+            } elseif (function_exists('resolve_employee_schedule')) {
+                $rs = resolve_employee_schedule($this->db, $employee_id, $date);
+                if ($rs) {
+                    $shift = ['start_time' => $rs['start_time'], 'end_time' => $rs['end_time'],
+                              'is_graveyard' => (int) ($rs['is_graveyard'] ?? 0)];
+                }
+            }
+            $overnight = $shift && ($shift['is_graveyard'] || $shift['end_time'] <= $shift['start_time']);
+            if ($overnight) {
+                $pair     = dtr_pair_logs($ts, $date, $shift['start_time']);
+                $shiftEnd = strtotime($date . ' ' . $shift['end_time']);
+                if ($shiftEnd !== false && $shift['end_time'] <= $shift['start_time']) {
+                    $shiftEnd = strtotime('+1 day', $shiftEnd);
+                }
+                if ($pair['out'] === null && $shiftEnd !== false) {
+                    $ceiling  = $shiftEnd + 12 * 3600;
+                    $lastTs   = max($ts);
+                    $nextDate = date('Y-m-d', strtotime('+1 day', strtotime($date)));
+                    $nq = $this->db->query(
+                        "SELECT d.logs, d.schedule_id, d.sched_start, d.is_rest_day
+                         FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+                         WHERE d.employee_id = $employee_id AND d.id <> $id AND b.status <> 2
+                           AND d.date_time = '" . $this->db->real_escape_string($nextDate) . "'
+                         ORDER BY d.id DESC LIMIT 1"
+                    );
+                    $next = $nq ? $nq->fetch_assoc() : null;
+                    if ($next) {
+                        // A punch on the next day's own rostered shift start is
+                        // that shift's TIME-IN, not this one's time-out — same
+                        // nearer-boundary tie-break ingestion uses. Only a duty
+                        // day may claim it; a rest day is not a shift.
+                        $nextStart = null;
+                        if (!empty($next['schedule_id']) && $next['sched_start'] !== null) {
+                            if ((int) $next['is_rest_day'] === 0) {
+                                $nextStart = strtotime($nextDate . ' ' . $next['sched_start']);
+                            }
+                        } elseif (function_exists('resolve_employee_schedule')) {
+                            $ns = resolve_employee_schedule($this->db, $employee_id, $nextDate);
+                            if ($ns && isset($ns['day_is_rest']) && (int) $ns['day_is_rest'] === 0) {
+                                $nextStart = strtotime($nextDate . ' ' . $ns['start_time']);
+                            }
+                        }
+                        $cand = [];
+                        foreach ((json_decode((string) $next['logs'], true) ?: []) as $lg) {
+                            $t = strtotime($lg['dateTime'] ?? '');
+                            if ($t !== false) $cand[] = $t;
+                        }
+                        sort($cand);
+                        foreach ($cand as $t) {
+                            if ($t <= $lastTs) continue;
+                            if ($t > $ceiling) break;
+                            if ($nextStart !== null && $nextStart !== false
+                                && abs($t - $nextStart) < abs($t - $shiftEnd)) break;
+                            $autoAdopted[] = $t;
+                        }
+                        if ($autoAdopted) {
+                            $ts = array_values(array_unique(array_merge($ts, $autoAdopted)));
+                            sort($ts);
+                        }
+                    }
+                }
+            }
         }
 
         // A punch typed onto this row that already exists as a scan on a
@@ -11945,8 +12032,11 @@ class Action
             return date('M j', strtotime($n['date']));
         }, $strip)));
 
+        $autoAdoptedLbl = array_map(function ($t) { return date('g:i A', $t); }, $autoAdopted);
+
         return [
-            'moved_from' => $movedFrom,
+            'moved_from'   => $movedFrom,
+            'auto_adopted' => $autoAdoptedLbl,
             'result'      => true,
             'work_hours'  => (float) $c['work_hours'],
             'overtime'    => (float) $c['overtime'],
@@ -11960,8 +12050,108 @@ class Action
             'message'     => (count($logs)
                     ? count($logs) . ' punch(es) saved — the day was recalculated and sent back to Pending.'
                     : 'All punches removed — the day is now blank and back to Pending.')
-                . ($movedFrom ? ' Moved off ' . implode(' and ', $movedFrom) . ', which was recalculated too.' : ''),
+                . ($autoAdoptedLbl
+                    ? ' Also pulled ' . implode(' and ', $autoAdoptedLbl) . ' from ' . implode(' and ', $movedFrom)
+                      . ' — this night shift\'s clock-out, which the scanner had filed on the next day.'
+                    : ($movedFrom ? ' Moved off ' . implode(' and ', $movedFrom) . ', which was recalculated too.' : '')),
         ];
+    }
+
+    /**
+     * Add attendance for a day that has NO DTR_details row yet (the employee
+     * never scanned, so the scanner never opened one). Creates the row inside
+     * the batch — stamped with the shift the roster resolves for that date,
+     * exactly as a first scan would be — and then hands the typed punches to
+     * save_dtr_punches(), so provenance rules, night-shift spill adoption and
+     * the recompute all apply unchanged. The row is only ever created together
+     * with its punches: a cancelled editor leaves nothing behind, and a save
+     * that fails on a row created here deletes it again.
+     *
+     * POST: ddtr_id, employee_id, date (Y-m-d), punches[] ({dt} list).
+     */
+    function dtr_add_day()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if ($role === 6) return ['result' => false, 'message' => 'Not authorized'];
+
+        $ddtrId      = (int) ($_POST['ddtr_id'] ?? 0);
+        $employee_id = (int) ($_POST['employee_id'] ?? 0);
+        $date        = trim((string) ($_POST['date'] ?? ''));
+        if (!$ddtrId || !$employee_id) return ['result' => false, 'message' => 'Missing batch or employee.'];
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || strtotime($date) === false) {
+            return ['result' => false, 'message' => 'Invalid date.'];
+        }
+        $date = date('Y-m-d', strtotime($date));
+
+        $punches = $_POST['punches'] ?? [];
+        if (!is_array($punches)) $punches = [];
+        $punches = array_values(array_filter($punches, function ($p) {
+            return trim((string) (is_array($p) ? ($p['dt'] ?? '') : $p)) !== '';
+        }));
+        if (!$punches) return ['result' => false, 'message' => 'Add at least one punch — a day is never created empty.'];
+
+        $b = $this->db->query("SELECT date_from, date_to, status FROM DTR WHERE id = $ddtrId LIMIT 1");
+        $b = $b ? $b->fetch_assoc() : null;
+        if (!$b) return ['result' => false, 'message' => 'DTR batch not found.'];
+        if ((int) $b['status'] === 2) {
+            return ['result' => false, 'message' => 'This DTR batch is already final-approved and locked — reopen it before adding attendance.'];
+        }
+        $from = date('Y-m-d', strtotime($b['date_from']));
+        $to   = date('Y-m-d', strtotime($b['date_to']));
+        if ($date < $from || $date > $to) {
+            return ['result' => false, 'message' => 'That date is outside this batch (' . date('M j', strtotime($from)) . ' – ' . date('M j, Y', strtotime($to)) . ').'];
+        }
+        $eq = $this->db->query("SELECT id FROM employee WHERE id = $employee_id LIMIT 1");
+        if (!$eq || !$eq->fetch_assoc()) return ['result' => false, 'message' => 'Employee not found.'];
+
+        // Already has a row for that date in this batch (the sheet may simply
+        // be stale) — just save the punches onto it.
+        $ex = $this->db->query(
+            "SELECT id FROM DTR_details WHERE ddtr_id = $ddtrId AND employee_id = $employee_id
+               AND date_time = '" . $this->db->real_escape_string($date) . "' ORDER BY id ASC LIMIT 1"
+        );
+        $ex = $ex ? $ex->fetch_assoc() : null;
+        $created = false;
+        if ($ex) {
+            $detailId = (int) $ex['id'];
+        } else {
+            // Frozen-shift stamp for the day, the same way a first scan is
+            // recorded — compute with no logs just to resolve the schedule.
+            $cs   = dtr_compute_day($this->db, $employee_id, $date, []);
+            $logs = '[]';
+            $st = $this->db->prepare(
+                "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, logs, attendance_type,
+                                          day_type, nsd_hours, is_complete, status,
+                                          schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
+                 VALUES (?, ?, ?, 0, ?, 'manual', ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?)"
+            );
+            $st->bind_param(
+                'iisssidissii',
+                $ddtrId, $employee_id, $date, $logs, $cs['day_type'],
+                $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
+                $cs['sched_start'], $cs['sched_end'], $cs['sched_break'], $cs['sched_graveyard']
+            );
+            if (!$st->execute()) return ['result' => false, 'message' => 'Could not create the day: ' . $st->error];
+            $detailId = (int) $this->db->insert_id;
+            $st->close();
+            $created = true;
+        }
+
+        $_POST['detail_id'] = $detailId;
+        $_POST['punches']   = $punches;
+        $resp = $this->save_dtr_punches();
+        if (empty($resp['result']) && $created) {
+            // Never leave an empty shell behind — the day only exists with punches.
+            $this->db->query("DELETE FROM DTR_details WHERE id = $detailId AND logs = '[]'");
+            return $resp;
+        }
+        $resp['id']      = $detailId;
+        $resp['date']    = $date;
+        $resp['created'] = $created;
+        if (!empty($resp['result']) && $created) {
+            $resp['message'] = 'Attendance added for ' . date('D, M j', strtotime($date)) . '. ' . ($resp['message'] ?? '');
+        }
+        return $resp;
     }
 
     function finalize_dtr()

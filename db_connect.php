@@ -1057,6 +1057,68 @@ if (!function_exists('rest_day_premium')) {
     }
 }
 
+// ── Payroll settings (GLOBAL) ───────────────────────────────────────────
+// payroll.settings is a JSON list of {id, type} choosing what a run applies
+// and what the payroll table shows as columns:
+//   1 contribution   2 deduction   3 loan   4 refund
+//   6 allowance type  (id = allowances.id)
+//   0 marker          (id = "v2")
+// Runs saved before type 6 existed carry no marker: for them every configured
+// allowance applies (no per-type columns), exactly as before. With the marker,
+// only the listed type-6 entries apply — which is what lets "untick everything"
+// be stored. Type 5 entries (an earlier draft) are ignored.
+if (!function_exists('payroll_settings_split')) {
+    function payroll_settings_split($json): array
+    {
+        $all = is_array($json) ? $json : (json_decode((string) $json, true) ?: []);
+        $out = ['deds' => [], 'refunds' => [], 'allow' => [], 'v2' => false];
+        foreach ($all as $item) {
+            if (!is_array($item) || !isset($item['type'])) continue;
+            $type = (int) $item['type'];
+            $id   = $item['id'] ?? null;
+            if ($type === 0) {
+                if ($id === 'v2') $out['v2'] = true;
+            } elseif ($type === 4) {
+                $out['refunds'][] = $item;
+            } elseif ($type === 6) {
+                $out['allow'][] = (int) $id;
+            } elseif (in_array($type, [1, 2, 3], true)) {
+                $out['deds'][] = $item;
+            }
+        }
+        $out['allow'] = $out['v2'] ? array_values(array_unique($out['allow'])) : [];
+        return $out;
+    }
+}
+
+// Deduction columns that live directly on payroll_items rather than in a
+// master table, always shown in the payroll table / prints. Only withholding
+// tax remains: the SSS Provident Fund / JEI Advance / JCC Advances columns were
+// removed on request (their payroll_items fields still exist; a non-zero legacy
+// value still prints on the payslip, which lists them only when > 0).
+if (!defined('PAYROLL_FIXED_DEDS')) {
+    define('PAYROLL_FIXED_DEDS', [
+        'tax' => 'Tax',
+    ]);
+}
+
+// Names for the ticked allowance-type columns, in settings order.
+// [allowance_id => label]; ids no longer in the master fall back to "#id".
+if (!function_exists('payroll_allowance_column_names')) {
+    function payroll_allowance_column_names(mysqli $conn, array $ids): array
+    {
+        $names = [];
+        if (!$ids) return $names;
+        $in = implode(',', array_map('intval', $ids));
+        if ($q = $conn->query("SELECT id, allowance FROM allowances WHERE id IN ($in)")) {
+            $found = [];
+            while ($r = $q->fetch_assoc()) $found[(int) $r['id']] = $r['allowance'];
+            foreach ($ids as $id) $names[(int) $id] = $found[(int) $id] ?? ('#' . (int) $id);
+        }
+        return $names;
+    }
+}
+
 // ── Allowances (GLOBAL) ─────────────────────────────────────────────────
 // Total allowance on ONE payroll item. Two sources, deliberately ADDITIVE:
 //
@@ -1073,6 +1135,31 @@ if (!function_exists('payroll_allowance_list')) {
     {
         $list = json_decode($row['allowances'] ?? '', true);
         return is_array($list) ? $list : [];
+    }
+}
+
+// Backpay is a one-off EARNING (unpaid salary from an earlier cutoff): taxable
+// compensation, kept in payroll_item_extras (kind 2) like other one-time
+// earnings but shown in its own "Backpay" column. Matches "Backpay", "Back Pay",
+// "back-pay" regardless of case/spacing.
+if (!function_exists('payroll_is_backpay_label')) {
+    function payroll_is_backpay_label($label): bool
+    {
+        return (bool) preg_match('/^\s*back\s*-?\s*pay\s*$/i', (string) $label);
+    }
+}
+
+// Frozen per-type allowance amounts on ONE item: [allowance_id => amount].
+// Two rows of the same type (rare, e.g. re-granted mid-window) are summed.
+if (!function_exists('payroll_allowance_by_id')) {
+    function payroll_allowance_by_id($row): array
+    {
+        $by = [];
+        foreach (payroll_allowance_list($row) as $a) {
+            $id = (int) ($a['allowance_id'] ?? 0);
+            $by[$id] = ($by[$id] ?? 0) + (float) ($a['amount'] ?? 0);
+        }
+        return $by;
     }
 }
 

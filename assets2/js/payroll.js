@@ -238,6 +238,9 @@ $(document).ready(function () {
                 if (item.type == 4) {
                     $("#refund-" + item.id).prop("checked", true);
                 }
+                if (item.type == 6) {
+                    $("#allowance-" + item.id).prop("checked", true);
+                }
             });
         } catch (e) {
             console.error("Invalid JSON in settings attribute:", e);

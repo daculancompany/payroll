@@ -5137,6 +5137,10 @@ class Action
         // loop below doesn't warn / crash on null.
         $settings = json_decode($pay['settings'], true);
         if (!is_array($settings)) $settings = [];
+        // Which allowance types this run applies. Legacy runs (no "v2" marker)
+        // apply every configured allowance, as they always did.
+        $settingsSplit = payroll_settings_split($settings);
+        $allowTypeFilter = $settingsSplit['v2'] ? array_flip($settingsSplit['allow']) : null;
 
         // Columns no part of the calculation writes — they exist only because an
         // admin typed them into the payroll table. The rebuild below DELETEs every
@@ -5917,6 +5921,8 @@ class Action
                     $item_allowances = [];
                     $allowance_total = 0.0;
                     foreach (($employee_allowances[$employee_id] ?? []) as $ea) {
+                        // Allowance type unticked in Payroll Settings → not applied this run.
+                        if ($allowTypeFilter !== null && !isset($allowTypeFilter[(int) $ea['allowance_id']])) continue;
                         $amt = employee_allowance_amount_for_run($ea, $date_from, $date_to);
                         if ($amt <= 0) continue;
                         $item_allowances[] = [
@@ -7463,22 +7469,52 @@ class Action
                 }
             }
         }
+        // Every allowance type (type 6) and the marker that says type 6 is
+        // authoritative for this run (payroll_settings_split()). Same behaviour
+        // as before for the calculation — every configured allowance applies —
+        // but stored explicitly, so the gear Settings modal shows exactly what
+        // the table does.
+        return array_merge($settings, $this->defaultColumnSettings());
+    }
+
+    // The type 6 defaults + "v2" marker for a run whose form did not offer the
+    // Allowances section (the Create modal): every allowance type ticked.
+    private function defaultColumnSettings()
+    {
+        $settings = [];
+        if ($res = $this->db->query("SELECT id FROM allowances ORDER BY id ASC")) {
+            while ($r = $res->fetch_assoc()) $settings[] = ["id" => (string) $r['id'], "type" => 6];
+        }
+        $settings[] = ["id" => "v2", "type" => 0];
         return $settings;
     }
 
-    // Builds a payroll "settings" array from posted checkbox groups (as parsed
-    // from the Create form). Mirrors save_payroll_settings() type codes:
-    // 1=contribution, 2=deduction, 3=loan, 4=refund.
+    // Builds a payroll "settings" array from posted checkbox groups (Create
+    // form and the gear Settings modal). Type codes: 1=contribution,
+    // 2=deduction, 3=loan, 4=refund, 6=allowance type, 0=marker. The "v2"
+    // marker is written whenever the form offered the Allowances section
+    // (settings_v2), so an empty group there means "none", not "everything"
+    // (payroll_settings_split()).
     function settingsFromInput($src)
     {
         $settings = [];
-        $map = [1 => 'contributions', 3 => 'loans', 2 => 'deductions', 4 => 'refunds'];
+        $map = [1 => 'contributions', 3 => 'loans', 2 => 'deductions', 4 => 'refunds', 6 => 'allowances'];
         foreach ($map as $type => $key) {
             if (!empty($src[$key]) && is_array($src[$key])) {
                 foreach ($src[$key] as $v) {
                     $settings[] = ["id" => $v, "type" => $type];
                 }
             }
+        }
+        if (!empty($src['settings_v2'])) {
+            // Gear Settings modal: it offered the Allowances section, so what
+            // was ticked is exactly what applies.
+            $settings[] = ["id" => "v2", "type" => 0];
+        } elseif (!empty($src['settings_offered'])) {
+            // Create modal: it offered only contributions / deductions / loans.
+            // Fill the rest with the defaults so the new run is explicit and
+            // the gear modal shows the same state the table renders.
+            $settings = array_merge($settings, $this->defaultColumnSettings());
         }
         return $settings;
     }
@@ -7572,37 +7608,9 @@ class Action
 
     function save_payroll_settings()
     {
-        $settings = [];
-        $count = 0;
-        $contributions = isset($_POST['contributions']) && is_array($_POST['contributions']) ? $_POST['contributions'] : [];
-        foreach ($contributions as $i =>  $k) {
-            $settings[$count]["id"] = $k;
-            $settings[$count]["type"] = 1;
-            $count++;
-        }
-
-        $loans = isset($_POST['loans']) && is_array($_POST['loans']) ? $_POST['loans'] : [];
-        foreach ($loans as $i =>  $k) {
-            $settings[$count]["id"] = $k;
-            $settings[$count]["type"] = 3;
-            $count++;
-        }
-
-        $deductions = isset($_POST['deductions']) && is_array($_POST['deductions']) ? $_POST['deductions'] : [];
-        foreach ($deductions as $i =>  $k) {
-            $settings[$count]["id"] = $k;
-            $settings[$count]["type"] = 2;
-            $count++;
-        }
-
-        $refunds = isset($_POST['refunds']) && is_array($_POST['refunds']) ? $_POST['refunds'] : [];
-        foreach ($refunds as $i =>  $k) {
-            $settings[$count]["id"] = $k;
-            $settings[$count]["type"] = 4;
-            $count++;
-        }
-
-
+        // Same builder as the Create form, so both paths agree on type codes
+        // and on the "v2" marker.
+        $settings = $this->settingsFromInput($_POST);
 
         $id = $_POST['id'];
         $settings_json =  json_encode($settings);

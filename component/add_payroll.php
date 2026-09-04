@@ -12,6 +12,21 @@ $payroll_setting_sections = [
     ['title' => 'Loans',         'icon' => 'ri-bank-card-line', 'query' => "SELECT clt_id AS id, loan_type AS label FROM contribution_loan_types ORDER BY clt_id ASC", 'prefix' => 'loan', 'name' => 'loans[]', 'id_col' => 'id'],
     // ['title' => 'Refunds',       'icon' => 'ri-refund-2-line',  'query' => "SELECT id, refunds AS label FROM refunds ORDER BY id ASC",             'prefix' => 'refund',        'name' => 'refunds[]',       'id_col' => 'id'],
 ];
+// Extra section offered ONLY in the gear "Payroll Settings" modal (the Create
+// modal stays as it is). Every ticked allowance type becomes a column in the
+// payroll table and is applied on (re)calculation; unticked = not applied, not
+// shown. Type codes live in payroll_settings_split() (db_connect.php).
+$payroll_settings_only_sections = [
+    ['title' => 'Allowances', 'icon' => 'ri-gift-line', 'query' => "SELECT id, allowance AS label FROM allowances ORDER BY id ASC", 'prefix' => 'allowance', 'name' => 'allowances[]', 'id_col' => 'id'],
+];
+// Rows for one section from its master table query.
+$payroll_section_rows = function (array $sec) use ($conn): array {
+    $out = [];
+    if ($res = $conn->query($sec['query'])) {
+        while ($r = $res->fetch_assoc()) $out[] = $r;
+    }
+    return $out;
+};
 ?>
 <!-- ── Create Payroll ─────────────────────────────────────────────── -->
 <div class="modal fade" id="modal" tabindex="-1" role="dialog">
@@ -119,12 +134,16 @@ $payroll_setting_sections = [
                 </div>
                 <div class="modal-body">
                     <input type="hidden" name="id" id="settings-id">
+                    <input type="hidden" name="settings_v2" value="1">
+                    <p class="text-muted mb-3" style="font-size:12px;">Ticked items are applied on the next
+                        Recalculate and shown as columns in the payroll table. Unticked items are neither
+                        applied nor shown.</p>
 
                     <?php
-                    $sections = $payroll_setting_sections;
+                    $sections = array_merge($payroll_settings_only_sections, $payroll_setting_sections); // Allowances first
 
                     foreach ($sections as $i => $sec):
-                        $rows = $conn->query($sec['query']);
+                        $rows = $payroll_section_rows($sec);
                     ?>
                     <?= $i > 0 ? '<hr class="my-3">' : '' ?>
                     <div class="d-flex align-items-center gap-2 mb-2">
@@ -132,7 +151,7 @@ $payroll_setting_sections = [
                         <span class="fw-bold" style="font-size:13px;color:#673bb6;"><?= $sec['title'] ?></span>
                     </div>
                     <div class="row g-2">
-                        <?php while ($row = $rows->fetch_assoc()): ?>
+                        <?php foreach ($rows as $row): ?>
                         <div class="col-md-4 col-sm-6">
                             <div class="form-check" style="border:1px solid #e8eaf6;border-radius:4px;padding:6px 10px 6px 32px;background:#f9f9ff;">
                                 <input class="form-check-input" type="checkbox"
@@ -145,7 +164,7 @@ $payroll_setting_sections = [
                                 </label>
                             </div>
                         </div>
-                        <?php endwhile; ?>
+                        <?php endforeach; ?>
                     </div>
                     <?php endforeach; ?>
 

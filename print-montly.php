@@ -64,17 +64,26 @@ LEFT JOIN position p ON e.position_id = p.id
 LEFT JOIN sites f ON f.id = a.site_id 
 WHERE  a.payroll_id = $id $filter_query  ORDER BY lastname ASC ");
 
-$contributions_settings = json_decode($payroll['settings'], true) ?: [];
+// Columns follow Payroll Settings exactly as payroll_calculations.php does.
+$settings_split         = payroll_settings_split($payroll['settings']);
+$contributions_settings = $settings_split['deds'];
+$refunds_settings       = $settings_split['refunds'];
+$fixed_keys             = array_keys(PAYROLL_FIXED_DEDS);   // always-on fixed columns (Tax)
+$allow_settings         = $settings_split['allow'];
+$allow_names            = payroll_allowance_column_names($conn, $allow_settings);
+$t_allow_type           = [];
+$t_allow_oneoff         = 0;   // other one-time earnings (not backpay)
+$t_backpay              = 0;
+$t_fixed                = [];
 
-$refunds_settings  = array_filter($contributions_settings, function ($item) {
-    return $item["type"] === 4;
-});
-
-$contributions_settings = array_filter($contributions_settings, function ($item) {
-    return $item["type"] !== 4;
-});
-
-$contributions_settings = array_values($contributions_settings);
+// Named one-off items per employee (payroll_item_extras): kind 1 deducts,
+// kind 2 adds. Shown in the One-off allowance column and folded into the
+// printed gross / net so this sheet agrees with the payslip.
+$ppExtras = [];
+if ($conn->query("SHOW TABLES LIKE 'payroll_item_extras'")->num_rows) {
+    $xq = $conn->query("SELECT payroll_item_id, kind, label, amount FROM payroll_item_extras WHERE payroll_id = $id ORDER BY id ASC");
+    if ($xq) while ($x = $xq->fetch_assoc()) $ppExtras[(int)$x['payroll_item_id']][] = $x;
+}
 
 
 
@@ -227,7 +236,7 @@ $payroll_type = $payroll['type'];
                                     <div class="flip-text">Quinsina</div>
                                     <div class="flip-text">Pay</div>
                                 </th>
-                                <th colspan="3" class="text-center  primary-header">Allowance</th>
+                                <th colspan="<?= 4 + count($allow_settings) ?>" class="text-center  primary-header">Allowance</th>
                                 <!-- <th rowspan="2" class="text-center  primary-header">Allowance Quinsina</th> -->
                                 <th rowspan="2" class="text-center   flip-text">
                                     <div class="flip-text">Basic</div>
@@ -264,8 +273,9 @@ $payroll_type = $payroll['type'];
                                 <th colspan="2" class="text-center info-header">Night Diff</th>
 
                                 <th colspan="3" class="text-center info-header">Late</th>
+                                <th rowspan="2" class="text-center success-header">Backpay</th>
                                 <th rowspan="2" class="text-center success-header">Total Gross PAY</th>
-                                <th colspan="<?= count($contributions_settings) + 4 ?>" class="text-center danger-header">Deduction</th>
+                                <th colspan="<?= count($contributions_settings) + 1 + count($fixed_keys) ?>" class="text-center danger-header">Deduction</th>
                                 <th rowspan="2" class="text-center danger-header">Total Deduction</th>
                                 <?php if (count($refunds_settings) > 0) { ?>
                                     <th colspan="<?= count($refunds_settings) ?>" class="text-center primary-header">Refunds</th>
@@ -276,6 +286,10 @@ $payroll_type = $payroll['type'];
                             <tr>
                                 <th class="text-center  info-header">No. dys</th>
                                 <th class="text-center  info-header">Rate</th>
+                                <?php foreach ($allow_settings as $aid): ?>
+                                    <th class="text-center  info-header"><?= htmlspecialchars($allow_names[$aid]) ?></th>
+                                <?php endforeach; ?>
+                                <th class="text-center  info-header">Other Earnings</th>
                                 <th class="text-center  info-header">Amount</th>
 
                                 <th class="text-center  info-header">No. hr</th>
@@ -324,10 +338,10 @@ $payroll_type = $payroll['type'];
                                 <?php } else { ?>
 
                                 <?php } ?>
-                                <th class="text-center  danger-header">SSS PROVIDENT FUND </th>
-                                <th class="text-center  danger-header">JEI ADVANCE</th>
-                                <th class="text-center  danger-header">JCC ADVANCES</th>
-                                <th class="text-center  danger-header">Tax</th>
+                                <th class="text-center  danger-header">OTHER DEDUCTIONS</th>
+                                <?php foreach ($fixed_keys as $fk): ?>
+                                    <th class="text-center  danger-header"><?= htmlspecialchars(strtoupper(PAYROLL_FIXED_DEDS[$fk])) ?></th>
+                                <?php endforeach; ?>
                                 <?php if (count($refunds_settings) > 0) {
                                     foreach ($refunds_settings as $k) {
                                         $query_con = "SELECT * FROM refunds   WHERE id = ?";
@@ -402,6 +416,17 @@ $payroll_type = $payroll['type'];
                                 $total_amount =  $__e['subtotal'];
                                 $t_total_amount += $total_amount;
                                 $gross_salary =  $__e['gross'];
+                                // This employee's one-off items: allowances add to gross here,
+                                // deductions join the other deductions before net (as print-payroll.php does).
+                                $rowX = $ppExtras[(int)$row['id']] ?? [];
+                                // Backpay (a one-off earning) gets its own column; other earnings share one.
+                                $xAdd = $xLess = $xBack = 0;
+                                foreach ($rowX as $x) {
+                                    if ((int)$x['kind'] !== 2) { $xLess += (float)$x['amount']; continue; }
+                                    if (payroll_is_backpay_label($x['label'])) $xBack += (float)$x['amount']; else $xAdd += (float)$x['amount'];
+                                }
+                                $gross_salary += $xAdd + $xBack;
+                                $t_backpay += $xBack;
 
                                 $contributions = json_decode($row['contributions'], true);
                                 $deductions = json_decode($row['deductions'], true);
@@ -439,8 +464,18 @@ $payroll_type = $payroll['type'];
                                     <td class="text-right">
                                         <?= number_format($allowance_amount, 2) ?>
                                     </td>
+                                    <?php $__aby = payroll_allowance_by_id($row);
+                                    foreach ($allow_settings as $aid) {
+                                        $__aamt = (float) ($__aby[$aid] ?? 0);
+                                        $t_allow_type[$aid] = ($t_allow_type[$aid] ?? 0) + $__aamt; ?>
+                                    <td class="text-right"><?= number_format($__aamt, 2) ?></td>
+                                    <?php }
+                                    // Named one-off allowances on this payslip (folded into Gross above).
+                                    $t_allow_oneoff += $xAdd; ?>
+                                    <td class="text-right"><?= number_format($xAdd, 2) ?></td>
                                     <td class="text-right">
-                                        <?= number_format($total_allowance, 2) ?>
+                                        <?php /* blended: hand-typed days × rate + the configured types — same figure the payroll table shows */ ?>
+                                        <?= number_format(payroll_allowance_total($row), 2) ?>
                                     </td>
                                     <!-- Basic Daily Rate -->
                                     <td class="text-right">
@@ -512,6 +547,7 @@ $payroll_type = $payroll['type'];
                                         <?= number_format($late_amount, 2) ?>
                                     </td>
                                     <!-- /Late -->
+                                    <td class="text-right"><?= number_format($xBack, 2) ?></td>
                                     <td class="text-right">
                                         <?= number_format($gross_salary, 2) ?>
                                     </td>
@@ -553,22 +589,21 @@ $payroll_type = $payroll['type'];
                                     <?php  } else { ?>
 
                                     <?php } ?>
-                                    <td class="text-right">
-                                        <?= number_format($sss_fund, 2) ?>
-                                    </td>
-                                    <td class="text-right">
-                                        <?= number_format($jei_advances, 2) ?>
-
-                                    </td>
-                                    <td class="text-right">
-                                        <?= number_format($jcc_advances, 2) ?>
-
-                                    </td>
-                                    <td class="text-right">
-                                        <?= number_format($tax, 2) ?>
-                                    </td>
-                                    <?php $total_deductions = $total_deductions   + $tax + $jei_advances + $jcc_advances + $sss_fund;
-                                    $t_deduction += $total_deductions; ?>
+                                    <?php
+                                    // One-time deductions added on this payslip (payroll_item_extras kind 1).
+                                    $total_deductions += $xLess;
+                                    $t_other_ded = ($t_other_ded ?? 0) + $xLess; ?>
+                                    <td class="text-right"><?= number_format($xLess, 2) ?></td>
+                                    <?php
+                                    // Fixed columns (Tax).
+                                    $fixed_vals = compact('sss_fund', 'jei_advances', 'jcc_advances', 'tax');
+                                    foreach ($fixed_keys as $fk) {
+                                        $fd_val = (float) $fixed_vals[$fk];
+                                        $total_deductions += $fd_val;
+                                        $t_fixed[$fk] = ($t_fixed[$fk] ?? 0) + $fd_val; ?>
+                                    <td class="text-right"><?= number_format($fd_val, 2) ?></td>
+                                    <?php } ?>
+                                    <?php $t_deduction += $total_deductions; ?>
 
                                     <td class="text-right">
                                         <?= number_format($total_deductions, 2) ?>
@@ -613,6 +648,10 @@ $payroll_type = $payroll['type'];
                                 <th></th>
                                 <th></th>
                                 <th></th>
+                                <?php foreach ($allow_settings as $aid): ?>
+                                <th class="text-right"><?= number_format($t_allow_type[$aid] ?? 0, 2) ?></th>
+                                <?php endforeach; ?>
+                                <th class="text-right"><?= number_format($t_allow_oneoff, 2) ?></th>
                                 <th></th>
                                 <th class="text-right"><?= number_format($t_perDay, 2) ?></th>
                                 <th></th>
@@ -634,12 +673,13 @@ $payroll_type = $payroll['type'];
                                 <th></th>
                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                 <th></th>
+                                <th class="text-right"><?= number_format($t_backpay, 2) ?></th>
                                 <th class="text-right"><?= number_format($t_gross, 2) ?></th>
                                 <th colspan="<?= count($contributions_settings) ?>"></th>
-                                <th></th>
-                                <th></th>
-                                <th></th>
-                                <th></th>
+                                <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
+                                <?php foreach ($fixed_keys as $fk): ?>
+                                <th class="text-right"><?= number_format($t_fixed[$fk] ?? 0, 2) ?></th>
+                                <?php endforeach; ?>
                                 <th class="text-right"><?= number_format($t_deduction, 2) ?></th>
                                 <th colspan="<?= count($refunds_settings) ?>"></th>
                                 <th class="text-right"><?= number_format($t_net, 2) ?></th>

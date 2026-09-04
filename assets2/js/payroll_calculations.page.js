@@ -285,7 +285,7 @@
     function addExtraRow(e, kind) {
         return '<tr><td colspan="3" style="padding-top:5px;">'
             + '<button type="button" class="pp-x-add" onclick="pcwAddExtra(' + e.id + ',' + kind + ')">'
-            + '<i class="ri-add-line"></i> Add ' + (kind === 2 ? 'allowance' : 'deduction') + '</button></td></tr>';
+            + '<i class="ri-add-line"></i> Add ' + (kind === 2 ? 'earning' : 'deduction') + '</button></td></tr>';
     }
 
     // Add / edit share one dialog; the server upserts on the id.
@@ -321,16 +321,16 @@
 
         xiEl('xi-title').innerHTML = '<i class="ri-' + (isAllow ? 'gift-line' : 'scissors-cut-line')
             + ' me-1" style="color:' + (isAllow ? '#107c41' : '#c62828') + ';"></i>'
-            + (existing ? 'Edit ' : 'Add ') + (isAllow ? 'allowance' : 'deduction');
+            + (existing ? 'Edit ' : 'Add ') + (isAllow ? 'earning' : 'deduction');
         xiEl('xi-who').textContent = e && e.name ? e.name + ' only' : 'this employee only';
         xiEl('xi-label').value = existing ? existing.label : '';
         xiEl('xi-label').placeholder = isAllow
-            ? 'Search allowances, or type a new name' : 'Search deductions, or type a new name';
+            ? 'Backpay, bonus, one-time allowance… or type a new name' : 'Search deductions, or type a new name';
         xiEl('xi-amount').value = existing ? existing.amt : '';
 
         var save = xiEl('xi-save');
         save.innerHTML = '<i class="ri-' + (existing ? 'save-line' : 'add-line') + ' me-1"></i>'
-            + (existing ? 'Save changes' : 'Add ' + (isAllow ? 'allowance' : 'deduction'));
+            + (existing ? 'Save changes' : 'Add ' + (isAllow ? 'earning' : 'deduction'));
 
         xiSetErr('label', ''); xiSetErr('amount', ''); xiCloseMenu(); xiCheckDuplicate();
         xiWire();
@@ -370,7 +370,7 @@
 
         var h = '';
         if (!XI.list.length) {
-            h = '<div class="xi-empty">No saved ' + (XI.kind === 2 ? 'allowances' : 'deductions')
+            h = '<div class="xi-empty">No saved ' + (XI.kind === 2 ? 'earnings' : 'deductions')
                 + ' yet — type a name to create this line.</div>';
         } else {
             XI.list.forEach(function (o, i) {
@@ -415,7 +415,7 @@
         });
         box.classList.toggle('show', !!dup);
         if (dup) box.querySelector('span').textContent =
-            'This payslip already has a ' + (XI.kind === 2 ? 'allowance' : 'deduction')
+            'This payslip already has an item ' + (XI.kind === 2 ? '(earning)' : '(deduction)')
             + ' named that. Saving adds a second line — both are paid.';
     }
 
@@ -618,6 +618,11 @@
             h += earnRow('Basic Pay', days2(e.present) + ' day(s) × ' + fld(e, 'per_day', fmt(e.per_day)), e.basic_earned, false);
         }
         if (ed || e.allow_amt) h += earnRow('Allowance' + (monthlyRate && !isMonthlyBatch ? ' (½ applied to gross)' : ''), fld(e, 'allowance_days', e.allow_days) + ' day(s) × ' + fmt(e.allow_rate), e.allow_amt, false);
+        // Configured allowance types ticked in Payroll Settings — one line each,
+        // matching the per-type columns in the table (amounts frozen at calculation).
+        (e.allow_types || []).forEach(function (a) {
+            if (a.amt || ed) h += earnRow(esc(a.label), 'allowance type', a.amt, false);
+        });
         if (ed || e.legal_amt) h += earnRow('Legal Holiday Pay', fld(e, 'legal_holiday', e.legal) + ' × ' + fmt(e.per_day), e.legal_amt, false);
         // Rest-day pay is a PREMIUM for daily staff — the day itself is already
         // counted in Days on Duty above, so the line has to say "+30%" and show
@@ -664,23 +669,28 @@
             });
             h += '<tr class="subtotal"><td>Subtotal — ' + GROUPS[g] + '</td><td class="qty"></td><td class="amt neg" id="pp-sub-g' + g + '">(' + fmt(sub) + ')</td></tr>';
         });
+        // Fixed deduction lines that live on payroll_items: Tax always (it is a
+        // table column); SSS Provident Fund / JEI / JCC columns were removed, so
+        // those lines appear only when a legacy row still carries a value.
         var fixed = [
             ['SSS Provident Fund', 'sss_fund', e.sss_fund],
             ['JEI Advance', 'jei_advances', e.jei],
             ['JCC Advances', 'jcc_advances', e.jcc],
             ['Tax', 'tax', e.tax]
-        ];
-        var fsub = 0;
-        h += '<tr class="subgroup"><td colspan="3">Company Advances &amp; Tax</td></tr>';
-        fixed.forEach(function (fd) {
-            fsub += fd[2];
-            h += earnRow(fd[0], '', edAmt(e, fd[1], fd[2]), fd[2] > 0);
-        });
-        h += '<tr class="subtotal"><td>Subtotal — Company Advances &amp; Tax</td><td class="qty"></td><td class="amt neg" id="pp-sub-fx">(' + fmt(fsub) + ')</td></tr>';
+        ].filter(function (fd) { return fd[1] === 'tax' || fd[2] > 0; });
+        if (fixed.length) {
+            var fsub = 0;
+            h += '<tr class="subgroup"><td colspan="3">Company Advances &amp; Tax</td></tr>';
+            fixed.forEach(function (fd) {
+                fsub += fd[2];
+                h += earnRow(fd[0], '', edAmt(e, fd[1], fd[2]), fd[2] > 0);
+            });
+            h += '<tr class="subtotal"><td>Subtotal — Company Advances &amp; Tax</td><td class="qty"></td><td class="amt neg" id="pp-sub-fx">(' + fmt(fsub) + ')</td></tr>';
+        }
         // Named one-off deductions for this employee only.
         var xDed = extrasOfKind(e, 1);
         if (xDed.length || ed) {
-            h += '<tr class="subgroup"><td colspan="3">One-off Items</td></tr>';
+            h += '<tr class="subgroup"><td colspan="3">Other Deductions</td></tr>';
             xDed.forEach(function (x) { h += extraRow(e, x, true); });
             if (ed) h += addExtraRow(e, 1);
         }
@@ -1300,7 +1310,7 @@
                     var h0x = t.querySelectorAll('thead tr')[0];
                     if (h0x) {
                         var xth = document.createElement('th');
-                        xth.textContent = 'One-off Items';
+                        xth.textContent = 'Other Deductions';
                         xth.setAttribute('rowspan', '2');
                         xth.className = 'primary-header';
                         xth.setAttribute('style', xlHeadStyle(xth, XL_FILL.head1));

@@ -804,7 +804,7 @@ body.has-toolbar { padding-top: 50px; }
 
     <?php /* One-off allowances added for this employee alone */ ?>
     <?php if ($ps_extra_add > 0): ?>
-    <div class="grp-lbl">One-off Allowances</div>
+    <div class="grp-lbl">Other Earnings</div>
     <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 2) continue; ?>
     <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
     <?php endforeach; ?>
@@ -861,7 +861,7 @@ body.has-toolbar { padding-top: 50px; }
 
     <?php /* One-off deductions added for this employee alone */ ?>
     <?php if ($ps_extra_less > 0): ?>
-    <div class="grp-lbl">One-off Items</div>
+    <div class="grp-lbl">Other Deductions</div>
     <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 1) continue; ?>
     <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt red">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
     <?php endforeach; ?>

@@ -362,6 +362,9 @@ $pcwCatAdd = function ($bucket, $name, $desc, $used) use (&$pcwExtraCatalog, &$p
     $pcwCatSeen[$bucket][$key] = true;
     $pcwExtraCatalog[$bucket][] = ['n' => $name, 'd' => trim((string)$desc), 'u' => $used ? 1 : 0];
 };
+// Backpay is always offered: it is a standard earning (unpaid salary from an
+// earlier cutoff), taxable, and gets its own column in the register.
+$pcwCatAdd('allow', 'Backpay', 'Unpaid salary from a previous cutoff — taxable, own column', false);
 if ($cq = $conn->query("SELECT allowance, description FROM allowances ORDER BY allowance ASC")) {
     while ($cr = $cq->fetch_assoc()) $pcwCatAdd('allow', $cr['allowance'], $cr['description'], false);
 }
@@ -464,17 +467,15 @@ $sum_q->bind_param("i", $id);
 $sum_q->execute();
 $summary = $sum_q->get_result()->fetch_assoc();
 
-$contributions_settings = json_decode($payroll['settings'], true) ?: [];
-
-$refunds_settings  = array_filter($contributions_settings, function ($item) {
-    return $item["type"] === 4;
-});
-
-$contributions_settings = array_filter($contributions_settings, function ($item) {
-    return $item["type"] !== 4;
-});
-
-$contributions_settings = array_values($contributions_settings);
+// What this run applies / shows as columns (see payroll_settings_split()):
+// configured contributions/loans/deductions, refunds and per-type allowance
+// columns, plus the always-on fixed columns (PAYROLL_FIXED_DEDS: Tax).
+$settings_split         = payroll_settings_split($payroll['settings']);
+$contributions_settings = $settings_split['deds'];
+$refunds_settings       = $settings_split['refunds'];
+$fixed_keys             = array_keys(PAYROLL_FIXED_DEDS);   // payroll_items field names
+$allow_settings         = $settings_split['allow'];   // allowances.id list
+$allow_names            = payroll_allowance_column_names($conn, $allow_settings);
 
 
 
@@ -1072,8 +1073,8 @@ $refund_names = [];   // refund id => display name
                                                 <th rowspan="2" class="text-center primary-header">Position</th>
                                                 <!-- Basic Earnings (3 cols) -->
                                                 <th colspan="3" class="text-center primary-header">Basic Earnings</th>
-                                                <!-- Allowance (3 cols) -->
-                                                <th colspan="3" class="text-center info-header">Allowance</th>
+                                                <!-- Allowance (Days / Rate / one per ticked type / One-off / Amount) -->
+                                                <th colspan="<?= 4 + count($allow_settings) ?>" class="text-center info-header">Allowance</th>
                                                 <!-- Attendance (4 cols) -->
                                                 <th colspan="4" class="text-center primary-header">Attendance</th>
                                                 <!-- Holidays & Extra Duties (6 cols) -->
@@ -1084,9 +1085,10 @@ $refund_names = [];   // refund id => display name
                                                 <th colspan="2" class="text-center info-header">Night Diff</th>
                                                 <!-- Late (3 cols) -->
                                                 <th colspan="3" class="text-center info-header">Late</th>
+                                                <th rowspan="2" class="text-center success-header" title="Unpaid salary from a previous cutoff — taxable earning">Backpay</th>
                                                 <th rowspan="2" class="text-center success-header">Total Gross Pay</th>
                                                 <!-- Deductions -->
-                                                <th colspan="<?= count($contributions_settings) + 4 ?>" class="text-center danger-header">Deductions</th>
+                                                <th colspan="<?= count($contributions_settings) + 1 + count($fixed_keys) ?>" class="text-center danger-header">Deductions</th>
                                                 <th rowspan="2" class="text-center danger-header">Total Deduction</th>
                                                 <?php if (count($refunds_settings) > 0) { ?>
                                                     <th colspan="<?= count($refunds_settings) ?>" class="text-center success-header">Refunds</th>
@@ -1105,6 +1107,10 @@ $refund_names = [];   // refund id => display name
                                                 <!-- Allowance -->
                                                 <th class="text-center info-header">No. Days</th>
                                                 <th class="text-center info-header">Rate</th>
+                                                <?php foreach ($allow_settings as $aid): ?>
+                                                    <th class="text-center info-header"><?= htmlspecialchars($allow_names[$aid]) ?></th>
+                                                <?php endforeach; ?>
+                                                <th class="text-center info-header" title="Other one-time earnings added on the payslip (bonus, reimbursement…); Backpay has its own column">Other Earnings</th>
                                                 <th class="text-center info-header">Amount</th>
                                                 <!-- Attendance -->
                                                 <th class="text-center primary-header">No. of Duty</th>
@@ -1158,10 +1164,10 @@ $refund_names = [];   // refund id => display name
                                                 ?>
                                                         <th class="text-center danger-header"><?= htmlspecialchars($name_deduction) ?></th>
                                                 <?php } } ?>
-                                                <th class="text-center danger-header">SSS Provident Fund</th>
-                                                <th class="text-center danger-header">JEI Advance</th>
-                                                <th class="text-center danger-header">JCC Advances</th>
-                                                <th class="text-center danger-header">Tax</th>
+                                                <th class="text-center danger-header" title="One-time deductions added on the payslip (cash advance, penalty…)">Other Deductions</th>
+                                                <?php foreach ($fixed_keys as $fk): ?>
+                                                    <th class="text-center danger-header"><?= htmlspecialchars(PAYROLL_FIXED_DEDS[$fk]) ?></th>
+                                                <?php endforeach; ?>
                                                 <!-- Refund sub-headers -->
                                                 <?php if (count($refunds_settings) > 0) {
                                                     foreach ($refunds_settings as $k) {
@@ -1192,6 +1198,10 @@ $refund_names = [];   // refund id => display name
                                             // ── full column totals ──
                                             $t_monthly = 0; $t_quinsena = 0;
                                             $t_allow_days = 0; $t_allow_rate = 0; $t_allow_total = 0;
+                                            $t_allow_type = [];   // allowance_id => column total
+                                            $t_allow_oneoff = 0;  // other one-time earnings (payroll_item_extras, not backpay)
+                                            $t_backpay = 0;       // one-off items labelled Backpay
+                                            $t_fixed      = [];   // fixed deduction field => column total
                                             $t_absent_days = 0; $t_absent_amt = 0;
                                             $t_legal_d = 0; $t_legal_amt = 0;
                                             $t_sun_d = 0; $t_sun_amt = 0;
@@ -1366,6 +1376,40 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 100px;" class="text-right">
                                                         <b data-computed="allowance_amount"><?= number_format($allowance_amount, 2) ?></b>
                                                     </td>
+                                                    <?php
+                                                    // One column per allowance type ticked in Payroll Settings, read from
+                                                    // the amounts frozen on the item at calculation. The Amount column
+                                                    // after these is the blended total, so gross still adds up on-screen.
+                                                    $__aby = payroll_allowance_by_id($row);
+                                                    $pcw_row_allow = [];
+                                                    foreach ($allow_settings as $aid) {
+                                                        $__aamt = (float) ($__aby[$aid] ?? 0);
+                                                        $t_allow_type[$aid] = ($t_allow_type[$aid] ?? 0) + $__aamt;
+                                                        $pcw_row_allow[] = ['id' => (int) $aid, 'label' => $allow_names[$aid], 'amt' => $__aamt];
+                                                    ?>
+                                                    <td style="min-width: 90px;" class="text-right">
+                                                        <b><?= number_format($__aamt, 2) ?></b>
+                                                    </td>
+                                                    <?php }
+                                                    // Named one-time earnings added on this payslip (payroll_item_extras,
+                                                    // kind 2). They are already inside Gross; this column makes them visible
+                                                    // in the register, with the names in the tooltip. Backpay is split out
+                                                    // into its own column (see the cell before Gross).
+                                                    $__xnames = [];
+                                                    $rowBackpay = 0.0;
+                                                    $rowOtherEarn = 0.0;
+                                                    foreach ($rowExtras as $__x) {
+                                                        if ((int) ($__x['kind'] ?? 0) !== 2) continue;
+                                                        if (payroll_is_backpay_label($__x['label'])) { $rowBackpay += (float) $__x['amt']; continue; }
+                                                        $rowOtherEarn += (float) $__x['amt'];
+                                                        $__xnames[] = $__x['label'] . ': ' . number_format((float) $__x['amt'], 2);
+                                                    }
+                                                    $t_allow_oneoff += $rowOtherEarn;
+                                                    $t_backpay += $rowBackpay;
+                                                    ?>
+                                                    <td style="min-width: 90px;" class="text-right">
+                                                        <b<?= $__xnames ? ' style="border-bottom:1px dotted #888;cursor:help;" title="' . htmlspecialchars(implode("\n", $__xnames), ENT_QUOTES) . '"' : '' ?>><?= number_format($rowOtherEarn, 2) ?></b>
+                                                    </td>
                                                     <td class="text-right" style="min-width: 90px;">
                                                         <b data-computed="allowance_total"><?= number_format($total_allowance, 2) ?></b>
                                                     </td>
@@ -1532,6 +1576,10 @@ $refund_names = [];   // refund id => display name
                                                         <b data-computed="late_amount"><?= number_format($late_amount, 2) ?></b>
                                                     </td>
                                                     <!-- /Late -->
+                                                    <!-- Backpay: one-off earnings labelled "Backpay" for this employee (inside Gross) -->
+                                                    <td class="text-right" style="min-width: 90px;">
+                                                        <b><?= number_format($rowBackpay, 2) ?></b>
+                                                    </td>
                                                     <td class="text-right" style="min-width: 90px;">
                                                         <b data-computed="gross"><?= number_format($gross_salary, 2) ?></b>
                                                     </td>
@@ -1592,59 +1640,42 @@ $refund_names = [];   // refund id => display name
                                                     <?php  } else { ?>
 
                                                     <?php } ?>
+                                                    <!-- Fixed deductions (SSS Fund / JEI / JCC / Tax): only the columns ticked in
+                                                         Payroll Settings are shown and counted — same loop as the semi-monthly table. -->
+                                                    <?php
+                                                    // One-time deductions added on this payslip (payroll_item_extras kind 1):
+                                                    // own column, and counted into Total Deduction here so the printed
+                                                    // total matches the net below.
+                                                    $__dnames = [];
+                                                    foreach ($rowExtras as $__x) {
+                                                        if ((int) ($__x['kind'] ?? 0) === 1) $__dnames[] = $__x['label'] . ': ' . number_format((float) $__x['amt'], 2);
+                                                    }
+                                                    $rowOtherDed = (float) $rowExtraT['less'];
+                                                    $total_deductions += $rowOtherDed;
+                                                    $t_other_ded = ($t_other_ded ?? 0) + $rowOtherDed;
+                                                    ?>
+                                                    <td style="min-width: 90px;" class="text-right">
+                                                        <b<?= $__dnames ? ' style="border-bottom:1px dotted #888;cursor:help;" title="' . htmlspecialchars(implode("\n", $__dnames), ENT_QUOTES) . '"' : '' ?>><?= number_format($rowOtherDed, 2) ?></b>
+                                                    </td>
+                                                    <?php
+                                                    $fixed_ded_cells = [];
+                                                    foreach ($fixed_keys as $fk) {
+                                                        $fixed_ded_cells[$fk] = (float) compact('sss_fund', 'jei_advances', 'jcc_advances', 'tax')[$fk];
+                                                        $total_deductions += $fixed_ded_cells[$fk];
+                                                        $t_fixed[$fk] = ($t_fixed[$fk] ?? 0) + $fixed_ded_cells[$fk];
+                                                    }
+                                                    foreach ($fixed_ded_cells as $fd_field => $fd_val): ?>
                                                     <td style="min-width: 90px;" class="text-right">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $sss_fund ?>" data-id="<?= $row['id'] ?>" data-type="sss_fund" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="sss_fund" aria-describedby="basic-addon2">
-                                                                <!-- <div class="input-group-append">
-                                                                    <button onclick="updateData(this, <?= $row['id'] ?>,'sss_fund')"   class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
-                                                                </div> -->
+                                                                <input type="text" value="<?= $fd_val ?>" data-id="<?= $row['id'] ?>" data-type="<?= $fd_field ?>" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="<?= $fd_field ?>" aria-describedby="basic-addon2">
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= number_format($sss_fund, 2) ?></b>
-                                                        <?php } ?>
-
-                                                    </td>
-                                                    <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($rowShowInputs) { ?>
-                                                            <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $jei_advances ?>" data-id="<?= $row['id'] ?>" data-type="jei_advances" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="jei_advances" aria-describedby="basic-addon2">
-                                                                <!-- <div class="input-group-append">
-                                                                    <button onclick="updateData(this, <?= $row['id'] ?>,'jei_advances')" class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
-                                                                </div> -->
-                                                            </div>
-                                                        <?php } else { ?>
-                                                            <b><?= number_format($jei_advances, 2) ?></b>
-                                                        <?php } ?>
-
-                                                    </td>
-                                                    <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($rowShowInputs) { ?>
-                                                            <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $jcc_advances ?>" data-id="<?= $row['id'] ?>" data-type="jcc_advances" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="jcc_advances" aria-describedby="basic-addon2">
-                                                                <!-- <div class="input-group-append">
-                                                                    <button onclick="updateData(this, <?= $row['id'] ?>,'jcc_advances')" class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
-                                                                </div> -->
-                                                            </div>
-                                                        <?php } else { ?>
-                                                            <b><?= number_format($jcc_advances, 2) ?></b>
-                                                        <?php } ?>
-
-                                                    </td>
-
-                                                    <td style="min-width: 90px;" class="text-right">
-                                                        <?php if ($rowShowInputs) { ?>
-                                                            <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $tax ?>" class="form-control input-class"<?= $rowRO ?> data-id="<?= $row['id'] ?>" data-type="tax" placeholder="Enter Amount" aria-label="Tax" aria-describedby="basic-addon2">
-                                                                <!-- <div class="input-group-append">
-                                                                    <button onclick="updateData(this, <?= $row['id'] ?>,'tax')" class="btn btn-success" data-toggle="tooltip" title="Save Changes" type="button"><i class="ri-save-fill"></i></button>
-                                                                </div> -->
-                                                            </div>
-                                                        <?php } else { ?>
-                                                            <b><?= number_format($tax, 2) ?></b>
+                                                            <b><?= number_format($fd_val, 2) ?></b>
                                                         <?php } ?>
                                                     </td>
-                                                    <?php $total_deductions = $total_deductions   + $tax + $jei_advances + $jcc_advances + $sss_fund;
+                                                    <?php endforeach; ?>
+                                                    <?php
                                                     $t_deduction += $total_deductions;  ?>
                                                     <td style="min-width: 90px;" class="text-right">
                                                         <b><?= number_format($total_deductions, 2) ?></b>
@@ -1692,9 +1723,8 @@ $refund_names = [];   // refund id => display name
                                                     } ?>
                                                     <?php
 
-                                                    // One-off deductions for this employee (allowances already in gross).
-                                                    $total_deductions += $rowExtraT['less'];
-                                                    $t_deduction     += $rowExtraT['less'];
+                                                    // One-off deductions are already inside $total_deductions (Other
+                                                    // Deductions column above); one-off earnings are already in gross.
                                                     $net = $gross_salary -  $total_deductions + $total_refunds;
                                                     $t_net += $net;
                                                     $pcwEmployees[] = [
@@ -1713,6 +1743,7 @@ $refund_names = [];   // refund id => display name
                                                         'ut_min' => (float)$row['under_time'], 'ut_amt' => (float)$undertime_amount,
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
+                                                        'allow_types' => $pcw_row_allow,
                                                         'legal' => (float)$legal_holiday, 'legal_amt' => (float)$legal_holiday_amount,
                                                         'rest' => (float)$sunday_duty, 'rest_amt' => (float)$sunday_duty_amount,
                                                         'spc' => (float)$special_holiday, 'spc_amt' => (float)$special_holiday_amount,
@@ -1764,6 +1795,10 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-right"><?= number_format($t_quinsena, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_allow_days, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_allow_rate, 2) ?></th>
+                                                <?php foreach ($allow_settings as $aid): ?>
+                                                <th class="text-right"><?= number_format($t_allow_type[$aid] ?? 0, 2) ?></th>
+                                                <?php endforeach; ?>
+                                                <th class="text-right"><?= number_format($t_allow_oneoff, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_allow_total, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_perDay, 2) ?></th>
                                                 <th class="text-center"><?= number_format($total_number_days, 2) ?></th>
@@ -1784,14 +1819,15 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-center"><?= number_format($t_late_min, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_late_amt, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_backpay, 2) ?></th>
                                                 <th class="text-right" id="tfoot-gross"><?= number_format($t_gross, 2) ?></th>
                                                 <?php foreach ($contributions_settings as $k): ?>
                                                 <th class="text-right"><?= number_format($t_contrib[$k['id']] ?? 0, 2) ?></th>
                                                 <?php endforeach; ?>
-                                                <th class="text-right"><?= number_format($t_sss_fund, 2) ?></th>
-                                                <th class="text-right"><?= number_format($t_jei, 2) ?></th>
-                                                <th class="text-right"><?= number_format($t_jcc, 2) ?></th>
-                                                <th class="text-right"><?= number_format($t_tax, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
+                                                <?php foreach ($fixed_keys as $fk): ?>
+                                                <th class="text-right"><?= number_format($t_fixed[$fk] ?? 0, 2) ?></th>
+                                                <?php endforeach; ?>
                                                 <th class="text-right" id="tfoot-deduct"><?= number_format($t_deduction, 2) ?></th>
                                                 <?php foreach ($refunds_settings as $kd): ?>
                                                 <th class="text-right"><?= number_format($t_refund[$kd['id']] ?? 0, 2) ?></th>
@@ -1815,7 +1851,7 @@ $refund_names = [];   // refund id => display name
                                                 <th rowspan="2" class="text-center  primary-header">No. of Days</th>
                                                 <th rowspan="2" class="text-center  primary-header">Basic Rate</th>
                                                 <th rowspan="2" class="text-center  primary-header">Total Basic Rate</th>
-                                                <th colspan="3" class="text-center  info-header">Allowance</th>
+                                                <th colspan="<?= 4 + count($allow_settings) ?>" class="text-center  info-header">Allowance</th>
                                                 <th colspan="3" class="text-center info-header">Overtime</th>
                                                 <th colspan="2" class="text-center info-header">Night Diff</th>
                                                 <th colspan="3" class="text-center info-header">Late</th>
@@ -1824,9 +1860,10 @@ $refund_names = [];   // refund id => display name
                                                         calendar during calculation (rest day from the roster); the inputs
                                                         stay editable so an admin can still override a day. */ ?>
                                                 <th colspan="6" class="text-center info-header">Holiday / Rest Day</th>
+                                                <th rowspan="2" class="text-center success-header" title="Unpaid salary from a previous cutoff — taxable earning">Backpay</th>
                                                 <th rowspan="2" class="text-center success-header">GROSS SALARY</th>
-                                                <?php /* configured types + SSS Fund, JEI, JCC, Tax (Other Deduction retired) */ ?>
-                                                <th colspan="<?= count($contributions_settings) + 4 ?>" class="text-center danger-header">Deduction</th>
+                                                <?php /* configured types + Other Deductions (one-off) + fixed columns (Tax) */ ?>
+                                                <th colspan="<?= count($contributions_settings) + 1 + count($fixed_keys) ?>" class="text-center danger-header">Deduction</th>
                                                 <th rowspan="2" class="text-center danger-header">Total Deduction</th>
                                                 <?php if (count($refunds_settings) > 0) { ?>
                                                     <th colspan="<?= count($refunds_settings) ?>" class="text-center primary-header">Refunds</th>
@@ -1839,6 +1876,10 @@ $refund_names = [];   // refund id => display name
                                             <tr>
                                                 <th class="text-center  info-header">No. dys</th>
                                                 <th class="text-center  info-header">Rate</th>
+                                                <?php foreach ($allow_settings as $aid): ?>
+                                                    <th class="text-center  info-header"><?= htmlspecialchars($allow_names[$aid]) ?></th>
+                                                <?php endforeach; ?>
+                                                <th class="text-center  info-header" title="Other one-time earnings added on the payslip (bonus, reimbursement…); Backpay has its own column">Other Earnings</th>
                                                 <th class="text-center  info-header">Amount</th>
 
                                                 <th class="text-center  info-header">No. hr</th>
@@ -1899,10 +1940,10 @@ $refund_names = [];   // refund id => display name
                                                     <?php } ?>
                                                 <?php } else { ?>
                                                 <?php } ?>
-                                                <th class="text-center  danger-header">SSS Provident Fund</th>
-                                                <th class="text-center  danger-header">JEI Advance</th>
-                                                <th class="text-center  danger-header">JCC Advances</th>
-                                                <th class="text-center  danger-header">Tax</th>
+                                                <th class="text-center  danger-header" title="One-time deductions added on the payslip (cash advance, penalty…)">Other Deductions</th>
+                                                <?php foreach ($fixed_keys as $fk): ?>
+                                                    <th class="text-center  danger-header"><?= htmlspecialchars(PAYROLL_FIXED_DEDS[$fk]) ?></th>
+                                                <?php endforeach; ?>
                                                 <?php if (count($refunds_settings) > 0) {
                                                     foreach ($refunds_settings as $k) {
                                                         $query_con = "SELECT * FROM refunds   WHERE id = ?";
@@ -1937,6 +1978,10 @@ $refund_names = [];   // refund id => display name
                                             // ── full column totals ──
                                             $t_monthly = 0; $t_quinsena = 0;
                                             $t_allow_days = 0; $t_allow_rate = 0; $t_allow_total = 0;
+                                            $t_allow_type = [];   // allowance_id => column total
+                                            $t_allow_oneoff = 0;  // other one-time earnings (payroll_item_extras, not backpay)
+                                            $t_backpay = 0;       // one-off items labelled Backpay
+                                            $t_fixed      = [];   // fixed deduction field => column total
                                             $t_absent_days = 0; $t_absent_amt = 0;
                                             $t_legal_d = 0; $t_legal_amt = 0;
                                             $t_sun_d = 0; $t_sun_amt = 0;
@@ -2136,6 +2181,40 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 100px;" class="text-right">
                                                         <b data-computed="allowance_amount"><?= number_format($allowance_amount, 2) ?></b>
                                                     </td>
+                                                    <?php
+                                                    // One column per allowance type ticked in Payroll Settings, read from
+                                                    // the amounts frozen on the item at calculation. The Amount column
+                                                    // after these is the blended total, so gross still adds up on-screen.
+                                                    $__aby = payroll_allowance_by_id($row);
+                                                    $pcw_row_allow = [];
+                                                    foreach ($allow_settings as $aid) {
+                                                        $__aamt = (float) ($__aby[$aid] ?? 0);
+                                                        $t_allow_type[$aid] = ($t_allow_type[$aid] ?? 0) + $__aamt;
+                                                        $pcw_row_allow[] = ['id' => (int) $aid, 'label' => $allow_names[$aid], 'amt' => $__aamt];
+                                                    ?>
+                                                    <td style="min-width: 90px;" class="text-right">
+                                                        <b><?= number_format($__aamt, 2) ?></b>
+                                                    </td>
+                                                    <?php }
+                                                    // Named one-time earnings added on this payslip (payroll_item_extras,
+                                                    // kind 2). They are already inside Gross; this column makes them visible
+                                                    // in the register, with the names in the tooltip. Backpay is split out
+                                                    // into its own column (see the cell before Gross).
+                                                    $__xnames = [];
+                                                    $rowBackpay = 0.0;
+                                                    $rowOtherEarn = 0.0;
+                                                    foreach ($rowExtras as $__x) {
+                                                        if ((int) ($__x['kind'] ?? 0) !== 2) continue;
+                                                        if (payroll_is_backpay_label($__x['label'])) { $rowBackpay += (float) $__x['amt']; continue; }
+                                                        $rowOtherEarn += (float) $__x['amt'];
+                                                        $__xnames[] = $__x['label'] . ': ' . number_format((float) $__x['amt'], 2);
+                                                    }
+                                                    $t_allow_oneoff += $rowOtherEarn;
+                                                    $t_backpay += $rowBackpay;
+                                                    ?>
+                                                    <td style="min-width: 90px;" class="text-right">
+                                                        <b<?= $__xnames ? ' style="border-bottom:1px dotted #888;cursor:help;" title="' . htmlspecialchars(implode("\n", $__xnames), ENT_QUOTES) . '"' : '' ?>><?= number_format($rowOtherEarn, 2) ?></b>
+                                                    </td>
                                                     <td class="text-right" style="min-width: 90px;">
                                                         <?php
                                                         // Amount = the hand-typed slot (days × rate) PLUS the employee's
@@ -2276,6 +2355,10 @@ $refund_names = [];   // refund id => display name
                                                     <td class="text-right" style="min-width: 90px;">
                                                         <b data-computed="special_amount"><?= number_format($special_holiday_amount, 2) ?></b>
                                                     </td>
+                                                    <!-- Backpay: one-off earnings labelled "Backpay" for this employee (inside Gross) -->
+                                                    <td class="text-right" style="min-width: 90px;">
+                                                        <b><?= number_format($rowBackpay, 2) ?></b>
+                                                    </td>
                                                     <td class="text-right" style="min-width: 90px;">
                                                         <b data-computed="gross"><?= number_format($gross_salary, 2) ?></b>
                                                     </td>
@@ -2343,13 +2426,30 @@ $refund_names = [];   // refund id => display name
                                                     // Other Deduction retired — replaced by named one-off items
                                                     // (payroll_item_extras). Kept at 0 for legacy reports only.
                                                     $other_deduction = 0.0;
-                                                    $total_deductions += $sss_fund + $jei_advances + $jcc_advances + $tax;
-                                                    $fixed_ded_cells = [
-                                                        'sss_fund'        => $sss_fund,
-                                                        'jei_advances'    => $jei_advances,
-                                                        'jcc_advances'    => $jcc_advances,
-                                                        'tax'             => $tax,
-                                                    ];
+                                                    // Only the fixed columns ticked in Payroll Settings are shown and
+                                                    // counted (recalculation zeroes the unticked ones; this also keeps
+                                                    // an un-recalculated run honest).
+                                                    // One-time deductions added on this payslip (payroll_item_extras kind 1):
+                                                    // own column, and counted into Total Deduction here so the printed
+                                                    // total matches the net below.
+                                                    $__dnames = [];
+                                                    foreach ($rowExtras as $__x) {
+                                                        if ((int) ($__x['kind'] ?? 0) === 1) $__dnames[] = $__x['label'] . ': ' . number_format((float) $__x['amt'], 2);
+                                                    }
+                                                    $rowOtherDed = (float) $rowExtraT['less'];
+                                                    $total_deductions += $rowOtherDed;
+                                                    $t_other_ded = ($t_other_ded ?? 0) + $rowOtherDed;
+                                                    ?>
+                                                    <td style="min-width: 90px;" class="text-right">
+                                                        <b<?= $__dnames ? ' style="border-bottom:1px dotted #888;cursor:help;" title="' . htmlspecialchars(implode("\n", $__dnames), ENT_QUOTES) . '"' : '' ?>><?= number_format($rowOtherDed, 2) ?></b>
+                                                    </td>
+                                                    <?php
+                                                    $fixed_ded_cells = [];
+                                                    foreach ($fixed_keys as $fk) {
+                                                        $fixed_ded_cells[$fk] = (float) compact('sss_fund', 'jei_advances', 'jcc_advances', 'tax')[$fk];
+                                                        $total_deductions += $fixed_ded_cells[$fk];
+                                                        $t_fixed[$fk] = ($t_fixed[$fk] ?? 0) + $fixed_ded_cells[$fk];
+                                                    }
                                                     foreach ($fixed_ded_cells as $fd_field => $fd_val): ?>
                                                     <td style="min-width: 90px;" class="text-right">
                                                         <?php if ($rowShowInputs) { ?>
@@ -2410,9 +2510,8 @@ $refund_names = [];   // refund id => display name
                                                     </td>
                                                     <?php
 
-                                                    // One-off deductions for this employee (allowances already in gross).
-                                                    $total_deductions += $rowExtraT['less'];
-                                                    $t_deduction     += $rowExtraT['less'];
+                                                    // One-off deductions are already inside $total_deductions (Other
+                                                    // Deductions column above); one-off earnings are already in gross.
                                                     $net = $gross_salary -  $total_deductions + $total_refunds + $adjustment;
                                                     $t_net += $net;
                                                     $pcwEmployees[] = [
@@ -2431,6 +2530,7 @@ $refund_names = [];   // refund id => display name
                                                         'ut_min' => (float)$row['under_time'], 'ut_amt' => (float)$undertime_amount,
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
+                                                        'allow_types' => $pcw_row_allow,
                                                         'legal' => (float)$legal_holiday, 'legal_amt' => (float)$legal_holiday_amount,
                                                         'rest' => (float)$sunday_duty, 'rest_amt' => (float)$sunday_duty_amount,
                                                         'spc' => (float)$special_holiday, 'spc_amt' => (float)$special_holiday_amount,
@@ -2484,6 +2584,10 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-right" id="tfoot-basic-rate"><?= number_format($t_basic_rate, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_allow_days, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_allow_rate, 2) ?></th>
+                                                <?php foreach ($allow_settings as $aid): ?>
+                                                <th class="text-right"><?= number_format($t_allow_type[$aid] ?? 0, 2) ?></th>
+                                                <?php endforeach; ?>
+                                                <th class="text-right"><?= number_format($t_allow_oneoff, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_allow_total, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_ot_hrs, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ot_rate, 2) ?></th>
@@ -2502,14 +2606,15 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-right"><?= number_format($t_sun_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_spc_d, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_spc_amt, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_backpay, 2) ?></th>
                                                 <th class="text-right" id="tfoot-gross"><?= number_format($t_gross, 2) ?></th>
                                                 <?php foreach ($contributions_settings as $k): ?>
                                                 <th class="text-right"><?= number_format($t_contrib[$k['id']] ?? 0, 2) ?></th>
                                                 <?php endforeach; ?>
-                                                <th class="text-right"><?= number_format($t_sss_fund, 2) ?></th>
-                                                <th class="text-right"><?= number_format($t_jei, 2) ?></th>
-                                                <th class="text-right"><?= number_format($t_jcc, 2) ?></th>
-                                                <th class="text-right"><?= number_format($t_tax, 2) ?></th>
+                                                <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
+                                                <?php foreach ($fixed_keys as $fk): ?>
+                                                <th class="text-right"><?= number_format($t_fixed[$fk] ?? 0, 2) ?></th>
+                                                <?php endforeach; ?>
                                                 <th class="text-right" id="tfoot-deduct"><?= number_format($t_deduction, 2) ?></th>
                                                 <?php foreach ($refunds_settings as $kd): ?>
                                                 <th class="text-right"><?= number_format($t_refund[$kd['id']] ?? 0, 2) ?></th>
@@ -2759,7 +2864,7 @@ function renderRemittance() {
                 + '<td class="text-end" style="width:130px;">' + peso(res.ded_total) + '</td></tr>'
                 + '<tr class="rm-grand"><td>Total Refunds</td><td class="text-end">' + peso(res.ref_total) + '</td></tr>'
                 + (res.extra_add > 0
-                    ? '<tr class="rm-grand"><td>Total One-off Allowances (paid out, not remitted)</td>'
+                    ? '<tr class="rm-grand"><td>Total Other Earnings incl. Backpay (paid out, not remitted)</td>'
                       + '<td class="text-end">' + peso(res.extra_add) + '</td></tr>'
                     : '')
                 + '</tbody></table></div>'
@@ -3525,6 +3630,8 @@ function printPayslipPreview() {
 window.PCW_DATA = <?= json_encode($pcwEmployees, JSON_UNESCAPED_UNICODE | JSON_PARTIAL_OUTPUT_ON_ERROR) ?>;
 window.PCW_REVIEWS = <?= json_encode($pcwReviewConvo, JSON_UNESCAPED_UNICODE) ?>;
 window.PCW_EXTRA_CATALOG = <?= json_encode($pcwExtraCatalog, JSON_UNESCAPED_UNICODE) ?>;
+/* Fixed deduction columns this run applies (Payroll Settings); the sheet lists only these. */
+window.PCW_FIXED_DEDS = <?= json_encode($fixed_keys) ?>;
 /* Areas in this payroll: 'all' is every area, the rest is keyed by department
    name so the Area filter can follow the Department picker. */
 window.PCW_AREAS = <?= json_encode(['all' => $pay_areas, 'by_dept' => $pay_areas_by_dept], JSON_UNESCAPED_UNICODE) ?>;

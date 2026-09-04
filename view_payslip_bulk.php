@@ -331,7 +331,7 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <?php endif; ?>
     <?php /* One-off allowances added for this employee alone */ ?>
     <?php if ($ps_x_add > 0): ?>
-    <div class="grp-lbl">One-off Allowances</div>
+    <div class="grp-lbl">Other Earnings</div>
     <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 2) continue; ?>
     <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
     <?php endforeach; endif; ?>
@@ -364,7 +364,7 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <?php endforeach; endif; ?>
     <?php /* One-off items added for this employee alone */ ?>
     <?php if ($ps_x_less > 0): ?>
-    <div class="grp-lbl">One-off Items</div>
+    <div class="grp-lbl">Other Deductions</div>
     <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 1) continue; ?>
     <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
     <?php endforeach; endif; ?>

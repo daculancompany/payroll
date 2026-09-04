@@ -186,17 +186,17 @@ LEFT JOIN sites f ON f.id = a.site_id
         $xq = $conn->query("SELECT payroll_item_id, kind, label, amount FROM payroll_item_extras WHERE payroll_id = $id ORDER BY id ASC");
         if ($xq) while ($x = $xq->fetch_assoc()) $ppExtras[(int)$x['payroll_item_id']][] = $x;
     }
-    $contributions_settings = json_decode($payroll['settings'], true) ?: [];
-
-    $refunds_settings  = array_filter($contributions_settings, function ($item) {
-        return $item["type"] === 4;
-    });
-
-    $contributions_settings = array_filter($contributions_settings, function ($item) {
-        return $item["type"] !== 4;
-    });
-
-    $contributions_settings = array_values($contributions_settings);
+    // Columns follow Payroll Settings exactly as payroll_calculations.php does.
+    $settings_split         = payroll_settings_split($payroll['settings']);
+    $contributions_settings = $settings_split['deds'];
+    $refunds_settings       = $settings_split['refunds'];
+    $fixed_keys             = array_keys(PAYROLL_FIXED_DEDS);   // always-on fixed columns (Tax)
+    $allow_settings         = $settings_split['allow'];
+    $allow_names            = payroll_allowance_column_names($conn, $allow_settings);
+    $t_allow_type           = [];
+    $t_allow_oneoff         = 0;   // other one-time earnings (not backpay)
+    $t_backpay              = 0;
+    $t_fixed                = [];
 
     $payroll_type = $payroll['type'];
     ?>
@@ -292,12 +292,14 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <div class="flip-text">Total</div>
                             <div class="flip-text">Basic Rate</div>
                         </th>
-                        <th colspan="3" class="text-center  info-header">Allowance</th>
+                        <th colspan="<?= 4 + count($allow_settings) ?>" class="text-center  info-header">Allowance</th>
                         <th colspan="3" class="text-center info-header">Overtime</th>
                         <th colspan="2" class="text-center info-header">Night Diff</th>
                         <th colspan="3" class="text-center info-header">Late</th>
+                        <th rowspan="2" class="text-center success-header">Backpay</th>
                         <th rowspan="2" class="text-center success-header">GROSS SALARY</th>
-                        <th colspan="<?= count($contributions_settings) + 5 ?>" class="text-center danger-header">Deduction</th>
+                        <?php /* configured types + ticked fixed columns + Other Deduction */ ?>
+                        <th colspan="<?= count($contributions_settings) + count($fixed_keys) + 1 ?>" class="text-center danger-header">Deduction</th>
                         <th rowspan="2" class="text-center danger-header">Total Deduction</th>
                         <?php if (count($refunds_settings) > 0) { ?>
                             <th colspan="<?= count($refunds_settings) ?>" class="text-center primary-header">Refunds</th>
@@ -310,6 +312,10 @@ LEFT JOIN sites f ON f.id = a.site_id
                     <tr>
                         <th class="text-center  info-header">No. dys</th>
                         <th class="text-center  info-header">Rate</th>
+                        <?php foreach ($allow_settings as $aid): ?>
+                            <th class="text-center  info-header"><?= htmlspecialchars($allow_names[$aid]) ?></th>
+                        <?php endforeach; ?>
+                        <th class="text-center  info-header">Other Earnings</th>
                         <th class="text-center  info-header">Amount</th>
 
                         <th class="text-center  info-header">No. hr</th>
@@ -357,11 +363,10 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <?php } ?>
                         <?php } else { ?>
                         <?php } ?>
-                        <th class="text-center  danger-header">SSS Provident Fund</th>
-                        <th class="text-center  danger-header">JEI Advance</th>
-                        <th class="text-center  danger-header">JCC Advances</th>
-                        <th class="text-center  danger-header">Tax</th>
-                        <th class="text-center  danger-header">Other Deduction</th>
+                        <?php foreach ($fixed_keys as $fk): ?>
+                            <th class="text-center  danger-header"><?= htmlspecialchars(PAYROLL_FIXED_DEDS[$fk]) ?></th>
+                        <?php endforeach; ?>
+                        <th class="text-center  danger-header">Other Deductions</th>
                         <?php if (count($refunds_settings) > 0) {
                             foreach ($refunds_settings as $k) {
                                 $query_con = "SELECT * FROM refunds   WHERE id = ?";
@@ -485,8 +490,24 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <td class="text-right">
                                 <b><?= number_format($allowance_amount, 2) ?></b>
                             </td>
+                            <?php $__aby = payroll_allowance_by_id($row);
+                            foreach ($allow_settings as $aid) {
+                                $__aamt = (float) ($__aby[$aid] ?? 0);
+                                $t_allow_type[$aid] = ($t_allow_type[$aid] ?? 0) + $__aamt; ?>
+                            <td class="text-right"><b><?= number_format($__aamt, 2) ?></b></td>
+                            <?php }
+                            // One-time earnings on this payslip (already folded into Gross below):
+                            // Backpay gets its own column before Gross, the rest show here.
+                            $__xadd = 0; $__xback = 0;
+                            foreach (($ppExtras[(int)$row['id']] ?? []) as $__x) {
+                                if ((int)$__x['kind'] !== 2) continue;
+                                if (payroll_is_backpay_label($__x['label'])) $__xback += (float)$__x['amount']; else $__xadd += (float)$__x['amount'];
+                            }
+                            $t_allow_oneoff += $__xadd; $t_backpay += $__xback; ?>
+                            <td class="text-right"><b><?= number_format($__xadd, 2) ?></b></td>
                             <td class="text-right">
-                                <b><?= number_format($total_allowance, 2) ?></b>
+                                <?php /* blended: hand-typed days × rate + the configured types — same figure the payroll table shows */ ?>
+                                <b><?= number_format(payroll_allowance_total($row), 2) ?></b>
                             </td>
 
 
@@ -523,6 +544,7 @@ LEFT JOIN sites f ON f.id = a.site_id
                                 <?= number_format($late_amount, 2) ?>
                             </td>
                             <!-- /Late -->
+                            <td class="text-right"><?= number_format($__xback, 2) ?></td>
                             <td class="text-right">
                                 <?= number_format($gross_salary, 2) ?>
                             </td>
@@ -567,17 +589,19 @@ LEFT JOIN sites f ON f.id = a.site_id
                             <!-- Fixed deductions + Other Deduction — mirror payroll_calculations.php -->
                             <?php
                             $other_deduction = (float) ($row['other_deduction'] ?? 0);
-                            $total_deductions += $sss_fund + $jei_advances + $jcc_advances + $tax + $other_deduction;
-                            $t_sss_fund = ($t_sss_fund ?? 0) + $sss_fund;
-                            $t_jei = ($t_jei ?? 0) + $jei_advances;
-                            $t_jcc = ($t_jcc ?? 0) + $jcc_advances;
-                            $t_tax = ($t_tax ?? 0) + $tax;
+                            // + this employee's one-time deductions (payroll_item_extras kind 1),
+                            // so the Other Deductions column and Total Deduction both show them.
+                            foreach (($ppExtras[(int)$row['id']] ?? []) as $__x) if ((int)$__x['kind'] === 1) $other_deduction += (float)$__x['amount'];
+                            $total_deductions += $other_deduction;
                             $t_other_ded = ($t_other_ded ?? 0) + $other_deduction;
-                            ?>
-                            <td class="text-right"><?= number_format($sss_fund, 2) ?></td>
-                            <td class="text-right"><?= number_format($jei_advances, 2) ?></td>
-                            <td class="text-right"><?= number_format($jcc_advances, 2) ?></td>
-                            <td class="text-right"><?= number_format($tax, 2) ?></td>
+                            // Only the fixed columns ticked in Payroll Settings.
+                            $fixed_vals = compact('sss_fund', 'jei_advances', 'jcc_advances', 'tax');
+                            foreach ($fixed_keys as $fk) {
+                                $fd_val = (float) $fixed_vals[$fk];
+                                $total_deductions += $fd_val;
+                                $t_fixed[$fk] = ($t_fixed[$fk] ?? 0) + $fd_val; ?>
+                            <td class="text-right"><?= number_format($fd_val, 2) ?></td>
+                            <?php } ?>
                             <td class="text-right"><?= number_format($other_deduction, 2) ?></td>
                             <?php $t_deduction += $total_deductions;  ?>
                             <td class="text-right">
@@ -618,7 +642,7 @@ LEFT JOIN sites f ON f.id = a.site_id
                             $xAdd = $xLess = 0;
                             foreach ($rowX as $x) { if ((int)$x['kind'] === 2) $xAdd += (float)$x['amount']; else $xLess += (float)$x['amount']; }
                             $gross_salary     += $xAdd;
-                            $total_deductions += $xLess;
+                            // $xLess was already counted in the Other Deductions column above.
                             $net = $gross_salary -  $total_deductions + $total_refunds + $adjustment;
                             $t_net += $net;
                             ?>
@@ -642,6 +666,10 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th class="text-right"><?= number_format($t_basic_rate, 2) ?></th>
                         <th></th>
                         <th></th>
+                        <?php foreach ($allow_settings as $aid): ?>
+                        <th class="text-right"><?= number_format($t_allow_type[$aid] ?? 0, 2) ?></th>
+                        <?php endforeach; ?>
+                        <th class="text-right"><?= number_format($t_allow_oneoff, 2) ?></th>
                         <th></th>
                         <th></th>
                         <th></th>
@@ -651,12 +679,12 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th></th>
                         <th></th>
                         <th></th>
+                        <th class="text-right"><?= number_format($t_backpay, 2) ?></th>
                         <th class="text-right"><?= number_format($t_gross, 2) ?></th>
                         <th colspan="<?= count($contributions_settings) ?>"></th>
-                        <th class="text-right"><?= number_format($t_sss_fund ?? 0, 2) ?></th>
-                        <th class="text-right"><?= number_format($t_jei ?? 0, 2) ?></th>
-                        <th class="text-right"><?= number_format($t_jcc ?? 0, 2) ?></th>
-                        <th class="text-right"><?= number_format($t_tax ?? 0, 2) ?></th>
+                        <?php foreach ($fixed_keys as $fk): ?>
+                        <th class="text-right"><?= number_format($t_fixed[$fk] ?? 0, 2) ?></th>
+                        <?php endforeach; ?>
                         <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
                         <th class="text-right"><?= number_format($t_deduction, 2) ?></th>
                         <th colspan="<?= count($refunds_settings) ?>"></th>

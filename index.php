@@ -1378,7 +1378,8 @@ function getRole($login_role)
         <script src="assets2/js/deductions.js"></script>
     <?php } ?>
     <?php if ($page == 'payroll'  || $page == 'payroll_items') { ?>
-        <script src="assets2/js/payroll.js"></script>
+        <?php /* av() appends the file mtime so a changed script is never served from browser cache */ ?>
+        <script src="<?= av('assets2/js/payroll.js') ?>"></script>
     <?php } ?>
     <?php if ($page == 'attendance') { ?>
         <script src="assets2/js/attendance.js"></script>

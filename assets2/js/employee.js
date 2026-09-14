@@ -61,6 +61,40 @@ function refreshSelectDisplay($el) {
     if (window.CustomSelect) window.CustomSelect.refresh(el);
 }
 
+// The Area filter lists every ward in the hospital, so picking a Department has
+// to hide the ones that department has nobody in. Disable rather than remove —
+// the option list stays put and only the widget's menu is rebuilt, the same way
+// the Create Employee modal narrows its own selects.
+//
+// An area is kept when data-depts contains the chosen department. That list is
+// built from real employee rows, not area.department_id, because the two
+// legitimately disagree (see the comment on the select in employee.php).
+//
+// Clearing a now-invalid pick is the part that matters: server-side the filters
+// are ANDed, so a leftover area from the previous department returns zero rows,
+// which reads as "this department has no employees" rather than "that area
+// doesn't apply here". The "ALL" option carries no .opt class, so it is never
+// disabled.
+function areaAllowedFor(opt, did) {
+    if (!did) return true;
+    var depts = ($(opt).attr("data-depts") || "").split(",");
+    return depts.indexOf(String(did)) !== -1;
+}
+
+function narrowAreaFilter() {
+    var $area = $("#filter-area");
+    if (!$area.length) return;
+
+    var did = $("#filter-department").val() || "";
+    var $cur = $area.find("option:selected");
+    if ($cur.hasClass("opt") && !areaAllowedFor($cur[0], did)) $area.val("");
+
+    $area.find("option.opt").each(function () {
+        $(this).prop("disabled", !areaAllowedFor(this, did));
+    });
+    refreshSelectDisplay($area);
+}
+
 function fillAddEmployeeForm(e) {
     var $form = $("#form-add");
     $form[0].reset(); // clear out any previous quick-edit before filling this one
@@ -183,6 +217,7 @@ $(document).ready(function () {
                 d.status = $("#filter-status").val();
                 d.position_id = $("#filter-position").val();
                 d.department_id = $("#filter-department").val();
+                d.area_id = $("#filter-area").val();
                 d.fingerprint = $("#filter-fingerprint").val();
             },
         },
@@ -231,6 +266,11 @@ $(document).ready(function () {
     });
 
     $("#filter-department").on("change", function () {
+        narrowAreaFilter();
+        oTable.draw();
+    });
+
+    $("#filter-area").on("change", function () {
         oTable.draw();
     });
 

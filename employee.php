@@ -116,7 +116,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 									<option value="1">Active</option>
 								</select>
 							</div>
-							<div class="col-sm-3">
+							<div class="col-sm-2">
 								<div class="filter-label"><i class="ri-briefcase-4-line me-1"></i>Position</div>
 								<select class="form-control form-control-sm" id="filter-position" data-placeholder="All Positions" data-cs-title="Position" data-cs-icon="ri-briefcase-4-line">
 									<option value="">ALL</option>
@@ -136,6 +136,40 @@ $emp_hide_pay = is_timekeeper($login_role);
 									$depts = $conn->query("SELECT * FROM department " . ($dept_lock ? "WHERE id = $dept_lock " : "") . "ORDER BY name ASC");
 									if ($depts) while ($row = $depts->fetch_assoc()) : ?>
 										<option value="<?= $row['id'] ?>" <?= $dept_lock == $row['id'] ? 'selected' : '' ?>><?= htmlspecialchars($row['name']) ?></option>
+									<?php endwhile; ?>
+								</select>
+							</div>
+							<div class="col-sm-3">
+								<div class="filter-label"><i class="ri-node-tree me-1"></i>Area</div>
+								<?php /* Ward/section, narrowed client-side by the Department filter.
+
+								         data-depts lists which departments actually STAFF this area,
+								         read off the employee rows — NOT area.department_id. The two
+								         disagree on purpose: department is the payroll unit, area the
+								         operating one, so a nurse paid under NURSING SERVICE works the
+								         ICU ward. 92 of 352 active staff sit that way, and cascading on
+								         area.department_id would make 27 of the 61 real department/area
+								         pairs unpickable — the filter would silently hide people. */ ?>
+								<select class="form-control form-control-sm" id="filter-area" data-placeholder="All Areas" data-cs-title="Area" data-cs-icon="ri-node-tree">
+									<option value="">ALL</option>
+									<?php
+									$area_depts = [];
+									$__pairs = $conn->query("SELECT DISTINCT department_id, area_id FROM employee
+									                         WHERE status = 1 AND area_id IS NOT NULL AND department_id IS NOT NULL");
+									if ($__pairs) while ($p = $__pairs->fetch_assoc()) {
+										$area_depts[(int)$p['area_id']][(int)$p['department_id']] = true;
+									}
+
+									$areas = $conn->query("SELECT id, name, department_id FROM area WHERE status = 1 ORDER BY name ASC");
+									if ($areas) while ($row = $areas->fetch_assoc()):
+										$aid = (int)$row['id'];
+										// An area nobody is posted to yet still belongs to its own department.
+										$area_depts[$aid][(int)$row['department_id']] = true;
+										$dids = array_keys($area_depts[$aid]);
+										// A dept-locked session never sees an area its department cannot reach.
+										if ($dept_lock && !in_array($dept_lock, $dids, true)) continue;
+									?>
+										<option class="opt" value="<?= $aid ?>" data-depts="<?= implode(',', $dids) ?>"><?= htmlspecialchars($row['name']) ?></option>
 									<?php endwhile; ?>
 								</select>
 							</div>

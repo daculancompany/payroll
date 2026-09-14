@@ -19,6 +19,7 @@ $status        = isset($request['status'])        && $request['status']        !
 $position_id   = isset($request['position_id'])   && $request['position_id']   !== '' ? (int)$request['position_id']   : null;
 $department_id = isset($request['department_id']) && $request['department_id'] !== '' ? (int)$request['department_id'] : null;
 $fingerprint   = isset($request['fingerprint'])   && $request['fingerprint']   !== '' ? (int)$request['fingerprint']   : null;
+$area_id       = isset($request['area_id'])       && $request['area_id']       !== '' ? (int)$request['area_id']       : null;
 
 // Department Heads are locked to their own department regardless of the UI filter.
 if (dept_scope_id() > 0) {
@@ -62,6 +63,13 @@ $filter_department = '';
 if ($department_id) {
     $filter_department = " AND e.department_id = $department_id";
 }
+// Narrows WITHIN the department predicate above, never around it: a scoped
+// session has $department_id forced, and this is another AND, so a hand-crafted
+// area_id from another department simply matches no rows.
+$filter_area = '';
+if ($area_id) {
+    $filter_area = " AND e.area_id = $area_id";
+}
 // Fingerprint enrollment: 1 = has at least one template, 0 = none
 $filter_fingerprint = '';
 if ($fingerprint === 1) {
@@ -75,7 +83,7 @@ if ($fingerprint === 1) {
 $sql = "SELECT e.id, e.loan, e.employee_no, e.firstname, e.middlename, e.lastname, e.salary, e.basic_pay, e.ot_rate, e.status, e.rate_type, d.name AS department, p.name AS position, cl.clasification AS clasification FROM employee e
         LEFT JOIN department d ON e.department_id = d.id
         LEFT JOIN position p ON e.position_id = p.id
-        LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department $filter_fingerprint";
+        LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department $filter_area $filter_fingerprint";
 
 if (!empty($request['search']['value'])) {
     $searchValue = mysqli_real_escape_string($conn, $request['search']['value']);

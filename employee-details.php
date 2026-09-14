@@ -44,6 +44,23 @@ if (dept_scope_id() > 0 && (int)$emp['department_id'] !== dept_scope_id()) {
     die("You don't have access to this employee's record.");
 }
 
+// Prev/Next employee for the header: alphabetical (lastname, firstname, id),
+// same status as the one shown, and inside the viewer's visibility scope so an
+// approver never steps onto a record the guard above would refuse.
+// Row-value comparison mirrors the ORDER BY exactly, so ties on name are broken
+// by id and every employee is reachable.
+$__scope = dept_scope_sql('e.department_id');
+$__nav = ['prev' => null, 'next' => null];
+foreach (['prev' => ['<', 'DESC'], 'next' => ['>', 'ASC']] as $__k => [$__op, $__dir]) {
+    $__s = $conn->prepare("SELECT e.id, e.lastname, e.firstname FROM employee e
+        WHERE e.status = ? AND (e.lastname, e.firstname, e.id) $__op (?, ?, ?) $__scope
+        ORDER BY e.lastname $__dir, e.firstname $__dir, e.id $__dir LIMIT 1");
+    $__s->bind_param('issi', $emp['status'], $emp['lastname'], $emp['firstname'], $emp['id']);
+    $__s->execute();
+    $__nav[$__k] = $__s->get_result()->fetch_assoc() ?: null;
+    $__s->close();
+}
+
 // Assign values dynamically using variable variables ($$)
 foreach ($emp as $k => $v) {
     $$k = $v;
@@ -237,10 +254,24 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
 
                 <div class="card">
                     <div class="card-header align-items-center d-flex py-2">
-                        <div class="flex-grow-1">
-                            <a href="javascript:void(0);" onclick="if(document.referrer){history.back();}else{location.href='index.php?page=employee';}" class="btn btn-sm btn-outline-secondary me-2">
+                        <div class="flex-grow-1 d-flex align-items-center gap-2">
+                            <a href="javascript:void(0);" onclick="if(document.referrer){history.back();}else{location.href='index.php?page=employee';}" class="btn btn-sm btn-outline-secondary">
                                 <i class="ri-arrow-left-line me-1"></i>Back
                             </a>
+                            <div class="btn-group btn-group-sm" role="group" aria-label="Previous / next employee">
+                                <?php foreach (['prev' => ['ri-arrow-left-s-line', 'Previous', 'Prev'], 'next' => ['ri-arrow-right-s-line', 'Next', 'Next']] as $__k => [$__ico, $__lbl, $__txt]):
+                                    $__n = $__nav[$__k];
+                                    $__inner = $__k === 'prev' ? "<i class=\"$__ico\"></i>$__txt" : "$__txt<i class=\"$__ico\"></i>";
+                                    if ($__n): ?>
+                                        <a id="emp-nav-<?= $__k ?>" class="btn btn-outline-primary"
+                                           href="index.php?page=employee-details&id=<?= (int) $__n['id'] ?>"
+                                           title="<?= $__lbl ?>: <?= esc($__n['lastname'] . ', ' . $__n['firstname']) ?>"><?= $__inner ?></a>
+                                    <?php else: ?>
+                                        <button type="button" class="btn btn-outline-primary" disabled
+                                                title="No <?= strtolower($__lbl) ?> employee"><?= $__inner ?></button>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </div>
                         </div>
                         <div class="flex-shrink-0 d-flex gap-2">
                             <?php if (in_array($login_role, $allowed_values)): ?>
@@ -1956,6 +1987,20 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
 
     <script>
         let employee_id = "<?= $emp_id ?>";
+
+        // ← / → step to the previous / next employee (same guards as daily-board.js:
+        // no modifier keys, not while typing, not while a modal or datepicker is open).
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+            if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+            var t = e.target;
+            if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+            if (document.querySelector('.modal.show')) return;
+            var drp = document.querySelector('.daterangepicker');
+            if (drp && drp.offsetParent !== null) return;
+            var link = document.getElementById(e.key === 'ArrowLeft' ? 'emp-nav-prev' : 'emp-nav-next');
+            if (link && link.href) window.location.href = link.href;
+        });
 
         // Initialize tooltips
         document.addEventListener('DOMContentLoaded', function () {

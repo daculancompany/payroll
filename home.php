@@ -440,6 +440,7 @@ $arr = $conn->query("
     GROUP BY request_type, status
 ");
 if ($arr) while ($r = $arr->fetch_assoc()) {
+    if ($r['status'] == 3) continue;   // cancelled — neither pending nor decided
     $k = ($r['status'] == 1) ? 'a' : (($r['status'] == 2) ? 'r' : 'p');
     if (isset($areq[$r['request_type']])) $areq[$r['request_type']][$k] = (int)$r['c'];
 }

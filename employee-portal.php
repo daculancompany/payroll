@@ -1241,6 +1241,7 @@ body{
 .areq-card.st-pending{border-left-color:#e6a817;}
 .areq-card.st-approved{border-left-color:#6642aa;}
 .areq-card.st-rejected{border-left-color:#c62828;}
+.areq-card.st-cancelled{border-left-color:#6c757d;}
 .areq-head{padding:0 92px 4px 0;}
 .areq-head .areq-d1{font-size:15px;font-weight:800;color:#4e3483;display:flex;align-items:center;gap:6px;}
 .areq-head .areq-d1 i{color:#6642aa;font-size:15px;}
@@ -3535,7 +3536,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <div class="paper pslist-paper">
             <div class="pslist">
                 <?php
-                $stMap = [0 => ['Pending','#fd7e14','#fff8e8'], 1 => ['Approved','#4e3483','#f0ecf6'], 2 => ['Rejected','#dc3545','#fff0f0']];
+                $stMap = [0 => ['Pending','#fd7e14','#fff8e8'], 1 => ['Approved','#4e3483','#f0ecf6'], 2 => ['Rejected','#dc3545','#fff0f0'], 3 => ['Cancelled','#6c757d','#f1f3f5']];
                 // Compact per-stage chip (icon coloured by status), labelled by tooltip.
                 $stageChip = function ($s, $label) {
                     if ($s == 1) return '<span class="lv-chip" style="color:#4e3483;" title="' . htmlspecialchars($label) . ': Approved"><i class="ri-checkbox-circle-fill"></i></span>';
@@ -4415,7 +4416,7 @@ var LEAVE_DETAILS = <?= json_encode($lv_details ?? [], JSON_HEX_APOS | JSON_HEX_
 function openLeaveDetail(id) {
     var d = LEAVE_DETAILS[id];
     if (!d) return;
-    var stMap = { 0: ['Pending', '#fd7e14', '#fff8e8'], 1: ['Approved', '#4e3483', '#f0ecf6'], 2: ['Rejected', '#dc3545', '#fff0f0'] };
+    var stMap = { 0: ['Pending', '#fd7e14', '#fff8e8'], 1: ['Approved', '#4e3483', '#f0ecf6'], 2: ['Rejected', '#dc3545', '#fff0f0'], 3: ['Cancelled', '#6c757d', '#f1f3f5'] };
     var st = stMap[d.status] || ['Unknown', '#888', '#eee'];
     var h = '<div class="d-flex align-items-center justify-content-between mb-3">'
         + '<span style="font-weight:800;color:#4e3483;font-size:16px;">' + escapeHtml(d.type) + '</span>'

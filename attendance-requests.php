@@ -11,19 +11,23 @@ $my_uid  = (int) ($_SESSION['login_id'] ?? 0);
 $is_admin_view = ($my_role === 1);
 $in_chain      = in_array($my_role, [8, 9, 10, 11], true) && can_edit('attendance-requests');
 $can_delete    = in_array($my_role, [1, 9], true);
+// Cancelling an APPROVED request (rewinds its DTR / payroll effect) is the same
+// HR/Admin pair — admin_class::cancel_attendance_request enforces it server-side.
+$can_cancel    = in_array($my_role, [1, 9], true);
 $att_stage_defs = leave_stages();
 
 // Approvers only see their own areas' requests (dept-scope.php emits an area
 // predicate for area-scoped accounts); HR and Admin see everything.
 require_once 'dept-scope.php';
 
-$counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'awaiting' => 0];
+$counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'cancelled' => 0, 'awaiting' => 0];
 $cq = $conn->query("SELECT status, COUNT(*) AS c FROM attendance_requests WHERE 1=1" . dept_scope_emp_sql('employee_id') . " GROUP BY status");
 if ($cq) while ($r = $cq->fetch_assoc()) {
     $counts['total'] += (int)$r['c'];
-    if ($r['status'] == 0) $counts['pending']  = (int)$r['c'];
-    if ($r['status'] == 1) $counts['approved'] = (int)$r['c'];
-    if ($r['status'] == 2) $counts['rejected'] = (int)$r['c'];
+    if ($r['status'] == 0) $counts['pending']   = (int)$r['c'];
+    if ($r['status'] == 1) $counts['approved']  = (int)$r['c'];
+    if ($r['status'] == 2) $counts['rejected']  = (int)$r['c'];
+    if ($r['status'] == 3) $counts['cancelled'] = (int)$r['c'];
 }
 if ($in_chain) {
     $counts['awaiting'] = stage_awaiting_me_count($conn, $my_uid, 'attendance_requests', dept_scope_emp_sql('employee_id'));
@@ -140,6 +144,12 @@ $reasonLabels = [
                                         <span class="badge bg-danger-subtle text-danger align-middle ms-1"><?= $counts['rejected'] ?></span>
                                     </a>
                                 </li>
+                                <li class="nav-item">
+                                    <a class="nav-link" data-status="3" href="javascript:void(0);" role="tab">
+                                        <i class="ri-arrow-go-back-line me-1 align-bottom"></i>Cancelled
+                                        <span class="badge bg-secondary-subtle text-secondary align-middle ms-1"><?= $counts['cancelled'] ?></span>
+                                    </a>
+                                </li>
                             </ul>
                         </div>
                         <div class="card-body">
@@ -163,10 +173,12 @@ $reasonLabels = [
                                         $q = $conn->query("
                                             SELECT ar.*, CONCAT(e.lastname, ', ', e.firstname) AS employee_name, e.employee_no,
                                                    ru.name AS reviewer_name,
-                                                   se.name AS sec_name, su.name AS sup_name, au.name AS admin_name, hu.name AS hr_name
+                                                   se.name AS sec_name, su.name AS sup_name, au.name AS admin_name, hu.name AS hr_name,
+                                                   cu.name AS cancelled_name
                                             FROM attendance_requests ar
                                             INNER JOIN employee e ON e.id = ar.employee_id
                                             LEFT JOIN users ru ON ru.id = ar.reviewed_by
+                                            LEFT JOIN users cu ON cu.id = ar.cancelled_by
                                             LEFT JOIN users se ON se.id = ar.sec_by
                                             LEFT JOIN users su ON su.id = ar.sup_by
                                             LEFT JOIN users au ON au.id = ar.admin_by
@@ -179,6 +191,7 @@ $reasonLabels = [
                                                 0 => ['Pending',  'bg-warning'],
                                                 1 => ['Approved', 'bg-success'],
                                                 2 => ['Rejected', 'bg-danger'],
+                                                3 => ['Cancelled', 'bg-secondary'],
                                             ];
                                             [$slabel, $sclass] = $statusMap[$row['status']] ?? ['Unknown', 'bg-secondary'];
                                             // Where the chain stands and whether it is THIS user's turn.
@@ -286,6 +299,9 @@ $reasonLabels = [
                                                 <?php if ($can_delete && $row['status'] == 0): ?>
                                                     <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRequest(<?= $row['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
                                                 <?php endif; ?>
+                                                <?php if ($can_cancel && $row['status'] == 1): ?>
+                                                    <button class="btn btn-sm btn-outline-warning" title="Cancel approved request — undoes its DTR / payroll effect (HR / Admin only)" onclick="cancelRequest(<?= $row['id'] ?>)"><i class="ri-arrow-go-back-line"></i></button>
+                                                <?php endif; ?>
                                                 </div>
                                             </td>
                                         </tr>
@@ -339,6 +355,7 @@ function openAttTimeline(id) {
     var out;
     if (m.stat === 1)      out = '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="ri-checkbox-circle-fill me-1"></i>Fully approved</span>';
     else if (m.stat === 2) out = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="ri-close-circle-fill me-1"></i>Rejected</span>';
+    else if (m.stat === 3) out = '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle"><i class="ri-arrow-go-back-line me-1"></i>Cancelled</span>';
     else                   out = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-time-fill me-1"></i>' + (m.stage ? 'Awaiting ' + escHtml(m.stage) : 'Pending') + '</span>';
     document.getElementById('att-timeline-subject').innerHTML =
         '<b>' + escHtml(m.emp || '') + '</b> · ' + escHtml(m.type || '') + ' · ' + escHtml(m.date || '') + ' &nbsp;' + out;
@@ -373,6 +390,36 @@ function deleteRequest(id) {
                 if (j && j.result) { window.location.reload(); }
                 else Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Could not delete.' });
             });
+    });
+}
+
+// HR / Admin: cancel an APPROVED request. The server flips it to Cancelled and
+// rewinds what the approval wrote to the DTR (incident punches, OT hours);
+// payroll stops counting it on its own.
+function cancelRequest(id) {
+    var m = ATT_META[id] || {};
+    Swal.fire({
+        title: 'Cancel this approved request?',
+        text: (m.emp || '') + ' · ' + (m.type || '') + ' · ' + (m.date || '') + ' — its DTR / payroll effect will be undone.',
+        icon: 'warning',
+        input: 'textarea',
+        inputLabel: 'Reason for cancelling',
+        inputPlaceholder: 'Enter the reason…',
+        inputValidator: function (v) { return (!v || !v.trim()) ? 'A reason is required to cancel.' : undefined; },
+        showCancelButton: true, confirmButtonText: 'Cancel request', cancelButtonText: 'Keep', confirmButtonColor: '#f7b84b'
+    }).then(function (r) {
+        if (!r.isConfirmed) return;
+        Swal.fire({ title: 'Cancelling…', allowOutsideClick: false, didOpen: function () { Swal.showLoading(); } });
+        fetch('ajax.php?action=cancel_attendance_request', { method: 'POST', body: new URLSearchParams({ id: id, reason: r.value.trim() }) })
+            .then(function (x) { return x.json(); })
+            .then(function (j) {
+                if (j && j.result) {
+                    Swal.fire({ icon: 'success', title: 'Cancelled', text: j.message, confirmButtonText: 'OK' }).then(function () { window.location.reload(); });
+                } else {
+                    Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Could not cancel.' });
+                }
+            })
+            .catch(function () { Swal.fire({ icon: 'error', title: 'Error', text: 'Could not cancel.' }); });
     });
 }
 

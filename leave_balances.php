@@ -337,7 +337,7 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
                                 <thead class="table-light"><tr><th>When</th><th>Type</th><th class="text-center">Change</th><th>By</th></tr></thead>
                                 <tbody>
                                     <?php
-                                    $ctMap = ['set' => ['Set', 'bg-secondary-subtle text-secondary'], 'add' => ['Add', 'bg-success-subtle text-success'], 'deduct' => ['Deduct', 'bg-danger-subtle text-danger']];
+                                    $ctMap = ['set' => ['Set', 'bg-secondary-subtle text-secondary'], 'add' => ['Add', 'bg-success-subtle text-success'], 'deduct' => ['Deduct', 'bg-danger-subtle text-danger'], 'restore' => ['Restore', 'bg-info-subtle text-info']];
                                     while ($h = $hist->fetch_assoc()):
                                         $up = (float)$h['new_credits'] >= (float)$h['old_credits'];
                                         $ct = $h['change_type'] ?? 'set';
@@ -402,7 +402,7 @@ $lb_export_qs = 'year=' . $leave_year . '&emp=' . $sel_emp;
                                             WHERE lr.employee_id = " . $sel_emp . "
                                             ORDER BY lr.date_applied DESC, lr.id DESC
                                         ");
-                                        $stMap = [0 => ['Pending','bg-warning'], 1 => ['Approved','bg-success'], 2 => ['Rejected','bg-danger']];
+                                        $stMap = [0 => ['Pending','bg-warning'], 1 => ['Approved','bg-success'], 2 => ['Rejected','bg-danger'], 3 => ['Cancelled','bg-secondary']];
                                         $stage = function ($s) {
                                             if ($s == 1) return '<span class="badge bg-success-subtle text-success"><i class="ri-check-line"></i></span>';
                                             if ($s == 2) return '<span class="badge bg-danger-subtle text-danger"><i class="ri-close-line"></i></span>';

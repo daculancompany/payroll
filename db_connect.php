@@ -442,6 +442,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'delete_employee_attendance_single' => 'attendance', 'save_time_logs' => 'attendance',
         'decide_attendance_request' => 'attendance-requests',
         'delete_attendance_request' => 'attendance-requests',
+        'cancel_attendance_request' => 'attendance-requests',
         'save_attendance_request' => 'attendance-requests',
         // pay settings, 13th month, user management
         'save_pay_settings' => 'pay-settings',

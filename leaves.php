@@ -27,6 +27,9 @@ $is_admin_view = ($my_role === 1);
 // the chain (Section Head / Supervisor / Dept Head) reject instead of delete.
 // admin_class::delete_leave_request enforces the same list server-side.
 $can_delete_leave = in_array($my_role, [1, 9], true);
+// Cancelling an APPROVED leave (days go back to the balance) is the same
+// HR/Admin pair — admin_class::cancel_leave_request enforces it server-side.
+$can_cancel_leave = in_array($my_role, [1, 9], true);
 // Timeline HTML per request id, collected during the row loop for the modal.
 $leave_timelines = [];
 // Employee + type per request id — used in the action confirmation dialogs.
@@ -38,18 +41,19 @@ $lv_scope_emp  = dept_scope_emp_sql('employee_id');       // bare leave_requests
 $lv_scope_dept = dept_scope_sql('e.department_id');       // queries joining employee e
 
 // Summary counts for the cards
-$counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];
+$counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'cancelled' => 0];
 $cq = $conn->query("SELECT status, COUNT(*) AS c FROM leave_requests WHERE 1=1 $lv_scope_emp GROUP BY status");
 if ($cq) while ($r = $cq->fetch_assoc()) {
     $counts['total'] += (int)$r['c'];
-    if ($r['status'] == 0) $counts['pending']  = (int)$r['c'];
-    if ($r['status'] == 1) $counts['approved'] = (int)$r['c'];
-    if ($r['status'] == 2) $counts['rejected'] = (int)$r['c'];
+    if ($r['status'] == 0) $counts['pending']   = (int)$r['c'];
+    if ($r['status'] == 1) $counts['approved']  = (int)$r['c'];
+    if ($r['status'] == 2) $counts['rejected']  = (int)$r['c'];
+    if ($r['status'] == 3) $counts['cancelled'] = (int)$r['c'];
 }
 
 // Active status tab (server-side filter — avoids client-side lag on large lists).
-// ?lstatus= all | pending | approved | rejected
-$tab_map    = ['all' => null, 'pending' => 0, 'approved' => 1, 'rejected' => 2];
+// ?lstatus= all | pending | approved | rejected | cancelled
+$tab_map    = ['all' => null, 'pending' => 0, 'approved' => 1, 'rejected' => 2, 'cancelled' => 3];
 $active_tab = strtolower(trim($_GET['lstatus'] ?? 'all'));
 if (!array_key_exists($active_tab, $tab_map)) $active_tab = 'all';
 $status_filter = $tab_map[$active_tab];
@@ -147,6 +151,7 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                 'pending'  => ['Pending',  $counts['pending'],  'bg-warning-subtle text-warning'],
                                 'approved' => ['Approved', $counts['approved'], 'bg-success-subtle text-success'],
                                 'rejected' => ['Rejected', $counts['rejected'], 'bg-danger-subtle text-danger'],
+                                'cancelled' => ['Cancelled', $counts['cancelled'], 'bg-secondary-subtle text-secondary'],
                             ];
                             foreach ($tabs as $key => $t):
                                 $is_active = ($active_tab === $key);
@@ -186,10 +191,12 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 se.name AS sec_name,
                                                 su.name AS sup_name,
                                                 hu.name AS hr_name,
-                                                au.name AS admin_name
+                                                au.name AS admin_name,
+                                                cu.name AS cancelled_name
                                             FROM leave_requests lr
                                             INNER JOIN employee e ON e.id = lr.employee_id
                                             INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+                                            LEFT JOIN users cu ON cu.id = lr.cancelled_by
                                             LEFT JOIN users se ON se.id = lr.sec_by
                                             LEFT JOIN users su ON su.id = lr.sup_by
                                             LEFT JOIN users hu ON hu.id = lr.hr_by
@@ -202,6 +209,7 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 0 => ['Pending',  'bg-warning'],
                                                 1 => ['Approved', 'bg-success'],
                                                 2 => ['Rejected', 'bg-danger'],
+                                                3 => ['Cancelled', 'bg-secondary'],
                                             ];
                                             [$slabel, $sclass] = $statusMap[$row['status']] ?? ['Unknown', 'bg-secondary'];
                                             // Editable only while no stage has been decided at all.
@@ -287,8 +295,10 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 <?php
                                                 // No Delete on an APPROVED request — it already counts toward
                                                 // balances/payroll and the server refuses it anyway
-                                                // (delete_leave_request). Reject it instead.
-                                                $show_delete = $can_delete_leave && (int) $row['status'] !== 1;
+                                                // (delete_leave_request). Cancel it instead; a cancelled row
+                                                // is the audit record and stays too.
+                                                $show_delete = $can_delete_leave && !in_array((int) $row['status'], [1, 3], true);
+                                                $show_cancel = $can_cancel_leave && (int) $row['status'] === 1;
                                                 ?>
                                                 <?php if ($can_act_now): ?>
                                                     <button class="btn btn-sm btn-success" data-bs-toggle="tooltip" data-bs-placement="top" title="<?= htmlspecialchars($leave_stage_defs[$cur_stage]['label']) ?> Approve" onclick="decideLeave(<?= $row['id'] ?>,'<?= $cur_stage ?>',1)"><i class="ri-check-double-line"></i></button>
@@ -302,7 +312,10 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 <?php if ($show_delete): ?>
                                                     <button class="btn btn-sm btn-outline-danger" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete request (HR / Admin only)" onclick="deleteLeave(<?= $row['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
                                                 <?php endif; ?>
-                                                <?php if ($is_admin_view && !$show_delete): ?>
+                                                <?php if ($show_cancel): ?>
+                                                    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="tooltip" data-bs-placement="top" title="Cancel approved leave — returns the days to the balance (HR / Admin only)" onclick="cancelLeave(<?= $row['id'] ?>)"><i class="ri-arrow-go-back-line"></i></button>
+                                                <?php endif; ?>
+                                                <?php if ($is_admin_view && !$show_delete && !$show_cancel): ?>
                                                     <span class="text-muted" style="font-size:11px;"><i class="ri-eye-line me-1"></i>View only</span>
                                                 <?php endif; ?>
                                             </td>
@@ -458,6 +471,7 @@ function openLeaveTimeline(id) {
     var out;
     if (m.stat === 1)      out = { c: 'ok',   i: 'ri-checkbox-circle-fill', t: 'Fully approved' };
     else if (m.stat === 2) out = { c: 'no',   i: 'ri-close-circle-fill',    t: 'Rejected' };
+    else if (m.stat === 3) out = { c: 'no',   i: 'ri-arrow-go-back-line',   t: 'Cancelled' };
     else                   out = { c: 'wait', i: 'ri-time-fill',            t: m.stage ? 'Awaiting ' + m.stage : 'Pending' };
 
     sub.innerHTML = m.emp
@@ -719,6 +733,29 @@ async function deleteLeave(id) {
         Swal.fire({ icon: 'success', title: 'Deleted', text: json.message, timer: 1200, showConfirmButton: false }).then(() => location.reload());
     } else {
         Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to delete.' });
+    }
+}
+
+// HR / Admin: cancel an APPROVED leave — the days go back to the balance and
+// the restore is logged in Balance Change History.
+async function cancelLeave(id) {
+    const m = LEAVE_META[id] || {};
+    const r = await Swal.fire({
+        title: 'Cancel this approved leave?',
+        text: leaveWho(id) + ' — ' + (m.dur || '0') + ' day(s) will be returned to the balance.',
+        icon: 'warning',
+        input: 'textarea',
+        inputLabel: 'Reason for cancelling',
+        inputPlaceholder: 'Enter the reason…',
+        inputValidator: (v) => (!v || !v.trim() ? 'A reason is required to cancel.' : undefined),
+        showCancelButton: true, confirmButtonText: 'Cancel leave', cancelButtonText: 'Keep', confirmButtonColor: '#f7b84b'
+    });
+    if (!r.isConfirmed) return;
+    const json = await lvPost('cancel_leave_request', new URLSearchParams({ id, reason: r.value.trim() }), 'Cancelling…');
+    if (json?.result) {
+        Swal.fire({ icon: 'success', title: 'Cancelled', text: json.message, timer: 1600, showConfirmButton: false }).then(() => location.reload());
+    } else {
+        Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to cancel.' });
     }
 }
 </script>

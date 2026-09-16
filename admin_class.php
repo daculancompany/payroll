@@ -4258,7 +4258,202 @@ class Action
         }
         $stmt = $this->db->prepare("DELETE FROM attendance_requests WHERE id = ? AND status = 0");
         $stmt->bind_param('i', $id);
-        return ['result' => $stmt->execute(), 'message' => $stmt->error ?: 'Deleted'];
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+        if ($stmt->affected_rows < 1) {
+            return ['result' => false, 'message' => 'Only pending requests can be deleted. Approved ones must be cancelled instead.'];
+        }
+        return ['result' => true, 'message' => 'Deleted'];
+    }
+
+    // HR (9) / Administrator (1): cancel an APPROVED attendance request. Mirrors
+    // cancel_leave_request — the row becomes status 3 = Cancelled (kept for
+    // audit). Payroll reads approved OT / undertime requests live, so the pay
+    // effect reverses on its own; what the approval wrote to DTR_details is
+    // rewound here (undoAttendanceRequestDtr). Refused when the date sits in a
+    // LOCKED payroll or the DTR batch is already final-approved.
+    function cancel_attendance_request()
+    {
+        $id     = (int) ($_POST['id'] ?? 0);
+        $reason = trim($_POST['reason'] ?? '');
+        $role   = (int) ($_SESSION['login_role'] ?? 0);
+        $uid    = (int) ($_SESSION['login_id'] ?? 0);
+
+        if (!in_array($role, [1, 9], true)) {
+            return ['result' => false, 'message' => 'Only HR and Administrators may cancel approved requests.'];
+        }
+        if ($id <= 0) return ['result' => false, 'message' => 'Invalid request.'];
+        if ($reason === '') return ['result' => false, 'message' => 'A reason is required to cancel an approved request.'];
+        $reason = mb_substr($reason, 0, 255);
+
+        $req = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
+        if (!$req) return ['result' => false, 'message' => 'Request not found.'];
+
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int) $req['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        }
+        if ((int) $req['status'] !== 1) {
+            return ['result' => false, 'message' => 'Only approved requests can be cancelled. Pending ones can be deleted instead.'];
+        }
+
+        $employee_id = (int) $req['employee_id'];
+        $date        = $this->db->real_escape_string($req['request_date']);
+        $type        = (string) $req['request_type'];
+
+        // A locked payroll has already paid this date out with the request counted.
+        $lock = $this->db->query("
+            SELECT p.ref_no FROM payroll p
+            INNER JOIN payroll_items pi ON pi.payroll_id = p.id
+            WHERE p.status = 2 AND pi.employee_id = $employee_id
+              AND p.date_from <= '$date' AND p.date_to >= '$date'
+            LIMIT 1")->fetch_assoc();
+        if ($lock) {
+            return ['result' => false, 'message' => 'This request falls inside locked payroll ' . $lock['ref_no'] . '. Unlock that payroll first, then cancel the request.'];
+        }
+
+        // The DTR row the approval may have written to (same lookup applyIncidentToDtr /
+        // applyOvertimeToDtr used). A final-approved batch has frozen figures —
+        // recompute_dtr refuses it too — so its rows cannot be rewound.
+        $dtr = $this->db->query("
+            SELECT d.id, d.ddtr_id, d.logs, d.attendance_type, d.work_hours, d.is_rest_day,
+                   b.status AS batch_status, b.file AS batch_file, b.date_from AS batch_from, b.date_to AS batch_to
+            FROM DTR_details d INNER JOIN DTR b ON b.id = d.ddtr_id
+            WHERE d.employee_id = $employee_id AND d.date_time = '$date'
+            ORDER BY d.id DESC LIMIT 1")->fetch_assoc();
+        $touches_dtr = in_array($type, ['incident', 'overtime', 'rest_day'], true);
+        // The one-day batch applyIncidentToDtr creates is born with status 2 — it
+        // exists only to hold the incident row, so it is not a frozen batch.
+        $own_batch = $dtr && ($dtr['batch_file'] ?? '') === 'incident' && $dtr['batch_from'] === $dtr['batch_to'];
+        if ($touches_dtr && $dtr && (int) $dtr['batch_status'] === 2 && !$own_batch) {
+            return ['result' => false, 'message' => 'The DTR covering ' . date('M d, Y', strtotime($req['request_date'])) . ' is already final-approved, so its record cannot be rewound. Re-open that DTR first.'];
+        }
+
+        $this->db->begin_transaction();
+        try {
+            $stmt = $this->db->prepare("UPDATE attendance_requests SET status = 3, cancelled_by = ?, cancelled_at = NOW(), cancel_reason = ? WHERE id = ? AND status = 1");
+            $cb = $uid > 0 ? $uid : null;
+            $stmt->bind_param('isi', $cb, $reason, $id);
+            if (!$stmt->execute()) throw new Exception($stmt->error);
+            if ($stmt->affected_rows < 1) throw new Exception('This request was already changed by someone else. Reload and try again.');
+
+            $dtr_note = $touches_dtr ? $this->undoAttendanceRequestDtr($req, $dtr) : '';
+            $this->db->commit();
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => $e->getMessage()];
+        }
+
+        $label   = att_request_label($type);
+        $datestr = date('M d, Y', strtotime($req['request_date']));
+        $who     = 'HR';
+        if ($uid > 0) {
+            $wq = $this->db->query("SELECT name FROM users WHERE id = $uid")->fetch_assoc();
+            $who = $wq['name'] ?? $who;
+        }
+        $this->notifyEmployee($employee_id, 'Request cancelled',
+            "$who cancelled your approved $label for $datestr. Reason: $reason",
+            'ri-arrow-go-back-line', 'warning', 'employee-portal.php?tab=att-requests');
+
+        $msg = ucfirst($label) . ' cancelled.';
+        if ($type === 'undertime') {
+            $msg .= ' The hours are no longer excused at payroll time.';
+        } elseif ($dtr_note !== '') {
+            $msg .= ' ' . $dtr_note;
+        }
+        return ['result' => true, 'message' => $msg];
+    }
+
+    /**
+     * Rewind what a request's final approval wrote to DTR_details (see
+     * applyIncidentToDtr / applyOvertimeToDtr). Returns a short note for the
+     * caller's message; throws so cancel_attendance_request rolls back.
+     *
+     * The approval never saved the previous figures, so the rewind re-derives
+     * them from what is left on the row — the same way Recompute does:
+     *  · incident  → drop the 'incident' punches, recompute from the remaining
+     *                scans (none → a zero, incomplete day). A row that only
+     *                existed for the incident, in the one-day 'incident' batch
+     *                the approval created, is removed along with that batch.
+     *  · overtime  → a parked zero-hour row (no scans) is removed; an existing
+     *                row gets its overtime recomputed from its own scans.
+     *  · rest_day  → approval wrote nothing to an existing row; a parked row
+     *                is removed like OT.
+     */
+    private function undoAttendanceRequestDtr(array $req, ?array $dtr): string
+    {
+        if (!$dtr) return 'No DTR record exists for that date, nothing to rewind.';
+
+        $employee_id = (int) $req['employee_id'];
+        $date        = (string) $req['request_date'];
+        $row_id      = (int) $dtr['id'];
+        $ddtr_id     = (int) $dtr['ddtr_id'];
+        $logs        = json_decode((string) $dtr['logs'], true);
+        if (!is_array($logs)) $logs = [];
+
+        $dropRow = function () use ($row_id, $ddtr_id, $dtr): void {
+            if (!$this->db->query("DELETE FROM DTR_details WHERE id = $row_id")) {
+                throw new Exception('Could not remove the DTR record: ' . $this->db->error);
+            }
+            // The one-day batch applyIncidentToDtr creates has no other reason to exist.
+            if (($dtr['batch_file'] ?? '') === 'incident' && $dtr['batch_from'] === $dtr['batch_to']) {
+                $left = $this->db->query("SELECT COUNT(*) c FROM DTR_details WHERE ddtr_id = $ddtr_id")->fetch_assoc();
+                if ((int) ($left['c'] ?? 0) === 0) $this->db->query("DELETE FROM DTR WHERE id = $ddtr_id");
+            }
+        };
+
+        if ($req['request_type'] === 'incident') {
+            if (($dtr['attendance_type'] ?? '') !== 'incident') {
+                return 'The DTR record for that date is no longer the incident repair, so it was left as is.';
+            }
+            $kept = array_values(array_filter($logs, fn($lg) => (($lg['type'] ?? '') !== 'incident')));
+            if (!$kept && ($dtr['batch_file'] ?? '') === 'incident') {
+                $dropRow();
+                return 'The incident DTR record was removed.';
+            }
+            $ts = [];
+            foreach ($kept as $lg) {
+                $t = strtotime($lg['dateTime'] ?? '');
+                if ($t !== false) $ts[] = $t;
+            }
+            $c = dtr_compute_day($this->db, $employee_id, $date, $ts, false);
+            $newLogs = json_encode($kept);
+            $attType = $kept ? 'biometric' : null;
+            $stmt = $this->db->prepare(
+                "UPDATE DTR_details SET logs=?, work_hours=?, overtime=?, late=?, undertime=?, day_type=?, nsd_hours=?,
+                 is_complete=?, attendance_type=?, schedule_id=?, day_hours=?, is_rest_day=?,
+                 sched_start=?, sched_end=?, sched_break=?, sched_graveyard=?,
+                 status=0, decision_note=NULL, decided_by=NULL, decided_at=NULL WHERE id=?"
+            );
+            $stmt->bind_param('sddddsdisidissiii', $newLogs, $c['work_hours'], $c['overtime'], $c['late'], $c['undertime'],
+                              $c['day_type'], $c['nsd_hours'], $c['is_complete'], $attType,
+                              $c['schedule_id'], $c['day_hours'], $c['is_rest_day'],
+                              $c['sched_start'], $c['sched_end'], $c['sched_break'], $c['sched_graveyard'], $row_id);
+            if (!$stmt->execute()) throw new Exception('Could not rewind the DTR record: ' . $stmt->error);
+            return $kept
+                ? 'The incident punches were removed from the DTR and the day recomputed from its scans.'
+                : 'The incident punches were removed from the DTR; the day now has no scans.';
+        }
+
+        // overtime / rest_day
+        $parked = ($dtr['attendance_type'] ?? '') === 'overtime' && !$logs && (float) $dtr['work_hours'] == 0.0;
+        if ($parked) {
+            $dropRow();
+            return 'The parked OT row on the DTR was removed.';
+        }
+        if ($req['request_type'] === 'rest_day' || (int) ($dtr['is_rest_day'] ?? 0) === 1) {
+            return 'The DTR figures were left as is (a rest-day filing writes none).';
+        }
+        $ts = [];
+        foreach ($logs as $lg) {
+            $t = strtotime($lg['dateTime'] ?? '');
+            if ($t !== false) $ts[] = $t;
+        }
+        $c = dtr_compute_day($this->db, $employee_id, $date, $ts, false);
+        $stmt = $this->db->prepare("UPDATE DTR_details SET overtime = ? WHERE id = ?");
+        $stmt->bind_param('di', $c['overtime'], $row_id);
+        if (!$stmt->execute()) throw new Exception('Could not reset the OT hours on the DTR: ' . $stmt->error);
+        return 'The OT hours on the DTR were reset to ' . rtrim(rtrim(number_format((float) $c['overtime'], 2), '0'), '.') . ' h from the scans.';
     }
 
     function save_position()
@@ -11384,15 +11579,126 @@ class Action
         }
 
         // An APPROVED leave already counts toward balances and payroll — deleting
-        // it would silently rewrite history. It must be rejected instead.
+        // it would silently rewrite history. It must be cancelled instead, and a
+        // CANCELLED one is the audit record of that, so it stays too.
         if ((int) $row['status'] === 1) {
-            return ['result' => false, 'message' => 'This leave is already approved and counted in balances/payroll. Reject it instead of deleting.'];
+            return ['result' => false, 'message' => 'This leave is already approved and counted in balances/payroll. Cancel it instead of deleting.'];
+        }
+        if ((int) $row['status'] === 3) {
+            return ['result' => false, 'message' => 'Cancelled leaves are kept as an audit record and cannot be deleted.'];
         }
 
         if ($this->db->query("DELETE FROM leave_requests WHERE id = $id")) {
             return ['result' => true, 'message' => 'Leave request deleted.'];
         }
         return ['result' => false, 'message' => $this->db->error];
+    }
+
+    // HR (9) / Administrator (1): cancel an APPROVED leave. The row becomes
+    // status 3 = Cancelled (kept for audit). Balances are derived from pending +
+    // approved durations, so the days return to the employee on their own; the
+    // restore is also written to leave_credit_history so it shows in Balance
+    // Change History. Refused when the dates sit inside a LOCKED payroll.
+    function cancel_leave_request()
+    {
+        $id     = (int) ($_POST['id'] ?? 0);
+        $reason = trim($_POST['reason'] ?? '');
+        $role   = (int) ($_SESSION['login_role'] ?? 0);
+        $uid    = (int) ($_SESSION['login_id'] ?? 0);
+
+        if (!in_array($role, [1, 9], true)) {
+            return ['result' => false, 'message' => 'Only HR and Administrators may cancel approved leaves.'];
+        }
+        if ($id <= 0) return ['result' => false, 'message' => 'Invalid request.'];
+        if ($reason === '') return ['result' => false, 'message' => 'A reason is required to cancel an approved leave.'];
+        $reason = mb_substr($reason, 0, 255);
+
+        $row = $this->db->query("SELECT lr.*, lt.name AS type_name, lt.is_paid
+                                 FROM leave_requests lr
+                                 LEFT JOIN leave_types lt ON lt.id = lr.leave_type_id
+                                 WHERE lr.id = $id")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Leave request not found.'];
+
+        require_once __DIR__ . '/dept-scope.php';
+        if (dept_scope_id() > 0) {
+            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int) $row['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
+            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        }
+
+        if ((int) $row['status'] !== 1) {
+            return ['result' => false, 'message' => 'Only approved leaves can be cancelled. Pending requests can be deleted instead.'];
+        }
+
+        $employee_id   = (int) $row['employee_id'];
+        $leave_type_id = (int) $row['leave_type_id'];
+        $date_from     = $this->db->real_escape_string($row['date_from']);
+        $date_to       = $this->db->real_escape_string($row['date_to']);
+
+        // A locked payroll has already been paid out with this leave counted.
+        $lock = $this->db->query("
+            SELECT p.ref_no FROM payroll p
+            INNER JOIN payroll_items pi ON pi.payroll_id = p.id
+            WHERE p.status = 2 AND pi.employee_id = $employee_id
+              AND p.date_from <= '$date_to' AND p.date_to >= '$date_from'
+            LIMIT 1")->fetch_assoc();
+        if ($lock) {
+            return ['result' => false, 'message' => 'This leave falls inside locked payroll ' . $lock['ref_no'] . '. Unlock that payroll first, then cancel the leave.'];
+        }
+
+        // Remaining balance BEFORE the cancel — same formula as the filing guard
+        // in save_leave_request (credits − pending + approved for the year).
+        $is_paid = (int) ($row['is_paid'] ?? 0) === 1;
+        $duration = (float) $row['duration'];
+        $before = 0.0;
+        if ($is_paid) {
+            $ly = (int) date('Y', strtotime($row['date_from']));
+            $balq = $this->db->query("
+                SELECT COALESCE(c.credits, 0) - COALESCE(u.used, 0) AS remaining
+                FROM leave_types lt
+                LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $employee_id AND c.year = $ly
+                LEFT JOIN (
+                    SELECT leave_type_id, SUM(duration) AS used
+                    FROM leave_requests
+                    WHERE employee_id = $employee_id AND status IN (0,1) AND YEAR(date_from) = $ly
+                    GROUP BY leave_type_id
+                ) u ON u.leave_type_id = lt.id
+                WHERE lt.id = $leave_type_id");
+            $before = $balq ? (float) ($balq->fetch_assoc()['remaining'] ?? 0) : 0.0;
+        }
+
+        $stmt = $this->db->prepare("UPDATE leave_requests SET status = 3, cancelled_by = ?, cancelled_at = NOW(), cancel_reason = ? WHERE id = ? AND status = 1");
+        $cb = $uid > 0 ? $uid : null;
+        $stmt->bind_param('isi', $cb, $reason, $id);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+        if ($stmt->affected_rows < 1) return ['result' => false, 'message' => 'This leave was already changed by someone else. Reload and try again.'];
+
+        $fmt   = fn($n) => rtrim(rtrim(number_format((float) $n, 1), '0'), '.');
+        $range = $row['date_from'] === $row['date_to']
+            ? date('M d, Y', strtotime($row['date_from']))
+            : date('M d', strtotime($row['date_from'])) . ' – ' . date('M d, Y', strtotime($row['date_to']));
+        $type  = $row['type_name'] ?? 'leave';
+
+        // Balance Change History entry (paid types only — LWOP uses no credits).
+        if ($is_paid && $duration > 0) {
+            $after = $before + $duration;
+            $h = $this->db->prepare("INSERT INTO leave_credit_history (employee_id, leave_type_id, old_credits, new_credits, change_type, reason, changed_by)
+                                     VALUES (?, ?, ?, ?, 'restore', ?, ?)");
+            $h_reason = "Cancelled approved leave #$id ($range): $reason";
+            $h->bind_param('iiddsi', $employee_id, $leave_type_id, $before, $after, $h_reason, $cb);
+            $h->execute();
+        }
+
+        $who = 'HR';
+        if ($uid > 0) {
+            $wq = $this->db->query("SELECT name FROM users WHERE id = $uid")->fetch_assoc();
+            $who = $wq['name'] ?? $who;
+        }
+        $emp_msg = "$who cancelled your approved $type ($range, " . $fmt($duration) . " day(s))."
+                 . ($is_paid ? ' The days were returned to your balance.' : '')
+                 . " Reason: $reason";
+        $this->notifyEmployee($employee_id, 'Leave cancelled', $emp_msg, 'ri-arrow-go-back-line', 'warning', 'employee-portal.php?tab=leave');
+
+        return ['result' => true, 'message' => 'Leave cancelled.' . ($is_paid ? ' ' . $fmt($duration) . ' day(s) returned to the balance.' : '')];
     }
 
     // HR: change an employee's leave credits for a leave type.

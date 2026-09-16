@@ -1551,7 +1551,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             <thead class="table-light"><tr><th>When</th><th>Type</th><th class="text-center">Change</th><th>By</th></tr></thead>
                                             <tbody>
                                             <?php
-                                            $ctMap = ['set' => ['Set', 'bg-secondary-subtle text-secondary'], 'add' => ['Add', 'bg-success-subtle text-success'], 'deduct' => ['Deduct', 'bg-danger-subtle text-danger']];
+                                            $ctMap = ['set' => ['Set', 'bg-secondary-subtle text-secondary'], 'add' => ['Add', 'bg-success-subtle text-success'], 'deduct' => ['Deduct', 'bg-danger-subtle text-danger'], 'restore' => ['Restore', 'bg-info-subtle text-info']];
                                             if ($bh && $bh->num_rows): while ($h = $bh->fetch_assoc()):
                                                 $f = function ($n) { return rtrim(rtrim(number_format($n, 1), '0'), '.'); };
                                                 $up = (float)$h['new_credits'] >= (float)$h['old_credits'];
@@ -1613,7 +1613,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 WHERE lr.employee_id = " . $emp_id . "
                                                 ORDER BY lr.date_applied DESC, lr.id DESC
                                             ");
-                                            $lv_status = [0 => ['Pending','bg-warning'], 1 => ['Approved','bg-success'], 2 => ['Rejected','bg-danger']];
+                                            $lv_status = [0 => ['Pending','bg-warning'], 1 => ['Approved','bg-success'], 2 => ['Rejected','bg-danger'], 3 => ['Cancelled','bg-secondary']];
                                             $lv_stage = function ($s, $by, $rem) use ($lv_status) {
                                                 if ($s == 1) return '<span class="badge bg-success-subtle text-success border border-success-subtle" title="' . esc($by ?? '') . '"><i class="ri-check-line"></i></span>';
                                                 if ($s == 2) return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="' . esc($rem ?? '') . '"><i class="ri-close-line"></i></span>';

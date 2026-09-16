@@ -255,6 +255,28 @@ if (!function_exists('leave_timeline_html')) {
             $h .= '<li class="' . $cls . '">' . $dot . '<div class="lvtl-card">' . $line . '</div></li>';
         }
 
+        // Approved leave later cancelled by HR / Admin (leave_requests.status 3).
+        // Keyed on cancelled_at so attendance requests, which share this
+        // builder but have no such column, never hit it.
+        if ((int) ($row['status'] ?? 0) === 3 && !empty($row['cancelled_at'])) {
+            $cname = trim((string) ($row['cancelled_name'] ?? ''));
+            if ($cname === '' && !empty($row['cancelled_by']) && ($GLOBALS['conn'] ?? null) instanceof mysqli) {
+                $cq = $GLOBALS['conn']->query("SELECT name FROM users WHERE id = " . (int) $row['cancelled_by']);
+                $cname = trim((string) (($cq ? $cq->fetch_assoc() : null)['name'] ?? ''));
+            }
+            $creason = trim((string) ($row['cancel_reason'] ?? ''));
+            // Leave gives its days back; an attendance request is undone on the DTR / payroll.
+            $cpill = array_key_exists('request_type', $row) ? 'Reversed' : 'Days returned';
+            $h .= '<li class="is-no"><span class="lvtl-dot no"><i class="ri-arrow-go-back-line"></i></span>'
+                . '<div class="lvtl-card">'
+                . '<div class="lvtl-head"><span class="lvtl-stage">Cancelled</span>'
+                . '<span class="lvtl-pill no">' . $cpill . '</span></div>'
+                . ($cname !== '' ? '<div class="lvtl-name">' . $esc($cname) . '</div>' : '')
+                . $stamp($row['cancelled_at'])
+                . ($creason !== '' ? '<div class="lvtl-remark"><i class="ri-information-line"></i> ' . $esc($creason) . '</div>' : '')
+                . '</div></li>';
+        }
+
         $h .= '</ul>';
         return $h;
     }

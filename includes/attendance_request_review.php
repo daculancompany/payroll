@@ -205,7 +205,7 @@ window.AttReqReview = (function () {
         decided.innerHTML = pending ? ''
             : (Number(q.status) === 0
                 ? '<i class="ri-lock-line me-1"></i>Not your turn — only the ' + esc(q.current_stage_label || 'current approver') + ' can edit or decide it now.'
-                : '<i class="ri-lock-line me-1"></i>Already ' + (Number(q.status) === 1 ? 'approved' : 'rejected') + ' — no longer editable.');
+                : '<i class="ri-lock-line me-1"></i>Already ' + ({1: 'approved', 2: 'rejected', 3: 'cancelled'}[Number(q.status)] || 'decided') + ' — no longer editable.');
         ['arr-reason', 'arr-notes', 'arr-in', 'arr-out', 'arr-hours'].forEach(function (f) { $id(f).disabled = !pending; });
         $id('arr-approve').classList.toggle('d-none', !pending);
         $id('arr-reject').classList.toggle('d-none', !pending);

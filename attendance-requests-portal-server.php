@@ -43,6 +43,7 @@ $statusMap = [
     0 => ['Pending',  '#e6a817', 'pending'],
     1 => ['Approved', '#6642aa', 'approved'],
     2 => ['Rejected', '#c62828', 'rejected'],
+    3 => ['Cancelled', '#6c757d', 'cancelled'],
 ];
 
 // Total (unfiltered) count for this employee. No date filter here — the request

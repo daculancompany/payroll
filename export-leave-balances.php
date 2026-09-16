@@ -43,7 +43,7 @@ if ($f['emp'] && $rows) {
 }
 
 $slug  = 'leave-balances-' . (int) $f['year'] . ($f['emp'] ? '-emp' . (int) $f['emp'] : '') . '-' . date('Ymd');
-$stMap = [0 => 'Pending', 1 => 'Approved', 2 => 'Rejected'];
+$stMap = [0 => 'Pending', 1 => 'Approved', 2 => 'Rejected', 3 => 'Cancelled'];
 
 // Both outputs are binary — a stray notice or warning printed into the stream
 // corrupts the download, so from here on errors go to the log, never the page.
@@ -304,6 +304,7 @@ ob_start();
     .st-1 { color: #1c7a43; font-weight: bold; }
     .st-0 { color: #a76b09; font-weight: bold; }
     .st-2 { color: #b3352f; font-weight: bold; }
+    .st-3 { color: #6c757d; font-weight: bold; }
 </style>
 
 <div class="hdr">

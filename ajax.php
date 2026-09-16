@@ -583,6 +583,12 @@ if ($action == "decide_leave") {
 if ($action == "delete_leave_request") {
 	echo json_encode($crud->delete_leave_request());
 }
+if ($action == "cancel_leave_request") {
+	echo json_encode($crud->cancel_leave_request());
+}
+if ($action == "cancel_attendance_request") {
+	echo json_encode($crud->cancel_attendance_request());
+}
 if ($action == "save_leave_credit") {
 	echo json_encode($crud->save_leave_credit());
 }

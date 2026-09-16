@@ -905,7 +905,7 @@ switch ($action) {
             break;
         }
         if ((int) $crow['status'] === 1) {
-            echo json_encode(['result' => false, 'message' => 'This leave is already approved and counted in payroll. Ask HR to reject it instead.']);
+            echo json_encode(['result' => false, 'message' => 'This leave is already approved and counted in payroll. Ask HR to cancel it instead.']);
             break;
         }
         if ((int) $crow['status'] === 2) {

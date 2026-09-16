@@ -204,11 +204,22 @@ $__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin'
                                 <span class="badge bg-success-subtle text-success border ms-1" style="font-size:10px;">edits the duty roster</span>
                             <?php endif; ?>
                         </label>
-                        <select class="form-control ap-select" multiple size="5" name="stage[<?= $k ?>][]" data-stage="<?= $k ?>">
+                        <?php /* data-cs-multi hands this to the app's own multi-select: one line
+                                 instead of a five-row listbox, a filter box, and — the point —
+                                 click-to-toggle plus a Clear all, so taking someone off a stage
+                                 is not a ctrl-click nobody discovers. The chips below repeat the
+                                 selection with an × each, the same as the Department page. */ ?>
+                        <select class="form-control form-control-sm ap-select" multiple
+                                name="stage[<?= $k ?>][]" data-stage="<?= $k ?>"
+                                data-cs-multi="true" data-cs-search="true"
+                                data-cs-title="<?= htmlspecialchars($s['label']) ?>"
+                                data-cs-icon="<?= htmlspecialchars($s['icon']) ?>"
+                                data-placeholder="— nobody —">
                             <?php foreach ($users as $u): ?>
                                 <option value="<?= (int)$u['id'] ?>"><?= htmlspecialchars($u['name']) ?></option>
                             <?php endforeach; ?>
                         </select>
+                        <div class="ap-chips mt-1" data-for="<?= $k ?>"></div>
                     </div>
                     <?php endforeach; ?>
                     <div class="alert alert-light border mb-0" style="font-size:11.5px;">
@@ -242,7 +253,13 @@ document.addEventListener('DOMContentLoaded', function () {
 function editArea(a) {
     document.getElementById('area-id').value = a.id;
     document.getElementById('area-name').value = a.name;
-    document.getElementById('area-dept').value = a.department_id || '';
+    const dept = document.getElementById('area-dept');
+    dept.value = a.department_id || '';
+    // The native select is right the moment .value is set, but CustomSelect has
+    // painted a control over it and only re-reads on a real change event — so
+    // without this the picker opens on "— Select department —" for an area that
+    // plainly has one, and Parsley passes because the underlying value is fine.
+    if (window.CustomSelect) window.CustomSelect.refresh(dept);
     document.getElementById('area-modal-title').innerHTML = '<i class="ri-node-tree me-2" style="color:#673bb6;"></i>Edit Area';
     new bootstrap.Modal(document.getElementById('modal-area')).show();
 }
@@ -250,9 +267,55 @@ function editArea(a) {
 document.getElementById('modal-area').addEventListener('hidden.bs.modal', function () {
     document.getElementById('form-area').reset();
     document.getElementById('area-id').value = '';
+    // form.reset() fires no change event either, so the picker would otherwise
+    // carry the edited area's department into the next Add Area.
+    if (window.CustomSelect) window.CustomSelect.refresh(document.getElementById('area-dept'));
     document.getElementById('area-modal-title').innerHTML = '<i class="ri-node-tree me-2" style="color:#673bb6;"></i>Add Area';
     // Clear the error list too, or the next open still shows the last message.
     if (window.jQuery && jQuery.fn.parsley) jQuery('#form-area').parsley().reset();
+});
+
+const apEsc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+/* Who is on this stage, spelled out with an × each — the visible half of
+   "remove". Always rebuilt from the select, never the other way round. */
+function apRenderChips(sel) {
+    const box = document.querySelector('.ap-chips[data-for="' + sel.dataset.stage + '"]');
+    if (!box) return;
+    const picked = Array.from(sel.selectedOptions);
+    if (!picked.length) {
+        const required = sel.dataset.stage === 'admin';
+        box.innerHTML = '<span style="font-size:11px;" class="' + (required ? 'text-warning-emphasis' : 'text-muted') + '">'
+            + (required ? '<i class="ri-error-warning-line me-1"></i>Not assigned' : '<i class="ri-subtract-line me-1"></i>Nobody — this stage is skipped')
+            + '</span>';
+        return;
+    }
+    box.innerHTML = picked.map(o =>
+        '<span class="badge bg-primary-subtle text-primary rounded-pill me-1 mb-1" style="font-size:11px;font-weight:500;">'
+        + apEsc(o.textContent)
+        + '<button type="button" class="btn-close ms-1 ap-chip-x" data-value="' + apEsc(o.value) + '"'
+        + ' style="font-size:.5rem;vertical-align:middle;" aria-label="Remove ' + apEsc(o.textContent) + '"></button>'
+        + '</span>'
+    ).join('');
+}
+
+document.getElementById('form-approvers').addEventListener('change', function (e) {
+    const sel = e.target.closest('.ap-select');
+    if (sel) apRenderChips(sel);
+});
+
+document.getElementById('form-approvers').addEventListener('click', function (e) {
+    const x = e.target.closest('.ap-chip-x');
+    if (!x) return;
+    const sel = document.querySelector('.ap-select[data-stage="' + x.closest('.ap-chips').dataset.for + '"]');
+    if (!sel) return;
+    Array.from(sel.options).forEach(o => { if (o.value === x.dataset.value) o.selected = false; });
+    // CustomSelect listens natively, so a jQuery .trigger('change') would never
+    // reach it and the trigger label would drift from what actually posts.
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    if (window.CustomSelect) window.CustomSelect.refresh(sel);
 });
 
 function editApprovers(a) {
@@ -261,6 +324,8 @@ function editApprovers(a) {
     document.querySelectorAll('.ap-select').forEach(function (sel) {
         const chosen = (a.a && a.a[sel.dataset.stage]) ? a.a[sel.dataset.stage].map(x => String(x.id)) : [];
         Array.from(sel.options).forEach(o => { o.selected = chosen.includes(o.value); });
+        if (window.CustomSelect) window.CustomSelect.refresh(sel);
+        apRenderChips(sel);
     });
     new bootstrap.Modal(document.getElementById('modal-approvers')).show();
 }
@@ -285,6 +350,10 @@ document.getElementById('form-area').addEventListener('submit', async function (
     name.value = name.value.trim();          // "   " must not pass as a name
     if (!name.value) { if (window.jQuery && jQuery.fn.parsley) jQuery(this).parsley().validate(); return; }
 
+    // Read before the save: the reload wipes the form, and the hidden id is the
+    // only thing that distinguishes a rename from a brand-new area.
+    const isEdit = !!document.getElementById('area-id').value;
+
     const btn = this.querySelector('button[type="submit"]');
     const label = btn.innerHTML;
     btn.disabled = true;
@@ -292,7 +361,16 @@ document.getElementById('form-area').addEventListener('submit', async function (
 
     try {
         const json = await postForm('save_area', this);
-        if (json && json.result) { location.reload(); return; }
+        if (json && json.result) {
+            // Same confirmation the Department page gives. Reloading straight
+            // away looked like nothing had happened.
+            Swal.fire({
+                icon: 'success', title: 'Success',
+                text: isEdit ? 'Area updated.' : 'New area saved.',
+                timer: 1200, showConfirmButton: false
+            }).then(() => location.reload());
+            return;
+        }
         Swal.fire({ icon: 'error', title: 'Error', text: (json && json.message) || 'Failed to save.' });
     } finally {
         btn.disabled = false;
@@ -302,8 +380,27 @@ document.getElementById('form-area').addEventListener('submit', async function (
 
 document.getElementById('form-approvers').addEventListener('submit', async function (e) {
     e.preventDefault();
-    const json = await postForm('save_area_approvers', this);
-    if (json && json.result) { location.reload(); }
-    else { Swal.fire({ icon: 'error', title: 'Error', text: (json && json.message) || 'Failed to save.' }); }
+
+    const btn = this.querySelector('button[type="submit"]');
+    const label = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving…';
+
+    try {
+        const json = await postForm('save_area_approvers', this);
+        if (json && json.result) {
+            const area = document.getElementById('ap-area-name').textContent.trim();
+            Swal.fire({
+                icon: 'success', title: 'Success',
+                text: 'Approvers updated for ' + area + '.',
+                timer: 1400, showConfirmButton: false
+            }).then(() => location.reload());
+            return;
+        }
+        Swal.fire({ icon: 'error', title: 'Error', text: (json && json.message) || 'Failed to save.' });
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = label;
+    }
 });
 </script>

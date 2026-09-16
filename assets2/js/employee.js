@@ -441,14 +441,14 @@ $(function () {
     $('[name="department_id"]').change(function () {
         var did = $(this).val();
         var $pos = $("#position-select");
-        $pos.val("");
-        $pos.find("option.opt").each(function () {
-            var pdid = $(this).attr("data-did") || "";
-            // Only narrow the list when a department is actually picked, and never
-            // hide positions that aren't tied to any department — they belong to
-            // every one of them.
-            $(this).prop("disabled", !!did && !!pdid && pdid != did);
-        });
+        // Positions are NOT narrowed by department any more. The Positions page
+        // can no longer set a position's department (save_position ignores it),
+        // so the older positions stayed pinned to whichever department they were
+        // created under — greyed out everywhere else with no way to fix it — and
+        // editing an employee whose saved position sat in another department
+        // blanked the field and blocked Save. Every position is valid for every
+        // department; keep whatever is selected.
+        $pos.find("option.opt").prop("disabled", false);
         // Areas narrow the same way, but more strictly: every area belongs to
         // exactly one department, so once a department is chosen the areas of
         // any other are never valid. Clearing the value matters — silently
@@ -1126,6 +1126,7 @@ function editLoan(e) {
     $("#loan-select").val($(e).attr("loan_type"));
     $("#loan_date").val($(e).attr("loan_date"));
     $("#loan_effective_date").val($(e).attr("effective_date") || "");
+    $("#loan_reference_no").val($(e).attr("reference_no") || "");
     $("#damount").val($(e).attr("damount"));
     $("#loan_balance").val($(e).attr("loan_balance"));
     $("#loan_amount").val($(e).attr("loan_amount"));

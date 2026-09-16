@@ -1,14 +1,23 @@
 <?php
+require_once __DIR__ . '/includes/leave_timeline.php';
 $my_role = (int) ($_SESSION['login_role'] ?? 0);
-// Deciding is an approver's job AND a write: can_edit() is the same global
-// check ajax.php applies to decide_attendance_request, so HR — who may open
-// this screen read-only — never gets a button that would come back 403.
-$can_decide = in_array($my_role, [1, 8, 9], true) && can_edit('attendance-requests');
+$my_uid  = (int) ($_SESSION['login_id'] ?? 0);
+// Attendance requests run the SAME four-stage, area-based chain as leave
+// (Section/Unit Head → Supervisor → Department Head → HR). Who may act is
+// decided per ROW below (leave_user_can_act at the row's current stage), not
+// per page: one person can hold different stages in different wards.
+// Administrator is view-only on the chain, as on leave; delete stays with
+// Admin + HR.
+$is_admin_view = ($my_role === 1);
+$in_chain      = in_array($my_role, [8, 9, 10, 11], true) && can_edit('attendance-requests');
+$can_delete    = in_array($my_role, [1, 9], true);
+$att_stage_defs = leave_stages();
 
-// Department Heads only see their own department's requests.
+// Approvers only see their own areas' requests (dept-scope.php emits an area
+// predicate for area-scoped accounts); HR and Admin see everything.
 require_once 'dept-scope.php';
 
-$counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0];
+$counts = ['total' => 0, 'pending' => 0, 'approved' => 0, 'rejected' => 0, 'awaiting' => 0];
 $cq = $conn->query("SELECT status, COUNT(*) AS c FROM attendance_requests WHERE 1=1" . dept_scope_emp_sql('employee_id') . " GROUP BY status");
 if ($cq) while ($r = $cq->fetch_assoc()) {
     $counts['total'] += (int)$r['c'];
@@ -16,6 +25,11 @@ if ($cq) while ($r = $cq->fetch_assoc()) {
     if ($r['status'] == 1) $counts['approved'] = (int)$r['c'];
     if ($r['status'] == 2) $counts['rejected'] = (int)$r['c'];
 }
+if ($in_chain) {
+    $counts['awaiting'] = stage_awaiting_me_count($conn, $my_uid, 'attendance_requests', dept_scope_emp_sql('employee_id'));
+}
+$att_timelines = [];   // request id => timeline HTML for the trail modal
+$att_meta      = [];   // request id => employee / type / stage for the modal header
 
 $reasonLabels = [
     'forgot_scan'  => 'Forgot to Scan',
@@ -51,7 +65,11 @@ $reasonLabels = [
                             <div class="rounded bg-primary-subtle d-flex align-items-center justify-content-center me-3" style="width:48px;height:48px;">
                                 <i class="ri-file-list-3-line fs-22 text-primary"></i>
                             </div>
-                            <div><p class="text-muted mb-1">Total Requests</p><h4 class="mb-0"><?= $counts['total'] ?></h4></div>
+                            <?php if ($in_chain): ?>
+                                <div><p class="text-muted mb-1">Awaiting My Approval</p><h4 class="mb-0"><?= $counts['awaiting'] ?></h4></div>
+                            <?php else: ?>
+                                <div><p class="text-muted mb-1">Total Requests</p><h4 class="mb-0"><?= $counts['total'] ?></h4></div>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -88,12 +106,12 @@ $reasonLabels = [
 
                 <div class="col-12">
                     <div class="card">
-                        <div class="card-header d-flex align-items-center">
+                        <div class="card-header d-flex flex-wrap align-items-center gap-2">
                             <h4 class="card-title mb-0 flex-grow-1">
                                 <i class="ri-error-warning-line me-2 text-success"></i>Incident Reports &amp; OT Requests
                             </h4>
-                            <span class="badge bg-light text-dark border" title="Who can decide">
-                                <i class="ri-shield-user-line me-1"></i>Admin / Dept Head / HR Head
+                            <span class="badge bg-light text-dark border text-wrap text-start" title="Approval chain — same as leave, per area">
+                                <i class="ri-shield-user-line me-1"></i><?= htmlspecialchars(implode(' → ', array_map(fn($s) => $s['label'], $att_stage_defs))) ?>
                             </span>
                         </div>
                         <div class="card-header border-bottom-dashed pt-3 pb-0">
@@ -144,10 +162,15 @@ $reasonLabels = [
                                         <?php
                                         $q = $conn->query("
                                             SELECT ar.*, CONCAT(e.lastname, ', ', e.firstname) AS employee_name, e.employee_no,
-                                                   ru.name AS reviewer_name
+                                                   ru.name AS reviewer_name,
+                                                   se.name AS sec_name, su.name AS sup_name, au.name AS admin_name, hu.name AS hr_name
                                             FROM attendance_requests ar
                                             INNER JOIN employee e ON e.id = ar.employee_id
                                             LEFT JOIN users ru ON ru.id = ar.reviewed_by
+                                            LEFT JOIN users se ON se.id = ar.sec_by
+                                            LEFT JOIN users su ON su.id = ar.sup_by
+                                            LEFT JOIN users au ON au.id = ar.admin_by
+                                            LEFT JOIN users hu ON hu.id = ar.hr_by
                                             WHERE 1=1 " . dept_scope_sql('e.department_id') . "
                                             ORDER BY ar.created_at DESC
                                         ");
@@ -158,6 +181,19 @@ $reasonLabels = [
                                                 2 => ['Rejected', 'bg-danger'],
                                             ];
                                             [$slabel, $sclass] = $statusMap[$row['status']] ?? ['Unknown', 'bg-secondary'];
+                                            // Where the chain stands and whether it is THIS user's turn.
+                                            $cur_stage   = leave_current_stage($row);
+                                            $can_act_now = $cur_stage && $in_chain
+                                                && leave_user_can_act($conn, $my_uid, $cur_stage, (int) $row['employee_id']);
+                                            $awaiting_who = $cur_stage ? implode(' / ', leave_stage_approver_names($conn, $cur_stage, (int) $row['employee_id'])) : '';
+                                            $att_timelines[$row['id']] = leave_timeline_html($row);
+                                            $att_meta[$row['id']] = [
+                                                'emp'   => $row['employee_name'],
+                                                'type'  => att_request_label($row['request_type'], true),
+                                                'date'  => date('M d, Y', strtotime($row['request_date'])),
+                                                'stat'  => (int) $row['status'],
+                                                'stage' => $cur_stage ? $att_stage_defs[$cur_stage]['label'] : '',
+                                            ];
                                         ?>
                                         <tr data-status="<?= (int)$row['status'] ?>"
                                             data-req-id="<?= (int)$row['id'] ?>"
@@ -181,6 +217,8 @@ $reasonLabels = [
                                                     <span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-error-warning-line me-1"></i>Incident</span>
                                                 <?php elseif ($row['request_type'] === 'rest_day'): ?>
                                                     <span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="ri-moon-line me-1"></i>Rest Day</span>
+                                                <?php elseif ($row['request_type'] === 'undertime'): ?>
+                                                    <span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="ri-logout-box-r-line me-1"></i>Undertime</span>
                                                 <?php else: ?>
                                                     <span class="badge bg-info-subtle text-info border border-info-subtle"><i class="ri-timer-flash-line me-1"></i>Overtime</span>
                                                 <?php endif; ?>
@@ -194,7 +232,7 @@ $reasonLabels = [
                                                     <?= $row['claimed_time_out'] ? date('h:i A', strtotime($row['claimed_time_out'])) : '—' ?>
                                                 <?php endif; ?>
                                                 <?php if ($row['ot_hours_requested']): ?>
-                                                    <div><b><?= $row['ot_hours_requested'] ?> hrs</b> <?= $row['request_type'] === 'rest_day' ? 'rendered' : 'requested' ?></div>
+                                                    <div><b><?= $row['ot_hours_requested'] ?> hrs</b> <?= $row['request_type'] === 'rest_day' ? 'rendered' : ($row['request_type'] === 'undertime' ? 'to excuse' : 'requested') ?></div>
                                                 <?php endif; ?>
                                             </td>
                                             <td style="max-width:180px;">
@@ -218,7 +256,14 @@ $reasonLabels = [
                                             </td>
                                             <td class="text-center req-status-cell">
                                                 <span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span>
-                                                <?php if ($row['status'] != 0): ?>
+                                                <!-- One chip per approval stage (icon coloured by verdict, stage in the tooltip) -->
+                                                <div class="lv-chips mt-1" style="font-size:14px;line-height:1;"><?= leave_stage_chips($row) ?></div>
+                                                <?php if ($cur_stage): ?>
+                                                    <div class="text-muted" style="font-size:10px;margin-top:2px;">
+                                                        Awaiting <b><?= htmlspecialchars($att_stage_defs[$cur_stage]['label']) ?></b>
+                                                        <?php if ($awaiting_who !== ''): ?><br><span title="Who can act on this stage"><?= htmlspecialchars($awaiting_who) ?></span><?php else: ?><br><span class="text-warning">No approver assigned</span><?php endif; ?>
+                                                    </div>
+                                                <?php elseif ($row['status'] != 0): ?>
                                                     <div class="text-muted" style="font-size:10px;"><?= htmlspecialchars($row['reviewer_name'] ?? '') ?></div>
                                                 <?php endif; ?>
                                                 <?php if ($row['reviewer_remarks']): ?>
@@ -226,16 +271,22 @@ $reasonLabels = [
                                                 <?php endif; ?>
                                             </td>
                                             <td class="text-center req-actions-cell">
-                                                <?php if ($can_decide && $row['status'] == 0): ?>
+                                                <div class="d-inline-flex gap-1">
+                                                <?php if ($can_act_now): ?>
                                                     <!-- Opens the review modal: the day's scans, the figures (editable
                                                          before the decision — update_attendance_request) and Approve in
                                                          one place, so the approver never decides on a number they have
                                                          not seen against the record behind it. -->
-                                                    <button class="btn btn-sm btn-success" title="Review &amp; approve" onclick="reviewRequest(<?= $row['id'] ?>)"><i class="ri-check-double-line"></i></button>
+                                                    <button class="btn btn-sm btn-success" title="Review &amp; approve (<?= htmlspecialchars($att_stage_defs[$cur_stage]['label']) ?> stage)" onclick="reviewRequest(<?= $row['id'] ?>)"><i class="ri-check-double-line"></i></button>
                                                     <button class="btn btn-sm btn-danger" title="Reject" onclick="decideRequest(<?= $row['id'] ?>,2)"><i class="ri-close-line"></i></button>
-                                                <?php else: ?>
-                                                    <span class="text-muted">—</span>
+                                                <?php elseif ($is_admin_view || $my_role === 9): ?>
+                                                    <button class="btn btn-sm btn-outline-secondary" title="Review (view)" onclick="reviewRequest(<?= $row['id'] ?>)"><i class="ri-eye-line"></i></button>
                                                 <?php endif; ?>
+                                                    <button class="btn btn-sm btn-outline-secondary" title="Approval trail" onclick="openAttTimeline(<?= $row['id'] ?>)"><i class="ri-route-line"></i></button>
+                                                <?php if ($can_delete && $row['status'] == 0): ?>
+                                                    <button class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRequest(<?= $row['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
+                                                <?php endif; ?>
+                                                </div>
                                             </td>
                                         </tr>
                                         <?php endwhile; ?>
@@ -251,17 +302,49 @@ $reasonLabels = [
 </div>
 
 <?php include __DIR__ . '/includes/attendance_request_review.php'; ?>
+<?php leave_timeline_css(); ?>
+
+<!-- Approval trail — same timeline the leave queue shows, one modal per page -->
+<div class="modal fade" id="att-timeline-modal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0"><i class="ri-route-line me-1"></i>Approval trail</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="att-timeline-subject" class="mb-2 small"></div>
+        <div id="att-timeline-body"></div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 // ── Review & approve ─────────────────────────────────────────────────────────
 // The modal itself lives in includes/attendance_request_review.php — shared with
-// the DTR review screen, so both decide requests through one form. This page
-// only has to repaint the row the decision came from, which is why nothing here
-// reloads: the admin keeps their tab filter, their search and their scroll.
+// the DTR review screen, so both decide requests through one form. An edit
+// repaints the row in place; a DECISION reloads, because the row's stage
+// chips, the "awaiting" line, the tile counts and the action buttons all
+// change with it (exactly what leaves.php does).
 var REASON_LABELS = <?= json_encode($reasonLabels) ?>;
 var ME_NAME       = <?= json_encode($_SESSION['login_name'] ?? $_SESSION['login_username'] ?? '') ?>;
+var ATT_TIMELINES = <?= json_encode($att_timelines) ?>;
+var ATT_META      = <?= json_encode($att_meta) ?>;
 
 function reqRow(id) { return document.querySelector('tr[data-req-id="' + id + '"]'); }
+
+function openAttTimeline(id) {
+    var m = ATT_META[id] || {};
+    var out;
+    if (m.stat === 1)      out = '<span class="badge bg-success-subtle text-success border border-success-subtle"><i class="ri-checkbox-circle-fill me-1"></i>Fully approved</span>';
+    else if (m.stat === 2) out = '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="ri-close-circle-fill me-1"></i>Rejected</span>';
+    else                   out = '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-time-fill me-1"></i>' + (m.stage ? 'Awaiting ' + escHtml(m.stage) : 'Pending') + '</span>';
+    document.getElementById('att-timeline-subject').innerHTML =
+        '<b>' + escHtml(m.emp || '') + '</b> · ' + escHtml(m.type || '') + ' · ' + escHtml(m.date || '') + ' &nbsp;' + out;
+    document.getElementById('att-timeline-body').innerHTML = ATT_TIMELINES[id] || '<div class="text-muted">No trail.</div>';
+    new bootstrap.Modal(document.getElementById('att-timeline-modal')).show();
+}
 
 function reviewRequest(id) {
     AttReqReview.open(id, {
@@ -275,10 +358,21 @@ function reviewRequest(id) {
             tr.dataset.hours  = (q.ot_hours === null || q.ot_hours === undefined) ? '' : q.ot_hours;
             paintRequestRow(tr);
         },
-        onDecided: function (status, q) {
-            var tr = reqRow(q.id);
-            if (tr) paintRequestDecision(tr, status);
-        }
+        onDecided: function () { setTimeout(function () { window.location.reload(); }, 1400); }
+    });
+}
+
+function deleteRequest(id) {
+    Swal.fire({ title: 'Delete this request?', text: 'The employee will have to file it again.', icon: 'warning',
+                showCancelButton: true, confirmButtonColor: '#c62828', confirmButtonText: 'Yes, delete' })
+    .then(function (r) {
+        if (!r.isConfirmed) return;
+        fetch('ajax.php?action=delete_attendance_request', { method: 'POST', body: new URLSearchParams({ id: id }) })
+            .then(function (x) { return x.json(); })
+            .then(function (j) {
+                if (j && j.result) { window.location.reload(); }
+                else Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Could not delete.' });
+            });
     });
 }
 
@@ -366,32 +460,34 @@ async function decideRequest(id, status) {
         })
         : await Swal.fire({
             title: 'Reject this request?',
-            input: 'text', inputLabel: 'Reason for rejection (optional)',
+            text: (ATT_META[id] && ATT_META[id].stage) ? 'Rejecting at the ' + ATT_META[id].stage + ' stage halts the chain.' : '',
+            input: 'textarea', inputLabel: 'Reason for rejection',
             inputPlaceholder: 'e.g. No supporting logs / filed on the wrong date',
             inputAttributes: { maxlength: 255 },
+            inputValidator: (v) => (!String(v || '').trim() ? 'A reason is required to reject.' : undefined),
             icon: 'warning', showCancelButton: true,
             confirmButtonColor: '#c62828', confirmButtonText: 'Yes, reject',
         });
     if (!dlg.isConfirmed) return;
     const remarks = status === 2 ? String(dlg.value || '').trim() : '';
+    // The stage is the row's CURRENT one; the server re-derives it when omitted
+    // and refuses anything out of order.
     const res = await fetch('ajax.php?action=decide_attendance_request', {
         method: 'POST',
         body: new URLSearchParams({ id, status, remarks })
     });
     const json = await res.json();
     if (json?.result) {
-        // Repaint the one row instead of reloading: the admin keeps their tab
-        // filter, their search and their scroll position mid-queue. The server
-        // message still comes through — it carries the DTR-write warning when
-        // an approved OT request had no attendance record to write to.
-        const tr = reqRow(id);
-        if (tr) paintRequestDecision(tr, status);
-        Swal.fire({
+        // Reload: stage chips, "awaiting" line, tile counts and the buttons all
+        // change with a decision. The message carries the next stage (or the
+        // DTR-write warning on a final OT approval), so it is shown first.
+        await Swal.fire({
             icon: 'success', title: status === 1 ? 'Approved' : 'Rejected',
-            text: (json.message && json.message !== 'Request approved' && json.message !== 'Request rejected') ? json.message : '',
-            timer: json.message && json.message.length > 40 ? undefined : 1400,
-            showConfirmButton: !!(json.message && json.message.length > 40),
+            text: json.message || '',
+            timer: json.message && json.message.length > 90 ? undefined : 1600,
+            showConfirmButton: !!(json.message && json.message.length > 90),
         });
+        window.location.reload();
     } else {
         Swal.fire({ icon: 'error', title: 'Error', text: json?.message || 'Failed to update request.' });
     }

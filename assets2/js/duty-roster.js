@@ -46,6 +46,13 @@ $(document).ready(function () {
     var $period = $('#dr-period');
     var $dept = $('#dr-dept');
     var $area = $('#dr-area');   // absent (0 length) for an area-scoped session — every $area.* call below already no-ops on an empty jQuery set
+    // An area-scoped head's #dr-dept lists their WARDS, valued by area id (see
+    // duty-roster.php). Its value is posted as area_id with department_id 0 —
+    // the server ignores department for such a session and fences on area.
+    var wardMode = $dept.data('scope') === 'area';
+    // Separate storage key: a remembered department id must not be read back
+    // as an area id (or the reverse) after the picker changed meaning.
+    var deptKey = wardMode ? 'dr-ward' : 'dr-dept';
     var $search = $('#dr-search');
     var $min = $('#dr-min');
 
@@ -357,7 +364,7 @@ $(document).ready(function () {
                   // shift for knowing where you are. Inside one department it
                   // is the other way round.
                   + '<div class="dr-emp-sub">' + esc(emp.employee_no || '')
-                  + (S.dept === '0'
+                  + (S.dept === '0' && !S.area
                         ? (emp.dept ? ' · ' + esc(emp.dept) : '')
                         : (emp.period_shift ? ' · ' + esc(emp.period_shift) : ''))
                   + '</div>'
@@ -960,6 +967,10 @@ $(document).ready(function () {
         S.period = $period.val();
         S.dept = $dept.val() == null ? '' : String($dept.val());
         S.area = $area.length ? ($area.val() == null ? '' : String($area.val())) : '';
+        if (wardMode && S.dept !== '') {
+            S.area = S.dept === '0' ? '' : S.dept;   // "0" = All my wards
+            S.dept = '0';
+        }
         if (S.dept === '') {
             S.employees = []; S.days = []; S.cells = {}; S.zones = {}; S.from = ''; S.to = '';
             render();
@@ -1027,7 +1038,7 @@ $(document).ready(function () {
     // are working, so the check belongs on this side of it — the second call
     // carries confirm_leave once the planner has read the names.
     function doPublish($b, confirmed) {
-        var data = { period: S.period, department_id: S.dept };
+        var data = { period: S.period, department_id: S.dept, area_id: S.area };
         if (confirmed) data.confirm_leave = 1;
 
         post('duty_roster_publish', data)
@@ -1077,7 +1088,7 @@ $(document).ready(function () {
 
     $('#dr-copy').on('click', function () {
         var $b = $(this).prop('disabled', true);
-        post('duty_roster_copy', { period: S.period, department_id: S.dept })
+        post('duty_roster_copy', { period: S.period, department_id: S.dept, area_id: S.area })
             .done(function (j) {
                 $b.prop('disabled', false);
                 toast(j.result ? 'success' : 'error', j.result ? 'Copied' : 'Nothing copied', j.message);
@@ -1096,7 +1107,7 @@ $(document).ready(function () {
         }).then(function (r) {
             if (!r.isConfirmed) return;
             $b.prop('disabled', true);
-            post('duty_roster_clear_drafts', { period: S.period, department_id: S.dept })
+            post('duty_roster_clear_drafts', { period: S.period, department_id: S.dept, area_id: S.area })
                 .done(function (j) {
                     $b.prop('disabled', false);
                     toast(j.result ? 'success' : 'error', j.result ? 'Discarded' : 'Error', j.message);
@@ -1138,7 +1149,8 @@ $(document).ready(function () {
         if (S.dept === '') { toast('info', 'Choose a department', 'Pick a department first, then export.'); return; }
         var go = function () {
             window.location = 'export-duty-roster.php?period=' + encodeURIComponent(S.period)
-                            + '&department_id=' + encodeURIComponent(S.dept);
+                            + '&department_id=' + encodeURIComponent(S.dept)
+                            + '&area_id=' + encodeURIComponent(S.area || '');
         };
         if (!dirty.size) return go();
         Swal.fire({
@@ -1212,6 +1224,7 @@ $(document).ready(function () {
         fd.append('file', file);
         fd.append('period', S.period);
         fd.append('department_id', S.dept);
+        fd.append('area_id', S.area);
 
         Swal.fire({ title: 'Reading the sheet…', text: file.name, allowOutsideClick: false, didOpen: function () { Swal.showLoading(); } });
 
@@ -1509,7 +1522,7 @@ $(document).ready(function () {
         if (savedPer !== null && $period.find('option').filter(function () { return this.value === savedPer; }).length) {
             $period.val(savedPer).trigger('change');
         }
-        var savedDept = localStorage.getItem('dr-dept');
+        var savedDept = localStorage.getItem(deptKey);
         if (savedDept !== null && $dept.find('option').filter(function () { return this.value === savedDept; }).length) {
             $dept.val(savedDept).trigger('change');
         }
@@ -1543,7 +1556,7 @@ $(document).ready(function () {
         renderCoverage(visibleEmployees());
     });
 
-    $dept.on('change', function () { try { localStorage.setItem('dr-dept', $dept.val()); } catch (e) {} });
+    $dept.on('change', function () { try { localStorage.setItem(deptKey, $dept.val()); } catch (e) {} });
     $period.on('change', function () { try { localStorage.setItem('dr-period', $period.val()); } catch (e) {} });
 
     // Final label resync. autocomplete="off" already stops the browser writing

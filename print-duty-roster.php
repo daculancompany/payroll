@@ -45,8 +45,12 @@ if ($deptId > 0) {
 }
 $areaName = '';
 if ($areaId > 0) {
-    $aq = $conn->query("SELECT name FROM area WHERE id = $areaId LIMIT 1");
-    $areaName = ($aq && ($a = $aq->fetch_assoc())) ? $a['name'] : '';
+    $aq = $conn->query("SELECT a.name, d.name AS dept FROM area a LEFT JOIN department d ON d.id = a.department_id WHERE a.id = $areaId LIMIT 1");
+    if ($aq && ($a = $aq->fetch_assoc())) {
+        $areaName = (string) $a['name'];
+        // A ward-scoped head posts department 0 — title it with the ward's own department.
+        if ($deptId <= 0 && $a['dept'] !== null) $deptName = (string) $a['dept'];
+    }
 }
 
 $employees = $crud->dutyRosterEmployees($deptId, $range['from'], $range['to'], $areaId);

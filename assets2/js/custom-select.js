@@ -426,6 +426,12 @@
         if (sel.classList.contains('form-select-sm') || sel.classList.contains('form-control-sm')) {
             wrap.classList.add('cs-sm');
         }
+        // An inline width on the select (style="width:120px") was meant for
+        // the visible control. Left on the hidden select, the wrapper shrinks
+        // to its content and the invisible select pokes out past it.
+        ['width', 'minWidth', 'maxWidth'].forEach(function (k) {
+            if (sel.style[k]) wrap.style[k] = sel.style[k];
+        });
 
         var icon = sel.dataset.csIcon || '';
         var title = deriveTitle(sel);

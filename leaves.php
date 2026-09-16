@@ -57,25 +57,12 @@ $where_sql = 'WHERE 1=1'
     . ($status_filter === null ? '' : ' AND lr.status = ' . (int) $status_filter)
     . $lv_scope_dept;
 
-// Render an approval-stage badge with approver + reason tooltip.
+// Render an approval-stage badge with approver + reason tooltip. The markup
+// lives in includes/leave_timeline.php (leave_stage_badge) because the
+// attendance-request queue draws the very same chain.
 function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
 {
-    // Auto-skipped stage: stored approved so the chain advances, but with no
-    // approver. Distinguished so the column never credits a decision to nobody.
-    if ($status == 1 && !$by_id && $remarks) {
-        return '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" title="' . htmlspecialchars($remarks) . '"><i class="ri-skip-forward-line me-1"></i>Skipped</span>';
-    }
-    if ($status == 1) {
-        $t = 'Approved' . ($by_name ? ' by ' . htmlspecialchars($by_name) : '') . ($at ? ' • ' . date('M d, Y', strtotime($at)) : '');
-        return '<span class="badge bg-success-subtle text-success border border-success-subtle" title="' . $t . '"><i class="ri-check-line me-1"></i>Approved</span>'
-             . ($by_name ? '<div class="text-muted" style="font-size:10px;">' . htmlspecialchars($by_name) . '</div>' : '');
-    }
-    if ($status == 2) {
-        $t = 'Rejected' . ($by_name ? ' by ' . htmlspecialchars($by_name) : '') . ($remarks ? ' — ' . htmlspecialchars($remarks) : '');
-        return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="' . $t . '"><i class="ri-close-line me-1"></i>Rejected</span>'
-             . ($remarks ? '<div class="text-danger" style="font-size:10px;" title="' . htmlspecialchars($remarks) . '"><i class="ri-information-line"></i> ' . htmlspecialchars(mb_strimwidth($remarks, 0, 28, '…')) . '</div>' : '');
-    }
-    return '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-time-line me-1"></i>Pending</span>';
+    return leave_stage_badge($status, $by_name, $remarks, $at, $by_id);
 }
 ?>
 <!-- Stored-attachment view + in-app viewer (shared with the portal's leave form) -->
@@ -141,11 +128,11 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
 
                 <div class="col-12">
                     <div class="card">
-                        <div class="card-header d-flex align-items-center">
+                        <div class="card-header d-flex flex-wrap align-items-center gap-2">
                             <h4 class="card-title mb-0 flex-grow-1">
                                 <i class="ri-calendar-event-line me-2 text-success"></i>Leave Requests
                             </h4>
-                            <span class="badge bg-light text-dark border me-2" title="Approval flow">
+                            <span class="badge bg-light text-dark border text-wrap text-start" title="Approval flow">
                                 <i class="ri-flow-chart me-1"></i><?= implode(' &rarr; ', array_map(fn($s) => htmlspecialchars($s['label']), $leave_stage_defs)) ?>
                             </span>
                             <button type="button" class="btn btn-success btn-sm" id="btn-file-leave">
@@ -239,7 +226,17 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                 // Subject header of the timeline modal — it has to name the
                                                 // request, or the trail is a list of dates with no owner.
                                                 'no'    => $row['employee_no'],
-                                                'range' => date('M d', strtotime($row['date_from'])) . ' – ' . date('M d, Y', strtotime($row['date_to'])),
+                                                // The days actually filed. date_from–date_to is only their
+                                                // outer bound: a split leave read as one long range.
+                                                'range' => leave_days_label($row),
+                                                'days'  => array_map(function ($d) use ($row) {
+                                                    return [
+                                                        'd'    => date('M j', strtotime($d)),
+                                                        'w'    => date('D', strtotime($d)),
+                                                        'half' => !empty($row['is_half_day']) && !empty($row['half_date'])
+                                                                  && date('Y-m-d', strtotime($row['half_date'])) === $d,
+                                                    ];
+                                                }, leave_request_days($row)),
                                                 'stat'  => (int) $row['status'],
                                                 'stage' => $cur_stage ? ($leave_stage_defs[$cur_stage]['label'] ?? '') : '',
                                             ];
@@ -258,8 +255,9 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                                         <?= htmlspecialchars($row['half_period']) ?> Half<?= !empty($row['half_date']) && (float)$row['duration'] > 0.5 ? ' · ' . date('M j', strtotime($row['half_date'])) : '' ?>
                                                     </span>
                                                 <?php endif; ?>
-                                                <div class="text-muted" style="font-size:11px;">
-                                                    <?= date('M d', strtotime($row['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($row['date_to'])) ?>
+                                                <?php /* The days actually filed, not date_from–date_to — see leave_days_label(). */ ?>
+                                                <div class="text-muted" style="font-size:11px;" title="<?= htmlspecialchars(leave_days_title($row)) ?>">
+                                                    <?= leave_days_label($row) ?>
                                                 </div>
                                             </td>
                                             <td style="max-width:200px;">
@@ -395,6 +393,12 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
     .lvtl-subject .sub-fact{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;
         color:#4c5768;background:#fff;border:1px solid #e6e1f3;border-radius:20px;padding:3px 10px;}
     .lvtl-subject .sub-fact i{font-size:12px;color:#673bb6;}
+    .lvtl-subject .sub-days{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+    .lvtl-subject .sub-day{display:inline-flex;flex-direction:column;align-items:center;min-width:48px;
+        padding:3px 7px;border:1px solid #d9cdf0;border-radius:8px;background:#f6f2fd;
+        font-size:11px;font-weight:700;color:#4e3483;line-height:1.2;}
+    .lvtl-subject .sub-day small{font-size:9px;font-weight:600;color:#8a7bab;text-transform:uppercase;letter-spacing:.3px;}
+    .lvtl-subject .sub-day.is-half{border-style:dashed;background:#fff8ec;border-color:#f0c987;color:#9a6200;}
     .lvtl-outcome{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:6px;
         font-size:11px;font-weight:800;letter-spacing:.3px;border-radius:20px;padding:5px 12px;border:1px solid transparent;}
     .lvtl-outcome i{font-size:13px;}
@@ -465,6 +469,17 @@ function openLeaveTimeline(id) {
               + '<span class="sub-fact"><i class="ri-calendar-event-line"></i>' + lvEsc(m.range || '—') + '</span>'
               + '<span class="sub-fact"><i class="ri-hourglass-line"></i>' + lvEsc(m.dur || '0') + ' day(s)</span>'
             + '</div>'
+            // Every picked day on its own, weekday included — the range above
+            // says where the leave starts and ends, this says what was taken.
+            + ((m.days && m.days.length)
+                ? '<div class="sub-days">'
+                    + m.days.map(function (x) {
+                        return '<span class="sub-day' + (x.half ? ' is-half' : '') + '">'
+                            + '<small>' + lvEsc(x.w) + '</small>' + lvEsc(x.d) + (x.half ? ' ½' : '')
+                            + '</span>';
+                    }).join('')
+                  + '</div>'
+                : '')
           + '</div>'
           + '<span class="lvtl-outcome ' + out.c + '"><i class="' + out.i + '"></i>' + lvEsc(out.t) + '</span>'
         : '';

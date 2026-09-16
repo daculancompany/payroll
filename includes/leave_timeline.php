@@ -109,6 +109,54 @@ if (!function_exists('leave_timeline_css')) {
     }
 }
 
+if (!function_exists('leave_stage_badge')) {
+    /**
+     * One approval-stage badge for a list cell (Approved / Rejected / Pending /
+     * Skipped) with approver + reason in the tooltip. Shared by the leave queue
+     * and the attendance-request queue — both run the same chain.
+     */
+    function leave_stage_badge($status, $by_name, $remarks, $at, $by_id = 0): string
+    {
+        // Auto-skipped stage: stored approved so the chain advances, but with no
+        // approver. Distinguished so the column never credits a decision to nobody.
+        if ($status == 1 && !$by_id && $remarks) {
+            return '<span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle" title="' . htmlspecialchars($remarks) . '"><i class="ri-skip-forward-line me-1"></i>Skipped</span>';
+        }
+        if ($status == 1) {
+            $t = 'Approved' . ($by_name ? ' by ' . htmlspecialchars($by_name) : '') . ($at ? ' • ' . date('M d, Y', strtotime($at)) : '');
+            return '<span class="badge bg-success-subtle text-success border border-success-subtle" title="' . $t . '"><i class="ri-check-line me-1"></i>Approved</span>'
+                 . ($by_name ? '<div class="text-muted" style="font-size:10px;">' . htmlspecialchars($by_name) . '</div>' : '');
+        }
+        if ($status == 2) {
+            $t = 'Rejected' . ($by_name ? ' by ' . htmlspecialchars($by_name) : '') . ($remarks ? ' — ' . htmlspecialchars($remarks) : '');
+            return '<span class="badge bg-danger-subtle text-danger border border-danger-subtle" title="' . $t . '"><i class="ri-close-line me-1"></i>Rejected</span>'
+                 . ($remarks ? '<div class="text-danger" style="font-size:10px;" title="' . htmlspecialchars($remarks) . '"><i class="ri-information-line"></i> ' . htmlspecialchars(mb_strimwidth($remarks, 0, 28, '…')) . '</div>' : '');
+        }
+        return '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-time-line me-1"></i>Pending</span>';
+    }
+}
+
+if (!function_exists('leave_stage_chips')) {
+    /**
+     * Compact one-icon-per-stage strip for the employee portal lists (leave and
+     * attendance requests): green check / red cross / orange clock, the stage
+     * name in the tooltip. Skipped stages read as passed — to the employee the
+     * chain simply moved on.
+     */
+    function leave_stage_chips(array $row): string
+    {
+        $h = '';
+        foreach (leave_stages() as $key => $cfg) {
+            $s = (int) ($row[$key . '_status'] ?? 0);
+            $label = htmlspecialchars($cfg['label']);
+            if ($s === 1)      $h .= '<span class="lv-chip" style="color:#4e3483;" title="' . $label . ': Approved"><i class="ri-checkbox-circle-fill"></i></span>';
+            elseif ($s === 2)  $h .= '<span class="lv-chip" style="color:#dc3545;" title="' . $label . ': Rejected"><i class="ri-close-circle-fill"></i></span>';
+            else               $h .= '<span class="lv-chip" style="color:#fd7e14;" title="' . $label . ': Pending"><i class="ri-time-fill"></i></span>';
+        }
+        return $h;
+    }
+}
+
 if (!function_exists('leave_timeline_html')) {
     /** Returns the HTML for one leave request's approval timeline. */
     function leave_timeline_html(array $row): string
@@ -209,5 +257,105 @@ if (!function_exists('leave_timeline_html')) {
 
         $h .= '</ul>';
         return $h;
+    }
+}
+
+if (!function_exists('leave_request_days')) {
+    /**
+     * The exact days a leave covers, as sorted 'Y-m-d' strings.
+     *
+     * Filing picks days on a calendar and stores them in `dates` (JSON), and they
+     * need not be consecutive: a 5-day leave can be Sep 28–29 plus Oct 7–9. The
+     * date_from/date_to pair is only the outer bound of that set, so printing it
+     * reads as 12 days. It is the fallback for rows with no usable `dates`, never
+     * the source of truth.
+     */
+    function leave_request_days(array $row): array
+    {
+        $days = [];
+        $raw  = $row['dates'] ?? '';
+        if (is_string($raw) && $raw !== '') {
+            $j = json_decode($raw, true);
+            if (is_array($j)) {
+                foreach ($j as $d) {
+                    if (!is_string($d)) continue;
+                    $dt = DateTime::createFromFormat('!Y-m-d', $d);
+                    if ($dt && $dt->format('Y-m-d') === $d) $days[$d] = true;
+                }
+            }
+        }
+        if (!$days && !empty($row['date_from'])) {
+            $s = strtotime((string) $row['date_from']);
+            $e = strtotime((string) (!empty($row['date_to']) ? $row['date_to'] : $row['date_from']));
+            // The cap only guards against a corrupt range looping for years.
+            for ($t = $s, $i = 0; $s !== false && $e !== false && $t <= $e && $i < 366; $t = strtotime('+1 day', $t), $i++) {
+                $days[date('Y-m-d', $t)] = true;
+            }
+        }
+        $days = array_keys($days);
+        sort($days);
+        return $days;
+    }
+}
+
+if (!function_exists('leave_days_label')) {
+    /**
+     * A leave's days as compact runs for a list cell: "Sep 28–29 · Oct 7–9, 2026".
+     *
+     * Consecutive days collapse into a run and a gap starts a new one, so a split
+     * leave is visibly split. The month is repeated only when it changes and the
+     * year only where it changes ("Dec 30–31, 2026 · Jan 2, 2027"). A half day is
+     * always its own run with a ½ mark, because "Sep 15–17" would claim three
+     * full days. Built from dates alone, so the result is safe to echo.
+     */
+    function leave_days_label(array $row): string
+    {
+        $days = leave_request_days($row);
+        if (!$days) return '';
+        $half = (!empty($row['is_half_day']) && !empty($row['half_date']))
+            ? date('Y-m-d', strtotime((string) $row['half_date'])) : '';
+
+        $runs = [];
+        foreach ($days as $d) {
+            $t    = strtotime($d);
+            $last = count($runs) - 1;
+            // A run never crosses New Year: "Dec 31–Jan 1, 2027" would date the
+            // first day to the wrong year, since the year is printed once per run.
+            $joins = $last >= 0 && !$runs[$last]['half'] && $d !== $half
+                  && date('Y-m-d', strtotime('+1 day', $runs[$last]['end'])) === $d
+                  && date('Y', $runs[$last]['end']) === substr($d, 0, 4);
+            if ($joins) $runs[$last]['end'] = $t;
+            else        $runs[] = ['start' => $t, 'end' => $t, 'half' => $d === $half];
+        }
+
+        $out = [];
+        $prevMonth = '';
+        foreach ($runs as $i => $r) {
+            $piece = (date('Y-m', $r['start']) !== $prevMonth ? date('M j', $r['start']) : date('j', $r['start']));
+            $prevMonth = date('Y-m', $r['start']);
+            if ($r['end'] !== $r['start']) {
+                $piece .= '–' . (date('Y-m', $r['end']) !== $prevMonth ? date('M j', $r['end']) : date('j', $r['end']));
+                $prevMonth = date('Y-m', $r['end']);
+            }
+            if ($r['half']) $piece .= '½';
+            $next = $runs[$i + 1] ?? null;
+            if ($next === null || date('Y', $next['start']) !== date('Y', $r['end'])) {
+                $piece .= ', ' . date('Y', $r['end']);
+            }
+            $out[] = $piece;
+        }
+        return implode(' · ', $out);
+    }
+}
+
+if (!function_exists('leave_days_title')) {
+    /** Every day spelled out with its weekday, for a tooltip: "Mon, Sep 28 · Tue, Sep 29". */
+    function leave_days_title(array $row): string
+    {
+        $half = (!empty($row['is_half_day']) && !empty($row['half_date']))
+            ? date('Y-m-d', strtotime((string) $row['half_date'])) : '';
+        return implode(' · ', array_map(function ($d) use ($half) {
+            return date('D, M j', strtotime($d)) . ($d === $half ? ' (half day)' : '');
+        }, leave_request_days($row)));
     }
 }

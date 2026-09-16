@@ -458,6 +458,21 @@
                                     placeholder="0.00" value="0">
                             </div>
                         </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                Reference No. <span class="text-muted" style="text-transform:none;font-weight:600;">(optional)</span>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="ri-hashtag"></i></span>
+                                <input type="text" id="deduction_reference_no" class="form-control" name="reference_no[]"
+                                    autocomplete="off" maxlength="100" placeholder="e.g. VCH-2026-00123"
+                                    data-parsley-maxlength="100"
+                                    data-parsley-maxlength-message="Reference number is too long (max 100 characters).">
+                            </div>
+                            <small class="text-muted" style="font-size:10px;">
+                                Voucher / slip / control number, for tracing.
+                            </small>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer" style="background:#f8f9fa;">
@@ -622,7 +637,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="row g-3">
-                        <div class="col-md-6">
+                        <div class="col-12">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Loan Type <span class="text-danger">*</span>
                                 <?php if (function_exists('can_edit') && can_edit('loans')): ?>
@@ -640,6 +655,21 @@
                                     <option class="opt" value="<?= $row['clt_id'] ?>"><?= htmlspecialchars($row['loan_type']) ?></option>
                                 <?php endwhile; ?>
                             </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                Reference No. <span class="text-muted" style="text-transform:none;font-weight:600;">(optional)</span>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="ri-hashtag"></i></span>
+                                <input type="text" id="loan_reference_no" class="form-control" name="reference_no"
+                                    autocomplete="off" maxlength="100" placeholder="e.g. SSS-2026-00123"
+                                    data-parsley-maxlength="100"
+                                    data-parsley-maxlength-message="Reference number is too long (max 100 characters).">
+                            </div>
+                            <small class="text-muted" style="font-size:10px;">
+                                Loan / application / voucher number from the lender, for tracing.
+                            </small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
@@ -816,6 +846,12 @@
     #modal-upload .imp-issues li { margin-top: 1px; }
     #modal-upload .imp-sub { color: #8b86a0; font-size: 10.5px; }
     #modal-upload .imp-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    /* Phones: title + three step pills + close don't fit one row, which pushed
+       the close button out of the dialog. Drop the steps onto their own row. */
+    @media (max-width: 575.98px) {
+        #modal-upload .modal-header { flex-wrap: wrap; row-gap: 8px; }
+        #modal-upload .imp-steps { order: 3; flex-basis: 100%; margin-right: 0 !important; }
+    }
 </style>
 <div class="modal fade" id="modal-upload" tabindex="-1" role="dialog" data-bs-backdrop="static">
     <form id="uploadForm" novalidate>

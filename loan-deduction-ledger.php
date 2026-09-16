@@ -14,7 +14,7 @@ if ($f_kind !== 'deduction') {
     $lq = $conn->query("
         SELECT l.loan_id, l.employee_id, l.loan_amount AS original, l.damount AS per_period,
                l.loan_balance AS balance, l.loan_status AS status,
-               COALESCE(l.effective_date, l.loan_date) AS start_date,
+               COALESCE(l.effective_date, l.loan_date) AS start_date, l.reference_no,
                clt.loan_type AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
         FROM loans l
         INNER JOIN contribution_loan_types clt ON clt.clt_id = l.loan_type
@@ -29,7 +29,7 @@ if ($f_kind !== 'deduction') {
 if ($f_kind !== 'loan') {
     $dq = $conn->query("
         SELECT ed.id, ed.employee_id, ed.total_amount AS original, ed.amount AS per_period,
-               ed.balance, ed.status, ed.effective_date AS start_date,
+               ed.balance, ed.status, ed.effective_date AS start_date, ed.reference_no,
                d.deduction AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
         FROM employee_deductions ed
         INNER JOIN deductions d ON d.id = ed.deduction_id
@@ -50,7 +50,7 @@ foreach ($rows as $r) {
     $isPaid = ((int)$r['status'] === 1) || (float)$r['balance'] <= 0;
     if ($f_status === 'active' && $isPaid) continue;
     if ($f_status === 'paid'   && !$isPaid) continue;
-    if ($f_q !== '' && stripos($r['emp'] . ' ' . $r['employee_no'] . ' ' . $r['name'], $f_q) === false) continue;
+    if ($f_q !== '' && stripos($r['emp'] . ' ' . $r['employee_no'] . ' ' . $r['name'] . ' ' . ($r['reference_no'] ?? ''), $f_q) === false) continue;
     $r['paid'] = $paid; $r['isPaid'] = $isPaid;
     $view[] = $r;
     $t_orig += (float)$r['original']; $t_bal += (float)$r['balance']; $t_paid += $paid;
@@ -172,7 +172,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                                 </td>
                                 <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" data-emp-quickview="<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
                                 <td><span class="badge <?= $r['kind']==='Loan'?'bg-danger':'bg-warning text-dark' ?>"><?= $r['kind'] ?></span></td>
-                                <td><?= htmlspecialchars($r['name']) ?></td>
+                                <td><?= htmlspecialchars($r['name']) ?><?php if (!empty($r['reference_no'])): ?><br><small class="text-muted" style="font-family:monospace;" title="Reference number">#<?= htmlspecialchars($r['reference_no']) ?></small><?php endif; ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['original']) ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['per_period']) ?></td>
                                 <td class="rpt-num" style="color:#2e7d32;"><?= ldl_money($r['paid']) ?></td>

@@ -35,6 +35,7 @@ if (!defined('ATT_REQ_REVIEW_RENDERED')) {
         'system_down'   => 'System Down',
         'overtime'      => 'Overtime Authorization',
         'rest_day_work' => 'Rest Day / Day-Off Work',
+        'undertime'     => 'Undertime / Early Out',
         'other'         => 'Other',
     ];
 ?>
@@ -54,6 +55,10 @@ if (!defined('ATT_REQ_REVIEW_RENDERED')) {
           <span class="text-muted small"><i class="ri-calendar-event-line me-1"></i><span id="arr-date"></span></span>
         </div>
         <div class="text-muted mb-2" style="font-size:11px;">Filed <span id="arr-filed"></span></div>
+
+        <!-- Where the approval chain stands (same stages as leave) and whether it
+             is THIS user's turn — the buttons below follow it. -->
+        <div id="arr-chain" class="small mb-2 p-2 rounded border" style="line-height:1.5;background:#faf9fd;border-color:#e7e3f2 !important;"></div>
 
         <!-- What the record behind the request actually says (ot_request_limit). -->
         <div id="arr-limit" class="small mb-2" style="line-height:1.4;"></div>
@@ -106,9 +111,10 @@ window.AttReqReview = (function () {
     var TYPE_BADGE = {
         incident: '<span class="badge bg-warning-subtle text-warning border border-warning-subtle"><i class="ri-error-warning-line me-1"></i>Incident</span>',
         rest_day: '<span class="badge bg-primary-subtle text-primary border border-primary-subtle"><i class="ri-moon-line me-1"></i>Rest Day</span>',
-        overtime: '<span class="badge bg-info-subtle text-info border border-info-subtle"><i class="ri-timer-flash-line me-1"></i>Overtime</span>'
+        overtime: '<span class="badge bg-info-subtle text-info border border-info-subtle"><i class="ri-timer-flash-line me-1"></i>Overtime</span>',
+        undertime: '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="ri-logout-box-r-line me-1"></i>Undertime</span>'
     };
-    var HOUR_TYPES = ['overtime', 'rest_day'];
+    var HOUR_TYPES = ['overtime', 'rest_day', 'undertime'];
     var cur = null, cbs = {}, modal = null, seq = 0;
 
     function $id(id) { return document.getElementById(id); }
@@ -137,10 +143,31 @@ window.AttReqReview = (function () {
         });
     }
 
+    // One line per stage: verdict icon, stage name, who / when / why.
+    function chainHtml(q) {
+        var h = '';
+        (q.stages || []).forEach(function (s) {
+            var ic, col, txt;
+            if (s.status === 1 && !s.by && s.remarks) { ic = 'ri-skip-forward-line'; col = '#8a8a99'; txt = 'Skipped'; }
+            else if (s.status === 1) { ic = 'ri-checkbox-circle-fill'; col = '#1b8a3e'; txt = 'Approved' + (s.name ? ' · ' + esc(s.name) : '') + (s.at ? ' · ' + esc(s.at) : ''); }
+            else if (s.status === 2) { ic = 'ri-close-circle-fill'; col = '#c62828'; txt = 'Rejected' + (s.name ? ' · ' + esc(s.name) : '') + (s.remarks ? ' — ' + esc(s.remarks) : ''); }
+            else if (s.key === q.current_stage) { ic = 'ri-time-fill'; col = '#e6a817'; txt = '<b>Awaiting</b>' + ((q.awaiting_names || []).length ? ' · ' + esc(q.awaiting_names.join(' / ')) : ' · <span style="color:#c77700;">no approver assigned</span>'); }
+            else { ic = 'ri-checkbox-blank-circle-line'; col = '#c5c5cf'; txt = 'Pending'; }
+            h += '<div><i class="' + ic + ' me-1" style="color:' + col + ';"></i><span style="font-weight:700;color:#4e3483;">' + esc(s.label) + '</span> <span class="text-muted">' + txt + '</span></div>';
+        });
+        if (Number(q.status) === 0 && q.current_stage && !q.can_act) {
+            h += '<div class="mt-1" style="color:#8a8a99;"><i class="ri-eye-line me-1"></i>View only — this request is waiting on the ' + esc(q.current_stage_label) + '.</div>';
+        }
+        return h;
+    }
+
     function fill(q) {
         cur = q;
         var isHours = HOUR_TYPES.indexOf(q.type) !== -1;
-        var pending = Number(q.status) === 0;
+        // "pending" here means: still open AND it is this user's turn. Anyone
+        // else (Admin, an approver at a later stage) sees it read-only.
+        var pending = Number(q.status) === 0 && !!q.can_act;
+        $id('arr-chain').innerHTML = chainHtml(q);
 
         $id('arr-id').value        = q.id;
         $id('arr-emp').textContent = q.employee;
@@ -158,7 +185,10 @@ window.AttReqReview = (function () {
         $id('arr-in').value    = (q.time_in || '').slice(0, 5);
         $id('arr-out').value   = (q.time_out || '').slice(0, 5);
         $id('arr-hours').value = (q.ot_hours === null || q.ot_hours === undefined) ? '' : q.ot_hours;
-        $id('arr-hours-label').textContent = q.type === 'rest_day' ? 'Rest day hours rendered' : 'OT hours';
+        var isUt = q.type === 'undertime';
+        $id('arr-hours-label').textContent = isUt ? 'Undertime hours to excuse' : (q.type === 'rest_day' ? 'Rest day hours rendered' : 'OT hours');
+        $id('arr-hours').min  = isUt ? 0.25 : <?= OT_REQUEST_MIN_HOURS ?>;
+        $id('arr-hours').step = isUt ? 0.01 : <?= OT_REQUEST_STEP_HOURS ?>;
 
         document.querySelector('.arr-incident').classList.toggle('d-none', q.type !== 'incident');
         document.querySelector('.arr-hours').classList.toggle('d-none', !isHours);
@@ -173,8 +203,9 @@ window.AttReqReview = (function () {
         var decided = $id('arr-decided');
         decided.classList.toggle('d-none', pending);
         decided.innerHTML = pending ? ''
-            : '<i class="ri-lock-line me-1"></i>Already ' + (Number(q.status) === 1 ? 'approved' : 'rejected')
-              + ' — no longer editable.';
+            : (Number(q.status) === 0
+                ? '<i class="ri-lock-line me-1"></i>Not your turn — only the ' + esc(q.current_stage_label || 'current approver') + ' can edit or decide it now.'
+                : '<i class="ri-lock-line me-1"></i>Already ' + (Number(q.status) === 1 ? 'approved' : 'rejected') + ' — no longer editable.');
         ['arr-reason', 'arr-notes', 'arr-in', 'arr-out', 'arr-hours'].forEach(function (f) { $id(f).disabled = !pending; });
         $id('arr-approve').classList.toggle('d-none', !pending);
         $id('arr-reject').classList.toggle('d-none', !pending);
@@ -190,7 +221,7 @@ window.AttReqReview = (function () {
         // ceiling shown is what the scans support — not what is left after it.
         fetch('ajax.php?action=attendance_request_limit', {
             method: 'POST',
-            body: new URLSearchParams({ employee_id: q.employee_id, request_date: q.date, exclude_id: q.id })
+            body: new URLSearchParams({ employee_id: q.employee_id, request_date: q.date, exclude_id: q.id, request_type: q.type })
         }).then(function (r) { return r.json(); }).then(function (res) {
             var lim = res && res.limit;
             if (!lim || cur !== q) { hint.innerHTML = ''; return; }
@@ -198,11 +229,20 @@ window.AttReqReview = (function () {
             if (lim.allowed) {
                 $id('arr-hours').max = lim.max_hours;
                 hint.style.background = '#eef6ee'; hint.style.borderColor = '#c6e6c9'; hint.style.color = '#2e7d32';
-                hint.innerHTML = '<i class="ri-fingerprint-line me-1"></i><b>Their scans:</b> '
-                    + esc(lim.time_in) + ' &ndash; ' + esc(lim.time_out)
-                    + ' · <b>' + lim.rendered_hours + ' hrs</b> rendered'
-                    + (lim.rest_day ? ' on a rest day' : ' · shift ends ' + esc(lim.shift_end))
-                    + '<br>Up to <b>' + lim.max_hours + ' hr</b> can be approved for this date.';
+                if (isUt) {
+                    hint.innerHTML = '<i class="ri-fingerprint-line me-1"></i>'
+                        + (lim.has_record
+                            ? '<b>Their DTR:</b> ' + esc(lim.time_in || '—') + ' &ndash; ' + esc(lim.time_out || '—')
+                              + ' · shift ends ' + esc(lim.shift_end) + ' · <b>' + lim.undertime_hours + ' hr</b> undertime'
+                            : '<b>No DTR record for this date yet</b> — the excuse is capped at the undertime the scans finally show')
+                        + '<br>Up to <b>' + lim.max_hours + ' hr</b> can be excused for this date.';
+                } else {
+                    hint.innerHTML = '<i class="ri-fingerprint-line me-1"></i><b>Their scans:</b> '
+                        + esc(lim.time_in) + ' &ndash; ' + esc(lim.time_out)
+                        + ' · <b>' + lim.rendered_hours + ' hrs</b> rendered'
+                        + (lim.rest_day ? ' on a rest day' : ' · shift ends ' + esc(lim.shift_end))
+                        + '<br>Up to <b>' + lim.max_hours + ' hr</b> can be approved for this date.';
+                }
             } else {
                 hint.style.background = '#fdeaea'; hint.style.borderColor = '#f7c9c9'; hint.style.color = '#b3261e';
                 hint.innerHTML = '<i class="ri-error-warning-line me-1"></i>' + esc(lim.message || '');
@@ -252,24 +292,29 @@ window.AttReqReview = (function () {
 
     function decide(status, remarks) {
         return fetch('ajax.php?action=decide_attendance_request', {
-            method: 'POST', body: new URLSearchParams({ id: cur.id, status: status, remarks: remarks || '' })
+            method: 'POST',
+            body: new URLSearchParams({ id: cur.id, stage: cur.current_stage || '', status: status, remarks: remarks || '' })
         }).then(function (r) { return r.json(); }).then(function (json) {
             if (!(json && json.result)) {
                 Swal.fire({ icon: 'error', title: 'Error', text: (json && json.message) || 'Failed to decide the request.' });
                 return false;
             }
-            cur.status = status;
+            // Overall status moves only when the chain reaches a verdict; a
+            // mid-chain approval leaves it pending (json.final says which).
+            cur.status = json.final ? Number(json.status) : 0;
+            cur.final  = !!json.final;
             if (modal) modal.hide();
-            if (cbs.onDecided) cbs.onDecided(status, cur);
-            // The server message carries the warning when an approved OT request
-            // had no attendance record to write to — worth reading, not flashing.
-            var extra = json.message && json.message.indexOf('Warning') !== -1 ? json.message : '';
+            if (cbs.onDecided) cbs.onDecided(cur.status, cur, json);
+            // The message names the next stage, or carries the DTR-write warning
+            // on a final OT approval — worth reading, not flashing.
+            var text = json.message || '';
+            var hold = text.indexOf('Warning') !== -1 || !json.final;
             Swal.fire({
                 icon: 'success',
-                title: status === 1 ? 'Approved' : 'Rejected',
-                text: extra,
-                timer: extra ? undefined : 1300,
-                showConfirmButton: !!extra
+                title: status === 2 ? 'Rejected' : (json.final ? 'Fully approved' : 'Approved — next stage'),
+                text: text,
+                timer: hold ? undefined : 1300,
+                showConfirmButton: hold
             });
             return true;
         });
@@ -288,9 +333,11 @@ window.AttReqReview = (function () {
             var btn = this;
             Swal.fire({
                 title: 'Reject this request?',
-                input: 'text', inputLabel: 'Reason for rejection (optional)',
+                text: cur && cur.current_stage_label ? 'Rejecting at the ' + cur.current_stage_label + ' stage halts the chain.' : '',
+                input: 'textarea', inputLabel: 'Reason for rejection',
                 inputPlaceholder: 'e.g. No supporting logs / filed on the wrong date',
                 inputAttributes: { maxlength: 255 },
+                inputValidator: function (v) { return !String(v || '').trim() ? 'A reason is required to reject.' : undefined; },
                 icon: 'warning', showCancelButton: true,
                 confirmButtonColor: '#c62828', confirmButtonText: 'Yes, reject',
             }).then(function (res) {

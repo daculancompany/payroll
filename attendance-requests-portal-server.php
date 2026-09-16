@@ -14,6 +14,7 @@ if (empty($_SESSION['emp_is_login'])) {
 }
 
 include 'db_connect.php';
+require_once __DIR__ . '/includes/leave_timeline.php';   // stage chips + trail (same chain as leave)
 
 $emp_id = (int)$_SESSION['emp_id'];
 
@@ -67,13 +68,15 @@ $data = [];
 foreach ($rows as $row) {
     $isIncident = ($row['request_type'] === 'incident');
     $isRestDay  = ($row['request_type'] === 'rest_day');
+    $isUt       = ($row['request_type'] === 'undertime');
     $type_key   = $row['request_type'];
-    $type_label = $isIncident ? 'Incident' : ($isRestDay ? 'Rest Day' : 'OT Request');
+    $type_label = $isIncident ? 'Incident' : ($isRestDay ? 'Rest Day' : ($isUt ? 'Undertime' : 'OT Request'));
 
     $typeChip = [
-        'incident' => ['#fff3cd', '#856404', 'ri-error-warning-line', 'Incident'],
-        'rest_day' => ['#ece4fb', '#4c2f96', 'ri-moon-line',          'Rest Day'],
-        'overtime' => ['#cff4fc', '#055160', 'ri-timer-flash-line',   'OT Request'],
+        'incident'  => ['#fff3cd', '#856404', 'ri-error-warning-line', 'Incident'],
+        'rest_day'  => ['#ece4fb', '#4c2f96', 'ri-moon-line',          'Rest Day'],
+        'overtime'  => ['#cff4fc', '#055160', 'ri-timer-flash-line',   'OT Request'],
+        'undertime' => ['#fde2e4', '#8a1c2b', 'ri-logout-box-r-line',  'Undertime'],
     ][$type_key] ?? ['#cff4fc', '#055160', 'ri-timer-flash-line', 'OT Request'];
     $typeHtml = '<span style="background:' . $typeChip[0] . ';color:' . $typeChip[1]
         . ';border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;"><i class="'
@@ -86,7 +89,7 @@ foreach ($rows as $row) {
                  . ' – '
                  . ($row['claimed_time_out'] ? date('g:i A', strtotime($row['claimed_time_out'])) : '—');
     } elseif ($row['ot_hours_requested']) {
-        $details = htmlspecialchars($row['ot_hours_requested']) . ($isRestDay ? ' hrs rest-day duty' : ' hrs OT');
+        $details = htmlspecialchars($row['ot_hours_requested']) . ($isRestDay ? ' hrs rest-day duty' : ($isUt ? ' hrs undertime to excuse' : ' hrs OT'));
     }
     $notesFull = trim((string)($row['notes'] ?? ''));
     $notesShort = $notesFull !== ''
@@ -100,6 +103,17 @@ foreach ($rows as $row) {
 
     [$slabel, $scolor, $sslug] = $statusMap[$row['status']] ?? ['Unknown', '#aaa', 'unknown'];
     $statusHtml = '<span style="background:' . $scolor . ';color:#fff;border-radius:10px;padding:2px 10px;font-size:11px;font-weight:700;">' . $slabel . '</span>';
+
+    // Same staged chain as leave: one chip per stage, plus who it waits on.
+    $stageChips = leave_stage_chips($row);
+    $curStage   = leave_current_stage($row);
+    $awaiting   = '';
+    if ($curStage !== null && (int) $row['status'] === 0) {
+        $who = leave_stage_approver_names($conn, $curStage, $emp_id);
+        $awaiting = 'Awaiting ' . leave_stages()[$curStage]['label'] . ($who ? ' · ' . implode(' / ', $who) : '');
+    }
+    $statusHtml .= '<div class="lv-chips" style="margin-top:3px;font-size:13px;line-height:1;">' . $stageChips . '</div>'
+        . ($awaiting !== '' ? '<div style="font-size:10px;color:#888;margin-top:2px;">' . htmlspecialchars($awaiting) . '</div>' : '');
 
     $reasonLabel = $reasonLabels[$row['reason']] ?? $row['reason'];
 
@@ -130,6 +144,9 @@ foreach ($rows as $row) {
         'status_label' => $slabel,
         'status_color' => $scolor,
         'status_slug'  => $sslug,
+        'stage_chips'  => $stageChips,
+        'awaiting'     => $awaiting,
+        'timeline'     => leave_timeline_html($row),
         'reviewer_html'=> $reviewerCard,
         'attachment'   => $row['attachment'] ?? null,
     ];

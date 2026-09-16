@@ -228,8 +228,13 @@ if (!isset($page_title)) {
             padding: 2px;
         }
 
+        /* Wide tables scroll inside their card. This used to be
+           `overflow: unset !important`, which let every wide table spill out
+           of its card and widen the whole page (and overrode inline
+           max-height scroll boxes). Menus that must escape a table use
+           fixed positioning instead — see assets2/css/custom-select.css. */
         .table-responsive {
-            overflow: unset !important;
+            overflow-x: auto;
         }
 
         .card {

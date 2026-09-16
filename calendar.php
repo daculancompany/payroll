@@ -172,6 +172,20 @@ $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
 #calendar .cal-ev-type.t1{background:#fdecea;color:#c62828;}
 #calendar .cal-ev-type.t3{background:#fff4e5;color:#c76a00;}
 #calendar .cal-ev-type.t2{background:#e8f0ff;color:#0d6efd;}
+#calendar .cal-ev-type{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top;}
+/* Narrow calendar (phones, or the half-width column beside the list on a
+   laptop): cells drop under ~110px, so the full chip broke titles mid-word —
+   one letter per line on a phone — and the type tag spilled out of the cell.
+   Keep one ellipsised line (full title in the tooltip) and let the chip
+   colour + legend carry the type. Keyed to the calendar's own width, not the
+   viewport, because the column width varies with the layout. */
+#calendar{container-type:inline-size;}
+@container (max-width:780px){
+    #calendar .fc-daygrid-event{padding:1px 3px;font-size:10px;border-left-width:3px;border-radius:4px;}
+    #calendar .cal-ev{min-width:0;overflow:hidden;}
+    #calendar .cal-ev-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    #calendar .cal-ev-type{display:none;}
+}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.15/index.global.min.js"></script>
 <script>
@@ -193,6 +207,7 @@ $can_edit_cal = in_array((int)($_SESSION['login_role'] ?? 0), [1, 8, 9])
                 const label = t === 1 ? 'Legal Holiday' : (t === 3 ? 'Special Holiday' : 'Activity');
                 const wrap = document.createElement('div');
                 wrap.className = 'cal-ev';
+                wrap.title = arg.event.title + ' — ' + label;
                 const title = document.createElement('div');
                 title.className = 'cal-ev-title';
                 title.textContent = arg.event.title;

@@ -139,6 +139,9 @@ if (!defined('LEAVE_APPROVER_ALLOWED_PAGES')) {
                              // approve blind; and the Excel export is how the
                              // ward gets its copy. Writable only for role 8 —
                              // see READONLY_PAGES_BY_ROLE for 10 and 11.
+        'attendance-requests', // incident / OT / rest-day / undertime filings —
+                             // same area-based stage chain as leave, so the
+                             // same people decide them
         'profile',           // own account
     ]);
 }
@@ -227,7 +230,8 @@ if (!defined('HR_ALLOWED_PAGES')) {
         'home', 'daily-board',
         'employee', 'employee-details',          // people records
         'department', 'position',
-        'attendance', 'attendance-requests',     // READ-ONLY (see HR_READONLY_PAGES)
+        'attendance',                            // READ-ONLY (see HR_READONLY_PAGES)
+        'attendance-requests',                   // HR decides the final stage
         'leave-dashboard', 'leaves', 'leave_types',
         'leave_balances', 'leave-balances-report', 'calendar',
         'sites',                                 // biometric sites
@@ -239,7 +243,9 @@ if (!defined('HR_ALLOWED_PAGES')) {
 // action buttons for HR; the endpoints below are the actual boundary.
 if (!defined('HR_READONLY_PAGES')) {
     define('HR_READONLY_PAGES', [
-        'attendance', 'attendance-requests',
+        'attendance',
+        // attendance-requests is NOT here any more: HR is the final stage of
+        // the attendance-request chain (same as leave) and must be able to act.
         'employee', 'employee-details',   // people records: look, don't touch
     ]);
 }
@@ -279,7 +285,9 @@ if (!function_exists('is_hr')) {
 // A page not listed here is open to every role its slice allows.
 if (!defined('PAGE_ROLE_RESTRICTIONS')) {
     define('PAGE_ROLE_RESTRICTIONS', [
-        'attendance-requests' => [1, 8, 9],   // HR sees it READ-ONLY
+        // Every approver in the leave chain decides attendance requests too
+        // (same stages, same areas); HR gives the final approval.
+        'attendance-requests' => [1, 8, 9, 10, 11],
         'pay-settings'        => [1, 8],
         'thirteenth-month'    => [1, 8],
         'users'               => [1, 2, 3, 8],
@@ -441,6 +449,19 @@ if (!defined('ACTION_PAGE_MAP')) {
         'th13_set_final' => 'thirteenth-month',
         'th13_post_to_payroll' => 'thirteenth-month',
         'save_user' => 'users', 'update_status_user' => 'users',
+        // Departments and areas. Approvers decide who signs off whose leave, so
+        // both writers — the Areas page and the Department page's per-area editor
+        // — gate on 'area' ([1, 9]: admin and HR), not on 'department', which HR
+        // may also edit but the approver roles must never reach. Unmapped actions
+        // fall through to a session-only check, which would hand a Section Head
+        // the power to make themselves an approver.
+        'save_area' => 'area', 'save_area_approvers' => 'area',
+        'save_department_approvers' => 'area',
+        'save_department' => 'department',
+        // Own account only (name + password); every role that can open the
+        // profile page may call it — save_user is the admin's user-management
+        // write and stays closed to approver roles.
+        'save_profile' => 'profile',
     ]);
 }
 
@@ -2266,6 +2287,76 @@ if (!defined('OT_REQUEST_MIN_HOURS'))         define('OT_REQUEST_MIN_HOURS', 0.5
 if (!defined('OT_REQUEST_STEP_HOURS'))        define('OT_REQUEST_STEP_HOURS', 0.5);
 if (!defined('OT_REQUEST_MAX_HOURS_PER_DAY')) define('OT_REQUEST_MAX_HOURS_PER_DAY', 12);
 
+if (!function_exists('att_request_shift')) {
+    /**
+     * The shift an attendance request for $ymd is measured against, and whether
+     * that date is a rest day — the one resolution ot_request_limit and
+     * undertime_request_limit share, so the two ceilings can never disagree on
+     * which shift end the day had.
+     *
+     * Precedence, exactly as in dtr_compute_day: the period roster, beaten by a
+     * published duty-roster day, beaten by the shift STAMPED on the DTR row
+     * ($rec, may be null) when the scans were recorded — the stamp is what the
+     * employee's own DTR line was priced against.
+     *
+     * Returns ['sched' => array|null, 'day' => roster row|null, 'rest_day' => bool].
+     */
+    function att_request_shift(mysqli $db, int $employee_id, string $ymd, ?array $rec): array
+    {
+        $ymdEsc  = $db->real_escape_string($ymd);
+        $stamped = $rec && $rec['schedule_id'] !== null;
+
+        $sched = $db->query("
+            SELECT ws.start_time, ws.end_time, ws.break_minutes, ws.is_graveyard, ws.total_hours, es.rest_days
+            FROM employee_schedules es
+            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
+            WHERE es.employee_id = " . (int) $employee_id . "
+              AND es.effective_from <= '$ymdEsc'
+              AND (es.effective_to IS NULL OR es.effective_to >= '$ymdEsc')
+            ORDER BY es.effective_from DESC LIMIT 1
+        ");
+        $sched = $sched ? $sched->fetch_assoc() : null;
+
+        // A published duty-roster day beats the period, exactly as it does in
+        // resolve_employee_schedule — otherwise a nurse rostered onto NOC would
+        // have their ceiling measured against the AM shift end the period
+        // roster still names, and the cap would disagree with their own DTR.
+        // A rostered rest day with no shift keeps the period's boundaries.
+        $day = duty_roster_day($db, $employee_id, $ymd);
+        if ($day && $day['schedule_id'] !== null) {
+            $dsq = $db->query("SELECT start_time, end_time, break_minutes, is_graveyard, total_hours
+                               FROM work_schedules WHERE id = " . (int) $day['schedule_id'] . " LIMIT 1");
+            if ($dsq && ($drow = $dsq->fetch_assoc())) {
+                $drow['rest_days'] = '';
+                $sched = $drow;
+            }
+        }
+
+        // …and the stamp beats both.
+        if ($stamped) {
+            if (!is_array($sched)) $sched = ['rest_days' => ''];
+            if ($rec['sched_start']     !== null) $sched['start_time']    = $rec['sched_start'];
+            if ($rec['sched_end']       !== null) $sched['end_time']      = $rec['sched_end'];
+            if ($rec['sched_break']     !== null) $sched['break_minutes'] = (int) $rec['sched_break'];
+            if ($rec['sched_graveyard'] !== null) $sched['is_graveyard']  = (int) $rec['sched_graveyard'];
+            if ($rec['day_hours']       !== null) $sched['total_hours']   = $rec['day_hours'];
+        }
+
+        if ($stamped) {
+            $rest_day = ((int) $rec['is_rest_day'] === 1);
+        } elseif ($day) {
+            $rest_day = ((int) $day['is_rest_day'] === 1);
+        } else {
+            $rest = array_filter(array_map('intval', explode(',', (string) ($sched['rest_days'] ?? ''))), function ($d) {
+                return $d >= 0 && $d <= 6;
+            });
+            $rest_day = in_array((int) date('w', strtotime($ymd)), $rest, true);
+        }
+
+        return ['sched' => $sched, 'day' => $day, 'rest_day' => $rest_day];
+    }
+}
+
 if (!function_exists('ot_request_limit')) {
     /**
      * How much overtime this employee may still file for ONE date.
@@ -2337,45 +2428,10 @@ if (!function_exists('ot_request_limit')) {
             $out['message'] = "No attendance record for $dateStr yet. Overtime can only be filed for a day you actually scanned — if a scan is missing, file an Incident Report for that date first.";
             return $out;
         }
-        $stamped = ($rec['schedule_id'] !== null);
-
-        // The schedule in effect that date — its end time is what OT is measured
-        // against, and its rest days decide which rule prices the span.
-        $sched = $db->query("
-            SELECT ws.start_time, ws.end_time, ws.break_minutes, ws.is_graveyard, ws.total_hours, es.rest_days
-            FROM employee_schedules es
-            INNER JOIN work_schedules ws ON ws.id = es.schedule_id
-            WHERE es.employee_id = " . (int) $employee_id . "
-              AND es.effective_from <= '$ymdEsc'
-              AND (es.effective_to IS NULL OR es.effective_to >= '$ymdEsc')
-            ORDER BY es.effective_from DESC LIMIT 1
-        ");
-        $sched = $sched ? $sched->fetch_assoc() : null;
-
-        // A published duty-roster day beats the period, exactly as it does in
-        // resolve_employee_schedule — otherwise a nurse rostered onto NOC would
-        // have their OT ceiling measured against the AM shift end the period
-        // roster still names, and the cap would disagree with their own DTR.
-        // A rostered rest day with no shift keeps the period's boundaries.
-        $day = duty_roster_day($db, $employee_id, $ymd);
-        if ($day && $day['schedule_id'] !== null) {
-            $dsq = $db->query("SELECT start_time, end_time, break_minutes, is_graveyard, total_hours
-                               FROM work_schedules WHERE id = " . (int) $day['schedule_id'] . " LIMIT 1");
-            if ($dsq && ($drow = $dsq->fetch_assoc())) {
-                $drow['rest_days'] = '';
-                $sched = $drow;
-            }
-        }
-
-        // …and the stamp beats both, exactly as in dtr_compute_day.
-        if ($stamped) {
-            if (!is_array($sched)) $sched = ['rest_days' => ''];
-            if ($rec['sched_start']     !== null) $sched['start_time']    = $rec['sched_start'];
-            if ($rec['sched_end']       !== null) $sched['end_time']      = $rec['sched_end'];
-            if ($rec['sched_break']     !== null) $sched['break_minutes'] = (int) $rec['sched_break'];
-            if ($rec['sched_graveyard'] !== null) $sched['is_graveyard']  = (int) $rec['sched_graveyard'];
-            if ($rec['day_hours']       !== null) $sched['total_hours']   = $rec['day_hours'];
-        }
+        // Shift in effect (period roster → duty roster → the row's stamp) and
+        // whether the date is a rest day — shared with undertime_request_limit.
+        $ctx   = att_request_shift($db, $employee_id, $ymd, $rec);
+        $sched = $ctx['sched'];
 
         if (!$sched || empty($sched['end_time'])) {
             $out['message'] = "You have no work schedule on file for $dateStr, so there are no duty hours to measure overtime against. Ask HR to set your schedule first.";
@@ -2413,16 +2469,7 @@ if (!function_exists('ot_request_limit')) {
         // filed as OT too — that double-paid the same hours. Only time rendered
         // BEYOND the full duty is fileable. Regular day → only the part past the
         // shift end (dtr_compute_day, so this always agrees with the DTR).
-        if ($stamped) {
-            $out['rest_day'] = ((int) $rec['is_rest_day'] === 1);
-        } elseif ($day) {
-            $out['rest_day'] = ((int) $day['is_rest_day'] === 1);
-        } else {
-            $rest = array_filter(array_map('intval', explode(',', (string) ($sched['rest_days'] ?? ''))), function ($d) {
-                return $d >= 0 && $d <= 6;
-            });
-            $out['rest_day'] = in_array((int) date('w', $ts), $rest, true);
-        }
+        $out['rest_day'] = $ctx['rest_day'];
 
         $duty  = day_hours_or_default($sched['total_hours'] ?? null);
         $break = ($sched['break_minutes'] ?? 60) / 60;
@@ -2511,9 +2558,10 @@ if (!function_exists('att_request_label')) {
     function att_request_label(string $type, bool $short = false): string
     {
         switch ($type) {
-            case 'incident': return $short ? 'Incident' : 'attendance incident report';
-            case 'rest_day': return $short ? 'Rest Day' : 'rest-day work request';
-            default:         return $short ? 'Overtime' : 'overtime request';
+            case 'incident':  return $short ? 'Incident' : 'attendance incident report';
+            case 'rest_day':  return $short ? 'Rest Day' : 'rest-day work request';
+            case 'undertime': return $short ? 'Undertime' : 'undertime request';
+            default:          return $short ? 'Overtime' : 'overtime request';
         }
     }
 }
@@ -2523,6 +2571,144 @@ if (!function_exists('att_request_label')) {
 // files the part past the shift end. Both cap what payroll pays.
 if (!defined('ATT_REQUEST_HOUR_TYPES')) {
     define('ATT_REQUEST_HOUR_TYPES', ['overtime', 'rest_day']);
+}
+// Every fileable type. 'undertime' also carries hours, but they are bounded by
+// undertime_request_limit() and EXCUSE a deduction rather than add pay, so it
+// is deliberately not in ATT_REQUEST_HOUR_TYPES (which drives applyOvertimeToDtr).
+if (!defined('ATT_REQUEST_TYPES')) {
+    define('ATT_REQUEST_TYPES', ['incident', 'overtime', 'rest_day', 'undertime']);
+}
+
+// ── Undertime request ceiling ───────────────────────────────────────────
+// Undertime is rarely on a half-hour grid (0.68 hr is normal), and excusing
+// 0.5 of it would leave 0.18 deducted, so the form accepts hundredths.
+if (!defined('UT_REQUEST_MIN_HOURS'))  define('UT_REQUEST_MIN_HOURS', 0.25);
+if (!defined('UT_REQUEST_STEP_HOURS')) define('UT_REQUEST_STEP_HOURS', 0.01);
+
+if (!function_exists('undertime_request_limit')) {
+    /**
+     * How much undertime this employee may still file to be EXCUSED for one
+     * date. Same return shape as ot_request_limit() so the portal modal and the
+     * approver's review modal render either one with the same code.
+     *
+     * With a DTR row for the date the ceiling is the undertime that row carries
+     * (the figure payroll would deduct), less what is already filed. With no
+     * row yet — attendance not imported, or an early-out being asked for in
+     * advance — filing is allowed up to the day's duty hours: payroll takes
+     * max(0, row.undertime − approved), so an over-filed advance excuse can
+     * never turn into pay. Rest days have no shift to leave early from.
+     */
+    function undertime_request_limit(mysqli $db, int $employee_id, string $date, int $exclude_request_id = 0): array
+    {
+        $out = [
+            'allowed'        => false,
+            'max_hours'      => 0.0,
+            'undertime_hours'=> 0.0,
+            'already'        => 0.0,
+            'message'        => '',
+            'rendered_hours' => 0.0,
+            'duty_hours'     => 0.0,
+            'date_label'     => '',
+            'time_in'        => '',
+            'time_out'       => '',
+            'time_in_html'   => '',
+            'time_out_html'  => '',
+            'shift_start'    => '',
+            'shift_end'      => '',
+            'rest_day'       => false,
+            'has_record'     => false,
+            'request_type'   => 'undertime',
+        ];
+
+        $ts = strtotime($date);
+        if ($employee_id <= 0 || !$ts) {
+            $out['message'] = 'Please select a valid date.';
+            return $out;
+        }
+        $ymd     = date('Y-m-d', $ts);
+        $ymdEsc  = $db->real_escape_string($ymd);
+        $dateStr = date('M d, Y', $ts);
+        $out['date_label'] = $dateStr;
+
+        $rec = $db->query(
+            "SELECT logs, schedule_id, day_hours, is_rest_day, undertime, work_hours,
+                    sched_start, sched_end, sched_break, sched_graveyard
+             FROM DTR_details
+             WHERE employee_id = " . (int) $employee_id . " AND date_time = '$ymdEsc'
+             ORDER BY id DESC LIMIT 1"
+        );
+        $rec = $rec ? $rec->fetch_assoc() : null;
+
+        $ctx   = att_request_shift($db, $employee_id, $ymd, $rec);
+        $sched = $ctx['sched'];
+        if (!$sched || empty($sched['end_time'])) {
+            $out['message'] = "You have no work schedule on file for $dateStr, so there is no shift end to measure undertime against. Ask HR to set your schedule first.";
+            return $out;
+        }
+        $out['shift_start'] = !empty($sched['start_time']) ? date('g:i A', strtotime($ymd . ' ' . $sched['start_time'])) : '';
+        $out['shift_end']   = date('g:i A', strtotime($ymd . ' ' . $sched['end_time']));
+        $out['rest_day']    = $ctx['rest_day'];
+        $out['duty_hours']  = round((float) day_hours_or_default($sched['total_hours'] ?? null), 2);
+
+        if ($out['rest_day']) {
+            $out['message'] = "$dateStr is your rest day — there is no shift to leave early from, so there is no undertime to excuse for that date.";
+            return $out;
+        }
+
+        if ($rec) {
+            $out['has_record'] = true;
+            $log_ts = [];
+            foreach ((json_decode($rec['logs'] ?? '[]', true) ?: []) as $lg) {
+                $t = strtotime($lg['dateTime'] ?? '');
+                if ($t) $log_ts[] = $t;
+            }
+            sort($log_ts);
+            $pair = dtr_pair_logs($log_ts, $ymd, $sched['start_time'] ?? null);
+            if ($pair['in'])  { $out['time_in']  = date('g:i A', $pair['in']);  $out['time_in_html']  = dtr_punch_time($ymd, $pair['in'], 'g:i A'); }
+            if ($pair['out']) { $out['time_out'] = date('g:i A', $pair['out']); $out['time_out_html'] = dtr_punch_time($ymd, $pair['out'], 'g:i A'); }
+            $out['rendered_hours'] = round((float) $rec['work_hours'], 2);
+
+            // The STORED figure, not a fresh computation: it is what payroll
+            // deducts, and a hand-corrected row must be excusable as corrected.
+            $ut = round(max(0.0, (float) $rec['undertime']), 2);
+            $out['undertime_hours'] = $ut;
+            $cap = $ut;
+            if ($cap < UT_REQUEST_MIN_HOURS) {
+                $span = $out['time_in'] && $out['time_out'] ? " ({$out['time_in']} – {$out['time_out']})" : '';
+                $out['message'] = $ut > 0
+                    ? "Your DTR for $dateStr$span shows only $ut hr of undertime — less than the " . UT_REQUEST_MIN_HOURS . " hr minimum, so there is nothing to file."
+                    : "Your DTR for $dateStr$span shows no undertime — you left at or after your {$out['shift_end']} shift end — so there is nothing to excuse.";
+                return $out;
+            }
+        } else {
+            // Nothing imported yet: allow an advance / early filing, capped at
+            // a full duty. Payroll clamps the excuse to the real undertime.
+            $cap = $out['duty_hours'];
+        }
+
+        $ex  = $exclude_request_id > 0 ? " AND id <> " . (int) $exclude_request_id : '';
+        $agg = $db->query(
+            "SELECT COALESCE(SUM(ot_hours_requested), 0) AS h FROM attendance_requests
+             WHERE employee_id = " . (int) $employee_id . "
+               AND request_type = 'undertime'
+               AND request_date = '$ymdEsc' AND status IN (0, 1)$ex"
+        );
+        $already = round((float) ($agg ? ($agg->fetch_assoc()['h'] ?? 0) : 0), 2);
+        $out['already'] = $already;
+
+        $remaining = round($cap - $already, 2);
+        if ($remaining < UT_REQUEST_MIN_HOURS) {
+            $out['message'] = "You have already filed $already of the $cap hr of undertime on record for $dateStr.";
+            return $out;
+        }
+
+        $out['allowed']   = true;
+        $out['max_hours'] = $remaining;
+        $out['message']   = $rec
+            ? "Your DTR for $dateStr ({$out['time_in']} – {$out['time_out']}) shows $remaining hr of undertime before your {$out['shift_end']} shift end. If approved, that much is not deducted from your pay."
+            : "No attendance record for $dateStr yet. You may file up to $remaining hr now; what gets excused is capped at the undertime your scans finally show.";
+        return $out;
+    }
 }
 
 // ── Leave eligibility resolver (GLOBAL) ─────────────────────────────────
@@ -2778,6 +2964,16 @@ if (!function_exists('leave_stages')) {
                  WHERE ap.area_id = $area AND ap.stage = '$key' AND u.employee_id = $eid LIMIT 1"
             );
             if ($self && $self->num_rows) return [];
+        } elseif (!empty($stages[$stageKey]['optional'])) {
+            // No area on the employee: an optional stage has no one to name.
+            // The role lookup below is hospital-wide for these roles — every
+            // Section Head and Supervisor account has department_id NULL — so
+            // falling through listed all 32 Section Heads as approvers of one
+            // request, let any of them act, and notified them all. Skip instead,
+            // exactly as an area with no Section Head does. The mandatory
+            // Department Head / HR stages still take the fallback, so the
+            // request never hangs.
+            return [];
         }
 
         $role = (int) $stages[$stageKey]['role'];
@@ -2897,8 +3093,9 @@ if (!function_exists('leave_stages')) {
      *
      * Returns the labels of the stages that were skipped.
      */
-    function leave_autoskip_stages(mysqli $db, int $leave_id, int $employee_id): array
+    function leave_autoskip_stages(mysqli $db, int $leave_id, int $employee_id, string $table = 'leave_requests'): array
     {
+        $table   = leave_chain_table($table);
         $skipped = [];
         foreach (LEAVE_APPROVAL_STAGES as $key => $cfg) {
             if (leave_stage_has_approver($db, $key, $employee_id)) continue;
@@ -2917,7 +3114,7 @@ if (!function_exists('leave_stages')) {
                     : 'Auto-skipped — no ' . $cfg['label'] . ' assigned to this area.'
             );
             $db->query(
-                "UPDATE leave_requests
+                "UPDATE `$table`
                  SET {$key}_status = 1, {$key}_by = NULL,
                      {$key}_remarks = '$note', {$key}_at = NOW()
                  WHERE id = " . (int) $leave_id
@@ -2932,14 +3129,84 @@ if (!function_exists('leave_stages')) {
      * i.e. the first stage that was not auto-skipped. Returns [key, cfg] or
      * [null, null] when every stage got skipped (nobody left to notify).
      */
-    function leave_first_open_stage(mysqli $db, int $leave_id): array
+    function leave_first_open_stage(mysqli $db, int $leave_id, string $table = 'leave_requests'): array
     {
-        $row = $db->query("SELECT * FROM leave_requests WHERE id = " . (int) $leave_id);
+        $table = leave_chain_table($table);
+        $row = $db->query("SELECT * FROM `$table` WHERE id = " . (int) $leave_id);
         $row = $row ? $row->fetch_assoc() : null;
         if (!$row) return [null, null];
         $key = leave_current_stage($row);
         return $key === null ? [null, null] : [$key, LEAVE_APPROVAL_STAGES[$key]];
     }
+
+    /**
+     * The tables that carry the {stage}_status/_by/_remarks/_at columns and so
+     * run this chain. Attendance requests (incident / OT / rest day / undertime)
+     * follow the SAME stages and approvers as leave — see
+     * migrations/2026_09_att_request_stages.sql. Anything else is refused so a
+     * caller can never point the chain writers at an arbitrary table.
+     */
+    function leave_chain_table(string $table): string
+    {
+        if (!in_array($table, ['leave_requests', 'attendance_requests'], true)) {
+            throw new InvalidArgumentException("Not an approval-chain table: $table");
+        }
+        return $table;
+    }
+
+    /**
+     * How many requests in $table are sitting at a stage THIS user holds, in the
+     * areas they hold it for — the "Awaiting my approval" number. Mirrors
+     * leave_user_can_act()'s area-first rule: someone who is Section Head of
+     * one ward and Supervisor of three others is counted per stage per ward.
+     * Legacy department-pinned accounts (no area rows) fall back to the stage
+     * their role maps to, within $legacy_scope_sql (an " AND …" fragment on
+     * employee_id, e.g. from dept_scope_emp_sql).
+     */
+    function stage_awaiting_me_count(mysqli $db, int $user_id, string $table, string $legacy_scope_sql = ''): int
+    {
+        $table = leave_chain_table($table);
+        $n = 0;
+        $stageAreas = [];
+        $sr = $db->query("SELECT stage, area_id FROM area_approver WHERE user_id = " . (int) $user_id);
+        while ($sr && ($x = $sr->fetch_assoc())) $stageAreas[$x['stage']][] = (int) $x['area_id'];
+        if ($stageAreas) {
+            foreach ($stageAreas as $stage => $areaIds) {
+                if (!isset(LEAVE_APPROVAL_STAGES[$stage])) continue;
+                $p   = leave_stage_pending_predicate($stage);
+                $sin = implode(',', array_map('intval', $areaIds));
+                $r = $db->query("SELECT COUNT(*) c FROM `$table`
+                                 WHERE ($p) AND employee_id IN (SELECT id FROM employee WHERE area_id IN ($sin))");
+                if ($r) $n += (int) $r->fetch_assoc()['c'];
+            }
+            // HR holds the final stage for the whole hospital without area rows.
+            return $n + stage_awaiting_role_count($db, $user_id, $table, $legacy_scope_sql);
+        }
+        return stage_awaiting_role_count($db, $user_id, $table, $legacy_scope_sql);
+    }
+
+    /** Part of stage_awaiting_me_count: the stage this user's ROLE maps to (HR, legacy accounts). */
+    function stage_awaiting_role_count(mysqli $db, int $user_id, string $table, string $legacy_scope_sql = ''): int
+    {
+        $ur = $db->query("SELECT role FROM users WHERE id = " . (int) $user_id);
+        $role  = $ur ? (int) ($ur->fetch_assoc()['role'] ?? 0) : 0;
+        $stage = leave_stage_for_role($role);
+        if ($stage === null) return 0;
+        // Area-held stages were already counted by the caller; the role lookup
+        // only matters for stages the area table does not name (HR).
+        if (!empty(LEAVE_APPROVAL_STAGES[$stage]['optional'])) return 0;
+        $ar = $db->query("SELECT 1 FROM area_approver WHERE user_id = " . (int) $user_id . " AND stage = '" . $db->real_escape_string($stage) . "' LIMIT 1");
+        if ($ar && $ar->num_rows) return 0;
+        $p = leave_stage_pending_predicate($stage);
+        $r = $db->query("SELECT COUNT(*) c FROM `$table` WHERE ($p) $legacy_scope_sql");
+        return $r ? (int) $r->fetch_assoc()['c'] : 0;
+    }
+}
+
+// Attendance requests run the identical chain; the alias documents that and
+// gives attendance-side code a name that reads right.
+if (!defined('ATT_APPROVAL_STAGES')) {
+    define('ATT_APPROVAL_STAGES', LEAVE_APPROVAL_STAGES);
 }
 
 // ── Classification badge colors (GLOBAL) ────────────────────────────────

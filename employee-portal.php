@@ -488,7 +488,13 @@ foreach ($dtr_flag_rows as $__row) {
         }
     }
     if ($__lt > 0)           $__f[] = ['k' => 'late',     'sev' => 'warn', 'txt' => 'Late ' . nd($__lt) . ' min'];
-    if ($__ut > 0)           $__f[] = ['k' => 'ut',       'sev' => 'warn', 'txt' => 'Undertime ' . nd($__ut) . ' min'];
+    if ($__ut > 0) {
+        // Excusable: an approved Undertime request removes the deduction, so
+        // the flag says whether one is already on file for the day.
+        $__ut_filed = !empty($dtr_req_dates[$__d]['undertime']);
+        $__f[] = ['k' => 'ut', 'sev' => 'warn',
+                  'txt' => 'Undertime ' . nd($__ut) . ' min' . ($__ut_filed ? ' (excuse filed)' : ' — not yet filed')];
+    }
     if ($__rest && $__wh > 0) $__f[] = ['k' => 'rest',    'sev' => 'info', 'txt' => 'Worked on a rest day'];
     if ($__ot > DTR_HIGH_OT_HOURS) $__f[] = ['k' => 'high_ot', 'sev' => 'info', 'txt' => 'Unusually high OT (' . nd($__ot) . ' hrs)'];
 
@@ -3336,6 +3342,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <div class="loan-head">
                 <div>
                     <div class="loan-type-lbl"><?= htmlspecialchars($loan['type_name']) ?></div>
+                    <?php if (!empty($loan['reference_no'])): ?>
+                    <div style="font-size:11px;color:#6642aa;font-family:monospace;margin-top:2px;" title="Reference number"><i class="ri-hashtag me-1"></i><?= htmlspecialchars($loan['reference_no']) ?></div>
+                    <?php endif; ?>
                     <div style="font-size:11px;color:#aaa;margin-top:2px;">Since <?= date('M d, Y', strtotime($loan['loan_date'])) ?></div>
                 </div>
                 <div class="loan-bal-wrap">
@@ -4028,17 +4037,25 @@ function toggleAttFields(type) {
         var input = el.querySelector('.form-control');
         if (input) { if (type === 'incident') input.setAttribute('required', 'required'); else input.removeAttribute('required'); }
     });
-    // Overtime and rest-day work are both filed as HOURS against the day's
-    // scans, so they share the block; only the label differs.
-    var hourType = ATT_HOUR_TYPES.indexOf(type) !== -1;
+    // Overtime, rest-day work and undertime are all filed as HOURS against the
+    // day's scans, so they share the block; only the label and grid differ.
+    var isUt     = ATT_UT_TYPES.indexOf(type) !== -1;
+    var hourType = ATT_HOUR_TYPES.indexOf(type) !== -1 || isUt;
     document.querySelectorAll('.att-ot-field').forEach(function(el){
         el.style.display = hourType ? '' : 'none';
         var input = el.querySelector('.form-control');
         if (input) { if (hourType) input.setAttribute('required', 'required'); else input.removeAttribute('required'); }
     });
     var otLbl = document.getElementById('att-ot-hours-label');
-    if (otLbl) otLbl.innerHTML = (type === 'rest_day' ? 'Rest Day Hours Rendered' : 'OT Hours Requested')
+    if (otLbl) otLbl.innerHTML = (isUt ? 'Undertime Hours to Excuse' : (type === 'rest_day' ? 'Rest Day Hours Rendered' : 'OT Hours Requested'))
         + ' <span style="color:red;">*</span>';
+    var hrsInput = document.getElementById('att-ot-hours');
+    if (hrsInput) {
+        hrsInput.setAttribute('min',  isUt ? '0.25' : '0.5');
+        hrsInput.setAttribute('step', isUt ? '0.01' : '0.5');
+        hrsInput.setAttribute('placeholder', isUt ? 'e.g. 0.75' : 'e.g. 2.5');
+        hrsInput.setAttribute('data-parsley-required-message', isUt ? 'Please enter the undertime hours to excuse.' : 'Please enter the OT hours requested.');
+    }
 
     // The reason is not a real choice for these two — there is exactly one
     // sensible value, and leaving it blank only earns the employee a "Please
@@ -4110,15 +4127,18 @@ function refreshOtLimit() {
     input.dataset.otAuto = '1';
     setOtScan(null);
 
-    if (!typeEl || ATT_HOUR_TYPES.indexOf(typeEl.value) === -1) { setOtHint('', 'busy'); return; }
-    if (!date) { setOtHint('Pick the date first — what you may file is limited to the hours your scans actually show for that day.', 'busy'); return; }
+    var isUt = !!typeEl && ATT_UT_TYPES.indexOf(typeEl.value) !== -1;
+    if (!typeEl || (ATT_HOUR_TYPES.indexOf(typeEl.value) === -1 && !isUt)) { setOtHint('', 'busy'); return; }
+    if (!date) { setOtHint(isUt
+        ? 'Pick the date first — what you may file is limited to the undertime your DTR shows for that day.'
+        : 'Pick the date first — what you may file is limited to the hours your scans actually show for that day.', 'busy'); return; }
 
-    setOtHint('Checking your scans for that date…', 'busy');
+    setOtHint(isUt ? 'Checking your DTR for that date…' : 'Checking your scans for that date…', 'busy');
     var seq = ++_otLimitSeq;
     fetch('emp-portal-ajax.php?action=ot_request_limit', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'request_date=' + encodeURIComponent(date)
+        body: 'request_date=' + encodeURIComponent(date) + '&request_type=' + encodeURIComponent(typeEl.value)
     }).then(function (r) { return r.json(); }).then(function (res) {
         if (seq !== _otLimitSeq) return;               // a newer date won
         var lim = (res && res.limit) || null;
@@ -4128,8 +4148,9 @@ function refreshOtLimit() {
         // must be filed as rest-day work (approval authorizes it and writes
         // nothing), a working day as overtime (approval writes the hours). The
         // server rejects a mismatch, so correcting the select here saves them a
-        // round trip into an error they cannot act on.
-        if (lim && lim.request_type && typeEl.value !== lim.request_type
+        // round trip into an error they cannot act on. Undertime is its own
+        // filing and is never switched.
+        if (!isUt && lim && lim.request_type && typeEl.value !== lim.request_type
             && ATT_HOUR_TYPES.indexOf(lim.request_type) !== -1) {
             typeEl.value = lim.request_type;
             // Same reason as openAttRequestForDate: only a dispatched 'change'
@@ -4140,8 +4161,9 @@ function refreshOtLimit() {
         }
         if (lim && lim.allowed) {
             input.setAttribute('max', String(lim.max_hours));
-            input.setAttribute('data-parsley-otlimit-message',
-                'Your scans for that date only support up to ' + lim.max_hours + ' hr of overtime.');
+            input.setAttribute('data-parsley-otlimit-message', isUt
+                ? 'Your DTR for that date only shows ' + lim.max_hours + ' hr of undertime.'
+                : 'Your scans for that date only support up to ' + lim.max_hours + ' hr of overtime.');
             // Prefill with everything the day's scans support — filing the OT
             // actually rendered is the whole point of the form, so typing the
             // number back in by hand is busywork. A value the employee edited
@@ -4154,8 +4176,10 @@ function refreshOtLimit() {
         } else {
             input.value = '';
             // Short message on the field — the full reason is in the hint below it.
-            input.setAttribute('data-parsley-otlimit-message', 'No overtime can be filed for that date — see the note below.');
-            setOtHint((lim && lim.message) || 'Overtime cannot be filed for that date.', 'blocked');
+            input.setAttribute('data-parsley-otlimit-message', isUt
+                ? 'No undertime can be filed for that date — see the note below.'
+                : 'No overtime can be filed for that date — see the note below.');
+            setOtHint((lim && lim.message) || (isUt ? 'Undertime cannot be filed for that date.' : 'Overtime cannot be filed for that date.'), 'blocked');
         }
         if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().reset();
     }).catch(function () {
@@ -4183,7 +4207,7 @@ if (window.Parsley) {
             var n = parseFloat(value);
             return isNaN(n) ? true : n <= _otLimit.max_hours + 0.001;
         },
-        messages: { en: 'That is more overtime than your scans for that date support.' }
+        messages: { en: 'That is more than your record for that date supports.' }
     });
 }
 
@@ -4354,12 +4378,14 @@ function updatePayslipRow(payrollId, decision) {
 }
 
 // ── In-place row builders for freshly-submitted Leave / Attendance requests ──
-var REASON_LABELS = { forgot_scan:'Forgot to Scan', device_error:'Device Error', system_down:'System Down', overtime:'Overtime', other:'Other', rest_day_work:'Rest Day Work' };
-var ATT_TYPE_ICONS = { incident:'ri-error-warning-line', rest_day:'ri-moon-line', overtime:'ri-timer-flash-line' };
+var REASON_LABELS = { forgot_scan:'Forgot to Scan', device_error:'Device Error', system_down:'System Down', overtime:'Overtime', other:'Other', rest_day_work:'Rest Day Work', undertime:'Undertime / Early Out' };
+var ATT_TYPE_ICONS = { incident:'ri-error-warning-line', rest_day:'ri-moon-line', overtime:'ri-timer-flash-line', undertime:'ri-logout-box-r-line' };
 // Types filed as hours against the day's scans (ATT_REQUEST_HOUR_TYPES server-side).
 var ATT_HOUR_TYPES = ['overtime', 'rest_day'];
+// Undertime is filed as hours too, but they EXCUSE a deduction (own ceiling, own grid).
+var ATT_UT_TYPES = ['undertime'];
 // The one reason each hour-type always has — prefilled, still editable.
-var ATT_AUTO_REASON = { overtime: 'overtime', rest_day: 'rest_day_work' };
+var ATT_AUTO_REASON = { overtime: 'overtime', rest_day: 'rest_day_work', undertime: 'undertime' };
 function fmtMDY(s) { var d = new Date((s || '').replace(' ', 'T')); if (isNaN(d)) return s || ''; return d.toLocaleDateString('en-US', { month:'short', day:'2-digit', year:'numeric' }); }
 function fmtMD(s)  { var d = new Date((s || '').replace(' ', 'T')); if (isNaN(d)) return s || ''; return d.toLocaleDateString('en-US', { month:'short', day:'2-digit' }); }
 function fmtTimeHM(t) {
@@ -5760,6 +5786,7 @@ function loanDetailHtml(d) {
         + loanBox('Per period', peso(L.damount))
         + loanBox('Granted', escapeHtml(L.loan_date || '—'))
         + loanBox('First deduction', escapeHtml(L.effective_date || L.loan_date || '—'))
+        + (L.reference_no ? loanBox('Reference no.', escapeHtml(L.reference_no)) : '')
         + '</div>';
 
     h += '<div class="lnh-hd"><span><i class="ri-history-line me-1"></i>Deduction history</span>'
@@ -6478,6 +6505,10 @@ function openAreqDetail(r) {
         + '</div>'
         + (r.reviewer_html
             ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e7e6ed;font-size:12px;color:#555;">' + lbl('Reviewer Notes') + r.reviewer_html + '</div>'
+            : '')
+        // Same approval trail the leave details show — the request runs the same chain.
+        + (r.timeline
+            ? '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed #e7e6ed;">' + lbl('Approval Trail') + r.timeline + '</div>'
             : '');
     document.getElementById('areq-detail-body').innerHTML = h;
     new bootstrap.Modal(document.getElementById('modal-areq-detail')).show();
@@ -6502,6 +6533,7 @@ function areqCard(r) {
                 '<span class="psrow-ref"><i class="ri-calendar-event-line"></i> ' + (r.date_plain || '—') + '</span>' +
                 '<span class="psbadge" style="background:' + (r.status_color || '#888') + '1a;color:' + (r.status_color || '#888') + ';border:1px solid ' + (r.status_color || '#888') + '40;">' + (r.status_label || '') + '</span>' +
             '</span>' +
+            (r.stage_chips ? '<span class="psrow-meta lv-chips">' + r.stage_chips + (r.awaiting ? '<span class="attrow-note" style="margin-left:4px;">' + r.awaiting + '</span>' : '') + '</span>' : '') +
             (reason ? '<span class="psrow-meta attrow-note"><i class="ri-question-line"></i>' + reason + '</span>' : '') +
             (reviewer ? '<span class="psrow-meta attrow-note"><i class="ri-chat-1-line"></i>' + reviewer + '</span>' : '') +
         '</span>' +
@@ -7044,6 +7076,7 @@ jQuery(function ($) {
                                 <option value="incident">Incident Report (missed/wrong scan)</option>
                                 <option value="overtime">Overtime Authorization Request</option>
                                 <option value="rest_day">Rest Day / Day-Off Work Authorization</option>
+                                <option value="undertime">Undertime / Early-Out Authorization</option>
                             </select>
                         </div>
                         <div class="col-12 col-md-6">
@@ -7061,6 +7094,7 @@ jQuery(function ($) {
                                 <option value="system_down">System Down</option>
                                 <option value="overtime">Overtime Authorization</option>
                                 <option value="rest_day_work">Rest Day / Day-Off Work</option>
+                                <option value="undertime">Undertime / Early Out</option>
                                 <option value="other">Other</option>
                             </select>
                         </div>

@@ -180,18 +180,29 @@
                                                         role="<?= htmlspecialchars($row['role']) ?>"
                                                         department_id="<?= htmlspecialchars($row['department_id'] ?? '') ?>"
                                                         employee_id="<?= htmlspecialchars($row['employee_id'] ?? '') ?>"
+                                                        data-areas="<?= htmlspecialchars($row['area_names'] ?? '') ?>"
                                                         onclick="edit_function(this)"
                                                         data-bs-toggle="tooltip" data-bs-placement="top" title="Edit User">
                                                         <i class="ri-edit-line me-1"></i>Edit
                                                     </button>
+                                                    <?php /* The areas ride along so the confirm can warn before deactivating
+                                                            an approver: an inactive account is skipped by the approver pickers
+                                                            and dropped from area_approver the next time one of its areas is
+                                                            saved, which is not obvious from a status toggle. */ ?>
                                                     <?php if ($row['status'] == 1): ?>
-                                                        <button onclick="updateUserStatus(<?= $row['id'] ?>, 2)"
+                                                        <button onclick="updateUserStatus(this, 2)"
+                                                            data-id="<?= (int)$row['id'] ?>"
+                                                            data-name="<?= htmlspecialchars($row['name']) ?>"
+                                                            data-areas="<?= htmlspecialchars($row['area_names'] ?? '') ?>"
                                                             class="btn btn-sm btn-outline-danger"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Set Inactive">
                                                             <i class="ri-forbid-line"></i>
                                                         </button>
                                                     <?php else: ?>
-                                                        <button onclick="updateUserStatus(<?= $row['id'] ?>, 1)"
+                                                        <button onclick="updateUserStatus(this, 1)"
+                                                            data-id="<?= (int)$row['id'] ?>"
+                                                            data-name="<?= htmlspecialchars($row['name']) ?>"
+                                                            data-areas="<?= htmlspecialchars($row['area_names'] ?? '') ?>"
                                                             class="btn btn-sm btn-outline-success"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Set Active">
                                                             <i class="ri-checkbox-circle-line"></i>

@@ -99,6 +99,18 @@ $__ar_pill = $__ar_pending > 0
                     </a>
                 </li>
                 <?php endif; ?>
+                <?php /* Incident reports, OT, rest-day and undertime requests run the
+                         same area chain as leave, and the approvers were already
+                         being notified with a link to this page — but the menu never
+                         listed it, so a bell was the only way in. */ ?>
+                <?php if (page_allowed('attendance-requests')): ?>
+                <li class="nav-item">
+                    <a href="attendance-requests" class="nav-link menu-link <?= $page === 'attendance-requests' ? 'active' : '' ?>">
+                        <i class="ri-error-warning-line"></i> <span>Attendance Requests</span>
+                        <?= $__ar_pill ?>
+                    </a>
+                </li>
+                <?php endif; ?>
                 <?php if (page_allowed('calendar')): ?>
                 <li class="nav-item">
                     <a href="calendar" class="nav-link menu-link <?= $page === 'calendar' ? 'active' : '' ?>">
@@ -246,9 +258,6 @@ $__ar_pill = $__ar_pending > 0
                             <li class="nav-item">
                                 <a href="attendance-requests" class="nav-link <?= $page === 'attendance-requests' ? 'active' : '' ?>">
                                     <i class="ri-error-warning-line me-1"></i>Attendance Requests
-                                    <?php if (is_hr($login_role)): ?>
-                                        <span class="badge bg-light text-muted border ms-1" style="font-size:9px;">View</span>
-                                    <?php endif; ?>
                                     <?= $__ar_pill ?>
                                 </a>
                             </li>

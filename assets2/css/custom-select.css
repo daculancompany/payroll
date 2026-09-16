@@ -27,7 +27,9 @@
 .cs-native {
     position: absolute;
     inset: 0;
-    width: 100%;
+    /* !important: beats an inline width on the select, which would otherwise
+       stick out past the wrapper and widen the page. */
+    width: 100% !important;
     height: 100%;
     opacity: 0;
     pointer-events: none;

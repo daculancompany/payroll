@@ -272,7 +272,7 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between">
                         <h4 class="mb-sm-0">
                             Leave Dashboard
-                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2">
+                            <span class="badge bg-primary-subtle text-primary border border-primary-subtle ms-2 text-wrap text-start">
                                 <i class="ri-building-line me-1"></i><?= htmlspecialchars($dept_name) ?>
                             </span>
                         </h4>
@@ -640,7 +640,7 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                                         ?>
                                         <!-- Filter reads these, never the rendered cell text: the
                                              numbers are formatted for humans and an ineligible row
-                                             collapses its four value cells into one. -->
+                                             shows a badge and dashes instead of numbers. -->
                                         <tr data-pos="<?= htmlspecialchars($e['position'] ?? '') ?>"
                                             data-eligible="<?= $e['eligible'] ? 1 : 0 ?>"
                                             data-used="<?= (float) $e['used'] ?>"
@@ -654,11 +654,17 @@ if ($hq) while ($h = $hq->fetch_assoc()) $holidays[] = $h;
                                             </td>
                                             <td><span class="text-muted"><?= htmlspecialchars($e['position'] ?? '—') ?></span></td>
                                             <?php if (!$e['eligible']): ?>
-                                            <td colspan="4" class="text-center">
+                                            <!-- Four real cells, never one colspan="4": DataTables
+                                                 cannot index a spanned tbody cell, and the resulting
+                                                 init error killed paging and the filter bar. -->
+                                            <td class="text-center" data-order="-1">
                                                 <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle">
                                                     <i class="ri-forbid-line me-1"></i>Not entitled to leave
                                                 </span>
                                             </td>
+                                            <td class="text-center text-muted" data-order="-1">—</td>
+                                            <td class="text-center text-muted" data-order="-1">—</td>
+                                            <td class="text-center text-muted" data-order="-1">—</td>
                                             <?php else: ?>
                                             <td class="text-center"><?= $nice($e['credits']) ?></td>
                                             <td class="text-center"><?= $nice($e['used']) ?></td>

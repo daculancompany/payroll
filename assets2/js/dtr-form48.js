@@ -84,7 +84,7 @@
     // ── Day markers: holiday / leave / day-off / attendance request ──
     // Server shape (dtr-employee-server.php `marks`):
     //   holiday {k,t:'legal'|'special',lbl}  leave {k,lbl,s,half}
-    //   off {k}                       req {k,t:'incident'|'overtime'|'rest_day',s}
+    //   off {k}                       req {k,t:'incident'|'overtime'|'rest_day'|'undertime',s}
     function markInfo(m) {
         // Which shift the day ran on. Colour-coded by when it starts so a month
         // of mixed rotations is readable at a glance: day / afternoon / night.
@@ -127,7 +127,7 @@
         // Same moon glyph the duty roster grid uses for a rest day — one icon
         // means "day off" everywhere in the app, not a different mark per screen.
         if (m.k === 'off') return { cls: 'dm-off', ltr: '<i class="ri-moon-line"></i>', note: 'DAY OFF' };
-        var reqNote = { overtime: 'OT REQUEST', rest_day: 'REST DAY WORK REQUEST' }[m.t] || 'INCIDENT REPORT';
+        var reqNote = { overtime: 'OT REQUEST', rest_day: 'REST DAY WORK REQUEST', undertime: 'UNDERTIME EXCUSE REQUEST' }[m.t] || 'INCIDENT REPORT';
         return {
             cls: 'dm-req', ltr: '<i class="ri-time-line"></i>',
             note: reqNote + (m.s === 0 ? ' (PENDING)' : ' (APPROVED)')

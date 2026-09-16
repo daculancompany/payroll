@@ -698,6 +698,19 @@ class Action
         if ($salary < 0 || $basic_pay < 0 || $ot_rate < 0 || $allowance_rate < 0 || $sss_fund < 0)
             return 'error:Pay/rate values cannot be negative.';
         if ($basic_pay > 100000000 || $salary > 100000000) return 'error:Pay value is unrealistically large.';
+
+        // Area decides who approves this employee's leave and attendance
+        // requests. Left empty, the Section Head / Supervisor stages have nobody
+        // to route to. Required only when the department actually has areas —
+        // a few (e.g. ONCOLOGY) have none yet, and those must stay saveable.
+        $__dept = (int) ($_POST['department_id'] ?? 0);
+        if ($__dept > 0) {
+            $__hasAreas = $this->db->query("SELECT 1 FROM area WHERE department_id = $__dept AND status = 1 LIMIT 1");
+            if ($__hasAreas && $__hasAreas->num_rows
+                && $this->normalizeAreaId($_POST['area_id'] ?? null, $__dept) === null) {
+                return 'error:Please select an Area for this department. It decides who approves this employee\'s requests.';
+            }
+        }
         if ($bday !== '' && strtotime($bday) === false)     return 'error:Birthday is not a valid date.';
 
         // ── Portal login (email + password) — ADMINISTRATOR ONLY ──
@@ -993,6 +1006,80 @@ class Action
             }
             $this->db->commit();
             return ['result' => true, 'saved' => $n];
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            return ['result' => false, 'message' => 'Could not save approvers: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Approvers for every area of one department, written in a single transaction.
+     *
+     * The Department page edits all of a department's areas at once, so this is
+     * the department-wide sibling of save_area_approvers(). Same store, same
+     * delete-then-insert shape — and that shape is why the payload carries a
+     * manifest: an empty <select multiple> posts nothing at all, so "this area
+     * has nobody" and "the form forgot this area" arrive identically. area_ids[]
+     * is what tells them apart, and it is only trustworthy if it matches the
+     * department's real areas exactly. Anything else is refused rather than
+     * guessed at, because guessing wrong here silently wipes an area's approvers.
+     */
+    function save_department_approvers()
+    {
+        $dept = (int) ($_POST['department_id'] ?? 0);
+        if ($dept <= 0) return ['result' => false, 'message' => 'No department given.'];
+        $d = $this->db->query("SELECT id FROM department WHERE id = $dept");
+        if (!$d || !$d->num_rows) return ['result' => false, 'message' => 'That department no longer exists.'];
+
+        // The authoritative set — never the browser's word for it.
+        $own = [];
+        $aq = $this->db->query("SELECT id FROM area WHERE department_id = $dept");
+        while ($aq && ($r = $aq->fetch_assoc())) $own[(int) $r['id']] = true;
+
+        $posted = [];
+        foreach ((array) ($_POST['area_ids'] ?? []) as $aid) {
+            $aid = (int) $aid;
+            if ($aid > 0) $posted[$aid] = true;
+        }
+
+        $stray = array_diff_key($posted, $own);
+        if ($stray) {
+            return ['result' => false, 'message' => 'Area #' . array_key_first($stray) . ' does not belong to this department.'];
+        }
+        $missing = array_diff_key($own, $posted);
+        if ($missing) {
+            // Either a bug in the form or a page opened before someone added an
+            // area. Writing now would clear whatever that area holds.
+            return ['result' => false, 'message' => "This department's areas have changed since this page was opened. Reload and try again."];
+        }
+
+        $allowed = ['sec', 'sup', 'admin'];   // 'hr' is hospital-wide, never per area
+
+        // One lookup for every candidate instead of one per posted id.
+        $valid = [];
+        $uq = $this->db->query("SELECT id FROM users WHERE status = 1");
+        while ($uq && ($r = $uq->fetch_assoc())) $valid[(int) $r['id']] = true;
+
+        $this->db->begin_transaction();
+        try {
+            $del = $this->db->prepare("DELETE FROM area_approver WHERE area_id = ?");
+            $ins = $this->db->prepare("INSERT IGNORE INTO area_approver (area_id, stage, user_id) VALUES (?,?,?)");
+            $n = 0;
+            foreach (array_keys($own) as $aid) {
+                $del->bind_param('i', $aid);
+                $del->execute();
+                foreach ($allowed as $stage) {
+                    foreach ((array) ($_POST['areas'][$aid][$stage] ?? []) as $uid) {
+                        $uid = (int) $uid;
+                        if ($uid <= 0 || !isset($valid[$uid])) continue;
+                        $ins->bind_param('isi', $aid, $stage, $uid);
+                        $ins->execute();
+                        $n++;
+                    }
+                }
+            }
+            $this->db->commit();
+            return ['result' => true, 'areas' => count($own), 'saved' => $n];
         } catch (\Throwable $e) {
             $this->db->rollback();
             return ['result' => false, 'message' => 'Could not save approvers: ' . $e->getMessage()];
@@ -2575,8 +2662,11 @@ class Action
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
         $dept = (int) ($_POST['department_id'] ?? 0);
+        // The Area / ward filter narrows the write to what is on screen —
+        // publishing one ward must not release its neighbours' drafts.
+        $areaId = (int) ($_POST['area_id'] ?? 0);
 
-        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to'], $areaId);
         $empIds    = array_column($employees, 'id');
         if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
         if ($deny = $this->dutyDenyWrite($empIds)) return ['result' => false, 'message' => $deny];
@@ -2701,7 +2791,7 @@ class Action
         if (!$range || !$prevRange) return ['result' => false, 'message' => 'Invalid cutoff period.'];
 
         $dept      = (int) ($_POST['department_id'] ?? 0);
-        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to'], (int) ($_POST['area_id'] ?? 0));
         $empIds    = array_column($employees, 'id');
         if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
         if ($deny = $this->dutyDenyWrite($empIds)) return ['result' => false, 'message' => $deny];
@@ -2785,7 +2875,7 @@ class Action
         $range = $this->dutyPeriodRange($_POST['period'] ?? '');
         if (!$range) return ['result' => false, 'message' => 'Invalid cutoff period.'];
         $dept      = (int) ($_POST['department_id'] ?? 0);
-        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to'], (int) ($_POST['area_id'] ?? 0));
         $empIds    = array_column($employees, 'id');
         if (!$empIds) return ['result' => false, 'message' => 'No employees in this view.'];
         if ($deny = $this->dutyDenyWrite($empIds)) return ['result' => false, 'message' => $deny];
@@ -3035,7 +3125,7 @@ class Action
         }
 
         /* ── Who we are allowed to touch ──────────────────────────────────── */
-        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to']);
+        $employees = $this->dutyRosterEmployees($dept, $range['from'], $range['to'], (int) ($_POST['area_id'] ?? 0));
         $byNo = $byName = [];
         foreach ($employees as $e) {
             if ($e['employee_no'] !== '') $byNo[strtolower(trim($e['employee_no']))] = $e;
@@ -3501,9 +3591,27 @@ class Action
             ? floatval($_POST['ot_hours_requested']) : null;
         $notes        = trim($_POST['notes'] ?? '');
 
-        $valid_types = array_merge(['incident'], ATT_REQUEST_HOUR_TYPES);
-        if (!$employee_id || !in_array($request_type, $valid_types, true) || !$request_date || !$reason) {
+        if (!$employee_id || !in_array($request_type, ATT_REQUEST_TYPES, true) || !$request_date || !$reason) {
             return ['result' => false, 'message' => 'Missing required fields'];
+        }
+
+        // Undertime: hours to be EXCUSED, bounded by the undertime the DTR shows
+        // for that date (or a full duty when nothing is imported yet).
+        if ($request_type === 'undertime') {
+            if (!$ot_hours) {
+                return ['result' => false, 'message' => 'Please provide the number of undertime hours to excuse.'];
+            }
+            $lim = undertime_request_limit($this->db, $employee_id, $request_date);
+            if (!$lim['allowed']) {
+                return ['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim];
+            }
+            if ($ot_hours < UT_REQUEST_MIN_HOURS) {
+                return ['result' => false, 'message' => 'The smallest undertime that can be filed is ' . UT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim];
+            }
+            if ($ot_hours > $lim['max_hours'] + 0.001) {
+                return ['result' => false, 'message' => 'Only up to ' . $lim['max_hours'] . ' hr of undertime can be filed for that date. ' . $lim['message'], 'ot_limit' => $lim];
+            }
+            $ot_hours = round($ot_hours, 2);
         }
 
         // Same ceiling the employee portal enforces: hours can only be filed
@@ -3551,22 +3659,30 @@ class Action
         if (!$stmt->execute()) {
             return ['result' => false, 'message' => $stmt->error];
         }
+        $new_id = (int) $this->db->insert_id;
 
+        // Same chain as leave: skip the optional stages nobody holds for this
+        // employee's area, then tell whoever is actually first in line.
+        $skipped = leave_autoskip_stages($this->db, $new_id, $employee_id, 'attendance_requests');
+        [$firstKey, $firstCfg] = leave_first_open_stage($this->db, $new_id, 'attendance_requests');
         $erow  = $this->db->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $employee_id")->fetch_assoc();
         $ename = $erow['n'] ?? 'Employee';
         $label = att_request_label($request_type);
-        foreach ([1, 8, 9] as $role) {
-            $this->notifyRole(
-                $role,
+        if ($firstCfg) {
+            $this->notifyLeaveStage(
+                $firstKey,
+                $employee_id,
                 'New ' . $label,
-                "$ename filed a $label for " . date('M d, Y', strtotime($request_date)) . '.',
+                "$ename filed a $label for " . date('M d, Y', strtotime($request_date)) . ". Needs {$firstCfg['label']} approval.",
                 'ri-error-warning-line',
                 'warning',
                 'index.php?page=attendance-requests'
             );
         }
 
-        return ['result' => true, 'message' => 'Request submitted. Awaiting approval.'];
+        $msg = 'Request submitted. ' . ($firstCfg ? "Awaiting {$firstCfg['label']} approval." : 'Awaiting approval.');
+        if ($skipped) $msg .= ' Skipped: ' . implode(', ', $skipped) . ' (none assigned to this area).';
+        return ['result' => true, 'message' => $msg];
     }
 
     /**
@@ -3581,25 +3697,66 @@ class Action
     {
         $id   = intval($_POST['id'] ?? 0);
         $role = (int) ($_SESSION['login_role'] ?? 0);
-        if (!in_array($role, [1, 8, 9], true)) return ['result' => false, 'message' => 'Not authorized'];
+        $uid  = (int) ($_SESSION['login_id'] ?? 0);
+        if (!in_array($role, [1, 8, 9, 10, 11], true)) return ['result' => false, 'message' => 'Not authorized'];
         if (!$id) return ['result' => false, 'message' => 'Invalid request'];
 
         $q = $this->db->query(
-            "SELECT ar.*, CONCAT(e.lastname, ', ', e.firstname) AS employee_name, e.employee_no
+            "SELECT ar.*, CONCAT(e.lastname, ', ', e.firstname) AS employee_name, e.employee_no,
+                    se.name AS sec_name, su.name AS sup_name, au.name AS admin_name, hu.name AS hr_name
              FROM attendance_requests ar
              INNER JOIN employee e ON e.id = ar.employee_id
+             LEFT JOIN users se ON se.id = ar.sec_by
+             LEFT JOIN users su ON su.id = ar.sup_by
+             LEFT JOIN users au ON au.id = ar.admin_by
+             LEFT JOIN users hu ON hu.id = ar.hr_by
              WHERE ar.id = $id LIMIT 1"
         );
         $r = $q ? $q->fetch_assoc() : null;
         if (!$r) return ['result' => false, 'message' => 'Request not found'];
 
+        // Scope: Admin and HR see everything; an area-scoped approver may open a
+        // request only if they hold SOME stage for that employee's area
+        // (leave_stages_for_user), the same rule the leave queue applies.
+        // Legacy department-pinned accounts keep the department check.
         require_once __DIR__ . '/dept-scope.php';
-        if (dept_scope_id() > 0) {
-            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int) $r['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
-            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        $emp_id = (int) $r['employee_id'];
+        if (in_array($role, [8, 10, 11], true)) {
+            if (area_scope_active()) {
+                if (leave_stages_for_user($this->db, $uid, $emp_id) === []) {
+                    return ['result' => false, 'message' => 'This request belongs to another area.'];
+                }
+            } elseif (dept_scope_id() > 0) {
+                $chk = $this->db->query("SELECT id FROM employee WHERE id = $emp_id" . dept_scope_sql('department_id'))->fetch_assoc();
+                if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+            }
+        }
+
+        // Where the chain stands, and whether THIS user is the one it waits on.
+        require_once __DIR__ . '/includes/leave_timeline.php';
+        $stages  = leave_stages();
+        $current = leave_current_stage($r);
+        $can_act = $current !== null && $role !== 1 && leave_user_can_act($this->db, $uid, $current, $emp_id);
+        $stage_rows = [];
+        foreach ($stages as $k => $cfg) {
+            $stage_rows[] = [
+                'key'     => $k,
+                'label'   => $cfg['label'],
+                'status'  => (int) ($r[$k . '_status'] ?? 0),
+                'by'      => $r[$k . '_by'] !== null ? (int) $r[$k . '_by'] : null,
+                'name'    => (string) ($r[$k . '_name'] ?? ''),
+                'remarks' => (string) ($r[$k . '_remarks'] ?? ''),
+                'at'      => $r[$k . '_at'] ? date('M d, Y g:i A', strtotime($r[$k . '_at'])) : '',
+            ];
         }
 
         return ['result' => true, 'request' => [
+            'current_stage'       => $current,
+            'current_stage_label' => $current !== null ? $stages[$current]['label'] : null,
+            'awaiting_names'      => $current !== null ? leave_stage_approver_names($this->db, $current, $emp_id) : [],
+            'can_act'             => $can_act,
+            'stages'              => $stage_rows,
+            'timeline'            => leave_timeline_html($r),
             'id'          => (int) $r['id'],
             'employee_id' => (int) $r['employee_id'],
             'employee'    => $r['employee_name'],
@@ -3621,12 +3778,13 @@ class Action
     function attendance_request_limit()
     {
         $role = (int) ($_SESSION['login_role'] ?? 0);
-        if (!in_array($role, [1, 8, 9], true)) {
+        if (!in_array($role, [1, 8, 9, 10, 11], true)) {
             return ['result' => false, 'message' => 'Not authorized'];
         }
+        $fn = (($_POST['request_type'] ?? '') === 'undertime') ? 'undertime_request_limit' : 'ot_request_limit';
         return [
             'result' => true,
-            'limit'  => ot_request_limit(
+            'limit'  => $fn(
                 $this->db,
                 (int) ($_POST['employee_id'] ?? 0),
                 trim($_POST['request_date'] ?? ''),
@@ -3655,22 +3813,24 @@ class Action
     {
         $id   = intval($_POST['id'] ?? 0);
         $role = (int) ($_SESSION['login_role'] ?? 0);
+        $uid  = (int) ($_SESSION['login_id'] ?? 0);
 
-        if (!in_array($role, [1, 8, 9], true) || !can_edit('attendance-requests', $role)) {
+        // Only someone in the chain may correct a figure, and only the approver
+        // the request is currently waiting on — the same person who will decide
+        // it. Administrator is view-only here, as on leave.
+        if (!in_array($role, [8, 9, 10, 11], true) || !can_edit('attendance-requests', $role)) {
             return ['result' => false, 'message' => 'Your role cannot edit this request.'];
         }
         if (!$id) return ['result' => false, 'message' => 'Invalid request'];
 
         $req = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
         if (!$req) return ['result' => false, 'message' => 'Request not found'];
-        if ((int) $req['status'] !== 0) {
+        $cur = leave_current_stage($req);
+        if ((int) $req['status'] !== 0 || $cur === null) {
             return ['result' => false, 'message' => 'This request was already decided — it can no longer be edited.'];
         }
-
-        require_once __DIR__ . '/dept-scope.php';
-        if (dept_scope_id() > 0) {
-            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int) $req['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
-            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        if (!leave_user_can_act($this->db, $uid, $cur, (int) $req['employee_id'])) {
+            return ['result' => false, 'message' => 'Only the ' . leave_stages()[$cur]['label'] . ' this request is waiting on can edit it.'];
         }
 
         $employee_id = (int) $req['employee_id'];
@@ -3689,20 +3849,24 @@ class Action
             }
         }
 
-        if (in_array($type, ATT_REQUEST_HOUR_TYPES, true)) {
+        $is_ut = ($type === 'undertime');
+        if ($is_ut || in_array($type, ATT_REQUEST_HOUR_TYPES, true)) {
             if (trim($_POST['ot_hours_requested'] ?? '') === '') {
                 return ['result' => false, 'message' => 'Please provide the hours.'];
             }
             $ot_hours = (float) $_POST['ot_hours_requested'];
-            $what     = $type === 'rest_day' ? 'rest-day' : 'overtime';
+            $what     = $is_ut ? 'undertime' : ($type === 'rest_day' ? 'rest-day' : 'overtime');
+            $min      = $is_ut ? UT_REQUEST_MIN_HOURS : OT_REQUEST_MIN_HOURS;
             // Excluding THIS request, so editing 7.5 → 6 is measured against the
             // day's scans and not against the 7.5 already on the row.
-            $lim = ot_request_limit($this->db, $employee_id, $req['request_date'], $id);
+            $lim = $is_ut
+                ? undertime_request_limit($this->db, $employee_id, $req['request_date'], $id)
+                : ot_request_limit($this->db, $employee_id, $req['request_date'], $id);
             if (!$lim['allowed']) {
                 return ['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim];
             }
-            if ($ot_hours < OT_REQUEST_MIN_HOURS) {
-                return ['result' => false, 'message' => 'The smallest ' . $what . ' that can be filed is ' . OT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim];
+            if ($ot_hours < $min) {
+                return ['result' => false, 'message' => 'The smallest ' . $what . ' that can be filed is ' . $min . ' hr.', 'ot_limit' => $lim];
             }
             if ($ot_hours > $lim['max_hours'] + 0.001) {
                 return [
@@ -3757,54 +3921,92 @@ class Action
         ];
     }
 
+    /**
+     * Decide ONE stage of an attendance request — the same four-stage,
+     * area-based chain leave runs (decide_leave), on the same approvers.
+     *
+     * The legacy columns (status / reviewed_by / reviewed_at / reviewer_remarks)
+     * are written only when the chain reaches a verdict, so every reader of
+     * `status = 1` (payroll OT cap, undertime excuse, rest-day DTR gate, DTR
+     * marks) still means "fully approved". The DTR side effects fire on the
+     * FINAL approval only.
+     */
     function decide_attendance_request()
     {
         $id      = intval($_POST['id'] ?? 0);
+        $stage   = (string) ($_POST['stage'] ?? '');
         $status  = intval($_POST['status'] ?? 0); // 1 approve, 2 reject
         $remarks = trim($_POST['remarks'] ?? '');
-        $uid     = $_SESSION['login_id'] ?? null;
+        $uid     = (int) ($_SESSION['login_id'] ?? 0);
         $role    = (int) ($_SESSION['login_role'] ?? 0);
 
-        // Approver role AND write access: can_edit() keeps read-only roles out
-        // (HR can open this screen but not act on it — HR_READONLY_PAGES).
-        if (!in_array($role, [1, 8, 9], true) || !can_edit('attendance-requests', $role)) {
-            return ['result' => false, 'message' => 'Your role cannot decide this request.'];
-        }
         if (!$id || !in_array($status, [1, 2], true)) {
             return ['result' => false, 'message' => 'Invalid request'];
         }
-
         $req = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
         if (!$req) return ['result' => false, 'message' => 'Request not found'];
-        if ($req['status'] != 0) return ['result' => false, 'message' => 'Request already decided'];
 
-        // Scoped Department Heads may only decide their own department's requests.
-        require_once __DIR__ . '/dept-scope.php';
-        if (dept_scope_id() > 0) {
-            $chk = $this->db->query("SELECT id FROM employee WHERE id = " . (int)$req['employee_id'] . dept_scope_sql('department_id'))->fetch_assoc();
-            if (!$chk) return ['result' => false, 'message' => 'This request belongs to another department.'];
+        $stages = leave_stages();
+        // A caller that does not name the stage (older client) acts on the one
+        // currently awaiting a decision.
+        if ($stage === '') $stage = (string) leave_current_stage($req);
+        if (!isset($stages[$stage])) return ['result' => false, 'message' => 'Invalid approval stage.'];
+        $cfg = $stages[$stage];
+
+        // Same two gates as decide_leave: an approver role at all (Administrator
+        // is view-only on the chain), then THE approver for this employee's area
+        // at THIS stage — area_approver, not users.role, so a person holding
+        // different stages in different wards is judged per request.
+        if (!in_array($role, [8, 9, 10, 11], true) || !can_edit('attendance-requests', $role)) {
+            return ['result' => false, 'message' => 'You are not allowed to act on the ' . $cfg['label'] . ' approval.'];
+        }
+        if (!leave_user_can_act($this->db, $uid, $stage, (int) $req['employee_id'])) {
+            return ['result' => false, 'message' => 'You are not the ' . $cfg['label'] . ' for this employee\'s area.'];
+        }
+        if (leave_current_stage($req) !== $stage) {
+            if ((int) ($req[$stage . '_status'] ?? 0) !== 0) {
+                return ['result' => false, 'message' => 'This stage has already been decided.'];
+            }
+            return ['result' => false, 'message' => 'An earlier approval is still required before the ' . $cfg['label'] . ' stage.'];
+        }
+        if ($status === 2 && $remarks === '') {
+            return ['result' => false, 'message' => 'A reason is required to reject.'];
         }
 
+        $ot_applied = true;
         $this->db->begin_transaction();
         try {
-            $stmt = $this->db->prepare(
-                "UPDATE attendance_requests SET status=?, reviewed_by=?, reviewed_at=NOW(), reviewer_remarks=? WHERE id=?"
+            $remarks_sql = $remarks !== '' ? "'" . $this->db->real_escape_string($remarks) . "'" : 'NULL';
+            $this->db->query(
+                "UPDATE attendance_requests
+                 SET {$stage}_status = $status, {$stage}_by = $uid,
+                     {$stage}_remarks = $remarks_sql, {$stage}_at = NOW()
+                 WHERE id = $id"
             );
-            $stmt->bind_param('iisi', $status, $uid, $remarks, $id);
-            $stmt->execute();
+            $r2      = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
+            $overall = leave_overall_status($r2);
 
-            // Incident reports, once approved, write/repair the actual DTR_details row.
-            if ($status == 1 && $req['request_type'] === 'incident' && $req['claimed_time_in'] && $req['claimed_time_out']) {
-                $this->applyIncidentToDtr($req);
+            if ($overall !== 0) {
+                // Verdict reached: stamp the legacy single-decision columns with
+                // the person who closed the chain.
+                $this->db->query(
+                    "UPDATE attendance_requests
+                     SET status = $overall, reviewed_by = $uid, reviewed_at = NOW(), reviewer_remarks = $remarks_sql
+                     WHERE id = $id"
+                );
             }
 
-            // Overtime requests, once approved, auto-fill the DTR_details.overtime figure
-            // instead of leaving it at 0 pending a manual edit by the admin. A
-            // rest-day request only authorizes the day — applyOvertimeToDtr
-            // writes nothing for it (the scans already priced the row).
-            $ot_applied = true;
-            if ($status == 1 && in_array($req['request_type'], ATT_REQUEST_HOUR_TYPES, true) && $req['ot_hours_requested'] !== null) {
-                $ot_applied = $this->applyOvertimeToDtr($req);
+            if ($overall === 1) {
+                // Incident reports, once fully approved, write/repair the actual DTR_details row.
+                if ($req['request_type'] === 'incident' && $req['claimed_time_in'] && $req['claimed_time_out']) {
+                    $this->applyIncidentToDtr($req);
+                }
+                // Overtime requests auto-fill DTR_details.overtime. A rest-day
+                // request only authorizes the day — applyOvertimeToDtr writes
+                // nothing for it; undertime is excused at payroll time instead.
+                if (in_array($req['request_type'], ATT_REQUEST_HOUR_TYPES, true) && $req['ot_hours_requested'] !== null) {
+                    $ot_applied = $this->applyOvertimeToDtr($req);
+                }
             }
 
             $this->db->commit();
@@ -3813,35 +4015,61 @@ class Action
             return ['result' => false, 'message' => $e->getMessage()];
         }
 
-        // Notify the employee on their portal bell (recipient_type='employee').
-        $label   = att_request_label($req['request_type']);
-        $datestr = $req['request_date'] ? date('M d, Y', strtotime($req['request_date'])) : '';
+        // Notifications — employee at every step, next approvers on hand-off.
+        $label    = att_request_label($req['request_type']);
+        $datestr  = $req['request_date'] ? date('M d, Y', strtotime($req['request_date'])) : '';
+        $for      = $datestr ? " for $datestr" : '';
+        $emp      = (int) $req['employee_id'];
+        $erow     = $this->db->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp")->fetch_assoc();
+        $ename    = $erow['n'] ?? 'Employee';
+        $link     = 'index.php?page=attendance-requests';
         $emp_link = 'employee-portal.php?tab=att-requests';
-        if ($status == 1) {
-            $this->notifyEmployee(
-                (int) $req['employee_id'],
-                'Request approved',
-                "Your $label" . ($datestr ? " for $datestr" : '') . ' was approved.' . ($remarks ? " Note: $remarks" : ''),
-                'ri-checkbox-circle-line',
-                'success',
-                $emp_link
-            );
+        $stageLbl = $cfg['label'];
+        $hr_stage = leave_stage_for_role(9);
+        $next     = null;
+
+        if ($status === 2) {
+            $this->notifyEmployee($emp, 'Request rejected', "Your $label$for was rejected by $stageLbl." . ($remarks ? " Reason: $remarks" : ''), 'ri-close-circle-line', 'danger', $emp_link);
+            if ($hr_stage !== $stage) {
+                $this->notifyRole(9, ucfirst($label) . ' rejected', "$ename's $label$for was rejected by $stageLbl.", 'ri-close-circle-line', 'danger', $link);
+            }
         } else {
-            $this->notifyEmployee(
-                (int) $req['employee_id'],
-                'Request rejected',
-                "Your $label" . ($datestr ? " for $datestr" : '') . ' was rejected.' . ($remarks ? " Reason: $remarks" : ''),
-                'ri-close-circle-line',
-                'danger',
-                $emp_link
-            );
+            $next = leave_current_stage($r2);
+            if ($next === null) {
+                $this->notifyEmployee($emp, 'Request approved', "Your $label$for has been fully approved." . ($remarks ? " Note: $remarks" : ''), 'ri-checkbox-circle-line', 'success', $emp_link);
+                if ($hr_stage !== $stage) {
+                    $this->notifyRole(9, ucfirst($label) . ' approved', "$ename's $label$for received final approval.", 'ri-checkbox-circle-line', 'success', $link);
+                }
+            } else {
+                $nextCfg = $stages[$next];
+                $this->notifyLeaveStage($next, $emp, ucfirst($label) . ' needs your approval', "$ename's $label$for is awaiting {$nextCfg['label']} approval.", $nextCfg['icon'] ?? 'ri-shield-check-line', 'info', $link);
+                $this->notifyEmployee($emp, "Request approved by $stageLbl", "Your $label$for was approved by $stageLbl. Awaiting {$nextCfg['label']} approval.", 'ri-checkbox-circle-line', 'info', $emp_link);
+            }
         }
 
-        $msg = $status == 1 ? 'Request approved' : 'Request rejected';
-        if (!$ot_applied) {
-            $msg .= '. Warning: no DTR record exists for that date yet, so the OT hours were NOT written to the DTR — enter them on the DTR once attendance for that date is imported.';
+        $final = ($overall !== 0);
+        if ($status === 2) {
+            $msg = "Request rejected at the $stageLbl stage.";
+        } elseif ($final) {
+            $msg = 'Request fully approved.';
+            if ($req['request_type'] === 'undertime') {
+                $msg .= ' The approved hours are excused at payroll time (not deducted); the DTR figure itself is unchanged.';
+            }
+            if (!$ot_applied) {
+                $msg .= ' Warning: no DTR record exists for that date yet, so the OT hours were NOT written to the DTR — enter them on the DTR once attendance for that date is imported.';
+            }
+        } else {
+            $msg = "Approved at the $stageLbl stage — now awaiting {$stages[$next]['label']} approval.";
         }
-        return ['result' => true, 'message' => $msg];
+        return [
+            'result'           => true,
+            'message'          => $msg,
+            'final'            => $final,
+            'status'           => $overall,
+            'stage'            => $stage,
+            'next_stage'       => $next,
+            'next_stage_label' => $next !== null ? $stages[$next]['label'] : null,
+        ];
     }
 
     /**
@@ -4024,7 +4252,8 @@ class Action
     {
         $id   = intval($_POST['id'] ?? 0);
         $role = (int) ($_SESSION['login_role'] ?? 0);
-        if (!in_array($role, [1, 8, 9], true)) {
+        // Admin + HR only, as for leave: approvers in the chain reject, not delete.
+        if (!in_array($role, [1, 9], true)) {
             return ['result' => false, 'message' => 'Not authorized'];
         }
         $stmt = $this->db->prepare("DELETE FROM attendance_requests WHERE id = ? AND status = 0");
@@ -4173,6 +4402,7 @@ class Action
         $total_amount = $_POST['total_amount'] ?? [];
         $effective    = $_POST['effective_date'] ?? [];
         $type         = $_POST['type'] ?? [];
+        $reference    = $_POST['reference_no'] ?? [];
 
         $save = [];
         foreach ($deduction_id as $k => $v) {
@@ -4188,6 +4418,9 @@ class Action
             $data = " employee_id = $employee_id, deduction_id = $did, type = $t,"
                 . " amount = $amt, total_amount = $total, balance = $balance,"
                 . " effective_date = $edate ";
+            // Optional voucher / slip number, same rules as a loan's reference_no.
+            $ref = mb_substr(trim((string) ($reference[$k] ?? '')), 0, 100);
+            $data .= ", reference_no = " . ($ref !== '' ? "'" . $this->db->real_escape_string($ref) . "'" : "NULL") . " ";
             $save[] = $this->db->query("INSERT INTO employee_deductions set " . $data);
         }
 
@@ -4456,6 +4689,51 @@ class Action
     }
 
 
+    /**
+     * "My Profile": the signed-in user changes their OWN display name and/or
+     * password. Nothing else on the users row is touched — role, username,
+     * department, employee link and status stay exactly as the admin set them.
+     *
+     * Separate from save_user() on purpose: that endpoint is the admin's
+     * user-management write (it rewrites role/department/links and is mapped
+     * to the users page, which approver roles cannot open), so routing the
+     * profile form through it both refused every Department / Section Head
+     * and, for an admin, would have clobbered their own role with the form's
+     * missing fields.
+     */
+    function save_profile()
+    {
+        $uid = (int) ($_SESSION['login_id'] ?? 0);
+        if ($uid <= 0) return ['result' => false, 'message' => 'Not signed in.'];
+
+        $name     = trim((string) ($_POST['name'] ?? ''));
+        $password = (string) ($_POST['password'] ?? '');
+        $confirm  = (string) ($_POST['password_confirm'] ?? '');
+
+        if ($name === '')            return ['result' => false, 'message' => 'Name is required.'];
+        if (mb_strlen($name) > 100)  return ['result' => false, 'message' => 'Name is too long (max 100 characters).'];
+
+        $set = ['name = ?'];
+        $types = 's';
+        $vals  = [$name];
+        if ($password !== '') {
+            if (strlen($password) < 8)  return ['result' => false, 'message' => 'Password must be at least 8 characters.'];
+            if ($password !== $confirm) return ['result' => false, 'message' => 'The two passwords do not match.'];
+            $set[]  = 'password = ?';
+            $types .= 's';
+            $vals[] = password_hash($password, PASSWORD_BCRYPT);
+        }
+        $types .= 'i';
+        $vals[] = $uid;
+
+        $stmt = $this->db->prepare("UPDATE users SET " . implode(', ', $set) . " WHERE id = ?");
+        $stmt->bind_param($types, ...$vals);
+        if (!$stmt->execute()) return ['result' => false, 'message' => 'Could not save your profile: ' . $stmt->error];
+
+        $_SESSION['login_name'] = $name;
+        return ['result' => true, 'message' => $password !== '' ? 'Profile saved. Use the new password the next time you sign in.' : 'Profile saved.'];
+    }
+
     function save_user()
     {
         try {
@@ -4481,12 +4759,11 @@ class Action
             $employer_id = mysqli_real_escape_string($this->db, $employer_id);
             $id          = mysqli_real_escape_string($this->db, $id);
 
-            // A Department Head (8) and a Supervisor (10) must each be tied to a
-            // department (used later to approve that department's leave requests).
-            if (in_array((int)$role, [8, 10], true) && $department_id === '') {
-                $label = ((int)$role === 10) ? 'Supervisor' : 'Department Head';
-                return ['result' => false, 'message' => "Please select a department for the $label."];
-            }
+            // Department is optional. It used to be required for a Department Head
+            // (8) and a Supervisor (10), but approval scope moved to area/area_approver
+            // and every existing account carries a NULL department — so the old check
+            // made those accounts uneditable: you could not change a head's name or
+            // password without inventing a department the system no longer reads.
 
             // Only ONE active Supervisor is allowed per department. Block creating
             // (or switching a user into) a second Supervisor for the same dept.
@@ -5433,6 +5710,27 @@ class Action
                     $otApproved[$oid][$oymd] = ($otApproved[$oid][$oymd] ?? 0) + (float) $o['hrs'];
                 }
 
+                // Approved UNDERTIME requests in the period — hours EXCUSED from
+                // the day's undertime deduction. Approval writes nothing onto the
+                // DTR row (a Recompute would erase it), so the excuse is applied
+                // here, next to the paid-leave reduction, and clamped by max(0,…)
+                // so an advance filing can never excuse more than was rendered.
+                $utApproved = [];   // eid => 'Y-m-d' => approved hours (summed)
+                $uq = $this->db->prepare(
+                    "SELECT employee_id, request_date, COALESCE(ot_hours_requested, 0) AS hrs
+                     FROM attendance_requests
+                     WHERE request_type = 'undertime' AND status = 1
+                       AND request_date BETWEEN ? AND ?"
+                );
+                $uq->bind_param('ss', $date_from, $date_to);
+                $uq->execute();
+                $ures = $uq->get_result();
+                while ($u = $ures->fetch_assoc()) {
+                    $uid_ = (int) $u['employee_id'];
+                    $uymd = date('Y-m-d', strtotime($u['request_date']));
+                    $utApproved[$uid_][$uymd] = ($utApproved[$uid_][$uymd] ?? 0) + (float) $u['hrs'];
+                }
+
                 foreach ($result as $row) {
                     $employee_id = $row["employee_id"];
                     $isAutoDeduct = $row["isAutoDeduct"];
@@ -5552,6 +5850,10 @@ class Action
                     } elseif (!empty($leaveMap[$employee_id][$ymd])) {
                         $leave_hours = min(1.0, (float) $leaveMap[$employee_id][$ymd]) * $day_hours;
                         $ut_hours = max(0.0, $ut_hours - $leave_hours);
+                    }
+                    // …and by an approved undertime request (excused early-out).
+                    if (!empty($utApproved[(int) $employee_id][$ymd])) {
+                        $ut_hours = max(0.0, $ut_hours - (float) $utApproved[(int) $employee_id][$ymd]);
                     }
                     $grouped_data[$employee_id]["under_time"] += $ut_hours * 60;
 
@@ -5764,8 +6066,12 @@ class Action
                                 // the DTR measures both in hours, payroll_items stores
                                 // minutes. Cross-cluster days were losing the same 60×.
                                 $data['undertime'] += $data__detail['undertime'];
-                                $data['under_time'] = ($data['under_time'] ?? 0)
-                                    + (empty($data__detail['is_rest_day']) ? (float) $data__detail['undertime'] * 60 : 0);
+                                // Same approved-undertime excuse as the main loop.
+                                $ut2 = empty($data__detail['is_rest_day']) ? (float) $data__detail['undertime'] : 0.0;
+                                if ($ut2 > 0 && !empty($utApproved[(int) $employee_id][$d2ymd_ot])) {
+                                    $ut2 = max(0.0, $ut2 - (float) $utApproved[(int) $employee_id][$d2ymd_ot]);
+                                }
+                                $data['under_time'] = ($data['under_time'] ?? 0) + $ut2 * 60;
                                 $data['late_in_minutes'] += $data__detail['late'] * 60;
                                 // Same whole-day credit as the main loop: late/UT are
                                 // deducted as minutes, so the day they were carved from
@@ -10009,6 +10315,11 @@ class Action
         $data .= ", loan_amount = $loan_amount ";
         $data .= ", loan_status = $loan_status ";
         $data .= ", loan_type = $loan_type ";
+        // Optional lender reference / control number; blank clears it to NULL
+        // (so an edit that empties the box actually removes the old value).
+        $ref = trim((string)($_POST['reference_no'] ?? ''));
+        $ref = mb_substr(preg_replace('/\s+/u', ' ', $ref), 0, 100);
+        $data .= ", reference_no=" . ($ref !== '' ? "'" . $this->db->real_escape_string($ref) . "'" : "NULL") . " ";
         $data .= ", loan_balance = $loan_balance ";
         $data .= ", damount = $damount ";
         // Optional supporting document (image/PDF ≤ 5 MB, shared helper). An
@@ -10876,7 +11187,7 @@ class Action
                 $info = $this->leaveInfo($new_id);
                 [$firstKey, $firstCfg] = leave_first_open_stage($this->db, (int) $new_id);
                 if ($firstCfg) {
-                    $this->notifyRoleForEmployee((int) $firstCfg['role'], $employee_id, 'New leave request', "{$info['emp']} filed a {$info['type']} ({$info['dur']} day/s). Needs {$firstCfg['label']} approval.", $firstCfg['icon'] ?? 'ri-calendar-event-line', 'warning', 'index.php?page=leaves');
+                    $this->notifyLeaveStage($firstKey, $employee_id, 'New leave request', "{$info['emp']} filed a {$info['type']} ({$info['dur']} day/s). Needs {$firstCfg['label']} approval.", $firstCfg['icon'] ?? 'ri-calendar-event-line', 'warning', 'index.php?page=leaves');
                 }
             }
             // Non-blocking: overlapping attendance is legitimate (half-day, or
@@ -11041,9 +11352,9 @@ class Action
                 $this->notifyEmployee($emp, 'Leave fully approved', "Your {$info['type']} has been fully approved.", 'ri-checkbox-circle-line', 'success', $emp_link);
                 $this->notifyRole(9, 'Leave fully approved', "{$info['emp']}'s {$info['type']} received final approval.", 'ri-checkbox-circle-line', 'success', $link);
             } else {
-                // Hand off to the next approver (scoped to the employee's department).
+                // Hand off to the next approver (scoped to the employee's area).
                 $nextCfg = $stages[$next];
-                $this->notifyRoleForEmployee((int) $nextCfg['role'], $emp, 'Leave needs your approval', "{$info['emp']}'s {$info['type']} ({$info['dur']} day/s) is awaiting {$nextCfg['label']} approval.", $nextCfg['icon'] ?? 'ri-shield-check-line', 'info', $link);
+                $this->notifyLeaveStage($next, $emp, 'Leave needs your approval', "{$info['emp']}'s {$info['type']} ({$info['dur']} day/s) is awaiting {$nextCfg['label']} approval.", $nextCfg['icon'] ?? 'ri-shield-check-line', 'info', $link);
                 $this->notifyEmployee($emp, "Leave approved by {$stageLbl}", "Your {$info['type']} was approved by {$stageLbl}. Awaiting {$nextCfg['label']} approval.", 'ri-checkbox-circle-line', 'info', $emp_link);
             }
         }
@@ -13427,32 +13738,25 @@ class Action
         } catch (\Throwable $e) { /* ignore */ }
     }
 
-    // Like notifyRole, but only reaches users of that role who are responsible
-    // for the given employee's department — the Supervisor / Department Head of
-    // that department, plus any unscoped (NULL / 0 department) reviewer of that
-    // role such as HR. Keeps a department's leave alerts out of other
-    // departments' bells.
-    private function notifyRoleForEmployee($role, $employee_id, $title, $message, $icon = 'ri-notification-3-line', $color = 'primary', $link = null)
+    // Notify exactly the people who may decide $stageKey for this employee's
+    // leave — the same set leave_stage_approver_ids() resolves from
+    // area_approver (role + department as a fallback for employees with no
+    // area). Approver accounts all carry department_id NULL, so the older
+    // "same department or unscoped" role predicate matched every Section Head
+    // / Department Head in the hospital and one ward's request rang in every
+    // other ward's bell. The push is targeted the same way.
+    private function notifyLeaveStage(string $stageKey, $employee_id, $title, $message, $icon = 'ri-notification-3-line', $color = 'primary', $link = null)
     {
-        $role        = (int) $role;
         $employee_id = (int) $employee_id;
-
-        $dept = 0;
-        $er = $this->db->query("SELECT department_id FROM employee WHERE id = $employee_id");
-        if ($er && ($e = $er->fetch_assoc())) $dept = (int) $e['department_id'];
-
-        $res = $this->db->query(
-            "SELECT id FROM users
-             WHERE role = $role AND status = 1
-               AND (department_id = $dept OR department_id IS NULL OR department_id = 0)"
-        );
-        if ($res) while ($u = $res->fetch_assoc()) {
-            $this->notify($u['id'], $title, $message, $icon, $color, $link);
+        $ids = leave_stage_approver_ids($this->db, $stageKey, $employee_id);
+        foreach ($ids as $uid) {
+            $this->notify($uid, $title, $message, $icon, $color, $link);
         }
-        // Best-effort browser push to the whole role (never fatal).
+        if (!$ids) return;
+        // Best-effort browser push to those approvers only (never fatal).
         try {
             require_once __DIR__ . '/fcm.php';
-            fcm_push_role($this->db, $role, $title, $message, $link ?: 'index.php');
+            fcm_push_users($this->db, $ids, $title, $message, $link ?: 'index.php');
         } catch (\Throwable $e) { /* ignore */ }
     }
 

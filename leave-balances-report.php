@@ -162,7 +162,7 @@ $topUsers = array_slice(array_filter($topUsers, fn($r) => $r['tot']['used'] > 0)
                     <span class="lb-section-title flex-grow-1"><i class="ri-pie-chart-2-line me-1"></i>Utilization by Leave Type</span>
                     <span class="text-muted" style="font-size:11px;">Year <?= (int) $f['year'] ?></span>
                 </div>
-                <div class="card-body p-0">
+                <div class="card-body p-0 table-responsive">
                     <table class="table mb-0 rpt-table lb-mini-table">
                         <thead>
                             <tr>

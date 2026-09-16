@@ -836,28 +836,26 @@ switch ($action) {
             $firstKey = array_key_last($stages);
             $firstCfg = $stages[$firstKey];
         }
-        $firstRole  = (int) $firstCfg['role'];
         $firstLabel = $firstCfg['label'];
-        $edept      = (int) ($conn->query("SELECT department_id FROM employee WHERE id = $emp_id")->fetch_assoc()['department_id'] ?? 0);
 
         $msg   = $conn->real_escape_string("$ename requested $tname ($durLabel) via portal. Needs {$firstLabel} approval.");
         $title = $conn->real_escape_string('New leave request');
-        // Notify the FIRST approver (scoped to the employee's department) plus the
-        // Administrator (role 1) as an observer, so it also shows in the admin bell.
-        $hrs = $conn->query(
-            "SELECT id FROM users WHERE status = 1 AND (
-                 role = 1
-                 OR (role = $firstRole AND (department_id = $edept OR department_id IS NULL OR department_id = 0))
-             )"
-        );
-        if ($hrs) while ($hu = $hrs->fetch_assoc()) {
-            $uid = (int) $hu['id'];
+        // Notify the FIRST stage's actual approvers — resolved per AREA by
+        // leave_stage_approver_ids(), the same lookup the approval chain uses —
+        // plus the Administrator (role 1) as an observer for the admin bell.
+        // (A role + department match is wrong here: approver accounts all have
+        // department_id NULL, so it reached every Section Head in the hospital.)
+        $recipients = leave_stage_approver_ids($conn, (string) $firstKey, (int) $emp_id);
+        $adm = $conn->query("SELECT id FROM users WHERE status = 1 AND role = 1");
+        if ($adm) while ($au = $adm->fetch_assoc()) $recipients[] = (int) $au['id'];
+        $recipients = array_values(array_unique(array_map('intval', $recipients)));
+        foreach ($recipients as $uid) {
             $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES ($uid,'user','$title','$msg','ri-calendar-event-line','warning','index.php?page=leaves')");
         }
-        // Mirror to reviewer staff browsers as a push (best-effort, never fatal).
+        // Mirror to those same browsers as a push (best-effort, never fatal).
         try {
             require_once __DIR__ . '/fcm.php';
-            fcm_push_role($conn, [1, $firstRole], 'New leave request',
+            fcm_push_users($conn, $recipients, 'New leave request',
                 "$ename requested $tname ($durLabel) via portal.", 'index.php?page=leaves');
         } catch (\Throwable $e) { /* ignore */ }
 
@@ -939,7 +937,15 @@ switch ($action) {
     // modal so the employee sees the cap BEFORE submitting. Advisory only —
     // submit_attendance_request re-checks the same limit server-side.
     case 'ot_request_limit': {
-        $lim = ot_request_limit($conn, $emp_id, trim($_POST['request_date'] ?? $_GET['request_date'] ?? ''));
+        $d = trim($_POST['request_date'] ?? $_GET['request_date'] ?? '');
+        // Undertime has its own ceiling (the day's undertime, to be excused)
+        // and its own grid; every other hour type is measured by ot_request_limit.
+        if (($_POST['request_type'] ?? $_GET['request_type'] ?? '') === 'undertime') {
+            $lim = undertime_request_limit($conn, $emp_id, $d);
+            echo json_encode(['result' => true, 'limit' => $lim, 'min_hours' => UT_REQUEST_MIN_HOURS, 'step' => UT_REQUEST_STEP_HOURS]);
+            break;
+        }
+        $lim = ot_request_limit($conn, $emp_id, $d);
         echo json_encode(['result' => true, 'limit' => $lim, 'min_hours' => OT_REQUEST_MIN_HOURS, 'step' => OT_REQUEST_STEP_HOURS]);
         break;
     }
@@ -978,7 +984,7 @@ switch ($action) {
         $att_notes = trim($_POST['notes'] ?? '');
 
         $hour_type = in_array($req_type, ATT_REQUEST_HOUR_TYPES, true);
-        if (!in_array($req_type, array_merge(['incident'], ATT_REQUEST_HOUR_TYPES), true) || !$req_date || !$reason) {
+        if (!in_array($req_type, ATT_REQUEST_TYPES, true) || !$req_date || !$reason) {
             echo json_encode(['result' => false, 'message' => 'Please complete all required fields.']);
             break;
         }
@@ -990,6 +996,32 @@ switch ($action) {
         if ($hour_type && !$ot_hours) {
             echo json_encode(['result' => false, 'message' => 'Please provide the number of ' . $what . ' hours requested.']);
             break;
+        }
+        // Undertime: hours to be EXCUSED, bounded by the undertime the DTR
+        // shows for that date (or a full duty when nothing is imported yet).
+        if ($req_type === 'undertime') {
+            if (!$ot_hours) {
+                echo json_encode(['result' => false, 'message' => 'Please provide the number of undertime hours to excuse.']);
+                break;
+            }
+            $lim = undertime_request_limit($conn, $emp_id, $req_date);
+            if (!$lim['allowed']) {
+                echo json_encode(['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim]);
+                break;
+            }
+            if ($ot_hours < UT_REQUEST_MIN_HOURS) {
+                echo json_encode(['result' => false, 'message' => 'The smallest undertime you can file is ' . UT_REQUEST_MIN_HOURS . ' hr.', 'ot_limit' => $lim]);
+                break;
+            }
+            if ($ot_hours > $lim['max_hours'] + 0.001) {
+                echo json_encode([
+                    'result'  => false,
+                    'message' => 'You can only file up to ' . $lim['max_hours'] . ' hr of undertime for that date. ' . $lim['message'],
+                    'ot_limit' => $lim,
+                ]);
+                break;
+            }
+            $ot_hours = round($ot_hours, 2);
         }
         // Hours are only fileable against scans that actually show them — past
         // the shift end on a regular day, the whole credited duty on a rest day
@@ -1045,29 +1077,45 @@ switch ($action) {
         }
         $new_id = $ins->insert_id;
 
+        // Same chain as leave: skip the optional stages nobody holds for this
+        // employee's area, then alert exactly the approvers first in line
+        // (area_approver) plus the Administrator as an observer.
+        $ar_skipped = leave_autoskip_stages($conn, (int) $new_id, (int) $emp_id, 'attendance_requests');
+        [$firstKey, $firstCfg] = leave_first_open_stage($conn, (int) $new_id, 'attendance_requests');
+        $firstLabel = $firstCfg['label'] ?? 'approver';
+
         $erow  = $conn->query("SELECT CONCAT(firstname,' ',lastname) AS n FROM employee WHERE id = $emp_id")->fetch_assoc();
         $ename = $erow['n'] ?? 'Employee';
-        $label = $req_type === 'incident' ? 'attendance incident report' : 'overtime request';
-        $msg   = $conn->real_escape_string("$ename filed a $label for " . date('M d, Y', strtotime($req_date)) . '.');
+        $label = att_request_label($req_type);
+        $msg   = $conn->real_escape_string("$ename filed a $label for " . date('M d, Y', strtotime($req_date)) . ". Needs $firstLabel approval.");
         $title = $conn->real_escape_string('New ' . $label);
-        $reviewers = $conn->query("SELECT id FROM users WHERE role IN (1,8,9) AND status = 1");
-        if ($reviewers) while ($ru = $reviewers->fetch_assoc()) {
-            $uid = (int) $ru['id'];
+        $recipients = $firstKey !== null ? leave_stage_approver_ids($conn, (string) $firstKey, (int) $emp_id) : [];
+        $adm = $conn->query("SELECT id FROM users WHERE status = 1 AND role = 1");
+        if ($adm) while ($au = $adm->fetch_assoc()) $recipients[] = (int) $au['id'];
+        $recipients = array_values(array_unique(array_map('intval', $recipients)));
+        foreach ($recipients as $uid) {
             $conn->query("INSERT INTO notifications (user_id, recipient_type, title, message, icon, color, link) VALUES ($uid, 'user', '$title', '$msg', 'ri-error-warning-line', 'warning', 'index.php?page=attendance-requests')");
         }
-        // Mirror to reviewer staff browsers as a push (best-effort, never fatal).
+        // Mirror to those same browsers as a push (best-effort, never fatal).
         try {
             require_once __DIR__ . '/fcm.php';
-            fcm_push_role($conn, [1, 8, 9], 'New ' . $label,
+            fcm_push_users($conn, $recipients, 'New ' . $label,
                 "$ename filed a $label for " . date('M d, Y', strtotime($req_date)) . '.',
                 'index.php?page=attendance-requests');
         } catch (\Throwable $e) { /* ignore */ }
 
         $att_req_pending_count = (int) ($conn->query("SELECT COUNT(*) AS c FROM attendance_requests WHERE employee_id = $emp_id AND status = 0")->fetch_assoc()['c'] ?? 0);
 
+        $submit_msg = "Request submitted! Your $firstLabel will review it shortly.";
+        if ($ar_skipped) $submit_msg .= ' (' . implode(', ', $ar_skipped) . ' skipped — none assigned to your area.)';
+        // Per-stage statuses as stored (auto-skips included) so the optimistic
+        // row the portal draws matches what a reload would show.
+        $stage_seed = array_map('intval', $conn->query("SELECT sec_status, sup_status, admin_status, hr_status FROM attendance_requests WHERE id = " . (int) $new_id)->fetch_assoc() ?: []);
+
         echo json_encode([
             'result'  => true,
-            'message' => 'Request submitted! It will be reviewed shortly.',
+            'message' => $submit_msg,
+            'awaiting' => $firstLabel,
             'att_req_pending_count' => $att_req_pending_count,
             'request' => [
                 'id' => (int) $new_id,
@@ -1081,7 +1129,7 @@ switch ($action) {
                 'attachment' => $att_file,
                 'created_at' => date('Y-m-d H:i:s'),
                 'status' => 0,
-            ],
+            ] + $stage_seed,
         ]);
         break;
     }
@@ -1095,7 +1143,8 @@ switch ($action) {
 
         $ls = $conn->prepare(
             "SELECT l.loan_id, l.loan_amount, l.loan_balance, l.damount, l.loan_date,
-                    l.effective_date, l.loan_status, COALESCE(clt.loan_type, 'Loan') AS type_name
+                    l.effective_date, l.loan_status, l.reference_no,
+                    COALESCE(clt.loan_type, 'Loan') AS type_name
              FROM loans l
              LEFT JOIN contribution_loan_types clt ON clt.clt_id = l.loan_type
              WHERE l.loan_id = ? AND l.employee_id = ?"
@@ -1148,6 +1197,7 @@ switch ($action) {
                 'damount'        => (float) $loan['damount'],
                 'loan_date'      => $loan['loan_date'] ? date('M d, Y', strtotime($loan['loan_date'])) : '',
                 'effective_date' => $loan['effective_date'] ? date('M d, Y', strtotime($loan['effective_date'])) : '',
+                'reference_no'   => (string) ($loan['reference_no'] ?? ''),
                 'settled'        => (int) $loan['loan_status'] === 1,
             ],
             // Sum of the ledger rows — may differ from (amount - balance) when a

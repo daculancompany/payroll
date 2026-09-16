@@ -2486,7 +2486,11 @@ function filingChip(r) {
 // local model, so a queue the admin has scrolled and filtered never resets.
 function reviewFiling(reqId, recId) {
     AttReqReview.open(reqId, {
-        onDecided: (status, q) => {
+        onDecided: (status, q, json) => {
+            // The filing runs the same staged chain as leave: a mid-chain
+            // approval keeps the request pending (status 0, json.final false),
+            // so the record's mark only changes once the chain has a verdict.
+            if (json && !json.final) { toast(json.message || 'Approved — awaiting the next stage'); return; }
             // Every record on that employee's SAME DATE is covered by the one
             // filing, so they all clear together — the same way the server's
             // gate reads it (per employee + date, not per record).

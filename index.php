@@ -1357,7 +1357,7 @@ function getRole($login_role)
     <?php } ?>
 
     <?php if ($page == 'employee' || $page == 'employee-details') { ?>
-        <script src="assets2/js/employee.js?v=10"></script>
+        <script src="<?= av('assets2/js/employee.js') ?>"></script>
     <?php } ?>
     <?php if ($page == 'schedule-roster') { ?>
         <script src="assets2/js/schedule-roster.js?v=1"></script>
@@ -1396,7 +1396,7 @@ function getRole($login_role)
     <?php } ?>
 
     <?php if ($page == 'users') { ?>
-        <script src="assets2/js/user.js"></script>
+        <script src="<?= av('assets2/js/user.js') ?>"></script>
     <?php } ?>
 
     <?php if ($page == 'dtr') { ?>

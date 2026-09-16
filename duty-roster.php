@@ -51,10 +51,14 @@ $__areas = area_scope_ids();
 // wards rather than the departments containing them — four nurse stations share
 // one department, so a department name would not tell them which sheet is open.
 // The counts come from employee.area_id for the same reason.
+// The option value is the AREA id, not the department id: four wards share one
+// department, so a department value made every ward option load the same grid
+// (all of the head's wards). duty-roster.js reads data-scope="area" and posts
+// the value as area_id.
 $__depts = [];
 if ($__areas !== []) {
     $in = implode(',', array_map('intval', $__areas));
-    $__dq = $conn->query("SELECT a.department_id AS id, a.name, COUNT(e.id) AS n
+    $__dq = $conn->query("SELECT a.id, a.name, COUNT(e.id) AS n
                           FROM area a LEFT JOIN employee e ON e.area_id = a.id AND e.status = 1
                           WHERE a.id IN ($in)
                           GROUP BY a.id, a.name ORDER BY a.name ASC");
@@ -899,6 +903,7 @@ table.dr-covtbl thead .dr-emp { background:#eae5f6;
             <div class="<?= $__areas === [] ? 'col-md-3' : 'col-md-6' ?>">
                 <div class="lbl"><i class="ri-building-line me-1"></i>Department</div>
                 <select class="form-select form-select-sm" id="dr-dept" autocomplete="off"
+                        data-scope="<?= $__areas !== [] ? 'area' : 'department' ?>"
                         data-cs-title="Department" data-cs-icon="ri-building-line" data-cs-search="true">
                     <?php /* "" is "nothing chosen yet"; "0" is the real ALL option. They are
                              deliberately different values — collapsing them would make an

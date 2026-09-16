@@ -210,6 +210,10 @@ if ($action == "save_area_approvers") {
 	echo json_encode($crud->save_area_approvers());
 	return;
 }
+if ($action == "save_department_approvers") {
+	echo json_encode($crud->save_department_approvers());
+	return;
+}
 if ($action == "save_department") {
 	$save = $crud->save_department();
 	if ($save)
@@ -340,6 +344,9 @@ if ($action == "save_site") {
 		echo json_encode($save);
 }
 
+if ($action == "save_profile") {
+	echo json_encode($crud->save_profile());
+}
 if ($action == "save_user") {
 	$save = $crud->save_user();
 	if ($save)

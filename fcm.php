@@ -133,6 +133,27 @@ function fcm_push_role($db, $roles, $title, $body, $link = 'index.php', $tag = '
     );
 }
 
+/**
+ * Push a data message to the registered browser(s) of specific staff accounts.
+ * Leave alerts use this with the area's approver list so a ward's request does
+ * not buzz every Section Head / Department Head in the hospital.
+ *
+ * @param mysqli $db
+ * @param int[]  $user_ids
+ */
+function fcm_push_users($db, array $user_ids, $title, $body, $link = 'index.php', $tag = 'comc-payroll')
+{
+    $ids = array_values(array_unique(array_filter(array_map('intval', $user_ids), function ($v) { return $v > 0; })));
+    if (!$ids) {
+        return 0;
+    }
+    return fcm_push_where(
+        $db,
+        "recipient_type = 'user' AND user_id IN (" . implode(',', $ids) . ")",
+        $title, $body, $link, $tag
+    );
+}
+
 function fcm_push_where($db, $where, $title, $body, $link, $tag)
 {
     if (!fcm_available()) {

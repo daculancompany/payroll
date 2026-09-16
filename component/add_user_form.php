@@ -50,15 +50,20 @@
                             </select>
                         </div>
 
-                        <!-- Department — required for a Department Head (role 8) and a Supervisor
-                             (role 10); both approve their own department's leave requests. -->
+                        <!-- Department — optional, and only offered to a Department Head (role 8)
+                             or a Supervisor (role 10). It is NOT what scopes approvals any more:
+                             every approver is scoped per area on the Areas page (area_approver),
+                             which is why every existing account carries a NULL department. The
+                             field stays for the legacy reports that still read users.department_id,
+                             so it must never block a save. -->
                         <div class="col-md-12 d-none" id="department-wrapper">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
-                                <i class="ri-community-line me-1"></i>Department <span class="text-danger">*</span>
+                                <i class="ri-community-line me-1"></i>Department
+                                <small style="text-transform:none;color:#888;font-weight:400;">(optional)</small>
                             </label>
                             <select class="form-control select2" id="department_id" name="department_id"
-                                data-placeholder="Select department"
-                                data-parsley-required-message="Please select department.">
+                                data-placeholder="Select department">
+                                <option value="">&mdash; None &mdash;</option>
                                 <?php
                                 $dept_forms = $conn->query("SELECT * FROM department ORDER BY name ASC");
                                 while ($row_dept = $dept_forms->fetch_assoc()):
@@ -66,6 +71,25 @@
                                     <option value="<?= $row_dept['id'] ?>"><?= htmlspecialchars($row_dept['name']) ?></option>
                                 <?php endwhile; ?>
                             </select>
+                            <div class="form-text" style="font-size:11px;">
+                                Approval scope is set per area on the
+                                <a href="index.php?page=area" target="_blank">Areas page</a>, not here.
+                            </div>
+                        </div>
+
+                        <!-- Which areas this approver actually covers. Read-only: area_approver
+                             rows are owned by the Areas page, and duplicating the editor here
+                             would give the same assignment two places to disagree. Filled by
+                             edit_function() in assets2/js/user.js. -->
+                        <div class="col-md-12 d-none" id="user-areas-wrapper">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                <i class="ri-node-tree me-1"></i>Areas <span id="user-areas-count" style="text-transform:none;color:#888;font-weight:400;"></span>
+                            </label>
+                            <div id="user-areas-list"
+                                style="font-size:12px;border:1px solid #d0d7ee;border-radius:4px;padding:6px 10px;background:#f7f8fc;"></div>
+                            <div class="form-text" style="font-size:11px;">
+                                <a href="index.php?page=area" target="_blank"><i class="ri-external-link-line me-1"></i>Manage on the Areas page</a>
+                            </div>
                         </div>
 
                         <!-- Which employee this login belongs to. Only needed for an approver

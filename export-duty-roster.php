@@ -47,6 +47,7 @@ $period = (string) ($_GET['period'] ?? '');
 $range  = $crud->dutyPeriodRange($period);
 if (!$range) { http_response_code(400); echo 'Invalid cutoff period.'; exit; }
 $deptId = (int) ($_GET['department_id'] ?? 0);
+$areaId = (int) ($_GET['area_id'] ?? 0);
 // A Department Head / Supervisor gets their own ward whatever the URL says.
 // dutyRosterEmployees() enforces this again on the row set; doing it here as
 // well keeps the title, the filename and the sheet stamp honest — a file
@@ -63,8 +64,15 @@ if ($deptId > 0) {
     $dq = $conn->query("SELECT name FROM department WHERE id = $deptId LIMIT 1");
     $deptName = ($dq && ($d = $dq->fetch_assoc())) ? $d['name'] : ('Department #' . $deptId);
 }
+// One ward chosen: name the file and sheet after it, not "All departments".
+if ($areaId > 0) {
+    $aq = $conn->query("SELECT a.name, d.name AS dept FROM area a LEFT JOIN department d ON d.id = a.department_id WHERE a.id = $areaId LIMIT 1");
+    if ($aq && ($a = $aq->fetch_assoc())) {
+        $deptName = ($deptId > 0 ? $deptName : (string) $a['dept']) . ' - ' . $a['name'];
+    }
+}
 
-$employees = $crud->dutyRosterEmployees($deptId, $range['from'], $range['to']);
+$employees = $crud->dutyRosterEmployees($deptId, $range['from'], $range['to'], $areaId);
 if (!$employees) { http_response_code(404); echo 'No employees in this view.'; exit; }
 $empIds = array_column($employees, 'id');
 $zones  = $crud->dutyZoneMap($range['from'], $range['to'], $empIds);

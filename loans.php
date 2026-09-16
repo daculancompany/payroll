@@ -183,6 +183,9 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
                                         <td style="padding:8px 12px;font-size:12px;"><?= htmlspecialchars($l['dept_name']) ?></td>
                                         <td style="padding:8px 12px;">
                                             <span style="background:#f0ecf6;color:#4e3483;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;"><?= htmlspecialchars($l['loan_type_name']) ?></span>
+                                            <?php if (!empty($l['reference_no'])): ?>
+                                                <div style="font-size:10px;color:#6642aa;font-family:monospace;margin-top:3px;" title="Reference number"><i class="ri-hashtag me-1"></i><?= htmlspecialchars($l['reference_no']) ?></div>
+                                            <?php endif; ?>
                                         </td>
                                         <td style="padding:8px 12px;text-align:right;font-size:12px;">₱<?= number_format($l['loan_amount'], 2) ?></td>
                                         <td style="padding:8px 12px;text-align:right;font-size:12px;color:#28a745;">₱<?= number_format($l['amount_paid'], 2) ?></td>

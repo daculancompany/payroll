@@ -7,6 +7,9 @@ if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
 
 $emp_id = (int) $_GET['id']; // Cast to integer for security
 
+// Shared leave display helpers — the Leave tab prints each request's filed days.
+require_once __DIR__ . '/includes/leave_timeline.php';
+
 // One global answer for "may this role change anything here?" — the same
 // can_edit() that ajax.php enforces on every write endpoint (db_connect.php).
 // HR reads people records but does not change them, so their buttons are not
@@ -944,6 +947,11 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                 <tr>
                                                     <td>
                                                         <span style="font-weight:600;"><?= esc($row['loan_type']) ?></span>
+                                                        <?php if (!empty($row['reference_no'])): ?>
+                                                            <div style="font-size:10px;color:#6642aa;font-family:monospace;margin-top:1px;" title="Reference number">
+                                                                <i class="ri-hashtag me-1"></i><?= esc($row['reference_no']) ?>
+                                                            </div>
+                                                        <?php endif; ?>
                                                         <?php if (!empty($row['attachment'])): ?>
                                                             <a href="uploads/<?= rawurlencode($row['attachment']) ?>" class="att-view"
                                                                data-att-name="<?= htmlspecialchars($row['attachment']) ?>"
@@ -982,6 +990,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                                 loan_balance="<?= $row['loan_balance'] ?>" damount="<?= $row['damount'] ?>"
                                                                 loan_amount="<?= $row['loan_amount'] ?>" loan_date="<?= $row['loan_date'] ?>"
                                                                 effective_date="<?= esc($row['effective_date'] ?? '') ?>"
+                                                                reference_no="<?= esc($row['reference_no'] ?? '') ?>"
                                                                 loan_type="<?= $row['loan_type_id'] ?>" loan_status="<?= $row['loan_status'] ?>"
                                                                 onclick="editLoan(this)"
                                                                 data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Loan">
@@ -1139,7 +1148,14 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                             ?>
                                                 <?php $amortizing = (float)$row['total_amount'] > 0; ?>
                                                 <tr>
-                                                    <td><span style="font-weight:600;"><?= esc($row['dname']) ?></span></td>
+                                                    <td>
+                                                        <span style="font-weight:600;"><?= esc($row['dname']) ?></span>
+                                                        <?php if (!empty($row['reference_no'])): ?>
+                                                            <div style="font-size:10px;color:#6642aa;font-family:monospace;margin-top:1px;" title="Reference number">
+                                                                <i class="ri-hashtag me-1"></i><?= esc($row['reference_no']) ?>
+                                                            </div>
+                                                        <?php endif; ?>
+                                                    </td>
                                                     <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['amount'], 2) ?></span></td>
                                                     <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['total_amount'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
                                                     <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['balance'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
@@ -1611,7 +1627,15 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     <td><span class="badge bg-info-subtle text-info border border-info-subtle"><?= esc($row['leave_type_name']) ?></span></td>
                                                     <td class="text-center">
                                                         <b><?= rtrim(rtrim(number_format($row['duration'], 1), '0'), '.') ?></b> day(s)
-                                                        <div class="text-muted" style="font-size:11px;"><?= date('M d', strtotime($row['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($row['date_to'])) ?></div>
+                                                        <?php if ($row['is_half_day']): ?>
+                                                            <span class="badge bg-warning text-dark ms-1" style="font-size:10px;">
+                                                                <?= esc($row['half_period']) ?> Half<?= !empty($row['half_date']) && (float)$row['duration'] > 0.5 ? ' · ' . date('M j', strtotime($row['half_date'])) : '' ?>
+                                                            </span>
+                                                        <?php endif; ?>
+                                                        <?php /* The days actually filed, not date_from–date_to: a split
+                                                                 leave (Sep 28–29 plus Oct 7–9) would otherwise read as
+                                                                 twelve days. Hover for each day with its weekday. */ ?>
+                                                        <div class="text-muted" style="font-size:11px;" title="<?= esc(leave_days_title($row)) ?>"><?= leave_days_label($row) ?></div>
                                                     </td>
                                                     <td style="max-width:220px;"><span class="text-muted"><?= nl2br(esc($row['reason'] ?? '')) ?></span>
                                                         <?php

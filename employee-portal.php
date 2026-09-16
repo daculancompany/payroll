@@ -4071,7 +4071,22 @@ function toggleAttFields(type) {
     }
     var form = document.getElementById('att-request-form');
     if (form && window.jQuery && jQuery(form).parsley) { jQuery(form).parsley().reset(); }
+    setAttReqDateMax(type);
     refreshOtLimit();
+}
+
+// How far ahead the date picker allows, per request type. An incident report
+// repairs scans that already happened, so it stops at today. Overtime, rest-day
+// work and undertime are AUTHORIZATIONS — the server (ot_request_limit /
+// undertime_request_limit) accepts them in advance, capped at the per-day
+// ceiling, so the picker must not stand in the way. The picker is created in
+// a later ready-handler; until then there is nothing to update.
+function setAttReqDateMax(type) {
+    var $rd = window.jQuery ? jQuery('#att-req-date') : null;
+    var dp  = $rd && $rd.length ? $rd.data('daterangepicker') : null;
+    if (!dp) return;
+    dp.maxDate = (!type || type === 'incident') ? moment().endOf('day') : false;
+    if (dp.isShowing) dp.updateView();
 }
 
 // ── OT ceiling for the selected date ─────────────────────────────────────────
@@ -4132,7 +4147,7 @@ function refreshOtLimit() {
     if (!typeEl || (ATT_HOUR_TYPES.indexOf(typeEl.value) === -1 && !isUt)) { setOtHint('', 'busy'); return; }
     if (!date) { setOtHint(isUt
         ? 'Pick the date first — what you may file is limited to the undertime your DTR shows for that day.'
-        : 'Pick the date first — what you may file is limited to the hours your scans actually show for that day.', 'busy'); return; }
+        : 'Pick the date first — what you may file is limited to the hours your scans show for that day (a day not rendered yet can be filed in advance).', 'busy'); return; }
 
     setOtHint(isUt ? 'Checking your DTR for that date…' : 'Checking your scans for that date…', 'busy');
     var seq = ++_otLimitSeq;
@@ -4168,12 +4183,14 @@ function refreshOtLimit() {
             // Prefill with everything the day's scans support — filing the OT
             // actually rendered is the whole point of the form, so typing the
             // number back in by hand is busywork. A value the employee edited
-            // themselves (otAuto '0') is left alone.
+            // themselves (otAuto '0') is left alone. Filed in advance there are
+            // no scans and the cap is the per-day ceiling, which is not a
+            // figure anyone means to file — the employee types what they plan.
             if (input.dataset.otAuto !== '0') {
-                input.value = String(lim.max_hours);
+                input.value = lim.advance ? '' : String(lim.max_hours);
                 input.dataset.otAuto = '1';
             }
-            setOtHint(lim.message, 'ok');
+            setOtHint(lim.message, lim.advance ? 'busy' : 'ok');
         } else {
             input.value = '';
             // Short message on the field — the full reason is in the hint below it.
@@ -5056,6 +5073,15 @@ wireAjaxForm('att-request-form', 'submit_attendance_request', function (res) {
     document.getElementById('att-req-date').value = '';
     document.getElementById('att-req-date-hidden').value = '';
     if (window.AttachUpload) AttachUpload.clear(document.getElementById('att-req-attach'));
+    // form.reset() blanks the two native inputs but not the clock-timepicker
+    // element's own value or the wrapper's has-val state — the next incident
+    // filing then skipped the shift prefill ("already set") over a blank box.
+    // Same steps as the field's own clear button.
+    document.querySelectorAll('#att-request-form .ctp-12h').forEach(function (wrap) {
+        var ctp = wrap.querySelector('clock-timepicker');
+        if (ctp) { ctp.value = ''; var inner = ctp.querySelector('input'); if (inner) inner.value = ''; }
+        if (wrap._ctpSync) wrap._ctpSync();
+    });
     toggleAttFields('');
     prependAttRequestRow(res.request);
     PENDING.att = res.att_req_pending_count;
@@ -6384,9 +6410,13 @@ $(function () {
         singleDatePicker: true,
         autoUpdateInput: false,
         showDropdowns: true,
-        maxDate: moment(),
+        // Only the default: setAttReqDateMax lifts it for the request types
+        // that may be filed in advance the moment one is chosen.
+        maxDate: moment().endOf('day'),
         locale: { format: 'MMM D, YYYY', cancelLabel: 'Clear' }
     });
+    var typeSel0 = document.getElementById('att-req-type');
+    if (typeSel0 && typeof setAttReqDateMax === 'function') setAttReqDateMax(typeSel0.value);
     $rd.on('apply.daterangepicker', function (ev, picker) {
         $rd.val(picker.startDate.format('MMM D, YYYY'));
         $('#att-req-date-hidden').val(picker.startDate.format('YYYY-MM-DD'));

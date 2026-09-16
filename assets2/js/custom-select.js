@@ -603,6 +603,21 @@
     function boot() {
         scan(document);
         bindDatePills();
+        // form.reset() puts every native select back to its default option but
+        // fires no 'change', so the skin kept showing the value just submitted —
+        // the "File a Request" modal reopened reading "Overtime Authorization"
+        // over a blank native control. 'reset' is dispatched BEFORE the browser
+        // restores the values, hence the deferral; capture, because the event
+        // does not bubble to the document in older engines.
+        document.addEventListener('reset', function (e) {
+            var form = e.target;
+            if (!form || form.tagName !== 'FORM') return;
+            setTimeout(function () {
+                Array.prototype.forEach.call(form.querySelectorAll('select'), function (sel) {
+                    if (sel._cs) syncLabel(sel);
+                });
+            }, 0);
+        }, true);
         // Late arrivals: ajax-rendered modals, DataTables' length menu, etc.
         new MutationObserver(function (muts) {
             muts.forEach(function (m) {

@@ -174,7 +174,8 @@ $reasonLabels = [
                                             SELECT ar.*, CONCAT(e.lastname, ', ', e.firstname) AS employee_name, e.employee_no,
                                                    ru.name AS reviewer_name,
                                                    se.name AS sec_name, su.name AS sup_name, au.name AS admin_name, hu.name AS hr_name,
-                                                   cu.name AS cancelled_name
+                                                   cu.name AS cancelled_name,
+                                                   " . att_request_rendered_sql('ar') . "
                                             FROM attendance_requests ar
                                             INNER JOIN employee e ON e.id = ar.employee_id
                                             LEFT JOIN users ru ON ru.id = ar.reviewed_by
@@ -246,6 +247,17 @@ $reasonLabels = [
                                                 <?php endif; ?>
                                                 <?php if ($row['ot_hours_requested']): ?>
                                                     <div><b><?= $row['ot_hours_requested'] ?> hrs</b> <?= $row['request_type'] === 'rest_day' ? 'rendered' : ($row['request_type'] === 'undertime' ? 'to excuse' : 'requested') ?></div>
+                                                <?php endif; ?>
+                                                <?php
+                                                // Authorized vs rendered, once the date is over (att_request_rendered):
+                                                // an advance filing is only a promise until the scans confirm it.
+                                                if ($rd = att_request_rendered($row)):
+                                                    [$rdCls, $rdIcon] = [
+                                                        'none'  => ['bg-danger-subtle text-danger border-danger-subtle',   'ri-close-circle-line'],
+                                                        'short' => ['bg-warning-subtle text-warning border-warning-subtle', 'ri-timer-flash-line'],
+                                                        'met'   => ['bg-success-subtle text-success border-success-subtle', 'ri-checkbox-circle-line'],
+                                                    ][$rd['state']]; ?>
+                                                    <span class="badge border <?= $rdCls ?>" title="What the DTR shows for that date against the approved hours — payroll pays the smaller of the two"><i class="<?= $rdIcon ?> me-1"></i><?= htmlspecialchars($rd['label']) ?></span>
                                                 <?php endif; ?>
                                             </td>
                                             <td style="max-width:180px;">

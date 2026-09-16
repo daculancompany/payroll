@@ -236,6 +236,16 @@ window.AttReqReview = (function () {
                               + ' · shift ends ' + esc(lim.shift_end) + ' · <b>' + lim.undertime_hours + ' hr</b> undertime'
                             : '<b>No DTR record for this date yet</b> — the excuse is capped at the undertime the scans finally show')
                         + '<br>Up to <b>' + lim.max_hours + ' hr</b> can be excused for this date.';
+                } else if (lim.advance) {
+                    // Filed before the day was rendered: no scans to show, and
+                    // the ceiling is the per-day cap. What is approved here is
+                    // what payroll caps the scans' overtime at, never pay on
+                    // its own — so the figure is the authorization, not the pay.
+                    hint.style.background = '#f5f3f9'; hint.style.borderColor = '#e0dbea'; hint.style.color = '#4e3483';
+                    hint.innerHTML = '<i class="ri-calendar-event-line me-1"></i><b>Filed in advance</b> — '
+                        + (lim.time_in ? 'time-out not scanned yet' : 'no scans for this date yet')
+                        + (lim.rest_day ? ' (rest day)' : ' · shift ends ' + esc(lim.shift_end))
+                        + '<br>Up to <b>' + lim.max_hours + ' hr</b> can be authorized; pay is capped at the overtime the scans finally show.';
                 } else {
                     hint.innerHTML = '<i class="ri-fingerprint-line me-1"></i><b>Their scans:</b> '
                         + esc(lim.time_in) + ' &ndash; ' + esc(lim.time_out)

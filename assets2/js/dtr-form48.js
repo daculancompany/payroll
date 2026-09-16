@@ -128,9 +128,12 @@
         // means "day off" everywhere in the app, not a different mark per screen.
         if (m.k === 'off') return { cls: 'dm-off', ltr: '<i class="ri-moon-line"></i>', note: 'DAY OFF' };
         var reqNote = { overtime: 'OT REQUEST', rest_day: 'REST DAY WORK REQUEST', undertime: 'UNDERTIME EXCUSE REQUEST' }[m.t] || 'INCIDENT REPORT';
+        // m.nr: approved, the day is past, and nobody scanned — an
+        // authorization (filed in advance) that was never rendered. Said on
+        // the blank row itself, so the sheet explains the empty day.
         return {
             cls: 'dm-req', ltr: '<i class="ri-time-line"></i>',
-            note: reqNote + (m.s === 0 ? ' (PENDING)' : ' (APPROVED)')
+            note: reqNote + (m.s === 0 ? ' (PENDING)' : (m.nr ? ' (APPROVED · NOT RENDERED)' : ' (APPROVED)'))
         };
     }
 

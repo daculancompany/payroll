@@ -2284,6 +2284,11 @@ if (!function_exists('dtr_schedule_mismatches')) {
 // then floored onto the 0.5-hour grid the form uses, clamped to the per-day
 // hard ceiling, and reduced by whatever the employee already has pending or
 // approved for that same date (so 4 × "2 hrs" can't sneak past a 3-hour cap).
+//
+// A day not rendered yet (today or later, no paired in/out) may be filed IN
+// ADVANCE — an authorization asked for before the work — up to the per-day
+// hard ceiling. That is safe because payroll pays min(row.overtime, approved),
+// so the scans still cap the pay from the other side once they land.
 if (!defined('OT_REQUEST_MIN_HOURS'))         define('OT_REQUEST_MIN_HOURS', 0.5);
 if (!defined('OT_REQUEST_STEP_HOURS'))        define('OT_REQUEST_STEP_HOURS', 0.5);
 if (!defined('OT_REQUEST_MAX_HOURS_PER_DAY')) define('OT_REQUEST_MAX_HOURS_PER_DAY', 12);
@@ -2398,6 +2403,12 @@ if (!function_exists('ot_request_limit')) {
             'shift_end'    => '',
             'rest_day'     => false,
             'request_type' => 'overtime',
+            // true when the date has not been rendered yet (today or later,
+            // no paired in/out): the filing is an authorization made in
+            // advance, so the ceiling is the per-day hard cap rather than the
+            // scans, and payroll's min(row.overtime, approved) is what keeps
+            // an over-filed advance request from ever turning into pay.
+            'advance'      => false,
         ];
 
         $ts = strtotime($date);
@@ -2405,13 +2416,12 @@ if (!function_exists('ot_request_limit')) {
             $out['message'] = 'Please select a valid date.';
             return $out;
         }
-        $ymd = date('Y-m-d', $ts);
-        if ($ymd > date('Y-m-d')) {
-            $out['message'] = 'You cannot file overtime for a future date — file it after you have rendered and scanned it.';
-            return $out;
-        }
+        $ymd     = date('Y-m-d', $ts);
         $ymdEsc  = $db->real_escape_string($ymd);
         $dateStr = date('M d, Y', $ts);
+        // A day that may still be rendered. A PAST day with no scans stays
+        // unfileable — that is a missing record, which an Incident Report fixes.
+        $advance = ($ymd >= date('Y-m-d'));
 
         // The day's actual scans — plus the shift STAMPED on the row when they
         // were recorded. The stamp is what the employee's own DTR line was
@@ -2425,7 +2435,7 @@ if (!function_exists('ot_request_limit')) {
              ORDER BY id DESC LIMIT 1"
         );
         $rec = $rec ? $rec->fetch_assoc() : null;
-        if (!$rec) {
+        if (!$rec && !$advance) {
             $out['message'] = "No attendance record for $dateStr yet. Overtime can only be filed for a day you actually scanned — if a scan is missing, file an Incident Report for that date first.";
             return $out;
         }
@@ -2450,78 +2460,89 @@ if (!function_exists('ot_request_limit')) {
         // Same pairing the DTR itself used — including the early-tap filter, or
         // a stray morning scan on a graveyard day would be read as the IN and
         // hand the employee a whole extra day of "rendered" hours to file.
-        $pair   = dtr_pair_logs($log_ts, $ymd, $sched['start_time'] ?? null);
+        $pair   = $rec ? dtr_pair_logs($log_ts, $ymd, $sched['start_time'] ?? null) : ['in' => null, 'out' => null];
         $in_ts  = $pair['in'];
         $out_ts = $pair['out'];
-        if (!$in_ts || !$out_ts) {
+        if ((!$in_ts || !$out_ts) && !$advance) {
             $out['message'] = "Your record for $dateStr has no time-out scan, so there is nothing showing you worked past your shift. File an Incident Report for the missing scan first.";
             return $out;
         }
-        // Plain strings for the messages below (which end up in plain-text
-        // contexts too), plus the app's own punch renderer for the UI — so an
-        // overnight out carries the same "+1" chip here as on the DTR line.
-        $out['time_in']       = date('g:i A', $in_ts);
-        $out['time_out']      = date('g:i A', $out_ts);
-        $out['time_in_html']  = dtr_punch_time($ymd, $in_ts, 'g:i A');
-        $out['time_out_html'] = dtr_punch_time($ymd, $out_ts, 'g:i A');
 
         // Rest day → duty up to one full day's hours is paid AUTOMATICALLY from
         // the punches (basic + rest-day premium in payroll), so it must not be
         // filed as OT too — that double-paid the same hours. Only time rendered
         // BEYOND the full duty is fileable. Regular day → only the part past the
         // shift end (dtr_compute_day, so this always agrees with the DTR).
-        $out['rest_day'] = $ctx['rest_day'];
-
-        $duty  = day_hours_or_default($sched['total_hours'] ?? null);
-        $break = ($sched['break_minutes'] ?? 60) / 60;
-
-        // What the DTR credits for the day — the figure the employee sees on
-        // their own DTR line, so the form can show it back to them instead of
-        // making them work it out from two clock times.
-        $calc = dtr_compute_day($db, $employee_id, $ymd, $log_ts);
-        $out['rendered_hours'] = round(max(0, (float) $calc['work_hours'] + (float) $calc['overtime']), 2);
-        $out['duty_hours']     = round((float) $duty, 2);
-        $out['date_label']     = $dateStr;
-
-        if ($out['rest_day']) {
-            // The WHOLE rest day is filed, not just the part beyond the duty:
-            // with pay_settings.rest_day_auto_authorize off, this filing is the
-            // authorization for working the day off at all, so it has to be
-            // able to name every hour rendered. It is measured against the
-            // hours the DTR CREDITS rather than the raw punch span — the span
-            // counts early arrival the DTR never pays, and a ceiling must never
-            // promise more than the record behind it can defend.
-            //
-            // Filing all 7.68 does NOT pay them twice: approving a rest-day
-            // request writes nothing onto the row (applyOvertimeToDtr), and
-            // payroll pays min(row.overtime, approved hours) — so the duty
-            // hours stay paid once, as a present day plus the 30% premium.
-            $excess = $out['rendered_hours'];
-        } else {
-            $excess = round(max(0, (float) $calc['overtime']), 2);
-        }
-        $out['excess_hours'] = $excess;
+        $out['rest_day']   = $ctx['rest_day'];
+        $out['duty_hours'] = round((float) day_hours_or_default($sched['total_hours'] ?? null), 2);
+        $out['date_label'] = $dateStr;
         // Which filing this day needs. The UI reads it instead of re-deriving
         // the rest-day rule, and the server re-checks it on submit.
         $out['request_type'] = $out['rest_day'] ? 'rest_day' : 'overtime';
 
-        // Floor onto the form's 0.5 grid so the cap is never rounded UP past
-        // what was actually rendered, then apply the per-day hard ceiling.
-        $step = OT_REQUEST_STEP_HOURS;
-        $cap  = min(floor($excess / $step) * $step, (float) OT_REQUEST_MAX_HOURS_PER_DAY);
+        if (!$in_ts || !$out_ts) {
+            // ── Filed in advance: nothing rendered yet ─────────────────────
+            // An authorization asked for BEFORE the work, so there are no
+            // scans to measure it against. The ceiling is the per-day hard
+            // cap; the figure the approver authorizes is what payroll caps
+            // the scans' overtime at (min(row.overtime, approved)), never a
+            // figure paid on its own — so over-filing here cannot over-pay.
+            // An in-scan with no out yet (still on duty today) is the same
+            // case: the day is not finished, the OT is not measurable yet.
+            $out['advance'] = true;
+            $cap = (float) OT_REQUEST_MAX_HOURS_PER_DAY;
+        } else {
+            // Plain strings for the messages below (which end up in plain-text
+            // contexts too), plus the app's own punch renderer for the UI — so an
+            // overnight out carries the same "+1" chip here as on the DTR line.
+            $out['time_in']       = date('g:i A', $in_ts);
+            $out['time_out']      = date('g:i A', $out_ts);
+            $out['time_in_html']  = dtr_punch_time($ymd, $in_ts, 'g:i A');
+            $out['time_out_html'] = dtr_punch_time($ymd, $out_ts, 'g:i A');
 
-        if ($cap < OT_REQUEST_MIN_HOURS) {
-            $min  = rtrim(rtrim(number_format(OT_REQUEST_MIN_HOURS, 2), '0'), '.');
-            $span = "$dateStr ({$out['time_in']} – {$out['time_out']})";
+            // What the DTR credits for the day — the figure the employee sees on
+            // their own DTR line, so the form can show it back to them instead of
+            // making them work it out from two clock times.
+            $calc = dtr_compute_day($db, $employee_id, $ymd, $log_ts);
+            $out['rendered_hours'] = round(max(0, (float) $calc['work_hours'] + (float) $calc['overtime']), 2);
+
             if ($out['rest_day']) {
-                $out['message'] = "Your scans for $span credit only $excess hr of rest-day duty — less than the $min hr minimum, so there is nothing to file for that date.";
-            } elseif ($excess > 0) {
-                // Went past the shift end, but by less than one filing step.
-                $out['message'] = "Your scans for $span go past your {$out['shift_end']} shift end by only $excess hr — less than the $min hr minimum, so there is no overtime to file.";
+                // The WHOLE rest day is filed, not just the part beyond the duty:
+                // with pay_settings.rest_day_auto_authorize off, this filing is the
+                // authorization for working the day off at all, so it has to be
+                // able to name every hour rendered. It is measured against the
+                // hours the DTR CREDITS rather than the raw punch span — the span
+                // counts early arrival the DTR never pays, and a ceiling must never
+                // promise more than the record behind it can defend.
+                //
+                // Filing all 7.68 does NOT pay them twice: approving a rest-day
+                // request writes nothing onto the row (applyOvertimeToDtr), and
+                // payroll pays min(row.overtime, approved hours) — so the duty
+                // hours stay paid once, as a present day plus the 30% premium.
+                $excess = $out['rendered_hours'];
             } else {
-                $out['message'] = "Your scans for $span do not go past your {$out['shift_end']} shift end, so you have no overtime to file for that date.";
+                $excess = round(max(0, (float) $calc['overtime']), 2);
             }
-            return $out;
+            $out['excess_hours'] = $excess;
+
+            // Floor onto the form's 0.5 grid so the cap is never rounded UP past
+            // what was actually rendered, then apply the per-day hard ceiling.
+            $step = OT_REQUEST_STEP_HOURS;
+            $cap  = min(floor($excess / $step) * $step, (float) OT_REQUEST_MAX_HOURS_PER_DAY);
+
+            if ($cap < OT_REQUEST_MIN_HOURS) {
+                $min  = rtrim(rtrim(number_format(OT_REQUEST_MIN_HOURS, 2), '0'), '.');
+                $span = "$dateStr ({$out['time_in']} – {$out['time_out']})";
+                if ($out['rest_day']) {
+                    $out['message'] = "Your scans for $span credit only $excess hr of rest-day duty — less than the $min hr minimum, so there is nothing to file for that date.";
+                } elseif ($excess > 0) {
+                    // Went past the shift end, but by less than one filing step.
+                    $out['message'] = "Your scans for $span go past your {$out['shift_end']} shift end by only $excess hr — less than the $min hr minimum, so there is no overtime to file.";
+                } else {
+                    $out['message'] = "Your scans for $span do not go past your {$out['shift_end']} shift end, so you have no overtime to file for that date.";
+                }
+                return $out;
+            }
         }
 
         // Hours already claimed for the same date (pending or approved).
@@ -2536,17 +2557,29 @@ if (!function_exists('ot_request_limit')) {
         $out['already'] = $already;
 
         $remaining = round($cap - $already, 2);
+        $label     = $out['rest_day'] ? 'rest-day' : 'overtime';
         if ($remaining < OT_REQUEST_MIN_HOURS) {
-            $label = $out['rest_day'] ? 'rest-day' : 'overtime';
-            $out['message'] = "You have already filed $already of the $cap $label hours your scans support for $dateStr.";
+            $out['message'] = $out['advance']
+                ? "You have already filed $already of the $cap $label hours that can be filed in advance for $dateStr."
+                : "You have already filed $already of the $cap $label hours your scans support for $dateStr.";
             return $out;
         }
 
         $out['allowed']   = true;
         $out['max_hours'] = $remaining;
-        $out['message']   = $out['rest_day']
-            ? "Rest day — your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) credit $remaining hr of duty. File them: your attendance for that date cannot be approved until this filing is, and your pay for the day (plus the rest-day premium) follows the approved record."
-            : "Your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) run past your {$out['shift_end']} shift end, so you may file up to $remaining hr of overtime.";
+        if ($out['advance']) {
+            // "Not scanned yet" covers both a future date and a day still in
+            // progress; the in-scan wording tells an employee still on duty
+            // why their own record is not the ceiling.
+            $state = $in_ts ? "Your time-out for $dateStr has not been scanned yet" : "No scans for $dateStr yet";
+            $out['message'] = $out['rest_day']
+                ? "$dateStr is your rest day — " . lcfirst($state) . ", so this files the rest-day work in advance. You may file up to $remaining hr now; your pay for the day (plus the rest-day premium) follows the hours your scans finally show."
+                : "$state — this files the overtime in advance. You may file up to $remaining hr now; what gets paid is capped at the time your scans finally show past your {$out['shift_end']} shift end.";
+        } else {
+            $out['message'] = $out['rest_day']
+                ? "Rest day — your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) credit $remaining hr of duty. File them: your attendance for that date cannot be approved until this filing is, and your pay for the day (plus the rest-day premium) follows the approved record."
+                : "Your scans for $dateStr ({$out['time_in']} – {$out['time_out']}) run past your {$out['shift_end']} shift end, so you may file up to $remaining hr of overtime.";
+        }
         return $out;
     }
 }
@@ -2572,6 +2605,57 @@ if (!function_exists('att_request_label')) {
 // files the part past the shift end. Both cap what payroll pays.
 if (!defined('ATT_REQUEST_HOUR_TYPES')) {
     define('ATT_REQUEST_HOUR_TYPES', ['overtime', 'rest_day']);
+}
+
+// SQL for the two figures att_request_rendered() reads, as columns of a
+// request-list query ($ar = the attendance_requests alias). MAX() because a
+// date can carry more than one row (a stub plus the scanned row).
+if (!function_exists('att_request_rendered_sql')) {
+    function att_request_rendered_sql(string $ar = 'ar'): string
+    {
+        return "(SELECT MAX(d.overtime)   FROM DTR_details d WHERE d.employee_id = $ar.employee_id AND d.date_time = $ar.request_date) AS dtr_ot,
+                (SELECT MAX(d.work_hours) FROM DTR_details d WHERE d.employee_id = $ar.employee_id AND d.date_time = $ar.request_date) AS dtr_wh";
+    }
+}
+
+// Authorized vs rendered, for an APPROVED overtime / rest-day filing whose
+// date has passed. A filing made in advance is an authorization, not a fact:
+// this is where the fact catches up with it. Returns null when there is
+// nothing to compare (other types, not approved, date not over yet), else
+//   state    'none'  — no scans at all on that date
+//            'short' — rendered less than authorized
+//            'met'   — rendered at least the authorized hours
+//   rendered float, the hours the DTR shows (OT on a regular day, everything
+//            credited on a rest day — the same measure ot_request_limit uses)
+//   approved float
+// Payroll pays min(rendered, approved) whatever the state; this only shows it.
+if (!function_exists('att_request_rendered')) {
+    function att_request_rendered(array $row): ?array
+    {
+        if ((int) ($row['status'] ?? 0) !== 1) return null;
+        if (!in_array($row['request_type'] ?? '', ATT_REQUEST_HOUR_TYPES, true)) return null;
+        $ts = strtotime((string) ($row['request_date'] ?? ''));
+        if (!$ts || date('Y-m-d', $ts) >= date('Y-m-d')) return null;
+
+        $approved = round((float) ($row['ot_hours_requested'] ?? 0), 2);
+        if (!array_key_exists('dtr_ot', $row) || $row['dtr_ot'] === null) {
+            return ['state' => 'none', 'rendered' => 0.0, 'approved' => $approved, 'label' => 'Not rendered'];
+        }
+        $rendered = ($row['request_type'] === 'rest_day')
+            ? (float) $row['dtr_wh'] + (float) $row['dtr_ot']
+            : (float) $row['dtr_ot'];
+        $rendered = round(max(0.0, $rendered), 2);
+        $state = $rendered <= 0 ? 'none' : ($rendered + 0.001 < $approved ? 'short' : 'met');
+        // "3.2 of 5 hr" — trailing zeros trimmed, the way every list prints hours.
+        $fmt = function (float $h): string { return rtrim(rtrim(number_format($h, 2), '0'), '.'); };
+        return [
+            'state'    => $state,
+            'rendered' => $rendered,
+            'approved' => $approved,
+            'label'    => $state === 'none' ? 'Not rendered'
+                        : ($state === 'short' ? 'Rendered ' . $fmt($rendered) . ' of ' . $fmt($approved) . ' hr' : 'Rendered'),
+        ];
+    }
 }
 // Every fileable type. 'undertime' also carries hours, but they are bounded by
 // undertime_request_limit() and EXCUSE a deduction rather than add pay, so it

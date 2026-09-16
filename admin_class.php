@@ -4056,7 +4056,12 @@ class Action
                 $msg .= ' The approved hours are excused at payroll time (not deducted); the DTR figure itself is unchanged.';
             }
             if (!$ot_applied) {
-                $msg .= ' Warning: no DTR record exists for that date yet, so the OT hours were NOT written to the DTR — enter them on the DTR once attendance for that date is imported.';
+                // Typical for a request filed in advance: no record for the
+                // date yet. Nothing is lost — payroll reads the approved hours
+                // from the request itself and caps them at the overtime the
+                // scans show once they land.
+                $hrs  = rtrim(rtrim(number_format((float) $req['ot_hours_requested'], 2), '0'), '.');
+                $msg .= " No scans for that date yet. The OT will appear on the DTR once it is rendered, capped at the approved $hrs hr.";
             }
         } else {
             $msg = "Approved at the $stageLbl stage — now awaiting {$stages[$next]['label']} approval.";
@@ -4191,12 +4196,19 @@ class Action
         if (!$stmt->execute()) throw new Exception('Could not write the DTR record: ' . $stmt->error);
     }
 
-    // Writes an approved OT request's requested hours onto the matching DTR_details
-    // row (same employee + date) so the timekeeper sees it filled in, not 0.
-    // With no row for that date (rest-day OT / biometric import not run yet) the
-    // hours are parked on a pending zero-hour row in the batch covering the date
-    // so they aren't lost; its exception flags force a manual decision.
-    // Returns false only when NO batch covers the date, so the caller can warn.
+    // Writes an approved OT request's hours onto the matching DTR_details row
+    // (same employee + date) so the timekeeper sees it filled in, not 0 — never
+    // more than that row's own scans support.
+    //
+    // With NO row for that date nothing is written and false is returned so
+    // the caller can say so. It used to park the requested hours on a
+    // zero-hour, punch-less placeholder row "so they aren't lost" — but they
+    // never were: payroll reads the approved hours from attendance_requests
+    // itself and pays min(row.overtime, approved). What the parked row DID do
+    // was show OT on the DTR before it was rendered, and since it carried no
+    // punch it raised no exception flag — so an advance filing the employee
+    // then never rendered was one careless row-approval away from being paid.
+    // OT now appears on the DTR only once the scans put it there.
     private function applyOvertimeToDtr($req)
     {
         $employee_id = (int) $req['employee_id'];
@@ -4204,7 +4216,7 @@ class Action
         $ot_hours    = (float) $req['ot_hours_requested'];
 
         $existing = $this->db->query(
-            "SELECT id, is_rest_day FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' ORDER BY id DESC LIMIT 1"
+            "SELECT id, is_rest_day, logs FROM DTR_details WHERE employee_id = $employee_id AND date_time = '$date' ORDER BY id DESC LIMIT 1"
         )->fetch_assoc();
 
         if ($existing) {
@@ -4217,6 +4229,24 @@ class Action
             // caps what it pays at min(row.overtime, approved hours).
             if ((int) ($existing['is_rest_day'] ?? 0) === 1) return true;
 
+            // Never write MORE than the row's own scans support. A request
+            // filed in advance (ot_request_limit's advance ceiling) can name
+            // 5 hrs against a day that then scanned 3.2 — and since payroll
+            // pays min(row.overtime, approved), writing the 5 onto the row
+            // would have paid it. A row with no scans yet (a manual stub, or a
+            // placeholder parked before parking was dropped) keeps the filed
+            // figure: the scans overwrite it the moment they land.
+            $log_ts = [];
+            foreach ((json_decode((string) ($existing['logs'] ?? '[]'), true) ?: []) as $lg) {
+                $t = strtotime($lg['dateTime'] ?? '');
+                if ($t) $log_ts[] = $t;
+            }
+            if ($log_ts) {
+                sort($log_ts);
+                $c        = dtr_compute_day($this->db, $employee_id, $req['request_date'], $log_ts);
+                $ot_hours = min($ot_hours, round(max(0.0, (float) $c['overtime']), 2));
+            }
+
             $existing_id = (int) $existing['id'];
             $stmt = $this->db->prepare("UPDATE DTR_details SET overtime = ? WHERE id = ?");
             $stmt->bind_param('di', $ot_hours, $existing_id);
@@ -4224,28 +4254,10 @@ class Action
             return true;
         }
 
-        $batch = $this->db->query(
-            "SELECT id FROM DTR WHERE date_from <= '$date' AND date_to >= '$date' ORDER BY id DESC LIMIT 1"
-        )->fetch_assoc();
-        if (!$batch) return false;
-
-        $ddtr_id = (int) $batch['id'];
-        // Stamp the shift on the parked row so it follows the same frozen-shift
-        // policy as every other new attendance row (no logs → figures stay 0).
-        $cs = dtr_compute_day($this->db, $employee_id, $req['request_date'], []);
-        // Same rule as above on a date that resolves to a rest day: the parked
-        // row records the authorization, and the hours come from the scans when
-        // they land — never from the filing.
-        $park_hours = ((int) $cs['is_rest_day'] === 1) ? 0.0 : $ot_hours;
-        $stmt = $this->db->prepare(
-            "INSERT INTO DTR_details (ddtr_id, employee_id, date_time, work_hours, overtime, logs, attendance_type, status,
-                                      schedule_id, day_hours, is_rest_day, sched_start, sched_end, sched_break, sched_graveyard)
-             VALUES (?,?,?,0,?,'[]','overtime',0,?,?,?,?,?,?,?)"
-        );
-        $stmt->bind_param('iisdidissii', $ddtr_id, $employee_id, $date, $park_hours, $cs['schedule_id'], $cs['day_hours'], $cs['is_rest_day'],
-                          $cs['sched_start'], $cs['sched_end'], $cs['sched_break'], $cs['sched_graveyard']);
-        if (!$stmt->execute()) throw new Exception('Could not write the OT hours to the DTR: ' . $stmt->error);
-        return true;
+        // No record for the date yet (filed in advance, or not imported). The
+        // authorization stays on the request; the DTR gets its OT from the
+        // scans, and payroll caps that at the approved hours.
+        return false;
     }
 
     function delete_attendance_request()

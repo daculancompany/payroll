@@ -89,6 +89,9 @@ $agg = $sumStmt->get_result()->fetch_assoc() ?: [];
 
 $batchStatus  = (int)$dtr['status'];
 $canEdit      = ($login_role !== 6);
+// Who may void an approved OT / rest-day filing that was never rendered —
+// the same rule cancel_attendance_request enforces (HR + Admin).
+$canCancelReq = in_array($login_role, [1, 9], true);
 
 // ── Stale-schedule detection ── rows recorded under a shift that no longer
 // matches the employee's current schedule assignment (admin changed/corrected
@@ -699,6 +702,12 @@ body {
                   background:#0f9d58; color:#fff; }
 .ddv-filing-act:hover { background:#0c7d46; }
 .ddv-filing-act i { font-size:11px; line-height:1; }
+/* Void an approved filing that was never rendered — a warning, not a go. */
+.ddv-filing-act.warn { background:#e0891d; }
+.ddv-filing-act.warn:hover { background:#b96d12; }
+/* A past day with an approved OT / rest-day filing and no record at all:
+   listed among the records so the filing can be cancelled from here. */
+.ddv-rec.is-nr { background:#fffaf0; border-color:#f3ddb5; }
 
 /* ── Cross-employee bulk selection ── */
 .ddv-bulk {
@@ -1012,6 +1021,7 @@ body.view-table .ddv-drawer-btn { display:none !important; }
      data-from="<?= htmlspecialchars($dtr['date_from']) ?>"
      data-to="<?= htmlspecialchars($dtr['date_to']) ?>"
      data-can-edit="<?= $canEdit ? 1 : 0 ?>"
+     data-can-cancel-req="<?= $canCancelReq ? 1 : 0 ?>"
      data-status="<?= $batchStatus ?>">
 
     <!-- ── Top bar ── -->
@@ -1225,6 +1235,7 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                         <button type="button" data-fl="high_ot"><i class="ri-sun-line"></i> High OT</button>
                         <button type="button" data-fl="manual"><i class="ri-edit-line"></i> Manual</button>
                         <button type="button" data-fl="rest_worked"><i class="ri-moon-line"></i> Day off worked</button>
+                        <button type="button" data-fl="ot_short"><i class="ri-timer-flash-line"></i> OT under-rendered</button>
                         <button type="button" data-fl="low_att"><i class="ri-calendar-close-line"></i> Low attend.</button>
                     </div>
                     <div class="ddv-fp-lbl">Activity</div>
@@ -1693,6 +1704,8 @@ const DDTR_ID   = root.dataset.id;
 const DATE_FROM = root.dataset.from;
 const DATE_TO   = root.dataset.to;
 const CAN_EDIT  = root.dataset.canEdit === '1';
+// HR / Admin: may cancel an approved filing the employee never rendered.
+const CAN_CANCEL_REQ = root.dataset.canCancelReq === '1';
 const BATCH_STATUS = parseInt(root.dataset.status, 10) || 0;
 // Admin may add attendance for a day with no record while the batch is not locked.
 const CAN_ADD_DAY = CAN_EDIT && BATCH_STATUS !== 2;
@@ -2443,6 +2456,10 @@ const FLAG_META = {
     // — one icon for "rest day" everywhere in the app.
     rest_worked: { cls: 'info', icon: 'ri-moon-line',          lbl: 'Day off worked',
                   why: 'This date is marked as the employee\'s rest day, but hours were recorded here — pays base pay + 30% rest-day premium instead of a regular working day (see Change schedule to correct it if this was not intended). The record cannot be approved until an approved Rest Day Work request is on file for this date (or pay_settings.rest_day_auto_authorize is turned on). Approving that request authorizes the duty; it never changes the hours — the scans keep deciding them.' },
+    // Authorized in advance, rendered short. Informational: payroll pays the
+    // rendered figure (capped at the approved hours), so nothing is blocked.
+    ot_short:   { cls: 'info', icon: 'ri-timer-flash-line',   lbl: 'OT under-rendered',
+                  why: 'An approved OT / rest-day request covers this date for more hours than the scans show. Payroll pays the rendered figure, capped at the approved hours — nothing extra is paid. Cancel the filing if the rest will not be rendered, so the authorization does not linger.' },
 };
 
 // A rest_worked record with ANY hours on it and no approved rest-day (or
@@ -2473,6 +2490,63 @@ function filingChip(r) {
         return `<span class="ddv-filing pend ddv-tip" role="button" tabindex="0" onclick="reviewFiling(${req.id}, ${r.id})" data-tip="The employee filed ${Number(req.h || 0)} hr for this day; the request is still pending, so the record cannot be approved yet."><i class="ri-time-fill"></i>Filed · pending</span>${act}`;
     }
     return `<span class="ddv-filing none ddv-tip" data-tip="No Rest Day Work request on file — this record cannot be approved until the employee files one and it is approved (or Auto-authorize rest-day work is turned on in Pay Settings)."><i class="ri-error-warning-fill"></i>Not filed</span>`;
+}
+
+// The under-rendered detail beside the ot_short flag: what was rendered against
+// what was authorized, plus the way out — cancel the filing — for HR / Admin.
+function shortTag(r) {
+    const q = r.req;
+    if (!q) return '';
+    const rendered = q.t === 'rest_day' ? Number(r.wh) + Number(r.ot) : Number(r.ot);
+    const what = q.t === 'rest_day' ? 'rest-day work' : 'OT';
+    const chip = `<span class="ddv-filing pend ddv-tip" role="button" tabindex="0" onclick="reviewFiling(${q.id}, ${r.id})" data-tip="Approved ${what} request for ${Number(q.h || 0)} hr; the scans show ${rendered.toFixed(2)}. Payroll pays the rendered figure. Click to view the request."><i class="ri-timer-flash-line"></i>${rendered.toFixed(2)} of ${Number(q.h || 0)} hr</span>`;
+    return chip + cancelFilingBtn(q.id, what, q.h);
+}
+function cancelFilingBtn(reqId, what, hours) {
+    if (!CAN_CANCEL_REQ) return '';
+    return `<button class="ddv-filing-act warn ddv-tip" onclick="cancelFiling(${reqId})" data-tip="Cancel the approved ${what} request (${Number(hours || 0)} hr) — it was not rendered as authorized. The employee is notified with the reason; the record stays as filed → approved → cancelled."><i class="ri-arrow-go-back-line"></i>Cancel filing</button>`;
+}
+
+// Void an approved OT / rest-day filing that was never (fully) rendered. Same
+// endpoint and reason prompt as the requests queue (cancel_attendance_request);
+// it rewinds whatever the approval wrote to the DTR and notifies the employee.
+// The local model is updated in place — the filing drops off every record and
+// mark it covered, and the flags re-derive — so the page never reloads.
+function cancelFiling(reqId) {
+    Swal.fire({
+        title: 'Cancel this approved filing?',
+        text: 'The authorization is withdrawn. Payroll pays only what the scans show either way; this keeps the record straight.',
+        icon: 'warning',
+        input: 'textarea',
+        inputLabel: 'Reason for cancelling',
+        inputValue: 'Not rendered as authorized',
+        inputValidator: v => (!v || !v.trim()) ? 'A reason is required to cancel.' : undefined,
+        showCancelButton: true, confirmButtonText: 'Cancel filing', cancelButtonText: 'Keep', confirmButtonColor: '#e0891d'
+    }).then(res => {
+        if (!res.isConfirmed) return;
+        Swal.fire({ title: 'Cancelling…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        fetch('ajax.php?action=cancel_attendance_request', { method: 'POST', body: new URLSearchParams({ id: reqId, reason: res.value.trim() }) })
+            .then(x => x.json())
+            .then(j => {
+                if (!(j && j.result)) { Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Could not cancel.' }); return; }
+                Swal.close();
+                st.emps.forEach(e => {
+                    for (const date of Object.keys(e.days)) {
+                        (e.days[date].recs || []).forEach(rc => {
+                            if (rc.req && rc.req.id === reqId) { rc.req = null; rc.ot_filed = false; }
+                        });
+                    }
+                    for (const date of Object.keys(e.marks || {})) {
+                        e.marks[date] = e.marks[date].filter(m => !(m.k === 'req' && m.id === reqId));
+                        if (!e.marks[date].length) delete e.marks[date];
+                    }
+                    recomputeEmp(e);
+                });
+                rerenderAll();
+                toast(j.message || 'Filing cancelled');
+            })
+            .catch(() => Swal.fire({ icon: 'error', title: 'Error', text: 'Could not cancel.' }));
+    });
 }
 
 // Review the employee's filing from the record card — the SAME modal the
@@ -2546,7 +2620,7 @@ function renderRecords(e) {
                 // request that is sitting right there waiting for them.
                 const filedTag = (f === 'rest_worked' && (r.wh > 0 || r.ot > 0))
                     ? filingChip(r)
-                    : '';
+                    : (f === 'ot_short' ? shortTag(r) : '');
                 return `<span class="ddv-flag ${m.cls}" title="${esc(m.why)}"><i class="${m.icon}"></i>${m.lbl}</span>${filedTag}`;
             }).join('');
             // Leave-vs-attendance conflict: this date carries a leave request AND
@@ -2588,6 +2662,25 @@ function renderRecords(e) {
                     ${msgBtn}
                     <button class="ddv-mini-btn del ddv-tip"  onclick="deleteRec(${r.id})" data-tip="Delete this attendance record and its punches"><i class="ri-delete-bin-6-line"></i></button>
                 </div>` : (msgs.length ? `<div class="ddv-rec-actions">${msgBtn}</div>` : '')}
+            </div>`;
+        });
+    });
+    // Past days with an approved OT / rest-day filing and NO record: the
+    // authorization was never rendered. Nothing is paid for it, but it should
+    // not sit there approved forever — list it here so HR can cancel it in
+    // place. (dtr-employee-server marks these `nr` on the day's req mark.)
+    Object.keys(e.marks || {}).sort().forEach(date => {
+        (e.marks[date] || []).forEach(m => {
+            if (m.k !== 'req' || !m.nr) return;
+            const what = m.t === 'rest_day' ? 'Rest-day work' : 'OT';
+            const dLbl = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            html += `<div class="ddv-rec is-nr">
+                <div class="ddv-rec-top"><span class="ddv-rec-date"><i class="ri-calendar-event-line" style="color:#6642aa;"></i> ${dLbl}</span><span class="ddv-rec-badge b-pend">No record</span></div>
+                <div class="ddv-rec-flags">
+                    <span class="ddv-flag info" title="An approved ${what.toLowerCase()} request covers this date for ${Number(m.h || 0)} hr, but the employee never scanned. Nothing is paid for it. Cancel the filing so the authorization does not linger."><i class="ri-timer-flash-line"></i>${what} authorized · not rendered</span>
+                    <span class="ddv-filing pend ddv-tip" role="button" tabindex="0" onclick="AttReqReview.open(${m.id}, {})" data-tip="${Number(m.h || 0)} hr approved. Click to view the request."><i class="ri-time-line"></i>${Number(m.h || 0)} hr approved</span>
+                    ${cancelFilingBtn(m.id, what.toLowerCase(), m.h)}
+                </div>
             </div>`;
         });
     });
@@ -2655,12 +2748,23 @@ function recFlags(r) {
     if (r.ot > OT_HOURS) f.push('high_ot');
     if ((r.logs || []).some(l => !l.bio)) f.push('manual');
     if (r.is_rest_day && r.wh > 0) f.push('rest_worked');
+    if (isShort(r)) f.push('ot_short');
     return f;
+}
+// Approved filing on a past date that the scans did not live up to — the same
+// test dtr-employee-server.php applies, re-run here so an edit to the punches
+// updates the flag without a refetch. A rest-day filing names the whole day.
+function isShort(r) {
+    const q = r.req;
+    if (!q || Number(q.s) !== 1 || !q.past) return false;
+    const rendered = q.t === 'rest_day' ? Number(r.wh) + Number(r.ot) : Number(r.ot);
+    return rendered + 0.001 < Number(q.h || 0);
 }
 // rest_worked only blocks when unfiled — the server refuses to approve it in
 // that state (decide_dtr_details), so the exception count must say so too, or
 // "Approve all clean" leaves it pending with no red marker explaining why.
-const hasBlocker = r => r.flags.some(f => f !== 'manual' && f !== 'rest_worked') || isRestUnfiled(r);
+// ot_short never blocks: payroll already pays only what was rendered.
+const hasBlocker = r => r.flags.some(f => f !== 'manual' && f !== 'rest_worked' && f !== 'ot_short') || isRestUnfiled(r);
 
 function recomputeEmp(e) {
     e.appr = e.pend = e.disa = e.exc = 0;

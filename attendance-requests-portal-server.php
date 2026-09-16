@@ -54,7 +54,7 @@ $tc->execute();
 $totalRecords = (int)($tc->get_result()->fetch_assoc()['c'] ?? 0);
 
 // Page of data.
-$sql = "SELECT ar.*, ru.name AS reviewer_name
+$sql = "SELECT ar.*, ru.name AS reviewer_name, " . att_request_rendered_sql('ar') . "
         FROM attendance_requests ar
         LEFT JOIN users ru ON ru.id = ar.reviewed_by
         WHERE ar.employee_id = ?
@@ -97,6 +97,18 @@ foreach ($rows as $row) {
         ? htmlspecialchars(mb_strimwidth($notesFull, 0, 40, '…'))
         : '';
     $detailsHtml = $details;
+    // Authorized vs rendered, once the date is over (att_request_rendered):
+    // the employee sees whether their advance filing was borne out by scans.
+    if ($rd = att_request_rendered($row)) {
+        [$rdBg, $rdFg, $rdIcon] = [
+            'none'  => ['#fdeaea', '#b3261e', 'ri-close-circle-line'],
+            'short' => ['#fff4e2', '#a86206', 'ri-timer-flash-line'],
+            'met'   => ['#eef6ee', '#1b5e20', 'ri-checkbox-circle-line'],
+        ][$rd['state']];
+        $detailsHtml .= '<div style="margin-top:3px;"><span style="background:' . $rdBg . ';color:' . $rdFg
+            . ';border-radius:8px;padding:2px 8px;font-size:10px;font-weight:700;white-space:nowrap;" title="What your DTR shows for that date against the approved hours — pay follows the smaller of the two"><i class="'
+            . $rdIcon . ' me-1"></i>' . htmlspecialchars($rd['label']) . '</span></div>';
+    }
     if ($notesShort !== '') {
         $detailsHtml .= '<div style="color:#aaa;font-size:10px;">' . $notesShort . '</div>';
     }

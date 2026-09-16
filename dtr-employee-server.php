@@ -354,6 +354,15 @@ if ($action === 'docs') {
             'high_ot'     => "overtime > $otMax",
             'manual'      => "(logs LIKE '%\"manual\"%' OR logs LIKE '%\"incident\"%')",
             'rest_worked' => "is_rest_day = 1 AND work_hours > 0",
+            // An approved OT / rest-day filing for a PAST date that the scans
+            // did not live up to (filed in advance, rendered less or not at
+            // all). Informational: payroll pays the rendered figure anyway.
+            'ot_short'    => "EXISTS (SELECT 1 FROM attendance_requests ar
+                                WHERE ar.employee_id = DTR_details.employee_id
+                                  AND ar.request_date = DATE(DTR_details.date_time)
+                                  AND ar.status = 1 AND ar.request_date < CURDATE()
+                                  AND ((ar.request_type = 'overtime' AND DTR_details.overtime + 0.001 < ar.ot_hours_requested)
+                                    OR (ar.request_type = 'rest_day' AND DTR_details.work_hours + DTR_details.overtime + 0.001 < ar.ot_hours_requested)))",
         ];
         if (isset($flagConds[$flagF])) {
             $where .= " AND e.id IN (SELECT employee_id FROM DTR_details
@@ -915,24 +924,45 @@ if ($action === 'docs') {
                 if ($isOff) $m[] = ['k' => 'off'];
                 $otFiled = false;
                 $hourReq = null;          // the filing itself, for the record card
+                // A filing for a date already gone can be measured against what
+                // was rendered; one for today or later still can be.
+                $past    = $ymd < date('Y-m-d');
+                $hasRec  = !empty($E['days'][$ymd]['recs']);
                 foreach (($reqMap[$eid][$ymd] ?? []) as $rq) {
-                    $m[] = ['k' => 'req'] + $rq;
+                    $rq['past'] = $past;
                     // Either filing authorizes a rest day; only 'overtime'
                     // ever restates a regular day's OT figure.
-                    if (!in_array($rq['t'], ATT_REQUEST_HOUR_TYPES, true)) continue;
+                    $isHour = in_array($rq['t'], ATT_REQUEST_HOUR_TYPES, true);
+                    // Approved, the day is over, and nobody scanned: an
+                    // authorization (typically filed in advance) that was never
+                    // rendered. The sheet says so on the blank row; payroll
+                    // pays nothing for it either way.
+                    if ($isHour && $rq['s'] === 1 && $past && !$hasRec) $rq['nr'] = 1;
+                    $m[] = ['k' => 'req'] + $rq;
+                    if (!$isHour) continue;
                     if ($rq['s'] === 1) $otFiled = true;
                     // An APPROVED filing always wins the slot — it is the one
                     // that unblocks the record; a pending one only reports that
                     // something is waiting for a decision.
                     if ($hourReq === null || ($rq['s'] === 1 && (int) $hourReq['s'] !== 1)) $hourReq = $rq;
                 }
-                if (isset($E['days'][$ymd]['recs'])) {
+                if ($hasRec) {
                     foreach ($E['days'][$ymd]['recs'] as &$rc) {
                         if ($otFiled && in_array('rest_worked', $rc['flags'], true)) $rc['ot_filed'] = true;
                         // Carried per record so the card can show the filing's
                         // state — and, when it is still pending, decide it right
                         // there instead of sending the admin to another screen.
-                        if ($hourReq !== null) $rc['req'] = $hourReq;
+                        if ($hourReq !== null) {
+                            $rc['req'] = $hourReq;
+                            // Rendered less than authorized (the same test as
+                            // the flag=ot_short filter above; recFlags() mirrors
+                            // it client-side). A rest-day filing names the whole
+                            // day, so it is measured against everything credited.
+                            $rendered = $hourReq['t'] === 'rest_day' ? $rc['wh'] + $rc['ot'] : $rc['ot'];
+                            if ((int) $hourReq['s'] === 1 && $past && $rendered + 0.001 < $hourReq['h']) {
+                                $rc['flags'][] = 'ot_short';
+                            }
+                        }
                     }
                     unset($rc);
                 }

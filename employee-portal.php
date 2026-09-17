@@ -4032,6 +4032,21 @@ if ('serviceWorker' in navigator) {
 <script>window.FCM_SAVE_URL = 'emp-portal-ajax.php?action=save_fcm_token';</script>
 <script type="module" src="assets2/js/fcm-client.js"></script>
 <script>
+// Blank the OT/UT start time the way its own clear button does — form.reset()
+// alone leaves the clock-timepicker element's value and the wrapper's has-val
+// state behind, and a hidden field with a stale time still posts.
+function clearAttOtStart() {
+    var wrap = document.querySelector('#att-request-form .att-otstart-field .ctp-12h');
+    if (!wrap) return;
+    var ctp = wrap.querySelector('clock-timepicker');
+    if (ctp) {
+        ctp.value = '';
+        var inner = ctp.querySelector('input');
+        if (inner) inner.value = '';
+    }
+    if (wrap._ctpSync) wrap._ctpSync();
+}
+
 function toggleAttFields(type) {
     document.querySelectorAll('.att-incident-field').forEach(function(el){
         el.style.display = type === 'incident' ? '' : 'none';
@@ -4057,6 +4072,23 @@ function toggleAttFields(type) {
         hrsInput.setAttribute('placeholder', isUt ? 'e.g. 0.75' : 'e.g. 2.5');
         hrsInput.setAttribute('data-parsley-required-message', isUt ? 'Please enter the undertime hours to excuse.' : 'Please enter the OT hours requested.');
     }
+
+    // Start time — overtime and undertime only. A rest day's filing is the whole
+    // credited duty, so "when did it begin" has nothing to add there. Never
+    // required and never given a Parsley rule: it is recorded for the approver
+    // to read, and the hours above remain the only figure that computes.
+    var wantStart = (type === 'overtime' || isUt);
+    document.querySelectorAll('.att-otstart-field').forEach(function (el) {
+        el.style.display = wantStart ? '' : 'none';
+    });
+    var startLbl = document.getElementById('att-ot-start-label');
+    if (startLbl) startLbl.innerHTML = (isUt ? 'Time You Left' : 'OT Start Time')
+        + ' <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span>';
+    var startInput = document.getElementById('att-ot-start-disp');
+    if (startInput) startInput.setAttribute('placeholder', isUt ? 'e.g. 3:00 PM' : 'e.g. 5:00 PM');
+    // Switching to a type that has no start time must not leave a value behind
+    // in the hidden input for the submit to post.
+    if (!wantStart) clearAttOtStart();
 
     // The reason is not a real choice for these two — there is exactly one
     // sensible value, and leaving it blank only earns the employee a "Please
@@ -6487,8 +6519,12 @@ function attPrefillSched() {
         document.querySelectorAll('#att-request-form .ctp-12h').forEach(function (wrap) {
             var ctp   = wrap.querySelector('clock-timepicker');
             var inner = ctp.querySelector('input');
+            // Only the incident's own two fields. The OT/UT start time shares
+            // this widget but not this prefill — filling it here would post a
+            // shift end the employee never picked, on a field they cannot see.
+            if (!inner || (inner.name !== 'claimed_time_in' && inner.name !== 'claimed_time_out')) return;
             if (ctp.value) return;                   // already set — hands off
-            ctp.value = (inner && inner.name === 'claimed_time_in') ? r.start : r.end;
+            ctp.value = (inner.name === 'claimed_time_in') ? r.start : r.end;
             if (inner) inner.value = ctp.value || '';
             if (wrap._ctpSync) wrap._ctpSync();
         });
@@ -7162,6 +7198,23 @@ jQuery(function ($) {
                                     <input type="number" name="ot_hours_requested" id="att-ot-hours" class="form-control" min="0.5" max="12" step="0.5" placeholder="e.g. 2.5"
                                         data-parsley-type="number" data-parsley-otlimit="true"
                                         data-parsley-required-message="Please enter the OT hours requested.">
+                                </div>
+                                <!-- When the overtime began, or when they walked out early. Purely
+                                     descriptive — it is recorded and shown to the approver, and
+                                     NOTHING computes from it: the hours beside it are still the only
+                                     figure the ceiling checks and payroll reads. Optional by design,
+                                     so it never stands between an employee and a filing.
+                                     Must stay AFTER the hours input: toggleAttFields marks the
+                                     block's FIRST .form-control required, and that has to be hours. -->
+                                <div class="col-12 col-md-6 att-otstart-field" style="display:none;">
+                                    <label id="att-ot-start-label" style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT Start Time <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span></label>
+                                    <div class="ctp-12h">
+                                        <input type="text" id="att-ot-start-disp" class="form-control ctp-display" placeholder="e.g. 5:00 PM" readonly tabindex="-1">
+                                        <clock-timepicker format="HH:mm" precision="00:05">
+                                            <input type="text" name="ot_time_start" autocomplete="off">
+                                        </clock-timepicker>
+                                        <button type="button" class="ctp-clear" title="Clear time" tabindex="-1"><i class="ri-close-circle-fill"></i></button>
+                                    </div>
                                 </div>
                                 <!-- The day's own scans, as the DTR paired them. The hours above
                                      are prefilled from these, so the employee can check the figure

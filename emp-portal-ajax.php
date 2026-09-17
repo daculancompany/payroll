@@ -983,6 +983,16 @@ switch ($action) {
         $ot_hours  = trim($_POST['ot_hours_requested'] ?? '') !== '' ? (float) $_POST['ot_hours_requested'] : null;
         $att_notes = trim($_POST['notes'] ?? '');
 
+        // When the overtime began / when they left early. Optional, and carried
+        // for the approver to read — no ceiling, no DTR write and no payroll
+        // figure looks at it. Kept to the two types whose form offers it, and to
+        // a real HH:MM, so a stale hidden value from another type (or anything
+        // hand-posted) can never reach the column.
+        $ot_start = trim($_POST['ot_time_start'] ?? '');
+        $ot_start = ($ot_start !== ''
+            && in_array($req_type, ['overtime', 'undertime'], true)
+            && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $ot_start)) ? $ot_start : null;
+
         $hour_type = in_array($req_type, ATT_REQUEST_HOUR_TYPES, true);
         if (!in_array($req_type, ATT_REQUEST_TYPES, true) || !$req_date || !$reason) {
             echo json_encode(['result' => false, 'message' => 'Please complete all required fields.']);
@@ -1069,8 +1079,8 @@ switch ($action) {
         }
         $att_file = $up['file'];
 
-        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, notes, attachment) VALUES (?,?,?,?,?,?,?,?,?)");
-        $ins->bind_param('isssssdss', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $att_notes, $att_file);
+        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, ot_time_start, notes, attachment) VALUES (?,?,?,?,?,?,?,?,?,?)");
+        $ins->bind_param('isssssdsss', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $ot_start, $att_notes, $att_file);
         if (!$ins->execute()) {
             echo json_encode(['result' => false, 'message' => 'Could not submit your request. Please try again.']);
             break;
@@ -1125,6 +1135,7 @@ switch ($action) {
                 'claimed_time_in' => $time_in,
                 'claimed_time_out' => $time_out,
                 'ot_hours_requested' => $ot_hours,
+                'ot_time_start' => $ot_start,
                 'notes' => $att_notes,
                 'attachment' => $att_file,
                 'created_at' => date('Y-m-d H:i:s'),

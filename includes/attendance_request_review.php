@@ -87,6 +87,10 @@ if (!defined('ATT_REQ_REVIEW_RENDERED')) {
           <label class="form-label small mb-1" id="arr-hours-label">Hours</label>
           <input type="number" id="arr-hours" class="form-control form-control-sm" min="<?= OT_REQUEST_MIN_HOURS ?>" step="<?= OT_REQUEST_STEP_HOURS ?>">
           <div class="form-text" style="font-size:11px;">Adjust it to what you are authorizing — the employee is told what changed.</div>
+          <!-- What the employee said about WHEN. Read-only on purpose: it is
+               their account of the day, not a figure the approver authorizes,
+               and saveEdits() deliberately has no field for it. -->
+          <div id="arr-ot-start" class="form-text d-none" style="font-size:11px;"></div>
         </div>
 
         <div class="mt-2">
@@ -118,6 +122,14 @@ window.AttReqReview = (function () {
     var cur = null, cbs = {}, modal = null, seq = 0;
 
     function $id(id) { return document.getElementById(id); }
+    // 'HH:MM[:SS]' from the column → '5:00 PM'. Empty for null/blank/garbage.
+    function fmt12(t) {
+        var m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
+        if (!m) return '';
+        var h = parseInt(m[1], 10);
+        if (isNaN(h) || h > 23) return '';
+        return (h % 12 || 12) + ':' + m[2] + ' ' + (h >= 12 ? 'PM' : 'AM');
+    }
     function esc(v) {
         return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -189,6 +201,16 @@ window.AttReqReview = (function () {
         $id('arr-hours-label').textContent = isUt ? 'Undertime hours to excuse' : (q.type === 'rest_day' ? 'Rest day hours rendered' : 'OT hours');
         $id('arr-hours').min  = isUt ? 0.25 : <?= OT_REQUEST_MIN_HOURS ?>;
         $id('arr-hours').step = isUt ? 0.01 : <?= OT_REQUEST_STEP_HOURS ?>;
+
+        // Start time as the employee filed it, shown beneath the hours. Never an
+        // input — it is context for the decision, not part of it.
+        var startBox = $id('arr-ot-start');
+        var startTxt = fmt12(q.ot_start);
+        startBox.classList.toggle('d-none', !(isHours && startTxt));
+        startBox.innerHTML = startTxt
+            ? '<i class="ri-time-line me-1"></i>Employee filed it as starting <b>' + esc(startTxt) + '</b>'
+              + (isUt ? ' — when they left.' : '.')
+            : '';
 
         document.querySelector('.arr-incident').classList.toggle('d-none', q.type !== 'incident');
         document.querySelector('.arr-hours').classList.toggle('d-none', !isHours);

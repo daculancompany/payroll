@@ -248,6 +248,14 @@ $reasonLabels = [
                                                 <?php if ($row['ot_hours_requested']): ?>
                                                     <div><b><?= $row['ot_hours_requested'] ?> hrs</b> <?= $row['request_type'] === 'rest_day' ? 'rendered' : ($row['request_type'] === 'undertime' ? 'to excuse' : 'requested') ?></div>
                                                 <?php endif; ?>
+                                                <?php // What the employee said the OT began / they walked out.
+                                                      // Read alongside the hours; it computes nothing. ?>
+                                                <?php if (!empty($row['ot_time_start'])): ?>
+                                                    <div class="text-muted" style="font-size:11px;">
+                                                        <i class="ri-time-line me-1"></i><?= $row['request_type'] === 'undertime' ? 'Left' : 'From' ?>
+                                                        <?= date('h:i A', strtotime($row['ot_time_start'])) ?>
+                                                    </div>
+                                                <?php endif; ?>
                                                 <?php
                                                 // Authorized vs rendered, once the date is over (att_request_rendered):
                                                 // an advance filing is only a promise until the scans confirm it.

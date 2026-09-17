@@ -91,6 +91,12 @@ foreach ($rows as $row) {
                  . ($row['claimed_time_out'] ? date('g:i A', strtotime($row['claimed_time_out'])) : '—');
     } elseif ($row['ot_hours_requested']) {
         $details = htmlspecialchars($row['ot_hours_requested']) . ($isRestDay ? ' hrs rest-day duty' : ($isUt ? ' hrs undertime to excuse' : ' hrs OT'));
+        // The start time the employee gave, when they gave one. Descriptive
+        // only — the hours beside it are what was filed and what pays.
+        if (!empty($row['ot_time_start'])) {
+            $details .= '<div style="color:#6b6386;font-size:10.5px;">'
+                . ($isUt ? 'Left ' : 'From ') . date('g:i A', strtotime($row['ot_time_start'])) . '</div>';
+        }
     }
     $notesFull = trim((string)($row['notes'] ?? ''));
     $notesShort = $notesFull !== ''

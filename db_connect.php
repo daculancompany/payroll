@@ -848,10 +848,12 @@ if (!function_exists('dtr_break_overlap')) {
 //              day length. NOT reduced by the late charge — the hours actually
 //              rendered stay on the sheet; the charge is priced by payroll.
 if (!function_exists('dtr_shift_figures')) {
-    function dtr_shift_figures(int $in_ts, int $out_ts, int $sched_start, int $sched_end, array $schedule): array
+    function dtr_shift_figures(int $in_ts, int $out_ts, int $sched_start, int $sched_end, array $schedule, bool $rest_day = false): array
     {
         $day_hours = day_hours_or_default($schedule['total_hours'] ?? null);
-        $win       = dtr_break_window($sched_start, $sched_end, $schedule);
+        // Rest-day work carries no noon break (company rule): no window, so
+        // late, undertime and work are all measured on the full span.
+        $win       = $rest_day ? null : dtr_break_window($sched_start, $sched_end, $schedule);
 
         $late_raw_min = 0.0;
         if ($in_ts > $sched_start) {
@@ -883,6 +885,13 @@ if (!function_exists('dtr_shift_figures')) {
         // pesos on its own line — its day credit is min(1, worked + late + UT),
         // so a bracket charge can never add up to more than one day.
         $work_hours = round(min($work_hours, $day_hours), 2);
+
+        // Rest day: no break, so the duty is the whole shift (8:00–5:00 = 9 h
+        // on an 8-h day) — not capped at the day length. Overtime stays what
+        // it is on any day: only the time past the shift end.
+        if ($rest_day) {
+            $work_hours = round(max(0, $eff_out - $eff_in) / 3600, 2);
+        }
 
         return [
             'work_hours' => $work_hours,
@@ -2114,7 +2123,7 @@ if (!function_exists('dtr_compute_day')) {
             // maths (dtr_shift_figures): break overlap excluded from all of
             // them, late priced by the grace/bracket/half-day rules in
             // pay_settings, work = hours actually rendered inside the shift.
-            $fig        = dtr_shift_figures($in_ts, $out_ts, $sched_start, $sched_end, $schedule);
+            $fig        = dtr_shift_figures($in_ts, $out_ts, $sched_start, $sched_end, $schedule, (bool) $is_rest);
             $late       = $fig['late'];
             $undertime  = $fig['undertime'];
             $overtime   = $fig['overtime'];

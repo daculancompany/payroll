@@ -4204,20 +4204,22 @@ function refreshOtLimit() {
         var lim = (res && res.limit) || null;
         _otLimit = lim;
         setOtScan(lim);
-        // The DATE decides which filing it is, not the employee: a rest day
-        // must be filed as rest-day work (approval authorizes it and writes
-        // nothing), a working day as overtime (approval writes the hours). The
-        // server rejects a mismatch, so correcting the select here saves them a
-        // round trip into an error they cannot act on. Undertime is its own
-        // filing and is never switched.
-        if (!isUt && lim && lim.request_type && typeEl.value !== lim.request_type
-            && ATT_HOUR_TYPES.indexOf(lim.request_type) !== -1) {
-            typeEl.value = lim.request_type;
-            // Same reason as openAttRequestForDate: only a dispatched 'change'
-            // repaints the custom-select label (and re-runs toggleAttFields,
-            // which relabels the hours field). It re-enters this function once
-            // more, and stops there — the type now matches the answer.
-            typeEl.dispatchEvent(new Event('change', { bubbles: true }));
+        // A rest day is filed as rest-day work, a working day as overtime, and
+        // the server rejects a mismatch. The type is NEVER switched for the
+        // employee, though — doing so (on a date pick or a type pick) snapped
+        // their choice of Overtime straight back to Rest Day. Their pick
+        // stands; the note says plainly why that date needs the other type.
+        var mismatch = !isUt && lim && lim.request_type && typeEl.value !== lim.request_type
+            && ATT_HOUR_TYPES.indexOf(lim.request_type) !== -1;
+        if (mismatch) {
+            input.setAttribute('data-parsley-otlimit-message', 'This type does not match that date — see the note below.');
+            _otLimit = { allowed: false };
+            input.value = '';
+            setOtHint(lim.request_type === 'rest_day'
+                ? (lim.date_label || 'That date') + ' is your rest day — file it as Rest Day / Day-Off Work, not overtime.'
+                : (lim.date_label || 'That date') + ' is a regular working day — file it as Overtime, not rest-day work.', 'blocked');
+            if (window.jQuery && jQuery.fn.parsley) jQuery('#att-request-form').parsley().reset();
+            return;
         }
         if (lim && lim.allowed) {
             input.setAttribute('max', String(lim.max_hours));

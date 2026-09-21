@@ -8840,7 +8840,7 @@ class Action
                     // bracket / half-day rules, work = hours actually rendered
                     // inside the shift. Anything computed here by hand drifted
                     // from the recompute path sooner or later.
-                    $fig        = dtr_shift_figures($earliest, $latest, $sched_start, $sched_end, $schedule);
+                    $fig        = dtr_shift_figures($earliest, $latest, $sched_start, $sched_end, $schedule, (bool) $is_rest);
                     $late       = $fig['late'];
                     $undertime  = $fig['undertime'];
                     $overtime   = $fig['overtime'];

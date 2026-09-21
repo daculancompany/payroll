@@ -122,14 +122,6 @@ window.AttReqReview = (function () {
     var cur = null, cbs = {}, modal = null, seq = 0;
 
     function $id(id) { return document.getElementById(id); }
-    // 'HH:MM[:SS]' from the column → '5:00 PM'. Empty for null/blank/garbage.
-    function fmt12(t) {
-        var m = /^(\d{1,2}):(\d{2})/.exec(String(t || ''));
-        if (!m) return '';
-        var h = parseInt(m[1], 10);
-        if (isNaN(h) || h > 23) return '';
-        return (h % 12 || 12) + ':' + m[2] + ' ' + (h >= 12 ? 'PM' : 'AM');
-    }
     function esc(v) {
         return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -202,14 +194,15 @@ window.AttReqReview = (function () {
         $id('arr-hours').min  = isUt ? 0.25 : <?= OT_REQUEST_MIN_HOURS ?>;
         $id('arr-hours').step = isUt ? 0.01 : <?= OT_REQUEST_STEP_HOURS ?>;
 
-        // Start time as the employee filed it, shown beneath the hours. Never an
-        // input — it is context for the decision, not part of it.
+        // The window as the employee filed it, shown beneath the hours and worded
+        // server-side by att_request_time_span so it reads the same here as in
+        // the queue. Never an input — it is context for the decision, not part
+        // of it.
         var startBox = $id('arr-ot-start');
-        var startTxt = fmt12(q.ot_start);
-        startBox.classList.toggle('d-none', !(isHours && startTxt));
-        startBox.innerHTML = startTxt
-            ? '<i class="ri-time-line me-1"></i>Employee filed it as starting <b>' + esc(startTxt) + '</b>'
-              + (isUt ? ' — when they left.' : '.')
+        var span = String(q.ot_span || '');
+        startBox.classList.toggle('d-none', !(isHours && span));
+        startBox.innerHTML = span
+            ? '<i class="ri-time-line me-1"></i>Employee filed it as: <b>' + esc(span) + '</b>'
             : '';
 
         document.querySelector('.arr-incident').classList.toggle('d-none', q.type !== 'incident');

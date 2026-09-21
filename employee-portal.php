@@ -4032,19 +4032,20 @@ if ('serviceWorker' in navigator) {
 <script>window.FCM_SAVE_URL = 'emp-portal-ajax.php?action=save_fcm_token';</script>
 <script type="module" src="assets2/js/fcm-client.js"></script>
 <script>
-// Blank the OT/UT start time the way its own clear button does — form.reset()
-// alone leaves the clock-timepicker element's value and the wrapper's has-val
-// state behind, and a hidden field with a stale time still posts.
+// Blank the OT/UT start and end times the way their own clear buttons do —
+// form.reset() alone leaves the clock-timepicker element's value and the
+// wrapper's has-val state behind, and a hidden field with a stale time still
+// posts.
 function clearAttOtStart() {
-    var wrap = document.querySelector('#att-request-form .att-otstart-field .ctp-12h');
-    if (!wrap) return;
-    var ctp = wrap.querySelector('clock-timepicker');
-    if (ctp) {
-        ctp.value = '';
-        var inner = ctp.querySelector('input');
-        if (inner) inner.value = '';
-    }
-    if (wrap._ctpSync) wrap._ctpSync();
+    document.querySelectorAll('#att-request-form .att-otstart-field .ctp-12h').forEach(function (wrap) {
+        var ctp = wrap.querySelector('clock-timepicker');
+        if (ctp) {
+            ctp.value = '';
+            var inner = ctp.querySelector('input');
+            if (inner) inner.value = '';
+        }
+        if (wrap._ctpSync) wrap._ctpSync();
+    });
 }
 
 function toggleAttFields(type) {
@@ -4077,15 +4078,26 @@ function toggleAttFields(type) {
     // credited duty, so "when did it begin" has nothing to add there. Never
     // required and never given a Parsley rule: it is recorded for the approver
     // to read, and the hours above remain the only figure that computes.
+    // 'flex' (not '') so the column's flex-direction/justify-content take effect:
+    // the two share a row with the hours, and bottom-aligning them keeps the
+    // inputs in line even when one label wraps and the other does not. A
+    // Bootstrap .d-flex class cannot be used here — its display is !important
+    // and would beat the inline 'none' that hides these for the other types.
     var wantStart = (type === 'overtime' || isUt);
     document.querySelectorAll('.att-otstart-field').forEach(function (el) {
-        el.style.display = wantStart ? '' : 'none';
+        el.style.display = wantStart ? 'flex' : 'none';
     });
+    // Kept short on purpose: these two sit in quarter-width columns, and a label
+    // long enough to wrap in one but not the other pushed its input out of line.
+    var optional = ' <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span>';
     var startLbl = document.getElementById('att-ot-start-label');
-    if (startLbl) startLbl.innerHTML = (isUt ? 'Time You Left' : 'OT Start Time')
-        + ' <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span>';
+    if (startLbl) startLbl.innerHTML = (isUt ? 'Left At' : 'OT Start Time') + optional;
+    var endLbl = document.getElementById('att-ot-end-label');
+    if (endLbl) endLbl.innerHTML = (isUt ? 'Back At' : 'OT End Time') + optional;
     var startInput = document.getElementById('att-ot-start-disp');
     if (startInput) startInput.setAttribute('placeholder', isUt ? 'e.g. 3:00 PM' : 'e.g. 5:00 PM');
+    var endInput = document.getElementById('att-ot-end-disp');
+    if (endInput) endInput.setAttribute('placeholder', isUt ? 'e.g. 4:00 PM' : 'e.g. 7:30 PM');
     // Switching to a type that has no start time must not leave a value behind
     // in the hidden input for the submit to post.
     if (!wantStart) clearAttOtStart();
@@ -4673,7 +4685,10 @@ function makeMultiDatePicker(inputId, hiddenId, opts) {
         ignoreReadonly: true,                            // inputs are readonly on purpose
         keepOpen: !opts.single,                          // stack several days per visit
         widgetPositioning: { horizontal: 'auto', vertical: 'bottom' },  // keep the month header reachable in the modal
-        minDate: moment().startOf('day'),
+        // No minDate: leave (and LWOP) may be filed for a past date too — e.g.
+        // an emergency leave the employee only gets to file after the fact.
+        // The server has never enforced a floor here either (submit_leave_request
+        // in emp-portal-ajax.php never compares $days against today).
         disabledDates: BLOCKED.concat(window.LV_TAKEN || []).map(function (s) { return moment(s, 'YYYY-MM-DD'); }),
         showClear: true,                                 // toolbar: wipe the selection…
         showClose: true,                                 // …and a Done button to dismiss
@@ -7206,12 +7221,26 @@ jQuery(function ($) {
                                      so it never stands between an employee and a filing.
                                      Must stay AFTER the hours input: toggleAttFields marks the
                                      block's FIRST .form-control required, and that has to be hours. -->
-                                <div class="col-12 col-md-6 att-otstart-field" style="display:none;">
+                                <div class="col-6 col-md-3 att-otstart-field" style="display:none;flex-direction:column;justify-content:flex-end;">
                                     <label id="att-ot-start-label" style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT Start Time <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span></label>
                                     <div class="ctp-12h">
                                         <input type="text" id="att-ot-start-disp" class="form-control ctp-display" placeholder="e.g. 5:00 PM" readonly tabindex="-1">
                                         <clock-timepicker format="HH:mm" precision="00:05">
                                             <input type="text" name="ot_time_start" autocomplete="off">
+                                        </clock-timepicker>
+                                        <button type="button" class="ctp-clear" title="Clear time" tabindex="-1"><i class="ri-close-circle-fill"></i></button>
+                                    </div>
+                                </div>
+                                <!-- The other end of the same window. Never checked against the
+                                     start: overtime that runs past midnight ends at an EARLIER
+                                     clock time than it began (10:00 PM → 2:00 AM), so an
+                                     "end after start" rule would reject the commonest night filing. -->
+                                <div class="col-6 col-md-3 att-otstart-field" style="display:none;flex-direction:column;justify-content:flex-end;">
+                                    <label id="att-ot-end-label" style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">OT End Time <span style="color:#948ea5;font-weight:600;text-transform:none;">(optional)</span></label>
+                                    <div class="ctp-12h">
+                                        <input type="text" id="att-ot-end-disp" class="form-control ctp-display" placeholder="e.g. 7:30 PM" readonly tabindex="-1">
+                                        <clock-timepicker format="HH:mm" precision="00:05">
+                                            <input type="text" name="ot_time_end" autocomplete="off">
                                         </clock-timepicker>
                                         <button type="button" class="ctp-clear" title="Clear time" tabindex="-1"><i class="ri-close-circle-fill"></i></button>
                                     </div>

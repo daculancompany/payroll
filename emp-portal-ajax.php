@@ -983,15 +983,21 @@ switch ($action) {
         $ot_hours  = trim($_POST['ot_hours_requested'] ?? '') !== '' ? (float) $_POST['ot_hours_requested'] : null;
         $att_notes = trim($_POST['notes'] ?? '');
 
-        // When the overtime began / when they left early. Optional, and carried
-        // for the approver to read — no ceiling, no DTR write and no payroll
-        // figure looks at it. Kept to the two types whose form offers it, and to
-        // a real HH:MM, so a stale hidden value from another type (or anything
-        // hand-posted) can never reach the column.
-        $ot_start = trim($_POST['ot_time_start'] ?? '');
-        $ot_start = ($ot_start !== ''
-            && in_array($req_type, ['overtime', 'undertime'], true)
-            && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $ot_start)) ? $ot_start : null;
+        // The window the employee says the filing covers: when the overtime began
+        // and ended, or when they left and came back. Optional, and carried for
+        // the approver to read — no ceiling, no DTR write and no payroll figure
+        // looks at either. Kept to the two types whose form offers them, and to a
+        // real HH:MM, so a stale hidden value from another type (or anything
+        // hand-posted) can never reach the columns. The two are NOT compared:
+        // overtime across midnight ends at an earlier clock time than it started.
+        $ot_time = static function (string $key) use ($req_type): ?string {
+            $v = trim($_POST[$key] ?? '');
+            return ($v !== ''
+                && in_array($req_type, ['overtime', 'undertime'], true)
+                && preg_match('/^([01]\d|2[0-3]):[0-5]\d$/', $v)) ? $v : null;
+        };
+        $ot_start = $ot_time('ot_time_start');
+        $ot_end   = $ot_time('ot_time_end');
 
         $hour_type = in_array($req_type, ATT_REQUEST_HOUR_TYPES, true);
         if (!in_array($req_type, ATT_REQUEST_TYPES, true) || !$req_date || !$reason) {
@@ -1079,8 +1085,8 @@ switch ($action) {
         }
         $att_file = $up['file'];
 
-        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, ot_time_start, notes, attachment) VALUES (?,?,?,?,?,?,?,?,?,?)");
-        $ins->bind_param('isssssdsss', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $ot_start, $att_notes, $att_file);
+        $ins = $conn->prepare("INSERT INTO attendance_requests (employee_id, request_type, request_date, reason, claimed_time_in, claimed_time_out, ot_hours_requested, ot_time_start, ot_time_end, notes, attachment) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+        $ins->bind_param('isssssdssss', $emp_id, $req_type, $req_date, $reason, $time_in, $time_out, $ot_hours, $ot_start, $ot_end, $att_notes, $att_file);
         if (!$ins->execute()) {
             echo json_encode(['result' => false, 'message' => 'Could not submit your request. Please try again.']);
             break;
@@ -1136,6 +1142,7 @@ switch ($action) {
                 'claimed_time_out' => $time_out,
                 'ot_hours_requested' => $ot_hours,
                 'ot_time_start' => $ot_start,
+                'ot_time_end' => $ot_end,
                 'notes' => $att_notes,
                 'attachment' => $att_file,
                 'created_at' => date('Y-m-d H:i:s'),

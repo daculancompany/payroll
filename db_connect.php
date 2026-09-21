@@ -2600,6 +2600,40 @@ if (!function_exists('att_request_label')) {
     }
 }
 
+// ── The window the employee says the filing covers (GLOBAL) ─────────────
+// ot_time_start / ot_time_end on an overtime or undertime filing, as one
+// readable phrase. Descriptive only — NOTHING computes from these two columns;
+// ot_hours_requested remains the figure the ceiling checks and payroll reads.
+// Kept here so the portal list, the admin queue and the review modal cannot
+// word the same pair of times three different ways.
+//
+// Either half may be missing (both are optional on the form), so all three
+// combinations get a sentence. No ordering is assumed: overtime that crosses
+// midnight ends at an earlier clock time than it began.
+//   overtime  → "From 5:00 PM – 7:30 PM" / "From 5:00 PM" / "Until 7:30 PM"
+//   undertime → "Left 3:00 PM – back 4:00 PM" / "Left 3:00 PM" / "Back 4:00 PM"
+if (!function_exists('att_request_time_span')) {
+    function att_request_time_span(array $row): string
+    {
+        $fmt = static function ($t): string {
+            $t = trim((string) $t);
+            if ($t === '' || $t === '00:00:00') return '';
+            $ts = strtotime($t);
+            return $ts === false ? '' : date('g:i A', $ts);
+        };
+        $start = $fmt($row['ot_time_start'] ?? '');
+        $end   = $fmt($row['ot_time_end'] ?? '');
+        if ($start === '' && $end === '') return '';
+
+        $isUt = ($row['request_type'] ?? '') === 'undertime';
+        if ($start !== '' && $end !== '') {
+            return $isUt ? "Left $start – back $end" : "From $start – $end";
+        }
+        if ($start !== '') return $isUt ? "Left $start" : "From $start";
+        return $isUt ? "Back $end" : "Until $end";
+    }
+}
+
 // The request types that carry HOURS (ot_hours_requested) and are therefore
 // bounded by ot_request_limit(). 'rest_day' files the whole day off; 'overtime'
 // files the part past the shift end. Both cap what payroll pays.

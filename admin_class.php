@@ -3767,10 +3767,11 @@ class Action
             'time_in'     => $r['claimed_time_in'],
             'time_out'    => $r['claimed_time_out'],
             'ot_hours'    => $r['ot_hours_requested'] !== null ? (float) $r['ot_hours_requested'] : null,
-            // Descriptive start time on an OT/UT filing. Read-only in the review
-            // modal — update_attendance_request never touches it, and nothing
-            // downstream computes from it.
-            'ot_start'    => $r['ot_time_start'] ?: null,
+            // The descriptive window on an OT/UT filing, already worded by the
+            // shared helper so the modal cannot phrase it differently from the
+            // two lists. Read-only — update_attendance_request never touches
+            // those columns, and nothing downstream computes from them.
+            'ot_span'     => att_request_time_span($r),
             'notes'       => (string) $r['notes'],
             'attachment'  => (string) $r['attachment'],
             'status'      => (int) $r['status'],

@@ -5968,8 +5968,32 @@ class Action
                         : $this->dayHoursForDate($restMap[$employee_id] ?? [], $ymd);
                     $emp_day_hours[$employee_id] = $day_hours;
 
+                    // Rest-day duty: if this DTR day is one of the employee's rest days
+                    // (effective on that date), the worked fraction counts toward the
+                    // rest-day premium instead of being assumed to be Sunday.
+                    // Stamped flag wins for the same reason as day_hours above:
+                    // changing the roster must not turn a closed day into (or out
+                    // of) rest-day duty after the fact.
+                    $was_rest = isset($row['schedule_id']) && $row['schedule_id'] !== null
+                        ? ((int) ($row['is_rest_day'] ?? 0) === 1)
+                        : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
+
+                    // A rest-day filing names the hours that are VALID for the day —
+                    // the employee (or approver) may authorize fewer than the scans
+                    // show (8 rendered, 6 filed). Pay the duty up to the approved
+                    // hours, and let OT take only what is left of them, so the day
+                    // and its OT together never exceed the filing. No approved
+                    // filing (rest_day_auto_authorize on) = the scans alone decide.
+                    $row_work   = (float) $row["work_hours"];
+                    $rest_ot_cap = null;
+                    if ($was_rest && !empty($otApproved[(int) $employee_id][$ymd])) {
+                        $rest_approved = (float) $otApproved[(int) $employee_id][$ymd];
+                        $row_work      = min($row_work, $rest_approved);
+                        $rest_ot_cap   = max(0.0, $rest_approved - $row_work);
+                    }
+
                     // Cap a single day's worth of hours at one full day
-                    $work_hours = floor($row["work_hours"]) >= $day_hours ? $day_hours : $row["work_hours"];
+                    $work_hours = floor($row_work) >= $day_hours ? $day_hours : $row_work;
 
                     // Fraction of the day actually WORKED — the basis for rest-day
                     // and holiday premiums, which follow hours rendered. (Basic-pay
@@ -6018,15 +6042,7 @@ class Action
                         $ipresent++;
                     }
 
-                    // Rest-day duty: if this DTR day is one of the employee's rest days
-                    // (effective on that date), the worked fraction counts toward the
-                    // rest-day premium instead of being assumed to be Sunday.
-                    // Stamped flag wins for the same reason as day_hours above:
-                    // changing the roster must not turn a closed day into (or out
-                    // of) rest-day duty after the fact.
-                    $was_rest = isset($row['schedule_id']) && $row['schedule_id'] !== null
-                        ? ((int) ($row['is_rest_day'] ?? 0) === 1)
-                        : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
+                    // $was_rest is resolved above, before the day credit.
                     if ($was_rest) {
                         $grouped_data[$employee_id]["rest_duty"] += $frac_worked;
                     }
@@ -6141,9 +6157,11 @@ class Action
                     // above), capped at the approved hours. Raw excess on an
                     // uncovered date stays on the DTR sheet as information but
                     // earns nothing.
+                    // On a rest day the filing already paid the duty above, so OT gets
+                    // only the approved hours that are left ($rest_ot_cap).
                     if (!empty($otApproved[(int) $employee_id][$ymd])) {
                         $grouped_data[$employee_id]["overtime"] +=
-                            min((float) $row['overtime'], $otApproved[(int) $employee_id][$ymd]);
+                            min((float) $row['overtime'], $rest_ot_cap ?? $otApproved[(int) $employee_id][$ymd]);
                     }
                     // ×60: dtr_compute_day() returns late in HOURS ((time_in − sched_start)
                     // ÷ 3600) but payroll_items.late is MINUTES — payroll_earnings() prices

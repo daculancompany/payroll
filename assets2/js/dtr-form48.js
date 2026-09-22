@@ -244,6 +244,15 @@
                 }
             });
             if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
+            // In-shift hours past 8 (d.aot) — paid as OT with no filing, so
+            // they count toward the paid total regardless of any request.
+            var aot = Number(d.aot || 0);
+            otPaid += aot;
+            var autoTag = aot > 0
+                ? '<span class="ot-auto" tabindex="0" role="note" data-tip="Automatic OT — '
+                  + num(aot) + ' hr(s) rendered inside the shift beyond 8. Paid, no filing needed.">'
+                  + num(aot) + '<i class="ri-checkbox-circle-fill ot-ok-ic"></i></span>'
+                : '';
             var times = ampm
                 ? '<td class="t-col">' + punch(d.am_in, 0, iso, '', d.drop, d.drop_tip) + '</td>'
                   + '<td class="t-col">' + esc(d.am_out) + '</td>'
@@ -268,13 +277,15 @@
             rows += '<tr class="' + wkend.trim() + '">'
                 + '<td class="day">' + dayCell + '</td>' + times
                 + '<td class="x-col num">' + (d.wh > 0 ? num(d.wh) : '') + '</td>'
-                + '<td class="x-col num ot' + (d.ot > 0 ? (otAppr ? ' ot-appr' : ' ot-raw') : '') + '">'
+                + '<td class="x-col num ot' + (d.ot > 0 ? (otAppr ? ' ot-appr' : (aot > 0 ? '' : ' ot-raw')) : (aot > 0 ? ' ot-appr' : '')) + '">'
+                + autoTag
+                + (autoTag && d.ot > 0 ? '<br>' : '')
                 + (d.ot > 0
                     ? (otAppr
                         ? '<span tabindex="0" role="note" data-tip="Overtime request APPROVED'
                           + (otApprH > 0 ? ' for ' + num(Math.min(d.ot, otApprH)) + ' hr(s)' : '') + ' — paid.">'
                           + num(d.ot) + '<i class="ri-checkbox-circle-fill ot-ok-ic"></i></span>'
-                        : '<span tabindex="0" role="note" data-tip="Unfiled OT — rendered past the shift end but NOT paid unless filed and approved.">'
+                        : '<span class="ot-raw-part" tabindex="0" role="note" data-tip="Unfiled OT — rendered past the shift end but NOT paid unless filed and approved.">'
                           + num(d.ot) + '</span>')
                     : '')
                 + '</td>'
@@ -350,8 +361,8 @@
         var foot = '<td colspan="' + totalSpan + '">TOTAL</td>'
             + '<td class="x-col num">' + num(totals.wh) + '</td>'
             + '<td class="x-col num ot' + (otPaid > 0 ? ' ot-appr' : '') + '">'
-            + '<span tabindex="0" role="note" data-tip="Approved OT only — '
-            + num(otPaid) + ' of ' + num(totals.ot) + ' rendered hr(s) is filed, approved, and paid.">'
+            + '<span tabindex="0" role="note" data-tip="Paid OT only — automatic OT (in-shift hours past 8) plus filed and approved OT. '
+            + num(otPaid) + ' hr(s) paid; ' + num(totals.ot) + ' hr(s) rendered past the shift end.">'
             + num(otPaid) + (otPaid > 0 ? '<i class="ri-checkbox-circle-fill ot-ok-ic"></i>' : '') + '</span></td>'
             + '<td>' + tut[0] + '</td><td>' + tut[1] + '</td>'
             + '<td class="x-col num late">' + num(totals.late) + '</td>';

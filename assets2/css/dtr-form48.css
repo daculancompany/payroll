@@ -84,6 +84,10 @@
 .dtrf48-table td.x-col.ot.ot-appr .ot-ok-ic { font-size: 9px; vertical-align: 1px; margin-left: 2px; }
 /* Rendered past the shift end but never filed/approved → visible, clearly unpaid */
 .dtrf48-table td.x-col.ot.ot-raw { color: #b9ad93; font-weight: 400; }
+/* Automatic OT (in-shift hours past 8) → paid without a filing, so green too */
+.dtrf48-table td.x-col.ot .ot-auto { color: #0f7a3d; font-weight: 700; }
+.dtrf48-table td.x-col.ot .ot-auto .ot-ok-ic { font-size: 9px; vertical-align: 1px; margin-left: 2px; }
+.dtrf48-table td.x-col.ot .ot-auto ~ .ot-raw-part { color: #b9ad93; font-weight: 400; }
 .dtrf48-table td.x-col.late { color: #b02a37; }
 /* Half-day late charge — the figure is half the shift, and the row says so */
 .dtrf48-table td.x-col.late.late-hd { background: #fdf1f0; }

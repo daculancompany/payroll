@@ -2650,6 +2650,7 @@ function renderRecords(e) {
                 <div class="ddv-rec-stats">
                     <span>Hrs <b>${Number(r.wh).toFixed(2)}</b></span>
                     <span class="ot">OT <b>${Number(r.ot).toFixed(2)}</b></span>
+                    ${r.auto_ot > 0 ? `<span class="ot ddv-tip" data-tip="Hours rendered inside the shift beyond 8 — paid as OT automatically, no filing needed">Auto OT <b>${Number(r.auto_ot).toFixed(2)}</b></span>` : ''}
                     <span class="ut">UT <b>${Number(r.ut).toFixed(2)}</b></span>
                     <span class="late">Late <b>${Number(r.late).toFixed(2)}</b></span>
                 </div>
@@ -2772,10 +2773,10 @@ function recomputeEmp(e) {
     e.low_att = MIN_DAYS > 0 && Object.keys(e.days).length < MIN_DAYS;
     for (const date of Object.keys(e.days)) {
         const d = e.days[date];
-        d.wh = d.ot = d.ut = d.late = 0; d.status = 1;
+        d.wh = d.ot = d.aot = d.ut = d.late = 0; d.status = 1;
         for (const r of (d.recs || [])) {
             r.flags = recFlags(r);
-            d.wh += r.wh; d.ot += r.ot; d.ut += r.ut; d.late += r.late;
+            d.wh += r.wh; d.ot += r.ot; d.aot += +r.auto_ot || 0; d.ut += r.ut; d.late += r.late;
             e.totals.wh += r.wh; e.totals.ot += r.ot; e.totals.ut += r.ut; e.totals.late += r.late;
             if (r.status === 1) e.appr++; else if (r.status === 2) { e.disa++; d.status = 2; }
             else { e.pend++; if (hasBlocker(r)) e.exc++; if (d.status !== 2) d.status = 0; }

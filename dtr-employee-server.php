@@ -514,6 +514,7 @@ if ($action === 'docs') {
             }
             $D['wh']   += (float)$row['work_hours'];
             $D['ot']   += (float)$row['overtime'];
+            $D['aot']   = ($D['aot'] ?? 0) + dtr_auto_ot($row['work_hours'], (int)($row['is_rest_day'] ?? 0) === 1);
             $D['ut']   += (float)$row['undertime'];
             $D['late'] += (float)$row['late'];
             $E['totals']['wh']   += (float)$row['work_hours'];
@@ -577,6 +578,8 @@ if ($action === 'docs') {
                 'status'      => $s,
                 'wh'          => $wh,
                 'ot'          => $ot,
+                // In-shift hours past 8 — paid as OT by payroll with no filing.
+                'auto_ot'     => dtr_auto_ot($wh, (int)($row['is_rest_day'] ?? 0) === 1),
                 'ut'          => (float)$row['undertime'],
                 'late'        => (float)$row['late'],
                 'logs'        => $recLogs,

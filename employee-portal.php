@@ -5376,7 +5376,7 @@ function renderDtrReview(res) {
             // DTR_details.notes — 'note' here, not d.note, which the endpoint
             // uses for the rejection reason shown elsewhere in this view.
             note: d.dtr_note || '',
-            wh: d.work_hours, ot: d.overtime, ut: (d.undertime || 0), late: d.late,
+            wh: d.work_hours, ot: d.overtime, aot: (d.auto_ot || 0), ut: (d.undertime || 0), late: d.late,
             late_tip: d.late_tip || '', half_day: d.half_day || 0
         };
         totals.wh += d.work_hours; totals.ot += d.overtime;

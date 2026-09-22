@@ -129,7 +129,7 @@ if ($commaSeparatedSites !== '') {
     $df_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_from'])));
     $dt_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_to'])));
     $dtr_logs_q = $conn->query("SELECT DTR_details.employee_id, DTR_details.date_time, DTR_details.work_hours,
-            DTR_details.overtime, DTR_details.undertime, DTR_details.late, DTR_details.logs, DTR.site_id
+            DTR_details.overtime, DTR_details.undertime, DTR_details.late, DTR_details.logs, DTR_details.is_rest_day, DTR.site_id
         FROM DTR_details
         INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
         WHERE DTR_details.date_time BETWEEN '$df_esc' AND '$dt_esc'
@@ -263,6 +263,7 @@ function pcw_dtr_sheet($days) {
         }
         $cell['wh']   = (float)$d['work_hours'];
         $cell['ot']   = (float)$d['overtime'];
+        $cell['aot']  = dtr_auto_ot($d['work_hours'], (int)($d['is_rest_day'] ?? 0) === 1);
         $cell['ut']   = (float)$d['undertime'];
         $cell['late'] = (float)$d['late'];
         // Raw punch list for the modal's Attendance Logs section (Form 48
@@ -508,7 +509,7 @@ $refund_names = [];   // refund id => display name
     <!-- defer keeps these off the critical render path so the loading overlay
          paints immediately instead of the page hanging blank on the CDN fetches.
          None of the inline scripts use jQuery at parse time, so order is safe. -->
-    <script defer src="assets2/js/dtr-form48.js"></script>
+    <script defer src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
     <script defer src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

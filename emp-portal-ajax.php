@@ -160,7 +160,7 @@ switch ($action) {
 
         $days = [];
         $stampByDate = [];   // 'Y-m-d' => DTR_details.schedule_id
-        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes, schedule_id, sched_start, day_hours
+        $st = $conn->prepare("SELECT id, date_time, work_hours, overtime, undertime, late, logs, attendance_type, status, decision_note, notes, schedule_id, sched_start, day_hours, is_rest_day
                               FROM DTR_details WHERE ddtr_id = ? AND employee_id = ? ORDER BY date_time ASC");
         $st->bind_param('ii', $ddtr_id, $emp_id);
         $st->execute();
@@ -260,6 +260,7 @@ switch ($action) {
                     : '',
                 'work_hours' => (float) $d['work_hours'],
                 'overtime'   => (float) $d['overtime'],
+                'auto_ot'    => dtr_auto_ot($d['work_hours'], (int) ($d['is_rest_day'] ?? 0) === 1),
                 'undertime'  => (float) $d['undertime'],
                 'late'       => (float) $d['late'],
                 'type'       => $d['attendance_type'],

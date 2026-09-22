@@ -5966,6 +5966,9 @@ class Action
                     $day_hours = isset($row['day_hours']) && $row['day_hours'] !== null
                         ? day_hours_or_default($row['day_hours'])
                         : $this->dayHoursForDate($restMap[$employee_id] ?? [], $ymd);
+                    // A shift longer than 8 h is priced as an 8-h day; the rest
+                    // of it is automatic OT ($auto_ot below).
+                    $day_hours = regular_day_hours($day_hours);
                     $emp_day_hours[$employee_id] = $day_hours;
 
                     // Rest-day duty: if this DTR day is one of the employee's rest days
@@ -5991,6 +5994,9 @@ class Action
                         $row_work      = min($row_work, $rest_approved);
                         $rest_ot_cap   = max(0.0, $rest_approved - $row_work);
                     }
+
+                    // In-shift hours past 8 are OT without a filing (see dtr_auto_ot).
+                    $auto_ot = dtr_auto_ot($row_work, $was_rest);
 
                     // Cap a single day's worth of hours at one full day
                     $work_hours = floor($row_work) >= $day_hours ? $day_hours : $row_work;
@@ -6159,6 +6165,8 @@ class Action
                     // earns nothing.
                     // On a rest day the filing already paid the duty above, so OT gets
                     // only the approved hours that are left ($rest_ot_cap).
+                    // In-shift hours past 8 are paid on top, filed or not.
+                    $grouped_data[$employee_id]["overtime"] += $auto_ot;
                     if (!empty($otApproved[(int) $employee_id][$ymd])) {
                         $grouped_data[$employee_id]["overtime"] +=
                             min((float) $row['overtime'], $rest_ot_cap ?? $otApproved[(int) $employee_id][$ymd]);
@@ -6259,12 +6267,13 @@ class Action
                             // loop does — otherwise the same day could count as rest
                             // duty in one pass and not the other.
                             $r2ymd = date('Y-m-d', strtotime($row2["date_time"]));
-                            $dh2 = ($row2['day_hours'] ?? null) !== null
+                            $dh2 = regular_day_hours(($row2['day_hours'] ?? null) !== null
                                 ? day_hours_or_default($row2['day_hours'])
-                                : $this->dayHoursForDate($restMap[$employee_id] ?? [], $r2ymd);
+                                : $this->dayHoursForDate($restMap[$employee_id] ?? [], $r2ymd));
                             $rest2 = ($row2['schedule_id'] ?? null) !== null
                                 ? ((int) ($row2['is_rest_day'] ?? 0) === 1)
                                 : $this->isRestDay($restMap[$employee_id] ?? [], $r2ymd);
+                            $auto_ot2 = dtr_auto_ot($row2["work_hours"], $rest2);
                             $work_hours2 = floor($row2["work_hours"]) >= $dh2 ? $dh2 : $row2["work_hours"];
                             $data__details[] = [
                                 "site_id" => $row2["site_id"],
@@ -6273,6 +6282,7 @@ class Action
                                 "day_hours" => $dh2,
                                 "is_rest_day" => $rest2,
                                 "overtime" => $row2["overtime"],
+                                "auto_ot" => $auto_ot2,
                                 "undertime" => $row2["undertime"],
                                 "present" => $row2["present"],
                                 "late" => $row2["late"],
@@ -6288,6 +6298,7 @@ class Action
                                 $data['total_hours'] += $data__detail['work_hours'];
                                 // Same approved-OT-only policy (and cap) as the main loop.
                                 $d2ymd_ot = date('Y-m-d', strtotime($data__detail['date_time']));
+                                $data['overtime'] += $data__detail['auto_ot'];
                                 if (!empty($otApproved[(int) $employee_id][$d2ymd_ot])) {
                                     $data['overtime'] +=
                                         min((float) $data__detail['overtime'], $otApproved[(int) $employee_id][$d2ymd_ot]);

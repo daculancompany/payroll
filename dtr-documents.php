@@ -1078,6 +1078,12 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                     </button>
                 <?php endif; ?>
             <?php endif; ?>
+            <?php if ($batchStatus === 2 && $canCancelReq): ?>
+                <button class="ddv-btn warn ddv-tip" id="ddv-reopen-btn" onclick="reopenBatch()"
+                    data-tip="Undo the final approval — back to Pending Approval so records can be edited or recomputed. Not allowed once a payroll using this DTR is locked or out for review.">
+                    <i class="ri-lock-unlock-line"></i> Reopen
+                </button>
+            <?php endif; ?>
             <?php if ($canEdit && $batchStatus !== 2): ?>
                 <button class="ddv-btn ddv-tip<?= $schedMM['rows'] ? ' ddv-btn-attn' : '' ?>" id="ddv-recompute-btn" onclick="recomputeBatch()"
                     data-tip="Re-derive every record's hours / late / undertime / OT from its raw logs using each employee's CURRENT schedule assignment and the holiday calendar. Use this after fixing a wrong or forgotten schedule change.">
@@ -3202,6 +3208,26 @@ function finalApprove() {
             success: r => {
                 if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Error!', text: (r && r.message) || 'Failed.' });
                 Swal.fire({ icon: 'success', title: 'Approved!', text: 'DTR approved for payroll.' }).then(() => location.reload());
+            },
+            error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
+        });
+    });
+}
+
+function reopenBatch() {
+    Swal.fire({
+        title: 'Reopen this DTR?',
+        text: 'The final approval is undone and the batch goes back to Pending Approval. Any open payroll using it must be recalculated afterwards.',
+        icon: 'warning', showCancelButton: true,
+        confirmButtonColor: '#c98a00', confirmButtonText: 'Yes, reopen',
+    }).then(res => {
+        if (!res.isConfirmed) return;
+        $.ajax({
+            url: 'ajax.php?action=reopen_dtr', method: 'POST', dataType: 'JSON',
+            data: { id: DDTR_ID },
+            success: r => {
+                if (!(r && r.result)) return Swal.fire({ icon: 'error', title: 'Cannot reopen', text: (r && r.message) || 'Failed.' });
+                Swal.fire({ icon: 'success', title: 'Reopened', text: r.message }).then(() => location.reload());
             },
             error: () => Swal.fire({ icon: 'error', title: 'Error!', text: 'Request failed.' }),
         });

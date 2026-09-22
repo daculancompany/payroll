@@ -476,7 +476,8 @@ foreach ($dtr_flag_rows as $__row) {
     if (!$__filed && ($__ot > 0 || ($__rest && $__wh > 0))) {
         $__lim = ot_request_limit($conn, $emp_id, $__d);
         if ($__lim['allowed']) {
-            $__type = $__lim['request_type'];
+            // Rest days are filed as Overtime now (no Rest Day option in the form).
+            $__type = $__lim['request_type'] === 'rest_day' ? 'overtime' : $__lim['request_type'];
             // A rest day is unfileable-until-filed in a way a regular day is
             // not: with auto-authorize off, NOTHING on the day is approved or
             // paid until the filing is (see the gate in admin_class.php).
@@ -2980,7 +2981,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="ps-row"><span class="ps-lbl">Legal Holiday (<?= $latest['legal_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($lgl_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($sun_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Rest Day Premium (<?= $latest['sunday_duty'] ?> × 30%)</span><span class="ps-val earn">₱<?= n2($sun_amt) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl">Rest Day Premium (<?= (float) $latest['sunday_duty'] ?> × 30%)</span><span class="ps-val earn">₱<?= n2($sun_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($spc_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Special Holiday (<?= $latest['special_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($spc_amt) ?></span></div>
@@ -3099,7 +3100,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'subtotal'   => n2($sub2),
                         'ot_hrs'     => nd($ps['ot']), 'ot_rate' => n2($ps['ot_rate']), 'ot_amt' => n2($ot2),
                         'lgl_days'   => nd($ps['legal_holiday']),   'lgl_amt' => n2($lgl2),
-                        'sun_days'   => nd($ps['sunday_duty']),     'sun_amt' => n2($sun2),
+                        'sun_days'   => (float) $ps['sunday_duty'],     'sun_amt' => n2($sun2),
                         'spc_days'   => nd($ps['special_holiday']), 'spc_amt' => n2($spc2),
                         'late_min'   => number_format($ps['late']), 'late_amt' => n2($la2),
                         'ut_min'     => number_format($ps['under_time']), 'ut_amt' => n2($ut2),
@@ -4048,6 +4049,30 @@ function clearAttOtStart() {
     });
 }
 
+// Rest day filed as Overtime: the whole duty is the OT, so its window is the
+// day's own time in → time out. Fills the OT Start/End pickers from the scans
+// ("7:00 AM" → "07:00"); a time the employee set themselves (data-auto absent
+// on a filled field) is left alone.
+function attPrefillOtTimes(inTxt, outTxt) {
+    function to24(t) {
+        var m = /^(\d{1,2}):(\d{2})\s*([AP]M)$/i.exec(String(t || '').trim());
+        if (!m) return '';
+        var h = parseInt(m[1], 10) % 12 + (m[3].toUpperCase() === 'PM' ? 12 : 0);
+        return (h < 10 ? '0' : '') + h + ':' + m[2];
+    }
+    var want = { ot_time_start: to24(inTxt), ot_time_end: to24(outTxt) };
+    document.querySelectorAll('#att-request-form .att-otstart-field .ctp-12h').forEach(function (wrap) {
+        var ctp   = wrap.querySelector('clock-timepicker');
+        var inner = ctp && ctp.querySelector('input');
+        if (!inner || !(inner.name in want) || !want[inner.name]) return;
+        if (ctp.value && wrap.dataset.auto !== '1') return;   // employee's own pick stands
+        ctp.value = want[inner.name];
+        inner.value = ctp.value || '';
+        wrap.dataset.auto = '1';
+        if (wrap._ctpSync) wrap._ctpSync();
+    });
+}
+
 function toggleAttFields(type) {
     document.querySelectorAll('.att-incident-field').forEach(function(el){
         el.style.display = type === 'incident' ? '' : 'none';
@@ -4209,8 +4234,15 @@ function refreshOtLimit() {
         // employee, though — doing so (on a date pick or a type pick) snapped
         // their choice of Overtime straight back to Rest Day. Their pick
         // stands; the note says plainly why that date needs the other type.
-        var mismatch = !isUt && lim && lim.request_type && typeEl.value !== lim.request_type
+        // Rest Day Work is no longer offered: a rest day is filed as Overtime
+        // for the whole rendered time, so that pair is not a mismatch.
+        var restAsOt = lim && lim.request_type === 'rest_day' && typeEl.value === 'overtime';
+        var mismatch = !isUt && !restAsOt && lim && lim.request_type && typeEl.value !== lim.request_type
             && ATT_HOUR_TYPES.indexOf(lim.request_type) !== -1;
+        var otLblEl = document.getElementById('att-ot-hours-label');
+        if (otLblEl && typeEl.value === 'overtime') {
+            otLblEl.innerHTML = (restAsOt ? 'Hours Rendered (rest day)' : 'OT Hours Requested') + ' <span style="color:red;">*</span>';
+        }
         if (mismatch) {
             input.setAttribute('data-parsley-otlimit-message', 'This type does not match that date — see the note below.');
             _otLimit = { allowed: false };
@@ -4235,6 +4267,10 @@ function refreshOtLimit() {
             if (input.dataset.otAuto !== '0') {
                 input.value = lim.advance ? '' : String(lim.max_hours);
                 input.dataset.otAuto = '1';
+            }
+            // Rest day: the OT window is the whole duty — time in → time out.
+            if (restAsOt && !lim.advance && lim.time_in && lim.time_out) {
+                attPrefillOtTimes(lim.time_in, lim.time_out);
             }
             setOtHint(lim.message, lim.advance ? 'busy' : 'ok');
         } else {
@@ -6511,6 +6547,9 @@ $(function () {
         }
         ctp.addEventListener('input', sync);         // live while the popup is open
         ctp.addEventListener('change', sync);
+        // A time the employee picks is theirs — the rest-day OT prefill
+        // (attPrefillOtTimes) no longer overwrites it.
+        ctp.addEventListener('change', function () { wrap.dataset.auto = '0'; });
         wrap._ctpSync = sync;                        // the schedule prefill below reuses it
         if (clear) clear.addEventListener('click', function (e) {
             e.preventDefault();
@@ -7159,7 +7198,8 @@ jQuery(function ($) {
                                 <option value="">— Select type —</option>
                                 <option value="incident">Incident Report (missed/wrong scan)</option>
                                 <option value="overtime">Overtime Authorization Request</option>
-                                <option value="rest_day">Rest Day / Day-Off Work Authorization</option>
+                                <?php /* Rest day is filed as Overtime (whole rendered time) — see emp-portal-ajax.php
+                                <option value="rest_day">Rest Day / Day-Off Work Authorization</option> */ ?>
                                 <option value="undertime">Undertime / Early-Out Authorization</option>
                             </select>
                         </div>
@@ -7177,7 +7217,7 @@ jQuery(function ($) {
                                 <option value="device_error">Device / Scanner Error</option>
                                 <option value="system_down">System Down</option>
                                 <option value="overtime">Overtime Authorization</option>
-                                <option value="rest_day_work">Rest Day / Day-Off Work</option>
+                                <?php /* <option value="rest_day_work">Rest Day / Day-Off Work</option> */ ?>
                                 <option value="undertime">Undertime / Early Out</option>
                                 <option value="other">Other</option>
                             </select>

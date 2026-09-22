@@ -400,7 +400,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         // Scoped recompute rides the schedule-assign flow (employee-details
         // modal), so it carries that page's permission, not the DTR screen's.
         'recompute_employee_dtr' => 'employee-details',
-        'update_status_dtr' => 'dtr', 'send_dtr_for_review' => 'dtr',
+        'update_status_dtr' => 'dtr', 'send_dtr_for_review' => 'dtr', 'reopen_dtr' => 'dtr',
         'bulk_send_dtr_for_review' => 'dtr', 'remind_dtr_review' => 'dtr',
         'dtr_review_progress' => 'dtr', 'eport_dtr_reviews' => 'dtr',
         'mark_review_seen' => 'dtr', 'resolve_review_dispute' => 'dtr',
@@ -990,6 +990,30 @@ if (!function_exists('day_hours_or_default')) {
     {
         $h = (float) $hours;
         return ($h > 0 && $h <= 24) ? $h : (float) PAYROLL_DEFAULT_DAY_HOURS;
+    }
+}
+
+// The regular (basic-pay) day is never longer than 8 hours. A longer shift
+// (7AM–7PM = 12 h) still buys 8 hours with the daily rate; what is rendered
+// inside it beyond 8 is automatic OT — see dtr_auto_ot().
+if (!defined('REGULAR_DAY_HOURS')) {
+    define('REGULAR_DAY_HOURS', 8);
+}
+if (!function_exists('regular_day_hours')) {
+    function regular_day_hours($hours): float
+    {
+        return min(day_hours_or_default($hours), (float) REGULAR_DAY_HOURS);
+    }
+}
+
+// In-shift hours rendered beyond 8 — paid as OT with NO filing (11 h rendered
+// on a 7-7 shift = 3 h OT). DTR work_hours only counts time inside the shift,
+// so time past the shift end is NOT here: that is DTR overtime and still needs
+// an approved filing. Rest days keep their own filing flow, so none there.
+if (!function_exists('dtr_auto_ot')) {
+    function dtr_auto_ot($work_hours, bool $rest_day): float
+    {
+        return $rest_day ? 0.0 : round(max(0.0, (float) $work_hours - REGULAR_DAY_HOURS), 2);
     }
 }
 

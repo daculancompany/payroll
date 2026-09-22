@@ -243,7 +243,15 @@
                     otAppr = true; otApprH += Number(m.h || 0);
                 }
             });
-            if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
+            // Rest day with an approved filing: payroll pays EXACTLY the filed
+            // hours (capped at what was rendered) at 130%, OT included — so the
+            // sheet shows that figure as the day's hours and no separate OT.
+            var isRest = !!d.rest || raw.some(function (m) { return m.k === 'off'; });
+            var restPaid = (isRest && otAppr && otApprH > 0)
+                ? Math.min(Number(d.wh || 0) + Number(d.ot || 0), otApprH)
+                : null;
+            if (restPaid !== null) otPaid += restPaid;
+            else if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
             // In-shift hours past 8 (d.aot) — paid as OT with no filing, so
             // they count toward the paid total regardless of any request.
             var aot = Number(d.aot || 0);
@@ -277,7 +285,12 @@
             rows += '<tr class="' + wkend.trim() + '">'
                 + '<td class="day">' + dayCell + '</td>' + times
                 + '<td class="x-col num">' + (d.wh > 0 ? num(d.wh) : '') + '</td>'
-                + '<td class="x-col num ot' + (d.ot > 0 ? (otAppr ? ' ot-appr' : (aot > 0 ? '' : ' ot-raw')) : (aot > 0 ? ' ot-appr' : '')) + '">'
+                + (restPaid !== null
+                    ? '<td class="x-col num ot ot-appr"><span tabindex="0" role="note" data-tip="Rest day — '
+                      + num(restPaid) + ' hr(s) filed and approved, paid at 130%. Rendered '
+                      + num(Number(d.wh || 0) + Number(d.ot || 0)) + ' hr(s).">'
+                      + num(restPaid) + '<i class="ri-checkbox-circle-fill ot-ok-ic"></i></span></td>'
+                    : '<td class="x-col num ot' + (d.ot > 0 ? (otAppr ? ' ot-appr' : (aot > 0 ? '' : ' ot-raw')) : (aot > 0 ? ' ot-appr' : '')) + '">'
                 + autoTag
                 + (autoTag && d.ot > 0 ? '<br>' : '')
                 + (d.ot > 0
@@ -288,7 +301,7 @@
                         : '<span class="ot-raw-part" tabindex="0" role="note" data-tip="Unfiled OT — rendered past the shift end but NOT paid unless filed and approved.">'
                           + num(d.ot) + '</span>')
                     : '')
-                + '</td>'
+                + '</td>')
                 + '<td class="ut">' + (d.ut > 0 ? ut[0] : '') + '</td>'
                 + '<td class="ut">' + (d.ut > 0 ? ut[1] : '') + '</td>'
                 // Late is the hours CHARGED (grace / brackets / half day per Pay

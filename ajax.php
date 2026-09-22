@@ -365,6 +365,9 @@ if ($action == "update_status_dtr") {
 		echo json_encode($save);
 }
 
+if ($action == "reopen_dtr") {
+	echo json_encode($crud->reopen_dtr());
+}
 if ($action == "send_dtr_for_review") {
 	echo json_encode($crud->send_dtr_for_review());
 }

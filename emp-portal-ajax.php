@@ -1049,10 +1049,13 @@ switch ($action) {
                 echo json_encode(['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim]);
                 break;
             }
-            // The date decides which filing it needs. Filing a rest day as
-            // plain overtime would let approval write the duty onto the row,
-            // and payroll would pay the same hours twice.
-            if ($lim['request_type'] !== $req_type) {
+            // The date decides which filing it needs. The portal no longer
+            // offers Rest Day Work: a rest day is filed as Overtime for the
+            // WHOLE rendered time (the rest-day limit above). That is safe —
+            // applyOvertimeToDtr writes nothing onto a rest-day row, and
+            // payroll pays a rest day's approved hours once, at 130%.
+            $rest_as_ot = $lim['request_type'] === 'rest_day' && $req_type === 'overtime';
+            if ($lim['request_type'] !== $req_type && !$rest_as_ot) {
                 echo json_encode([
                     'result'  => false,
                     'message' => $lim['request_type'] === 'rest_day'

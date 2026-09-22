@@ -1491,13 +1491,13 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['sunday_duty'] ?>" data-id="<?= $row['id'] ?>" data-type="sunday_duty" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= (float) $row['sunday_duty'] ?>" data-id="<?= $row['id'] ?>" data-type="sunday_duty" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'sunday_duty')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= $row['sunday_duty'] ?></b>
+                                                            <b><?= (float) $row['sunday_duty'] ?></b>
                                                         <?php } ?>
                                                     </td>
                                                     <td class="text-right" style="min-width: 90px;">
@@ -2335,10 +2335,10 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['sunday_duty'] ?>" data-id="<?= $row['id'] ?>" data-type="sunday_duty" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Rest Day Duty Days">
+                                                                <input type="text" value="<?= (float) $row['sunday_duty'] ?>" data-id="<?= $row['id'] ?>" data-type="sunday_duty" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Rest Day Duty Days">
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= $row['sunday_duty'] ?></b>
+                                                            <b><?= (float) $row['sunday_duty'] ?></b>
                                                         <?php } ?>
                                                     </td>
                                                     <td class="text-right" style="min-width: 90px;">

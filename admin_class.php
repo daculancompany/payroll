@@ -5981,25 +5981,30 @@ class Action
                         ? ((int) ($row['is_rest_day'] ?? 0) === 1)
                         : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
 
-                    // A rest-day filing names the hours that are VALID for the day —
-                    // the employee (or approver) may authorize fewer than the scans
-                    // show (8 rendered, 6 filed). Pay the duty up to the approved
-                    // hours, and let OT take only what is left of them, so the day
-                    // and its OT together never exceed the filing. No approved
-                    // filing (rest_day_auto_authorize on) = the scans alone decide.
+                    // Rest day: the employee files the WHOLE rendered time (work +
+                    // past-shift OT) as one Overtime request, and every approved hour
+                    // is paid at 130% — hourly × hours in `present` plus the 30%
+                    // premium in `rest_duty`, with no separate OT line. The filing
+                    // caps the hours (13 rendered, 10 filed = 10 paid). No approved
+                    // filing (rest_day_auto_authorize on) = the in-shift work only.
                     $row_work   = (float) $row["work_hours"];
                     $rest_ot_cap = null;
-                    if ($was_rest && !empty($otApproved[(int) $employee_id][$ymd])) {
-                        $rest_approved = (float) $otApproved[(int) $employee_id][$ymd];
-                        $row_work      = min($row_work, $rest_approved);
-                        $rest_ot_cap   = max(0.0, $rest_approved - $row_work);
+                    if ($was_rest) {
+                        if (!empty($otApproved[(int) $employee_id][$ymd])) {
+                            $row_work = min($row_work + (float) $row['overtime'],
+                                            (float) $otApproved[(int) $employee_id][$ymd]);
+                        }
+                        $rest_ot_cap = 0.0;
                     }
 
                     // In-shift hours past 8 are OT without a filing (see dtr_auto_ot).
                     $auto_ot = dtr_auto_ot($row_work, $was_rest);
 
-                    // Cap a single day's worth of hours at one full day
-                    $work_hours = floor($row_work) >= $day_hours ? $day_hours : $row_work;
+                    // Cap a single day's worth of hours at one full day — except a
+                    // rest day, whose every approved hour is paid (13 h = 1.625 days).
+                    $work_hours = $was_rest
+                        ? $row_work
+                        : (floor($row_work) >= $day_hours ? $day_hours : $row_work);
 
                     // Fraction of the day actually WORKED — the basis for rest-day
                     // and holiday premiums, which follow hours rendered. (Basic-pay
@@ -6274,7 +6279,17 @@ class Action
                                 ? ((int) ($row2['is_rest_day'] ?? 0) === 1)
                                 : $this->isRestDay($restMap[$employee_id] ?? [], $r2ymd);
                             $auto_ot2 = dtr_auto_ot($row2["work_hours"], $rest2);
-                            $work_hours2 = floor($row2["work_hours"]) >= $dh2 ? $dh2 : $row2["work_hours"];
+                            // Rest day: the whole approved rendered time, uncapped —
+                            // same 130%-on-every-hour rule as the main loop.
+                            if ($rest2) {
+                                $work_hours2 = (float) $row2["work_hours"];
+                                if (!empty($otApproved[(int) $employee_id][$r2ymd])) {
+                                    $work_hours2 = min($work_hours2 + (float) $row2["overtime"],
+                                                       (float) $otApproved[(int) $employee_id][$r2ymd]);
+                                }
+                            } else {
+                                $work_hours2 = floor($row2["work_hours"]) >= $dh2 ? $dh2 : $row2["work_hours"];
+                            }
                             $data__details[] = [
                                 "site_id" => $row2["site_id"],
                                 "date_time" => $row2["date_time"],
@@ -6299,7 +6314,8 @@ class Action
                                 // Same approved-OT-only policy (and cap) as the main loop.
                                 $d2ymd_ot = date('Y-m-d', strtotime($data__detail['date_time']));
                                 $data['overtime'] += $data__detail['auto_ot'];
-                                if (!empty($otApproved[(int) $employee_id][$d2ymd_ot])) {
+                                // A rest day's OT is already inside its 130% hours.
+                                if (empty($data__detail['is_rest_day']) && !empty($otApproved[(int) $employee_id][$d2ymd_ot])) {
                                     $data['overtime'] +=
                                         min((float) $data__detail['overtime'], $otApproved[(int) $employee_id][$d2ymd_ot]);
                                 }
@@ -6507,10 +6523,11 @@ class Action
                     $basic_pay = $data['basic_pay'];
                     $ot = $data['overtime'];
                     $allowance_amount = $data['allowance_amount'];
-                    // Rest-day duty days worked, auto-counted from the DTR above. Stored in the
-                    // sunday_duty column (int) — rounded to whole days, matching the prior
-                    // manual whole-day entry. Admin can still adjust it afterward.
-                    $rest_duty = (int) round($data['rest_duty'] ?? 0);
+                    // Rest-day duty in DAYS of 8 h, auto-counted from the DTR above
+                    // (13 approved hours = 1.625). Kept fractional (sunday_duty is
+                    // DECIMAL — migrations/2026_09_sunday_duty_decimal.sql) so the 30%
+                    // premium lands on every hour. Admin can still adjust it afterward.
+                    $rest_duty = round((float) ($data['rest_duty'] ?? 0), 3);
                     // Holiday duty days worked, auto-counted from the holiday calendar
                     // above. Same int columns and same rounding as rest-day duty; the
                     // admin can still override either afterwards.
@@ -7430,6 +7447,56 @@ class Action
         } else {
             return ['result' => false, 'message' => 'Invalid parameters'];
         }
+    }
+
+    // Undo a Final Approval: DTR status 2 → 1 (Pending Approval), so the batch can
+    // be edited, recomputed or sent for review again. Admin/HR only. Refused while
+    // a LOCKED (2) or in-employee-review (3) payroll covers the batch's site and
+    // period — those figures are paid or being signed off. An open payroll (0/1)
+    // is allowed, but must be recalculated afterwards (said in the reply).
+    function reopen_dtr()
+    {
+        $role = (int) ($_SESSION['login_role'] ?? 0);
+        if (!in_array($role, [1, 9], true)) {
+            return ['result' => false, 'message' => 'Only Admin or HR can reopen an approved DTR.'];
+        }
+        $id = isset($_POST['id']) ? (int) $_POST['id'] : 0;
+        if (!$id) return ['result' => false, 'message' => 'Invalid parameters'];
+
+        $dtr = $this->db->query("SELECT id, site_id, date_from, date_to, status FROM DTR WHERE id = $id")->fetch_assoc();
+        if (!$dtr) return ['result' => false, 'message' => 'DTR not found'];
+        if ((int) $dtr['status'] !== 2) {
+            return ['result' => false, 'message' => 'This DTR is not final-approved, so there is nothing to reopen.'];
+        }
+
+        $from = $this->db->real_escape_string(date('Y-m-d', strtotime($dtr['date_from'])));
+        $to   = $this->db->real_escape_string(date('Y-m-d', strtotime($dtr['date_to'])));
+        $site = (int) $dtr['site_id'];
+        $open = [];
+        $pq = $this->db->query("SELECT id, ref_no, status, site_ids FROM payroll
+                                WHERE date_from <= '$to' AND date_to >= '$from'");
+        if ($pq) while ($p = $pq->fetch_assoc()) {
+            $sites = json_decode((string) $p['site_ids'], true);
+            if (!is_array($sites) || !in_array($site, array_map('intval', $sites), true)) continue;
+            $st = (int) $p['status'];
+            if ($st === 2 || $st === 3) {
+                return ['result' => false, 'message' => 'Cannot reopen: payroll ' . $p['ref_no']
+                    . ($st === 2 ? ' is locked.' : ' is out for employee review.')
+                    . ' It already uses this DTR.'];
+            }
+            $open[] = $p['ref_no'];
+        }
+
+        $by  = (int) ($_SESSION['login_id'] ?? 0);
+        $upd = $this->db->query("UPDATE DTR SET status = 1, reopened_by = " . ($by ?: 'NULL') . ", reopened_at = NOW() WHERE id = $id AND status = 2");
+        if (!$upd) return ['result' => false, 'message' => $this->db->error];
+
+        return [
+            'result'  => true,
+            'message' => $open
+                ? 'DTR reopened. Recalculate payroll ' . implode(', ', $open) . ' after you finish, then Final Approve again.'
+                : 'DTR reopened. Final Approve it again when you are done.',
+        ];
     }
 
     // Move a DTR into "Ready for Review" (status 3) and notify every employee on it

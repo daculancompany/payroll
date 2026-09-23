@@ -615,6 +615,23 @@ $("#employee-deduction").on("submit", async function (e) {
                 $(".submitbutton").removeAttr("disabled");
             },
             success: function (resp) {
+                // An EDIT answers with a result object carrying its own message
+                // (including what was already withheld); adding still answers 1.
+                var json = null;
+                try { json = JSON.parse(resp); } catch (e) { json = null; }
+                if (json && typeof json === "object") {
+                    if (!json.result) {
+                        Swal.fire({ icon: "error", title: "Not saved", text: json.message || "Failed to save." });
+                        $(".submitbutton").removeAttr("disabled");
+                        return;
+                    }
+                    Swal.fire({
+                        icon: "success",
+                        title: "Saved",
+                        text: json.message || "Deduction updated.",
+                    }).then(() => window.location.reload());
+                    return;
+                }
                 if (resp == 1) {
                     Swal.fire({
                         icon: "success",
@@ -693,8 +710,56 @@ $("#employee-allowance").on("submit", async function (e) {
 });
 
 function add_deductions(e) {
+    resetDeductionModal();
     $("#modal-deduction").modal("show");
 }
+
+// The Add Deduction modal doubles as the editor — one form, one submit path, so
+// the two can never validate or save differently. Empty #deduction-row-id means
+// "new"; a value means "correct this row".
+function resetDeductionModal() {
+    var f = document.getElementById("employee-deduction");
+    if (!f) return;
+    f.reset();
+    $("#deduction-row-id").val("");
+    $("#deduction_id").val("").trigger("change");
+    $("#total_amount").val("0");
+    $("#deduction-modal-title").html('<i class="ri-subtract-line me-2" style="color:#673bb6;"></i>Add Deduction');
+    $("#deduction-submit-btn").html('<i class="ri-add-line me-1"></i>Add Deduction');
+    $("#deduction-edit-note").remove();
+    if (window.jQuery && jQuery.fn.parsley) $(f).parsley().reset();
+}
+
+$(document).on("click", ".edit_deduction", function () {
+    var row;
+    try { row = JSON.parse($(this).attr("data-row")); } catch (e) { return; }
+    resetDeductionModal();
+
+    $("#deduction-row-id").val(row.id);
+    // select2 needs the change event to repaint its own rendering.
+    $("#deduction_id").val(String(row.deduction_id)).trigger("change");
+    $("#amount").val(row.amount);
+    $("#total_amount").val(row.total_amount);
+    $("#edate").val(row.effective_date || "");
+    $("#deduction_reference_no").val(row.reference_no || "");
+
+    $("#deduction-modal-title").html('<i class="ri-pencil-line me-2" style="color:#673bb6;"></i>Edit Deduction');
+    $("#deduction-submit-btn").html('<i class="ri-save-line me-1"></i>Save Changes');
+
+    // An amortizing row already part-collected: say so, since changing the
+    // total re-derives the balance from what payroll has actually withheld.
+    var paid = Number(row.total_amount || 0) - Number(row.balance || 0);
+    if (Number(row.total_amount || 0) > 0 && paid > 0.004) {
+        $("#employee-deduction .modal-body").prepend(
+            '<div id="deduction-edit-note" class="alert alert-warning py-2 px-3 mb-3" style="font-size:11.5px;">' +
+            '<i class="ri-information-line me-1"></i>' + paid.toFixed(2) +
+            ' has already been withheld. Changing the total re-computes the remaining balance from it.</div>'
+        );
+    }
+    $("#modal-deduction").modal("show");
+});
+
+$(document).on("hidden.bs.modal", "#modal-deduction", resetDeductionModal);
 
 function add_contritions(e) {
     $("#modal-contrition").modal("show");

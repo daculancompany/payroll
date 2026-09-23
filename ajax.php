@@ -272,8 +272,10 @@ if ($action == "delete_deductions") {
 }
 if ($action == "save_employee_deduction") {
 	$save = $crud->save_employee_deduction();
-	if ($save)
-		echo $save;
+	// Adding returns the legacy 1/0 flag; editing returns a result array so the
+	// modal can show why a correction was refused.
+	if (is_array($save)) echo json_encode($save);
+	elseif ($save)       echo $save;
 }
 if ($action == "delete_employee_deduction") {
 	$save = $crud->delete_employee_deduction();

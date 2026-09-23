@@ -3432,11 +3432,10 @@ if (APP_ENV === 'prod') {
  * with only SELECT/INSERT/UPDATE/DELETE (no FILE, DROP or GRANT), and export
  * DB_USER/DB_PASS for it.
  */
-$servername = "localhost";
-$username = "u573277835_payroll";
-$password = ":nP7eSfO6l*=";
-$dbname = "u573277835_payroll";
-
+$servername = getenv('DB_HOST') ?: "localhost";
+$username   = getenv('DB_USER') ?: "root";
+$password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : "";
+$dbname     = getenv('DB_NAME') ?: "payroll_live_db";
 
 // Biometric scanner API key. Prefer the environment: a literal here is readable
 // by anyone who obtains the source or the git history, and rotating it means

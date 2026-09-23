@@ -4669,6 +4669,12 @@ class Action
         $type         = $_POST['type'] ?? [];
         $reference    = $_POST['reference_no'] ?? [];
 
+        // EDIT of one existing row. The same modal posts it, so the fields
+        // still arrive as one-element arrays; only the presence of `id`
+        // distinguishes a correction from a new assignment.
+        $edit_id = (int) ($_POST['id'] ?? 0);
+        if ($edit_id > 0) return $this->update_employee_deduction($edit_id);
+
         $save = [];
         foreach ($deduction_id as $k => $v) {
             $did   = (int)$v;
@@ -4690,6 +4696,78 @@ class Action
         }
 
         return !empty($save) ? 1 : 0;
+    }
+
+    /**
+     * Correct one existing employee_deductions row.
+     *
+     * Until now a wrong figure could only be deleted and re-added, which threw
+     * away the row that deduction_history points at — the record of what has
+     * already been withheld.
+     *
+     * The balance is re-derived rather than overwritten: whatever a LOCKED
+     * payroll already took (deduction_history) stays taken, and the remaining
+     * balance becomes `new total − already paid`. So raising a ₱5,000 total to
+     * ₱6,000 after ₱2,000 was collected leaves ₱4,000 to go, not ₱6,000. A row
+     * switched to recurring (total 0) keeps no balance at all, and one whose
+     * total is now fully covered is marked paid.
+     */
+    private function update_employee_deduction($id)
+    {
+        $id  = (int) $id;
+        $row = $this->db->query("SELECT * FROM employee_deductions WHERE id = $id")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Deduction not found.'];
+
+        $first = function ($key) {
+            $v = $_POST[$key] ?? null;
+            if (is_array($v)) $v = reset($v);
+            return $v === false ? null : $v;
+        };
+
+        $did   = (int) ($first('deduction_id') ?: $row['deduction_id']);
+        $amt   = (float) $first('amount');
+        $total = (float) $first('total_amount');
+        $edate = trim((string) $first('effective_date'));
+        $ref   = mb_substr(trim((string) $first('reference_no')), 0, 100);
+
+        if ($did <= 0)  return ['result' => false, 'message' => 'Please choose a deduction.'];
+        if ($amt <= 0)  return ['result' => false, 'message' => 'Amount must be greater than zero.'];
+        if ($total < 0) return ['result' => false, 'message' => 'Total cannot be negative.'];
+        $d = $this->db->query("SELECT id FROM deductions WHERE id = $did");
+        if (!$d || !$d->num_rows) return ['result' => false, 'message' => 'That deduction no longer exists.'];
+
+        // What payroll has already withheld against this row (written at Lock,
+        // reversed at Unlock — so it is always the truth about money taken).
+        $paid = 0.0;
+        $ph = $this->db->query("SELECT COALESCE(SUM(amount), 0) AS p FROM deduction_history WHERE ded_id = $id");
+        if ($ph && ($pr = $ph->fetch_assoc())) $paid = (float) $pr['p'];
+
+        if ($total > 0) {
+            $balance = max(0.0, $total - $paid);
+            $status  = $balance <= 0 ? 1 : 0;
+        } else {
+            $balance = 0.0;
+            $status  = 0;        // recurring: never "paid off"
+        }
+
+        $stmt = $this->db->prepare(
+            "UPDATE employee_deductions
+                SET deduction_id = ?, amount = ?, total_amount = ?, balance = ?, status = ?,
+                    effective_date = ?, reference_no = ?
+              WHERE id = ?"
+        );
+        $edate_val = ($edate !== '' && strtotime($edate) !== false) ? date('Y-m-d', strtotime($edate)) : null;
+        $ref_val   = $ref !== '' ? $ref : null;
+        $stmt->bind_param('idddissi', $did, $amt, $total, $balance, $status, $edate_val, $ref_val, $id);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        return [
+            'result'  => true,
+            'message' => $paid > 0
+                ? 'Deduction updated. ' . number_format($paid, 2) . ' already withheld, '
+                  . number_format($balance, 2) . ' left to collect.'
+                : 'Deduction updated.',
+        ];
     }
 
     function delete_employee_deduction()

@@ -1170,6 +1170,24 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     </td>
                                                     <td class="text-center">
                                                         <?php if (!$emp_readonly): ?>
+                                                        <?php /* Correcting a figure must not mean delete-and-re-add: the row
+                                                                 is what deduction_history points at, i.e. the record of what
+                                                                 has already been withheld. */ ?>
+                                                        <button type="button"
+                                                            class="btn btn-sm btn-outline-primary edit_deduction"
+                                                            data-row="<?= htmlspecialchars(json_encode([
+                                                                'id'             => (int) $row['id'],
+                                                                'deduction_id'   => (int) $row['deduction_id'],
+                                                                'dname'          => $row['dname'],
+                                                                'amount'         => (float) $row['amount'],
+                                                                'total_amount'   => (float) $row['total_amount'],
+                                                                'balance'        => (float) $row['balance'],
+                                                                'effective_date' => $row['effective_date'],
+                                                                'reference_no'   => $row['reference_no'],
+                                                            ]), ENT_QUOTES) ?>"
+                                                            data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Deduction">
+                                                            <i class="ri-pencil-line"></i>
+                                                        </button>
                                                         <button type="button" data-id="<?= $row['id'] ?>"
                                                             class="btn btn-sm btn-outline-danger remove_deduction"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Delete Deduction">

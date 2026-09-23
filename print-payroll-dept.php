@@ -121,8 +121,8 @@ thead { display: table-header-group; }
       <img style="width: 60px;" src="assets2/images/logo.jpeg" alt="Logo">
     </div>
     <div>
-      <div>COMC</div>
-      <div>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</div>
+      <div>Cagayan de Oro medical center,Inc.</div>
+      <div>Tiano-Nacalaban Street, Cagayan de Oro City</div>
       <div class="text-center">PAYROLL SUMMARY BY DEPARTMENT</div>
       <div class="text-center">PAYROLL PERIOD:
         <strong><?= date('F d', strtotime($payroll['date_from'])) ?> - <?= date('F j, Y', strtotime($payroll['date_to'])) ?></strong>
@@ -232,15 +232,15 @@ thead { display: table-header-group; }
     <div class="sig-block">
       Noted By:
       <div class="sig-inner">
-        <p><b>JAY O. VERAS</b></p>
-        <p>HR HEAD</p>
+        <p><b></b></p>
+        <p></p>
       </div>
     </div>
     <div class="sig-block">
       Checked By:
       <div class="sig-inner">
-        <p><b>JOVANIE ALAB</b></p>
-        <p>ACCOUNTING PAYABLE TEAM LEADER</p>
+        <p><b></b></p>
+        <p></p>
       </div>
     </div>
     <div class="sig-block">

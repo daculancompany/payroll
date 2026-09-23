@@ -173,8 +173,8 @@ $payroll_type = $payroll['type'];
                             <img style="width: 60px;" src="assets2/images/logo.jpeg" alt="Logo">
                         </div>
                         <div>
-                            <h1>COMC</h1>
-                            <h4>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</h4>
+                            <div>Cagayan de Oro medical center,Inc.</div>
+      <div>Tiano-Nacalaban Street, Cagayan de Oro City</div>
                             <h6 class="text-center">PAYROLL PERIOD: <strong>
                                     <?php
                                     $date = strtotime($payroll['date_from']);
@@ -532,7 +532,9 @@ $payroll_type = $payroll['type'];
                                 <th></th>
                                 <th></th>
                                 <th class="text-right"><?= number_format($t_gross, 2) ?></th>
+                                <?php if (count($contributions_settings) > 0): ?>
                                 <th colspan="<?= count($contributions_settings) ?>"></th>
+                                <?php endif; ?>
                                 <th></th>
                                 <th></th>
                                 <th></th>

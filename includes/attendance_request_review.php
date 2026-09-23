@@ -103,6 +103,8 @@ if (!defined('ATT_REQ_REVIEW_RENDERED')) {
       </div>
       <div class="modal-footer py-2">
         <button type="button" class="btn btn-sm btn-light" data-bs-dismiss="modal">Cancel</button>
+        <?php /* Admin-only: correct the figures at any stage, approved included. */ ?>
+        <button type="button" class="btn btn-sm btn-warning d-none" id="arr-save"><i class="ri-save-line me-1"></i>Save changes</button>
         <button type="button" class="btn btn-sm btn-danger"  id="arr-reject"><i class="ri-close-line me-1"></i>Reject</button>
         <button type="button" class="btn btn-sm btn-success" id="arr-approve"><i class="ri-check-double-line me-1"></i>Approve</button>
       </div>
@@ -119,6 +121,9 @@ window.AttReqReview = (function () {
         undertime: '<span class="badge bg-danger-subtle text-danger border border-danger-subtle"><i class="ri-logout-box-r-line me-1"></i>Undertime</span>'
     };
     var HOUR_TYPES = ['overtime', 'rest_day', 'undertime'];
+    // Admin (role 1) is the only account that may correct a request outside its
+    // own stage — see update_attendance_request, which enforces the same rule.
+    var ARR_IS_ADMIN = <?= ((int) ($_SESSION['login_role'] ?? 0) === 1) ? 'true' : 'false' ?>;
     var cur = null, cbs = {}, modal = null, seq = 0;
 
     function $id(id) { return document.getElementById(id); }
@@ -171,6 +176,11 @@ window.AttReqReview = (function () {
         // "pending" here means: still open AND it is this user's turn. Anyone
         // else (Admin, an approver at a later stage) sees it read-only.
         var pending = Number(q.status) === 0 && !!q.can_act;
+        // Admin may correct the hours whatever the stage — and on an approved
+        // request too, which re-applies to the DTR so payroll follows. A
+        // cancelled request is already reversed, so it stays read-only.
+        var adminEdit = ARR_IS_ADMIN && Number(q.status) !== 3;
+        var editable  = pending || adminEdit;
         $id('arr-chain').innerHTML = chainHtml(q);
 
         $id('arr-id').value        = q.id;
@@ -218,12 +228,19 @@ window.AttReqReview = (function () {
         var decided = $id('arr-decided');
         decided.classList.toggle('d-none', pending);
         decided.innerHTML = pending ? ''
-            : (Number(q.status) === 0
-                ? '<i class="ri-lock-line me-1"></i>Not your turn — only the ' + esc(q.current_stage_label || 'current approver') + ' can edit or decide it now.'
-                : '<i class="ri-lock-line me-1"></i>Already ' + ({1: 'approved', 2: 'rejected', 3: 'cancelled'}[Number(q.status)] || 'decided') + ' — no longer editable.');
-        ['arr-reason', 'arr-notes', 'arr-in', 'arr-out', 'arr-hours'].forEach(function (f) { $id(f).disabled = !pending; });
+            : (adminEdit
+                ? '<i class="ri-edit-line me-1"></i>Admin edit — '
+                  + (Number(q.status) === 1
+                        ? 'this request is already approved, so a change here also corrects the DTR and what payroll pays.'
+                        : 'you may correct the figures; the decision itself stays with the approver.')
+                  + ' The change is recorded on the approval trail.'
+                : (Number(q.status) === 0
+                    ? '<i class="ri-lock-line me-1"></i>Not your turn — only the ' + esc(q.current_stage_label || 'current approver') + ' can edit or decide it now.'
+                    : '<i class="ri-lock-line me-1"></i>Already ' + ({1: 'approved', 2: 'rejected', 3: 'cancelled'}[Number(q.status)] || 'decided') + ' — no longer editable.'));
+        ['arr-reason', 'arr-notes', 'arr-in', 'arr-out', 'arr-hours'].forEach(function (f) { $id(f).disabled = !editable; });
         $id('arr-approve').classList.toggle('d-none', !pending);
         $id('arr-reject').classList.toggle('d-none', !pending);
+        $id('arr-save').classList.toggle('d-none', !(adminEdit && !pending));
 
         var hint = $id('arr-limit');
         hint.innerHTML = '';
@@ -242,7 +259,10 @@ window.AttReqReview = (function () {
             if (!lim || cur !== q) { hint.innerHTML = ''; return; }
             hint.className = 'small mb-2 p-2 rounded border';
             if (lim.allowed) {
-                $id('arr-hours').max = lim.max_hours;
+                // Admin is not capped by the scans (the server warns instead of
+                // refusing), so the ceiling must not block the field either.
+                if (ARR_IS_ADMIN) $id('arr-hours').removeAttribute('max');
+                else $id('arr-hours').max = lim.max_hours;
                 hint.style.background = '#eef6ee'; hint.style.borderColor = '#c6e6c9'; hint.style.color = '#2e7d32';
                 if (isUt) {
                     hint.innerHTML = '<i class="ri-fingerprint-line me-1"></i>'
@@ -300,7 +320,7 @@ window.AttReqReview = (function () {
                 claimed_time_in: next.in, claimed_time_out: next.out,
                 ot_hours_requested: next.hours
             })
-        }).then(function (r) { return r.json(); }).then(function (json) {
+        }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (json) {
             if (!(json && json.result)) {
                 Swal.fire({ icon: 'error', title: 'Not saved', text: (json && json.message) || 'Failed to update request.' });
                 return false;
@@ -310,6 +330,7 @@ window.AttReqReview = (function () {
             cur.time_in  = json.request.time_in;
             cur.time_out = json.request.time_out;
             cur.ot_hours = json.request.ot_hours;
+            cur.save_warning = json.warning || null;
             if (cbs.onSaved) cbs.onSaved(cur);
             return true;
         });
@@ -319,7 +340,7 @@ window.AttReqReview = (function () {
         return fetch('ajax.php?action=decide_attendance_request', {
             method: 'POST',
             body: new URLSearchParams({ id: cur.id, stage: cur.current_stage || '', status: status, remarks: remarks || '' })
-        }).then(function (r) { return r.json(); }).then(function (json) {
+        }).then(function (r) { return r.json(); }).catch(function () { return null; }).then(function (json) {
             if (!(json && json.result)) {
                 Swal.fire({ icon: 'error', title: 'Error', text: (json && json.message) || 'Failed to decide the request.' });
                 return false;
@@ -345,12 +366,38 @@ window.AttReqReview = (function () {
         });
     }
 
+    // Approving writes to the DTR (and, on the final stage, notifies) — on a slow
+    // connection that is a few seconds of a dead-looking button. Hold a blocking
+    // spinner until the reply lands; the result Swal replaces it.
+    function busy(title) {
+        Swal.fire({
+            title: title,
+            allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false,
+            didOpen: function () { Swal.showLoading(); }
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
+        // Admin-only correction: save the figures without touching the verdict.
+        $id('arr-save').addEventListener('click', function () {
+            var btn = this;
+            btn.disabled = true;
+            busy('Saving…');
+            saveEdits().then(function (ok) {
+                if (!ok) return;
+                if (modal) modal.hide();
+                var warn = cur && cur.save_warning;
+                Swal.fire(warn
+                    ? { icon: 'warning', title: 'Saved with a warning', text: warn }
+                    : { icon: 'success', title: 'Saved', text: 'The request was updated and the change is on its approval trail.' });
+            }).finally(function () { btn.disabled = false; });
+        });
         $id('arr-approve').addEventListener('click', function () {
             var btn = this;
             btn.disabled = true;
             // The approver has the scans and the figure in front of them here —
             // a second "Are you sure?" on top of that is a click, not a safeguard.
+            busy('Approving…');
             saveEdits().then(function (ok) { return ok ? decide(1) : null; })
                        .finally(function () { btn.disabled = false; });
         });
@@ -368,6 +415,7 @@ window.AttReqReview = (function () {
             }).then(function (res) {
                 if (!res.isConfirmed) return;
                 btn.disabled = true;
+                busy('Rejecting…');
                 decide(2, String(res.value || '').trim()).finally(function () { btn.disabled = false; });
             });
         });

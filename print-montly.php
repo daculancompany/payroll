@@ -201,9 +201,8 @@ $payroll_type = $payroll['type'];
                             <img style="width: 60px;" src="assets2/images/logo.jpeg" alt="Logo">
                         </div>
                         <div>
-                            <div>COMC</div>
-                            <div>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</h4>
-                            </div>
+                           <div>Cagayan de Oro medical center,Inc.</div>
+      <div>Tiano-Nacalaban Street, Cagayan de Oro City</div>
                             <div class="text-center">PAYROLL PERIOD:
                                 <strong>
                                     <?php
@@ -675,13 +674,18 @@ $payroll_type = $payroll['type'];
                                 <th></th>
                                 <th class="text-right"><?= number_format($t_backpay, 2) ?></th>
                                 <th class="text-right"><?= number_format($t_gross, 2) ?></th>
+                                <?php /* Same colspan="0" shift as print-payroll.php — skip when empty. */ ?>
+                                <?php if (count($contributions_settings) > 0): ?>
                                 <th colspan="<?= count($contributions_settings) ?>"></th>
+                                <?php endif; ?>
                                 <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
                                 <?php foreach ($fixed_keys as $fk): ?>
                                 <th class="text-right"><?= number_format($t_fixed[$fk] ?? 0, 2) ?></th>
                                 <?php endforeach; ?>
                                 <th class="text-right"><?= number_format($t_deduction, 2) ?></th>
+                                <?php if (count($refunds_settings) > 0): ?>
                                 <th colspan="<?= count($refunds_settings) ?>"></th>
+                                <?php endif; ?>
                                 <th class="text-right"><?= number_format($t_net, 2) ?></th>
                                 <th></th>
                             </tr>
@@ -705,15 +709,15 @@ $payroll_type = $payroll['type'];
                         <div style="display: table-cell; padding: 0 10px;">
                             Noted By:
                             <div style="margin-left: 20px;">
-                                <p><b>JAY 0. VERAS</b></p>
-                                <p>HR HEAD</p>
+                                <p><b></b></p>
+                                <p></p>
                             </div>
                         </div>
                         <div style="display: table-cell; padding: 0 10px;">
                             Checked By:
                             <div style="margin-left: 20px;">
-                                <p><b>Jovanie Alab</b></p>
-                                <p> ACCOUNTING PAYABLE TEAM LEADER</p>
+                                <p><b></b></p>
+                                <p></p>
                             </div>
                         </div>
                         <div style="display: table-cell; padding: 0 10px;">

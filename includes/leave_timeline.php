@@ -277,6 +277,27 @@ if (!function_exists('leave_timeline_html')) {
                 . '</div></li>';
         }
 
+        // Last correction made to the figures (attendance requests only —
+        // update_attendance_request stamps edited_by / edited_at / edit_note).
+        // It sits at the end of the trail so "8 → 6 hrs, by HR, after approval"
+        // is read where the decision is, not buried above it.
+        if (!empty($row['edited_at'])) {
+            $ename = trim((string) ($row['edited_name'] ?? ''));
+            if ($ename === '' && !empty($row['edited_by']) && ($GLOBALS['conn'] ?? null) instanceof mysqli) {
+                $eq = $GLOBALS['conn']->query("SELECT name FROM users WHERE id = " . (int) $row['edited_by']);
+                $ename = trim((string) (($eq ? $eq->fetch_assoc() : null)['name'] ?? ''));
+            }
+            $enote = trim((string) ($row['edit_note'] ?? ''));
+            $h .= '<li class="is-skip"><span class="lvtl-dot skip"><i class="ri-edit-line"></i></span>'
+                . '<div class="lvtl-card">'
+                . '<div class="lvtl-head"><span class="lvtl-stage">Edited</span>'
+                . '<span class="lvtl-pill skip">Adjusted</span></div>'
+                . ($ename !== '' ? '<div class="lvtl-name">' . $esc($ename) . '</div>' : '')
+                . $stamp($row['edited_at'])
+                . ($enote !== '' ? '<div class="lvtl-remark"><i class="ri-information-line"></i> ' . $esc($enote) . '</div>' : '')
+                . '</div></li>';
+        }
+
         $h .= '</ul>';
         return $h;
     }

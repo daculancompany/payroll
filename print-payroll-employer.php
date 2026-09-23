@@ -214,8 +214,8 @@ $site_details = $result_site->fetch_assoc();
                         <img style="width: 60px;" src="assets2/images/logo.jpeg" alt="Logo">
                     </div>
                     <div>
-                        <div>COMC</div>
-                        <div>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</h4>
+                       <div>Cagayan de Oro medical center,Inc.</div>
+      <div>Tiano-Nacalaban Street, Cagayan de Oro City</div>
                         </div>
                         <div class="text-center">PAYROLL PERIOD:
                             <strong>
@@ -483,15 +483,15 @@ $site_details = $result_site->fetch_assoc();
                 <div style="display: table-cell; padding: 0 10px;">
                     Noted By:
                     <div style="margin-left: 20px;">
-                        <p><b>JAY 0. VERAS</b></p>
-                        <p>HR HEAD</p>
+                        <p><b></b></p>
+                        <p></p>
                     </div>
                 </div>
                 <div style="display: table-cell; padding: 0 10px;">
                     Checked By:
                     <div style="margin-left: 20px;">
-                        <p><b>JOVANIE ALAB</b></p>
-                        <p> ACCOUNTING PAYABLE TEAM LEADER</p>
+                        <p><b></b></p>
+                        <p></p>
                     </div>
                 </div>
                 <div style="display: table-cell; padding: 0 10px;">

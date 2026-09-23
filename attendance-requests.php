@@ -312,7 +312,11 @@ $reasonLabels = [
                                                     <button class="btn btn-sm btn-success" title="Review &amp; approve (<?= htmlspecialchars($att_stage_defs[$cur_stage]['label']) ?> stage)" onclick="reviewRequest(<?= $row['id'] ?>)"><i class="ri-check-double-line"></i></button>
                                                     <button class="btn btn-sm btn-danger" title="Reject" onclick="decideRequest(<?= $row['id'] ?>,2)"><i class="ri-close-line"></i></button>
                                                 <?php elseif ($is_admin_view || $my_role === 9): ?>
-                                                    <button class="btn btn-sm btn-outline-secondary" title="Review (view)" onclick="reviewRequest(<?= $row['id'] ?>)"><i class="ri-eye-line"></i></button>
+                                                    <?php /* Admin opens the same modal to correct the hours — at any stage,
+                                                             approved included (update_attendance_request). HR opens it read-only. */ ?>
+                                                    <button class="btn btn-sm btn-outline-secondary"
+                                                        title="<?= $is_admin_view ? 'Review &amp; edit hours' : 'Review (view)' ?>"
+                                                        onclick="reviewRequest(<?= $row['id'] ?>)"><i class="<?= $is_admin_view ? 'ri-edit-line' : 'ri-eye-line' ?>"></i></button>
                                                 <?php endif; ?>
                                                     <button class="btn btn-sm btn-outline-secondary" title="Approval trail" onclick="openAttTimeline(<?= $row['id'] ?>)"><i class="ri-route-line"></i></button>
                                                 <?php if ($can_delete && $row['status'] == 0): ?>
@@ -398,17 +402,29 @@ function reviewRequest(id) {
     });
 }
 
+// Blocking spinner for every action that goes to the server from this page,
+// so a slow reply never reads as a dead button. The result Swal replaces it.
+function attBusy(title) {
+    Swal.fire({
+        title: title,
+        allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false,
+        didOpen: function () { Swal.showLoading(); }
+    });
+}
+
 function deleteRequest(id) {
     Swal.fire({ title: 'Delete this request?', text: 'The employee will have to file it again.', icon: 'warning',
                 showCancelButton: true, confirmButtonColor: '#c62828', confirmButtonText: 'Yes, delete' })
     .then(function (r) {
         if (!r.isConfirmed) return;
+        attBusy('Deleting…');
         fetch('ajax.php?action=delete_attendance_request', { method: 'POST', body: new URLSearchParams({ id: id }) })
             .then(function (x) { return x.json(); })
             .then(function (j) {
                 if (j && j.result) { window.location.reload(); }
                 else Swal.fire({ icon: 'error', title: 'Error', text: (j && j.message) || 'Could not delete.' });
-            });
+            })
+            .catch(function () { Swal.fire({ icon: 'error', title: 'Error', text: 'Could not delete — the request did not reach the server.' }); });
     });
 }
 
@@ -536,13 +552,23 @@ async function decideRequest(id, status) {
         });
     if (!dlg.isConfirmed) return;
     const remarks = status === 2 ? String(dlg.value || '').trim() : '';
+    // Deciding writes to the DTR and notifies — hold a spinner so the row is
+    // never clicked twice while the request is in flight.
+    attBusy(status === 1 ? 'Approving…' : 'Rejecting…');
     // The stage is the row's CURRENT one; the server re-derives it when omitted
     // and refuses anything out of order.
-    const res = await fetch('ajax.php?action=decide_attendance_request', {
-        method: 'POST',
-        body: new URLSearchParams({ id, status, remarks })
-    });
-    const json = await res.json();
+    let json = null;
+    try {
+        const res = await fetch('ajax.php?action=decide_attendance_request', {
+            method: 'POST',
+            body: new URLSearchParams({ id, status, remarks })
+        });
+        json = await res.json();
+    } catch (e) {
+        // Without this the spinner above would spin forever on a dropped request.
+        Swal.fire({ icon: 'error', title: 'Error', text: 'The decision did not reach the server. Nothing was changed.' });
+        return;
+    }
     if (json?.result) {
         // Reload: stage chips, "awaiting" line, tile counts and the buttons all
         // change with a decision. The message carries the next stage (or the

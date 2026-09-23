@@ -221,9 +221,8 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <img style="width: 60px;" src="assets2/images/logo.jpeg" alt="Logo">
                     </div>
                     <div>
-                        <div>COMC</div>
-                        <div>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</h4>
-                        </div>
+                       <div>Cagayan de Oro medical center,Inc.</div>
+      <div>Tiano-Nacalaban Street, Cagayan de Oro City</div>
                         <div class="text-center">PAYROLL PERIOD:
                             <strong>
                                 <?php
@@ -681,13 +680,20 @@ LEFT JOIN sites f ON f.id = a.site_id
                         <th></th>
                         <th class="text-right"><?= number_format($t_backpay, 2) ?></th>
                         <th class="text-right"><?= number_format($t_gross, 2) ?></th>
+                        <?php /* colspan="0" is not 1 column — it shifts every footer cell after it
+                                 one to the right (the Net Pay total landed under Signature). Skip
+                                 the placeholder when the group has no columns at all. */ ?>
+                        <?php if (count($contributions_settings) > 0): ?>
                         <th colspan="<?= count($contributions_settings) ?>"></th>
+                        <?php endif; ?>
                         <?php foreach ($fixed_keys as $fk): ?>
                         <th class="text-right"><?= number_format($t_fixed[$fk] ?? 0, 2) ?></th>
                         <?php endforeach; ?>
                         <th class="text-right"><?= number_format($t_other_ded ?? 0, 2) ?></th>
                         <th class="text-right"><?= number_format($t_deduction, 2) ?></th>
+                        <?php if (count($refunds_settings) > 0): ?>
                         <th colspan="<?= count($refunds_settings) ?>"></th>
+                        <?php endif; ?>
                         <th class="text-right"><?= number_format($t_adjust ?? 0, 2) ?></th>
                         <th class="text-right"><?= number_format($t_net, 2) ?></th>
                         <th></th>

@@ -3820,10 +3820,13 @@ class Action
         $role = (int) ($_SESSION['login_role'] ?? 0);
         $uid  = (int) ($_SESSION['login_id'] ?? 0);
 
-        // Only someone in the chain may correct a figure, and only the approver
-        // the request is currently waiting on — the same person who will decide
-        // it. Administrator is view-only here, as on leave.
-        if (!in_array($role, [8, 9, 10, 11], true) || !can_edit('attendance-requests', $role)) {
+        // Someone in the chain may correct a figure, but only the approver the
+        // request is currently waiting on — the same person who will decide it.
+        // ADMIN is the exception: it may correct the hours at any stage, and on
+        // an already-approved request too (a filing found to be wrong after the
+        // fact). The DTR row is re-applied below so payroll follows the change.
+        $is_admin = ($role === 1);
+        if (!$is_admin && (!in_array($role, [8, 9, 10, 11], true) || !can_edit('attendance-requests', $role))) {
             return ['result' => false, 'message' => 'Your role cannot edit this request.'];
         }
         if (!$id) return ['result' => false, 'message' => 'Invalid request'];
@@ -3831,11 +3834,20 @@ class Action
         $req = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
         if (!$req) return ['result' => false, 'message' => 'Request not found'];
         $cur = leave_current_stage($req);
-        if ((int) $req['status'] !== 0 || $cur === null) {
-            return ['result' => false, 'message' => 'This request was already decided — it can no longer be edited.'];
-        }
-        if (!leave_user_can_act($this->db, $uid, $cur, (int) $req['employee_id'])) {
-            return ['result' => false, 'message' => 'Only the ' . leave_stages()[$cur]['label'] . ' this request is waiting on can edit it.'];
+        $st  = (int) $req['status'];
+        if ($is_admin) {
+            // Cancelled is already reversed on the DTR — editing it would leave
+            // the row and the filing disagreeing, with nothing to re-apply.
+            if ($st === 3) {
+                return ['result' => false, 'message' => 'This request was cancelled — it can no longer be edited.'];
+            }
+        } else {
+            if ($st !== 0 || $cur === null) {
+                return ['result' => false, 'message' => 'This request was already decided — it can no longer be edited.'];
+            }
+            if (!leave_user_can_act($this->db, $uid, $cur, (int) $req['employee_id'])) {
+                return ['result' => false, 'message' => 'Only the ' . leave_stages()[$cur]['label'] . ' this request is waiting on can edit it.'];
+            }
         }
 
         $employee_id = (int) $req['employee_id'];
@@ -3867,31 +3879,43 @@ class Action
             $lim = $is_ut
                 ? undertime_request_limit($this->db, $employee_id, $req['request_date'], $id)
                 : ot_request_limit($this->db, $employee_id, $req['request_date'], $id);
-            if (!$lim['allowed']) {
-                return ['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim];
-            }
-            if ($ot_hours < $min) {
-                return ['result' => false, 'message' => 'The smallest ' . $what . ' that can be filed is ' . $min . ' hr.', 'ot_limit' => $lim];
-            }
-            if ($ot_hours > $lim['max_hours'] + 0.001) {
-                return [
-                    'result'   => false,
-                    'message'  => 'Only up to ' . $lim['max_hours'] . ' hr of ' . $what . ' is supported by the scans for that date. ' . $lim['message'],
-                    'ot_limit' => $lim,
-                ];
+            // Admin is not held to the scan ceiling — a correction is sometimes
+            // exactly the case the scans cannot show (a missed tap, a figure
+            // agreed with the department). The ceiling still becomes a WARNING
+            // so nobody raises hours past the record without noticing.
+            if ($is_admin) {
+                if ($ot_hours <= 0 || $ot_hours > 24) {
+                    return ['result' => false, 'message' => 'Hours must be between 0 and 24.', 'ot_limit' => $lim];
+                }
+                if (!$lim['allowed']) {
+                    $warning = 'The scans for that date support no ' . $what . ' at all. ' . $lim['message'];
+                } elseif ($ot_hours > $lim['max_hours'] + 0.001) {
+                    $warning = 'Saved, but the scans for that date only support '
+                             . $lim['max_hours'] . ' hr of ' . $what . ' — this pays '
+                             . rtrim(rtrim(number_format($ot_hours - (float) $lim['max_hours'], 2), '0'), '.')
+                             . ' hr more than the record shows.';
+                } elseif ($ot_hours < $min) {
+                    $warning = 'Saved, but this is below the ' . $min . ' hr minimum a filing normally carries.';
+                }
+            } else {
+                if (!$lim['allowed']) {
+                    return ['result' => false, 'message' => $lim['message'], 'ot_limit' => $lim];
+                }
+                if ($ot_hours < $min) {
+                    return ['result' => false, 'message' => 'The smallest ' . $what . ' that can be filed is ' . $min . ' hr.', 'ot_limit' => $lim];
+                }
+                if ($ot_hours > $lim['max_hours'] + 0.001) {
+                    return [
+                        'result'   => false,
+                        'message'  => 'Only up to ' . $lim['max_hours'] . ' hr of ' . $what . ' is supported by the scans for that date. ' . $lim['message'],
+                        'ot_limit' => $lim,
+                    ];
+                }
             }
         }
 
-        $stmt = $this->db->prepare(
-            "UPDATE attendance_requests
-                SET reason = ?, claimed_time_in = ?, claimed_time_out = ?, ot_hours_requested = ?, notes = ?
-              WHERE id = ? AND status = 0"
-        );
-        $stmt->bind_param('sssdsi', $reason, $time_in, $time_out, $ot_hours, $notes, $id);
-        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
-
-        // The employee sees what the approver changed BEFORE the decision lands,
-        // so an approved 6 hrs against a filed 7.5 is never a silent haircut.
+        // What changed, in the same words the employee's notification and the
+        // approval trail use.
         $changed = [];
         if ((float) ($req['ot_hours_requested'] ?? 0) !== (float) ($ot_hours ?? 0)) {
             $changed[] = 'hours ' . rtrim(rtrim(number_format((float) $req['ot_hours_requested'], 2), '0'), '.')
@@ -3900,12 +3924,38 @@ class Action
         if ($req['claimed_time_in'] !== $time_in || $req['claimed_time_out'] !== $time_out) {
             $changed[] = 'claimed time updated';
         }
+        $edit_note = $changed ? implode(', ', $changed) : null;
+
+        // Admin edits any stage (including approved); everyone else only while
+        // the request is still pending, which the guard above already checked.
+        $where = $is_admin ? '' : ' AND status = 0';
+        $stmt = $this->db->prepare(
+            "UPDATE attendance_requests
+                SET reason = ?, claimed_time_in = ?, claimed_time_out = ?, ot_hours_requested = ?, notes = ?,
+                    edited_by = ?, edited_at = NOW(), edit_note = ?
+              WHERE id = ?" . $where
+        );
+        $stmt->bind_param('sssdsisi', $reason, $time_in, $time_out, $ot_hours, $notes, $uid, $edit_note, $id);
+        if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        // An APPROVED filing already wrote its hours onto the DTR row, so the
+        // correction has to land there too — otherwise payroll keeps paying the
+        // old figure. Rest-day rows are untouched by design (applyOvertimeToDtr).
+        if ($st === 1 && in_array($type, ATT_REQUEST_HOUR_TYPES, true)) {
+            $fresh = $this->db->query("SELECT * FROM attendance_requests WHERE id = $id")->fetch_assoc();
+            if ($fresh) $this->applyOvertimeToDtr($fresh);
+        }
+
+        // The employee sees what the approver changed BEFORE the decision lands,
+        // so an approved 6 hrs against a filed 7.5 is never a silent haircut.
         if ($changed) {
             $this->notifyEmployee(
                 $employee_id,
                 'Your request was adjusted',
                 att_request_label($type, true) . ' for ' . date('M d, Y', strtotime($req['request_date']))
-                    . ' — ' . implode(', ', $changed) . '. It is still awaiting a decision.',
+                    . ' — ' . implode(', ', $changed) . '. '
+                    . ($st === 1 ? 'It was already approved, so this corrects what payroll pays.'
+                                 : 'It is still awaiting a decision.'),
                 'ri-edit-line',
                 'warning',
                 'employee-portal.php?tab=att-requests'
@@ -3915,6 +3965,9 @@ class Action
         return [
             'result'  => true,
             'message' => 'Request updated',
+            // Set only for an admin correction the scans do not support — the
+            // save went through, and the modal says so rather than blocking it.
+            'warning' => $warning ?? null,
             'request' => [
                 'id'        => $id,
                 'reason'    => $reason,

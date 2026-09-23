@@ -53,8 +53,8 @@ thead { display: table-header-group; }
   <div class="top">
     <div class="logo-area"><img style="width:60px;" src="assets2/images/logo.jpeg" alt="Logo"></div>
     <div>
-      <div>COMC</div>
-      <div>TIU SONS, BUILDING BARANGAY 33, GUILLERMO COGON CAGAYAN DE ORO CITY</div>
+      <div>Cagayan de Oro medical center,Inc.</div>
+      <div>Tiano-Nacalaban Street, Cagayan de Oro City</div>
       <div><strong>13TH MONTH PAY REGISTER &mdash; <?= $year ?></strong><?= $finalized ? '' : ' (DRAFT)' ?></div>
     </div>
   </div>

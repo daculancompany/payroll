@@ -889,8 +889,20 @@ if (!function_exists('dtr_shift_figures')) {
         // Rest day: no break, so the duty is the whole shift (8:00–5:00 = 9 h
         // on an 8-h day) — not capped at the day length. Overtime stays what
         // it is on any day: only the time past the shift end.
+        //
+        // Late and undertime are dropped for the same reason the break window
+        // is: there was no shift to be late for or to leave early from. The
+        // stamped shift only anchors the clock here — the employee was off duty
+        // and came in anyway. Measuring a 9:09 arrival against an 8:00 start
+        // charged a HALF DAY against rest-day work that is otherwise paid at
+        // 130%, and payroll (which already zeroes undertime on a rest day)
+        // deducted it in pesos.
         if ($rest_day) {
             $work_hours = round(max(0, $eff_out - $eff_in) / 3600, 2);
+            $late       = 0.0;
+            $undertime  = 0.0;
+            $late_raw_min = 0.0;
+            $charge     = ['hours' => 0.0, 'rule' => 'none'];
         }
 
         return [
@@ -2907,6 +2919,18 @@ if (!function_exists('can_run_leave_rollover')) {
     }
 }
 
+// May this employee file THIS leave type? Eligibility above answers "entitled to
+// leave credits", which is a property of the employee — but a type marked
+// `open_to_all` (Official Business) is an authorization to be out on company
+// work, not a draw on a yearly balance, so every classification may file it.
+// Same escape-hatch shape LWOP already has in submit_leave_request.
+if (!function_exists('leave_can_file_type')) {
+    function leave_can_file_type($classification, $override, $open_to_all): bool
+    {
+        return ((int) $open_to_all === 1) || leave_eligibility_from($classification, $override);
+    }
+}
+
 if (!function_exists('leave_eligibility_from')) {
     function leave_eligibility_from($classification, $override): bool
     {
@@ -3408,10 +3432,11 @@ if (APP_ENV === 'prod') {
  * with only SELECT/INSERT/UPDATE/DELETE (no FILE, DROP or GRANT), and export
  * DB_USER/DB_PASS for it.
  */
-$servername = getenv('DB_HOST') ?: "localhost";
-$username   = getenv('DB_USER') ?: "root";
-$password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : "";
-$dbname     = getenv('DB_NAME') ?: "payroll_live_db";
+$servername = "localhost";
+$username = "u573277835_payroll";
+$password = ":nP7eSfO6l*=";
+$dbname = "u573277835_payroll";
+
 
 // Biometric scanner API key. Prefer the environment: a literal here is readable
 // by anyone who obtains the source or the git history, and rotating it means

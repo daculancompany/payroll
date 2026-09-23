@@ -52,6 +52,9 @@
                                                 <?php if ((int)($row['no_limit'] ?? 0) === 1): ?>
                                                     <div><span class="badge bg-info-subtle text-info border border-info-subtle mt-1" style="font-size:9.5px;" title="Filing is never blocked by balance">No limit</span></div>
                                                 <?php endif; ?>
+                                                <?php if ((int)($row['open_to_all'] ?? 0) === 1): ?>
+                                                    <div><span class="badge bg-primary-subtle text-primary border border-primary-subtle mt-1" style="font-size:9.5px;" title="Every classification may file this type, not just Regular and Executive">Open to all</span></div>
+                                                <?php endif; ?>
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-center">
@@ -141,6 +144,13 @@
                         </div>
                         <small class="text-muted">Employees can always file this type even with 0 or unset credits (e.g. Sick Leave). Days are still tracked and reported — filing is just never blocked.</small>
                     </div>
+                    <div class="mb-3" id="ltype-openall-group">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="ltype-openall" name="open_to_all" value="1">
+                            <label class="form-check-label" for="ltype-openall"><b>Open to all classifications</b></label>
+                        </div>
+                        <small class="text-muted">Any employee may file this type — Probationary, Contractual and the rest — not only Regular and Executive (e.g. Official Business, which authorizes company work rather than spending a balance). Leave credits still belong to the entitled classifications only.</small>
+                    </div>
                     <div class="mb-3" id="ltype-rollover-group">
                         <label class="form-label"><i class="ri-calendar-todo-line me-1"></i>Year-End Policy</label>
                         <select class="form-select" id="ltype-carryover" name="carryover" onchange="toggleCap()">
@@ -201,6 +211,7 @@ function resetLeaveTypeModal() {
     document.getElementById('ltype-status').checked = true;
     document.getElementById('ltype-paid-yes').checked = true;
     document.getElementById('ltype-nolimit').checked = false;
+    document.getElementById('ltype-openall').checked = false;
     document.getElementById('ltype-carryover').value = '0';
     toggleDaysAllowed(1);
     toggleCap();
@@ -214,6 +225,7 @@ function editLeaveType(row) {
     document.getElementById('ltype-desc').value  = row.description || '';
     document.getElementById('ltype-status').checked = (row.status == 1);
     document.getElementById('ltype-nolimit').checked = (parseInt(row.no_limit ?? 0) === 1);
+    document.getElementById('ltype-openall').checked = (parseInt(row.open_to_all ?? 0) === 1);
     document.getElementById('ltype-carryover').value = String(parseInt(row.carryover ?? 0));
     document.getElementById('ltype-cap').value = (row.carryover_cap === null || row.carryover_cap === undefined) ? '' : row.carryover_cap;
     const isPaid = parseInt(row.is_paid ?? 1);
@@ -231,6 +243,10 @@ document.getElementById('form-leave-type').addEventListener('submit', async func
     // Ensure status sends 0 when unchecked
     const data = new URLSearchParams(new FormData(this));
     if (!document.getElementById('ltype-status').checked) data.set('status', '0');
+    // Unchecked checkboxes post nothing, so unticking has to be sent explicitly
+    // or the flag could never be turned back off.
+    if (!document.getElementById('ltype-openall').checked) data.set('open_to_all', '0');
+    if (!document.getElementById('ltype-nolimit').checked) data.set('no_limit', '0');
     const res = await fetch('ajax.php?action=save_leave_type', { method: 'POST', body: data });
     const json = await res.json();
     if (json?.result) {

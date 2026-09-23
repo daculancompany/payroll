@@ -6035,17 +6035,22 @@ class Action
                         : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
 
                     // Rest day: the employee files the WHOLE rendered time (work +
-                    // past-shift OT) as one Overtime request, and every approved hour
+                    // past-shift OT) as one Overtime request, and every APPROVED hour
                     // is paid at 130% — hourly × hours in `present` plus the 30%
-                    // premium in `rest_duty`, with no separate OT line. The filing
-                    // caps the hours (13 rendered, 10 filed = 10 paid). No approved
-                    // filing (rest_day_auto_authorize on) = the in-shift work only.
+                    // premium in `rest_duty`, with no separate OT line.
+                    //
+                    // The approval is the authority here, not the scans: it is what
+                    // HR/Admin agreed to pay for a day nobody was rostered on, and
+                    // Admin may already set any figure on the filing (with a warning).
+                    // Capping at the rendered time paid 7.90 against an approved 8.00
+                    // and made the sheet disagree with the filing it came from.
+                    // No approved filing (rest_day_auto_authorize on) = the in-shift
+                    // work only, exactly as before.
                     $row_work   = (float) $row["work_hours"];
                     $rest_ot_cap = null;
                     if ($was_rest) {
                         if (!empty($otApproved[(int) $employee_id][$ymd])) {
-                            $row_work = min($row_work + (float) $row['overtime'],
-                                            (float) $otApproved[(int) $employee_id][$ymd]);
+                            $row_work = (float) $otApproved[(int) $employee_id][$ymd];
                         }
                         $rest_ot_cap = 0.0;
                     }
@@ -6165,7 +6170,11 @@ class Action
                     // remainder of the day, so leave days still total 1. Rest-day
                     // duty keeps the worked fraction — no shift was owed, and UT is
                     // never charged there.
-                    $late_hours = (float) ($row['late'] ?? 0);
+                    // Never charged on a rest day, for the same reason undertime is
+                    // not: no shift was scheduled to be late for. dtr_shift_figures
+                    // stops writing it from now on; this also covers rows computed
+                    // before that and not yet recomputed.
+                    $late_hours = $was_rest ? 0.0 : (float) ($row['late'] ?? 0);
                     $days = $was_rest
                         ? $frac_worked
                         : min(1, $frac_worked + ($late_hours + $ut_hours) / $day_hours);
@@ -6236,7 +6245,7 @@ class Action
                     // MINUTES: ₱20.31 instead of ₱1,218.75 on a ₱1,000 / 8-hour day.
                     // The accumulator has always been named late_in_minutes; only the
                     // value feeding it was wrong.
-                    $grouped_data[$employee_id]["late_in_minutes"]  += $row['late'] * 60;
+                    $grouped_data[$employee_id]["late_in_minutes"]  += $late_hours * 60;
                     $grouped_data[$employee_id]["undertime"]  +=  $row['undertime'];
                     $grouped_data[$employee_id]["isAutoDeduct"]  =  $isAutoDeduct;
                     $grouped_data[$employee_id]["site_id"]  = $site_id;
@@ -6332,13 +6341,12 @@ class Action
                                 ? ((int) ($row2['is_rest_day'] ?? 0) === 1)
                                 : $this->isRestDay($restMap[$employee_id] ?? [], $r2ymd);
                             $auto_ot2 = dtr_auto_ot($row2["work_hours"], $rest2);
-                            // Rest day: the whole approved rendered time, uncapped —
-                            // same 130%-on-every-hour rule as the main loop.
+                            // Rest day: the APPROVED hours, uncapped — same
+                            // 130%-on-every-hour rule as the main loop.
                             if ($rest2) {
                                 $work_hours2 = (float) $row2["work_hours"];
                                 if (!empty($otApproved[(int) $employee_id][$r2ymd])) {
-                                    $work_hours2 = min($work_hours2 + (float) $row2["overtime"],
-                                                       (float) $otApproved[(int) $employee_id][$r2ymd]);
+                                    $work_hours2 = (float) $otApproved[(int) $employee_id][$r2ymd];
                                 }
                             } else {
                                 $work_hours2 = floor($row2["work_hours"]) >= $dh2 ? $dh2 : $row2["work_hours"];
@@ -6382,14 +6390,17 @@ class Action
                                     $ut2 = max(0.0, $ut2 - (float) $utApproved[(int) $employee_id][$d2ymd_ot]);
                                 }
                                 $data['under_time'] = ($data['under_time'] ?? 0) + $ut2 * 60;
-                                $data['late_in_minutes'] += $data__detail['late'] * 60;
+                                // Same rest-day rule as the main loop: no shift was
+                                // owed, so nothing to be late for.
+                                $late2 = empty($data__detail['is_rest_day']) ? (float) $data__detail['late'] : 0.0;
+                                $data['late_in_minutes'] += $late2 * 60;
                                 // Same whole-day credit as the main loop: late/UT are
                                 // deducted as minutes, so the day they were carved from
                                 // must be credited whole or they'd be charged twice.
                                 $frac2 = $data__detail['work_hours'] / $data__detail['day_hours'];
                                 $credit2 = !empty($data__detail['is_rest_day'])
                                     ? $frac2
-                                    : min(1, $frac2 + ((float) $data__detail['late'] + (float) $data__detail['undertime']) / $data__detail['day_hours']);
+                                    : min(1, $frac2 + ($late2 + (float) $data__detail['undertime']) / $data__detail['day_hours']);
                                 $data['present'] += $credit2;
                                 // Count rest-day duty from cross-cluster attendance too.
                                 $d2ymd = date('Y-m-d', strtotime($data__detail['date_time']));
@@ -11378,6 +11389,11 @@ class Action
         // No balance limit (paid types only): filing is never blocked by an
         // insufficient or unset balance — days are still tracked and reported.
         $no_limit     = ($is_paid === 1 && (int) ($_POST['no_limit'] ?? 0) === 1) ? 1 : 0;
+        // Open to all classifications: every employee may FILE this type, not
+        // only the ones entitled to leave credits (Official Business authorizes
+        // company work rather than spending a balance). LWOP is already open to
+        // everyone by its own rule, so the flag is only meaningful on paid types.
+        $open_to_all  = ($is_paid === 1 && (int) ($_POST['open_to_all'] ?? 0) === 1) ? 1 : 0;
 
         if ($name === '') {
             return ['result' => false, 'message' => 'Leave type name is required.'];
@@ -11387,11 +11403,11 @@ class Action
         }
 
         if ($id === 0) {
-            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, is_paid, description, status, carryover, carryover_cap, no_limit) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param('siisiidi', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $no_limit);
+            $stmt = $this->db->prepare("INSERT INTO leave_types (name, days_allowed, is_paid, description, status, carryover, carryover_cap, no_limit, open_to_all) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->bind_param('siisiidii', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $no_limit, $open_to_all);
         } else {
-            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, is_paid = ?, description = ?, status = ?, carryover = ?, carryover_cap = ?, no_limit = ? WHERE id = ?");
-            $stmt->bind_param('siisiidii', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $no_limit, $id);
+            $stmt = $this->db->prepare("UPDATE leave_types SET name = ?, days_allowed = ?, is_paid = ?, description = ?, status = ?, carryover = ?, carryover_cap = ?, no_limit = ?, open_to_all = ? WHERE id = ?");
+            $stmt->bind_param('siisiidiii', $name, $days_allowed, $is_paid, $description, $status, $carryover, $carry_cap, $no_limit, $open_to_all, $id);
         }
 
         if ($stmt->execute()) {

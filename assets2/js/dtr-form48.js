@@ -246,10 +246,12 @@
             // Rest day with an approved filing: payroll pays EXACTLY the filed
             // hours (capped at what was rendered) at 130%, OT included — so the
             // sheet shows that figure as the day's hours and no separate OT.
+            // The APPROVED hours are what a rest day pays — not what the scans
+            // rendered. Capping at the rendered time printed 7.90 against an
+            // approved 8.00, so the sheet disagreed with the filing it came from
+            // and with payroll, which pays the approval.
             var isRest = !!d.rest || raw.some(function (m) { return m.k === 'off'; });
-            var restPaid = (isRest && otAppr && otApprH > 0)
-                ? Math.min(Number(d.wh || 0) + Number(d.ot || 0), otApprH)
-                : null;
+            var restPaid = (isRest && otAppr && otApprH > 0) ? otApprH : null;
             if (restPaid !== null) otPaid += restPaid;
             else if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
             // In-shift hours past 8 (d.aot) — paid as OT with no filing, so

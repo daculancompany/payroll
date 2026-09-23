@@ -76,11 +76,20 @@ sort($my_taken_leave_dates);
 // ── Leave data for the portal Leave tab ─────────────────────────────────
 $leave_types_list = [];
 $lwop_types_list  = [];
-$ltq = $conn->query("SELECT id, name, days_allowed, is_paid FROM leave_types WHERE status = 1 ORDER BY name ASC");
+// Paid types every classification may file (Official Business): the filing
+// dropdown shows these to an employee who is not entitled to leave credits,
+// the same way LWOP is already offered to everyone.
+$open_all_types_list = [];
+$ltq = $conn->query("SELECT id, name, days_allowed, is_paid, open_to_all FROM leave_types WHERE status = 1 ORDER BY name ASC");
 if ($ltq) while ($r = $ltq->fetch_assoc()) {
     if ($r['is_paid'] == 0) $lwop_types_list[] = $r;
-    else $leave_types_list[] = $r;
+    else {
+        $leave_types_list[] = $r;
+        if ((int) ($r['open_to_all'] ?? 0) === 1) $open_all_types_list[] = $r;
+    }
 }
+// What this employee may actually pick in the Request a Leave modal.
+$leave_filable_types = $portal_leave_eligible ? $leave_types_list : $open_all_types_list;
 
 $leave_year = leave_current_year();   // credits are tracked per calendar year
 // `used` counts APPROVED days only; `pending` counts filed-but-not-yet-approved
@@ -3461,7 +3470,11 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <?php if (!$portal_leave_eligible): ?>
         <div style="border-radius:12px;padding:14px 16px;margin-bottom:16px;background:#fff8e8;color:#8a6d1a;border:1px solid #f0d98a;font-size:12.5px;display:flex;align-items:center;gap:10px;">
             <i class="ri-information-line" style="font-size:20px;"></i>
-            <div>Leave credits apply to <b>Regular</b> and <b>Executive</b> employees only. Your records below are shown for reference.</div>
+            <div>Leave <b>credits</b> apply to <b>Regular</b> and <b>Executive</b> employees only, so you have no balance to draw from.
+                <?php if (!empty($open_all_types_list)): ?>
+                    You may still file <b><?= htmlspecialchars(implode(', ', array_column($open_all_types_list, 'name'))) ?></b><?= !empty($lwop_types_list) ? ' and leave without pay' : '' ?>.
+                <?php endif; ?>
+                Your records below are shown for reference.</div>
         </div>
         <?php endif; ?>
 
@@ -3508,12 +3521,23 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </div>
         <?php endif; // end eligible: balance + request form ?>
 
-        <?php if (!empty($lwop_types_list) && !$portal_leave_eligible): ?>
-        <div class="d-flex mb-3">
+        <?php if ((!empty($lwop_types_list) || !empty($open_all_types_list)) && !$portal_leave_eligible): ?>
+        <div class="d-flex gap-2 mb-3">
+            <?php if (!empty($open_all_types_list)): ?>
+            <?php /* Types marked "open to all classifications" — Official Business.
+                     No credits are involved, so this button stands on its own
+                     without the balance strip above it. */ ?>
+            <button type="button" onclick="openLeaveModal()"
+                style="background:linear-gradient(135deg,#6642aa,#4e3483);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                <i class="ri-add-circle-line me-1"></i>Request a Leave
+            </button>
+            <?php endif; ?>
+            <?php if (!empty($lwop_types_list)): ?>
             <button type="button" onclick="openLwopModal()"
                 style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
                 <i class="ri-close-circle-line me-1"></i>File LWOP
             </button>
+            <?php endif; ?>
         </div>
         <?php endif; ?>
 
@@ -7004,7 +7028,7 @@ jQuery(function ($) {
                             <label style="font-size:11px;font-weight:700;color:#4e3483;text-transform:uppercase;letter-spacing:.4px;">Type of Leave <span style="color:red">*</span></label>
                             <select name="leave_type_id" class="form-control" onchange="updateLvBalance()" data-parsley-required-message="Please select a leave type." required>
                                 <option value="">Select leave type…</option>
-                                <?php foreach ($leave_types_list as $t): ?>
+                                <?php foreach ($leave_filable_types as $t): ?>
                                     <option value="<?= $t['id'] ?>"><?= htmlspecialchars($t['name']) ?></option>
                                 <?php endforeach; ?>
                             </select>

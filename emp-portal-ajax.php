@@ -713,14 +713,26 @@ switch ($action) {
         $half_on    = in_array($_POST['half_on'] ?? '', ['first', 'last'], true) ? $_POST['half_on'] : 'first';
         $dates_raw  = trim($_POST['dates'] ?? '');
 
-        $lt_check = $lt_id > 0 ? $conn->query("SELECT is_paid, no_limit FROM leave_types WHERE id = $lt_id LIMIT 1")->fetch_assoc() : null;
-        $is_lwop_req = $lt_check && $lt_check['is_paid'] == 0;
-        $is_uncapped_req = $lt_check && $lt_check['no_limit'] == 1;
+        // Active types only: an unknown (or retired) id used to come back as
+        // null here, which read as "not LWOP" and fell through to the
+        // eligibility branch instead of being refused outright.
+        $lt_check = $lt_id > 0
+            ? $conn->query("SELECT is_paid, no_limit, open_to_all FROM leave_types WHERE id = $lt_id AND status = 1 LIMIT 1")->fetch_assoc()
+            : null;
+        if (!$lt_check) {
+            echo json_encode(['result' => false, 'message' => 'That leave type is not available.']);
+            break;
+        }
+        $is_lwop_req = $lt_check['is_paid'] == 0;
+        $is_uncapped_req = $lt_check['no_limit'] == 1;
+        // Open to every classification (Official Business) — an authorization to
+        // be out on company work, not a draw on a leave balance.
+        $is_open_all_req = $lt_check['open_to_all'] == 1;
 
         $elig = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) AS c, e.leave_override FROM employee e LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = $emp_id")->fetch_assoc();
         $eligible = $elig && leave_eligibility_from($elig['c'], $elig['leave_override']);
 
-        if (!$eligible && !$is_lwop_req) {
+        if (!$eligible && !$is_lwop_req && !$is_open_all_req) {
             echo json_encode(['result' => false, 'message' => 'Only Regular and Executive employees are entitled to leave.']);
             break;
         }

@@ -167,12 +167,17 @@
         // hours), 0 when no approved request. The footer prints THIS, so the
         // sheet total always matches the payslip's OT line.
         var otPaid = 0;
+        // Work Hrs total, summed from the rows as displayed. Rest-day work is
+        // overtime, not regular hours — it prints only in the Overtime column,
+        // so it is left out of this total (the caller's totals.wh includes it).
+        var whShown = 0;
         eachDay(opt.dateFrom, opt.dateTo, function (iso, dayNo, dow) {
             var d = days[iso];
             var wkend = (dow === 0 || dow === 6) ? ' wkend' : '';
             if (iso === todayIso) wkend += ' is-today';
             var raw   = marks[iso] || [];
             var infos = raw.map(markInfo);
+            var isRest = !!(d && d.rest) || raw.some(function (m) { return m.k === 'off'; });
             var rawSched = raw.filter(function (m) { return m.k === 'sched'; })[0];
             if (d && rawSched) {
                 var key = String(rawSched.lbl || 'Shift');
@@ -185,7 +190,7 @@
                     shiftOrder.push(key);
                 }
                 shiftTally[key].days++;
-                shiftTally[key].wh += Number(d.wh || 0);
+                if (!isRest) shiftTally[key].wh += Number(d.wh || 0);
                 if (rawSched.inf) shiftTally[key].inf++;
             }
             // The other half of the day hover: DTR_details.notes. Same source,
@@ -250,8 +255,9 @@
             // rendered. Capping at the rendered time printed 7.90 against an
             // approved 8.00, so the sheet disagreed with the filing it came from
             // and with payroll, which pays the approval.
-            var isRest = !!d.rest || raw.some(function (m) { return m.k === 'off'; });
             var restPaid = (isRest && otAppr && otApprH > 0) ? otApprH : null;
+            var restRendered = isRest ? Number(d.wh || 0) + Number(d.ot || 0) : 0;
+            if (!isRest) whShown += Number(d.wh || 0);
             if (restPaid !== null) otPaid += restPaid;
             else if (otAppr) otPaid += otApprH > 0 ? Math.min(Number(d.ot || 0), otApprH) : Number(d.ot || 0);
             // In-shift hours past 8 (d.aot) — paid as OT with no filing, so
@@ -286,12 +292,18 @@
                 + (badges ? '<span class="day-marks">' + badges + '</span>' : '');
             rows += '<tr class="' + wkend.trim() + '">'
                 + '<td class="day">' + dayCell + '</td>' + times
-                + '<td class="x-col num">' + (d.wh > 0 ? num(d.wh) : '') + '</td>'
+                // Rest-day work is overtime: Work Hrs stays blank, the hours
+                // show only in the Overtime column.
+                + '<td class="x-col num">' + (!isRest && d.wh > 0 ? num(d.wh) : '') + '</td>'
                 + (restPaid !== null
                     ? '<td class="x-col num ot ot-appr"><span tabindex="0" role="note" data-tip="Rest day — '
                       + num(restPaid) + ' hr(s) filed and approved, paid at 130%. Rendered '
-                      + num(Number(d.wh || 0) + Number(d.ot || 0)) + ' hr(s).">'
+                      + num(restRendered) + ' hr(s).">'
                       + num(restPaid) + '<i class="ri-checkbox-circle-fill ot-ok-ic"></i></span></td>'
+                    : isRest && restRendered > 0
+                    ? '<td class="x-col num ot ot-raw"><span class="ot-raw-part" tabindex="0" role="note" data-tip="Rest day work — '
+                      + num(restRendered) + ' hr(s) rendered but NOT paid unless filed and approved.">'
+                      + num(restRendered) + '</span></td>'
                     : '<td class="x-col num ot' + (d.ot > 0 ? (otAppr ? ' ot-appr' : (aot > 0 ? '' : ' ot-raw')) : (aot > 0 ? ' ot-appr' : '')) + '">'
                 + autoTag
                 + (autoTag && d.ot > 0 ? '<br>' : '')
@@ -374,7 +386,7 @@
         var tut = utSplit(totals.ut);
         var totalSpan = ampm ? 5 : 3;
         var foot = '<td colspan="' + totalSpan + '">TOTAL</td>'
-            + '<td class="x-col num">' + num(totals.wh) + '</td>'
+            + '<td class="x-col num">' + num(whShown) + '</td>'
             + '<td class="x-col num ot' + (otPaid > 0 ? ' ot-appr' : '') + '">'
             + '<span tabindex="0" role="note" data-tip="Paid OT only — automatic OT (in-shift hours past 8) plus filed and approved OT. '
             + num(otPaid) + ' hr(s) paid; ' + num(totals.ot) + ' hr(s) rendered past the shift end.">'

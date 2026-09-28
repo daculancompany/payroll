@@ -400,10 +400,12 @@
 <div class="modal fade" id="modal-deduction" tabindex="-1" role="dialog">
     <form id="employee-deduction" novalidate>
         <input type="hidden" name="employee_id" value="<?= isset($_GET['id']) ? (int)$_GET['id'] : '' ?>">
+        <?php /* Set by edit_deduction() — empty means "add a new one". */ ?>
+        <input type="hidden" id="deduction-row-id" name="id" value="">
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title mb-0">
+                    <h6 class="modal-title mb-0" id="deduction-modal-title">
                         <i class="ri-subtract-line me-2" style="color:#673bb6;"></i>Add Deduction
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -479,7 +481,7 @@
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">
                         <i class="ri-close-line me-1"></i>Cancel
                     </button>
-                    <button type="submit" class="btn btn-sm text-white submitbutton" style="background:#673bb6;border-color:#673bb6;">
+                    <button type="submit" class="btn btn-sm text-white submitbutton" id="deduction-submit-btn" style="background:#673bb6;border-color:#673bb6;">
                         <i class="ri-add-line me-1"></i>Add Deduction
                     </button>
                 </div>

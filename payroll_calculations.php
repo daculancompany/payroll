@@ -598,11 +598,12 @@ $refund_names = [];   // refund id => display name
                         <button type="button" class="pcw-btn" data-bs-toggle="modal" data-bs-target="#modal-table-editor" title="Preview the whole payroll in classic table form (read-only)">
                             <i class="ri-table-line"></i> Table View
                         </button>
+                        <button type="button" title="Paysheet PDF — grouped by department" onclick="openPdfPreview('pdf-payroll.php?src=paysheet&id=<?= $id ?>', 'Paysheet PDF')" class="pcw-btn"><i class="ri-printer-line"></i> Print</button>
                         <?php if ($payroll_type == 5) { ?>
-                            <button type="button" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=monthly&id=<?= $id ?>', 'Payroll PDF')" class="pcw-btn"><i class="ri-printer-line"></i> Print</button>
+                            <!-- <button type="button" title="Detailed payroll PDF (every column)" onclick="openPdfPreview('pdf-payroll.php?src=monthly&id=<?= $id ?>', 'Payroll PDF')" class="pcw-btn"><i class="ri-file-list-3-line"></i> Detailed</button> -->
                         <?php } else { ?>
-                            <button type="button" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=payroll&id=<?= $id ?>&site_id=<?= $sid ?>', 'Payroll PDF')" class="pcw-btn"><i class="ri-printer-line"></i> Print</button>
-                            <button type="button" title="Summary by Department PDF" onclick="openPdfPreview('pdf-payroll.php?src=dept&id=<?= $id ?>', 'Department Summary PDF')" class="pcw-btn"><i class="ri-building-2-line"></i> Dept.</button>
+                            <!-- <button type="button" title="Detailed payroll PDF (every column)" onclick="openPdfPreview('pdf-payroll.php?src=payroll&id=<?= $id ?>&site_id=<?= $sid ?>', 'Payroll PDF')" class="pcw-btn"><i class="ri-file-list-3-line"></i> Detailed</button> -->
+                            <button type="button" title="Payroll summary by department — view, then download the PDF" data-bs-toggle="modal" data-bs-target="#modal-dept-summary" class="pcw-btn"><i class="ri-building-2-line"></i> Dept.</button>
                         <?php } ?>
                         <button type="button" title="Totals per contribution, deduction, loan, and refund type" onclick="openRemitModal()" class="pcw-btn"><i class="ri-hand-coin-line"></i> Remittance</button>
                         <?php if ($status == 1) { ?>
@@ -914,20 +915,27 @@ $refund_names = [];   // refund id => display name
                         <span class="xl-ribbon-title">
                             <i class="ri-file-excel-2-line"></i> Payroll List
                         </span>
+                        <!-- Paysheet (by department, PAYSHEET layout) | Detailed (every column, inline edits) -->
+                        <div class="ps-view-tabs" role="tablist">
+                            <button type="button" class="ps-view-tab active" data-view="paysheet"><i class="ri-building-2-line"></i> Paysheet (by Dept)</button>
+                            <button type="button" class="ps-view-tab" data-view="detailed"><i class="ri-table-line"></i> Detailed</button>
+                        </div>
                         <div class="xl-ribbon-actions">
                             <!-- <button data-toggle="tooltip" id="sf" title="Fullscreen" onclick="openFullscreen()" class="xl-btn"><i class="ri-fullscreen-line"></i></button>
                             <button style="display:none;" id="hf" data-toggle="tooltip" title="Exit Fullscreen" onclick="closeFullscreen()" class="xl-btn"><i class="ri-fullscreen-exit-line"></i></button>
                             <div class="xl-ribbon-sep"></div> -->
                             <!-- <button data-toggle="tooltip" title="Sites" onclick="view_site()" class="xl-btn"><i class="ri-building-line"></i> Sites</button> -->
                             <div class="xl-ribbon-sep"></div>
+                            <button data-toggle="tooltip" title="Paysheet PDF — grouped by department" onclick="openPdfPreview('pdf-payroll.php?src=paysheet&id=<?= $id ?>', 'Paysheet PDF')" class="xl-btn ps-only"><i class="ri-printer-line"></i> Print</button>
+                            <button data-toggle="tooltip" title="Download the paysheet (by department) as Excel" onclick="window.location.href='export-paysheet.php?id=<?= $id ?>'" class="xl-btn ps-only"><i class="ri-file-excel-2-line"></i> Excel</button>
                             <?php if ($payroll_type == 5) { ?>
-                                <button data-toggle="tooltip" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=monthly&id=<?= $id ?>', 'Payroll PDF')" class="xl-btn"><i class="ri-printer-line"></i> Print</button>
+                                <button data-toggle="tooltip" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=monthly&id=<?= $id ?>', 'Payroll PDF')" class="xl-btn dt-only" style="display:none;"><i class="ri-printer-line"></i> Print</button>
                             <?php } else { ?>
-                                <button data-toggle="tooltip" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=payroll&id=<?= $id ?>&site_id=<?= $sid ?>', 'Payroll PDF')" class="xl-btn"><i class="ri-printer-line"></i> Print</button>
+                                <button data-toggle="tooltip" title="Payroll PDF" onclick="openPdfPreview('pdf-payroll.php?src=payroll&id=<?= $id ?>&site_id=<?= $sid ?>', 'Payroll PDF')" class="xl-btn dt-only" style="display:none;"><i class="ri-printer-line"></i> Print</button>
                                 <!-- <button data-toggle="tooltip" title="Summary PDF" onclick="openPdfPreview('pdf-payroll.php?src=employer&id=<?= $id ?>&type=all', 'Payroll Summary PDF')" class="xl-btn"><i class="ri-printer-fill"></i> Summary</button> -->
                                 <!-- <button data-toggle="tooltip" title="Summary by Department PDF" onclick="openPdfPreview('pdf-payroll.php?src=dept&id=<?= $id ?>', 'Department Summary PDF')" class="xl-btn"><i class="ri-building-2-line"></i> Dept. Summary</button> -->
                             <?php } ?>
-                            <button data-toggle="tooltip" title="Download this table as a styled Excel workbook" onclick="pcwExportTableExcel(<?= $id ?>)" class="xl-btn" id="xl-export-btn"><i class="ri-file-excel-2-line"></i> Excel</button>
+                            <button data-toggle="tooltip" title="Download this table as a styled Excel workbook" onclick="pcwExportTableExcel(<?= $id ?>)" class="xl-btn dt-only" style="display:none;" id="xl-export-btn"><i class="ri-file-excel-2-line"></i> Excel</button>
                             <!-- <button data-toggle="tooltip" title="Totals per contribution, deduction, loan, and refund type" onclick="openRemitModal()" class="xl-btn"><i class="ri-hand-coin-line"></i> Remittance</button>
                             <button id="btn-print-payslips" title="Check rows to select employees, then click to print their payslips" onclick="printSelectedPayslips()" class="xl-btn">
                                 <i class="ri-file-text-line"></i> Payslips <span id="ps-count" style="background:#d7d0e6;color:#4e3483;border-radius:10px;padding:1px 7px;font-size:10px;margin-left:2px;font-weight:700;">0</span>
@@ -951,7 +959,10 @@ $refund_names = [];   // refund id => display name
                             <button type="button" data-bs-dismiss="modal" class="xl-btn" title="Close the table preview"><i class="ri-close-line"></i> Close</button>
                         </div>
                     </div>
-                    <div class="xl-panel-body" style="flex:1;min-height:0;overflow:auto;position:relative;">
+                    <div class="ps-pane" id="paysheet-pane" data-src="paysheet.php?id=<?= $id ?>" style="flex:1;min-height:0;overflow:auto;background:#fff;">
+                        <div class="ps-loading"><i class="ri-loader-4-line"></i> Loading paysheet…</div>
+                    </div>
+                    <div class="xl-panel-body" style="flex:1;min-height:0;overflow:auto;position:relative;display:none;">
                         <!-- ── Summary stats strip ── -->
                         <!-- <div class="pay-stats-strip">
                             <div class="pay-stat employees">
@@ -2636,6 +2647,95 @@ $refund_names = [];   // refund id => display name
     </div>
 </div>
 <!-- /modal-table-editor -->
+
+<!-- ══ Department Summary — web view first, PDF on demand ══ -->
+<div class="modal fade" id="modal-dept-summary" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+        <div class="modal-content" style="background:#f0eff2;">
+            <div class="modal-body p-2 d-flex flex-column" style="overflow:hidden;">
+                <div class="xl-panel" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+                    <div class="xl-ribbon">
+                        <span class="xl-ribbon-title"><i class="ri-building-2-line"></i> Department Summary</span>
+                        <div class="xl-ribbon-actions">
+                            <a class="xl-btn" href="pdf-payroll.php?src=dept&id=<?= $id ?>&download=1" title="Download the Department Summary as PDF"><i class="ri-file-pdf-2-line"></i> Download PDF</a>
+                            <div class="xl-ribbon-sep"></div>
+                            <button type="button" data-bs-dismiss="modal" class="xl-btn" title="Close"><i class="ri-close-line"></i> Close</button>
+                        </div>
+                    </div>
+                    <div id="dept-summary-pane" data-src="paysheet.php?id=<?= $id ?>&view=summary" style="flex:1;min-height:0;overflow:auto;background:#fff;padding:16px 18px;">
+                        <div class="ps-loading"><i class="ri-loader-4-line"></i> Loading summary…</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<style>
+    .ps-view-tabs { display:inline-flex; gap:2px; margin-left:12px; background:#e4e1ea; border-radius:6px; padding:2px; }
+    .ps-view-tab { border:0; background:transparent; padding:3px 10px; font-size:12px; border-radius:5px; color:#4e3483; cursor:pointer; }
+    .ps-view-tab.active { background:#fff; font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.15); }
+    .ps-pane .paysheet-table thead th { position:sticky; top:0; z-index:2; }
+    .ps-pane .paysheet-table tbody tr:not(.ps-dept):not(.ps-total):not(.ps-grand):hover td { background:#f5f3fa; }
+    .ps-loading { padding:24px; text-align:center; color:#888; }
+    /* Summary footer boxes are layout tables — no grid lines (their own
+       inline border-top on the TOTAL rows still shows). */
+    #dept-summary-pane .ps-sum-foot, #dept-summary-pane .ps-sum-foot table,
+    #dept-summary-pane .ps-sum-foot tbody, #dept-summary-pane .ps-sum-foot tr, #dept-summary-pane .ps-sum-foot td { border:0 !important; background:transparent !important; box-shadow:none !important; }
+    #dept-summary-pane .ps-sum-foot td.ps-line { border-top:1px solid #000 !important; }
+</style>
+<script>
+// Table View tabs: the Paysheet (by department) is fetched fresh every time it is
+// shown, so it always reflects edits saved from the Detailed tab.
+(function () {
+    var modal = document.getElementById('modal-table-editor');
+    if (!modal) return;
+    var pane = document.getElementById('paysheet-pane');
+    var body = modal.querySelector('.xl-panel-body');
+    function loadPaysheet() {
+        pane.innerHTML = '<div class="ps-loading"><i class="ri-loader-4-line"></i> Loading paysheet…</div>';
+        fetch(pane.dataset.src, { credentials: 'same-origin' })
+            .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+            .then(function (html) { pane.innerHTML = html; })
+            .catch(function () { pane.innerHTML = '<div class="ps-loading text-danger">Could not load the paysheet.</div>'; });
+    }
+    function show(view) {
+        var ps = view === 'paysheet';
+        modal.querySelectorAll('.ps-view-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.view === view); });
+        pane.style.display = ps ? '' : 'none';
+        body.style.display = ps ? 'none' : '';
+        modal.querySelectorAll('.ps-only').forEach(function (b) { b.style.display = ps ? '' : 'none'; });
+        modal.querySelectorAll('.dt-only').forEach(function (b) { b.style.display = ps ? 'none' : ''; });
+        if (ps) { loadPaysheet(); return; }
+        // The Detailed table measures itself (sticky header, frozen columns) —
+        // it was hidden when the modal opened, so re-fit it now that it shows.
+        if (typeof fitTableToViewport === 'function') fitTableToViewport();
+        if (typeof fixStickyHeaderGap === 'function') fixStickyHeaderGap();
+        if (typeof fixFrozenColumns === 'function') fixFrozenColumns();
+    }
+    modal.querySelectorAll('.ps-view-tab').forEach(function (b) {
+        b.addEventListener('click', function () { show(b.dataset.view); });
+    });
+    modal.addEventListener('show.bs.modal', function () {
+        var active = modal.querySelector('.ps-view-tab.active');
+        show(active ? active.dataset.view : 'paysheet');
+    });
+})();
+
+// Department Summary: fetched fresh on every open so it reflects the latest
+// edits and Non-ATM picks; the PDF button renders the same figures.
+(function () {
+    var modal = document.getElementById('modal-dept-summary');
+    if (!modal) return;
+    var pane = document.getElementById('dept-summary-pane');
+    modal.addEventListener('show.bs.modal', function () {
+        pane.innerHTML = '<div class="ps-loading"><i class="ri-loader-4-line"></i> Loading summary…</div>';
+        fetch(pane.dataset.src, { credentials: 'same-origin' })
+            .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+            .then(function (html) { pane.innerHTML = html; })
+            .catch(function () { pane.innerHTML = '<div class="ps-loading text-danger">Could not load the summary.</div>'; });
+    });
+})();
+</script>
 
 
 <div class="offcanvas offcanvas-end" tabindex="-1" id="offcanvas-history">

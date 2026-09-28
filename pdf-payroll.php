@@ -34,6 +34,7 @@ $sources = [
     'monthly'  => 'print-montly.php',
     'employer' => 'print-payroll-employer.php',
     'dept'     => 'print-payroll-dept.php',
+    'paysheet' => 'print-paysheet.php',  // paysheet grouped by department
     'payslip'  => 'view_payslip.php',   // individual payslip — portrait A4
     '13th'     => 'print-13th-month.php', // 13th month register — id = year
 ];
@@ -88,6 +89,7 @@ $density = [
     'monthly'  => 'table { font-size: 6.5px !important; } th, td { padding: 2px 1px !important; } th { width: auto !important; }',
     'employer' => 'table { font-size: 7px !important; } th, td { padding: 2px !important; }',
     'dept'     => '',
+    'paysheet' => '',
     'payslip'  => '',
 ];
 

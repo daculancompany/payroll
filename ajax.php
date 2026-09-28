@@ -391,6 +391,23 @@ if ($action == "get_sites") {
 		echo $save;
 }
 
+// Payroll Settings → Non-ATM picker: the run's employees, who has a bank
+// account on file, and the current Non-ATM selection (see payroll_non_atm()).
+if ($action == "get_payroll_non_atm") {
+	$pid = (int) ($_GET['id'] ?? 0);
+	$emps = [];
+	$q = $conn->query("SELECT DISTINCT e.id, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS name,
+	                          TRIM(COALESCE(e.bank_account_no, '')) <> '' AS has_bank
+	                   FROM payroll_items pi INNER JOIN employee e ON e.id = pi.employee_id
+	                   WHERE pi.payroll_id = $pid ORDER BY e.lastname, e.firstname");
+	while ($q && ($r = $q->fetch_assoc())) {
+		$emps[] = ['id' => (int) $r['id'], 'name' => $r['name'], 'emp_no' => $r['employee_no'], 'has_bank' => (bool) $r['has_bank']];
+	}
+	$na = payroll_non_atm($conn, $pid);
+	header('Content-Type: application/json');
+	echo json_encode(['result' => true, 'employees' => $emps, 'selected' => $na['ids'], 'is_default' => $na['is_default']]);
+}
+
 if ($action == "save_settings") {
 	$save = $crud->save_payroll_settings();
 	if ($save)

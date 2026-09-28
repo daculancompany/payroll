@@ -245,7 +245,34 @@ $(document).ready(function () {
         } catch (e) {
             console.error("Invalid JSON in settings attribute:", e);
         }
+        loadNonAtm($(this).attr("data-id"));
     });
+
+    // Non-ATM picker: this run's employees, pre-selected from the saved list (or,
+    // never saved, everyone with no bank account on file). The "offered" marker
+    // is only enabled once the list has loaded, so a failed load can never save
+    // an empty list over the real one.
+    function loadNonAtm(payrollId) {
+        var $sel = $("#non-atm-select"), $note = $("#non-atm-note"), $offered = $("#non-atm-offered");
+        $offered.prop("disabled", true);
+        $sel.empty();
+        $note.text("Loading employees…");
+        $.getJSON("ajax.php?action=get_payroll_non_atm&id=" + encodeURIComponent(payrollId))
+            .done(function (res) {
+                var picked = {};
+                (res.selected || []).forEach(function (id) { picked[id] = true; });
+                (res.employees || []).forEach(function (e) {
+                    var label = e.name + " | " + (e.emp_no || "") + (e.has_bank ? "" : "  (no bank account)");
+                    $sel.append($("<option>").val(e.id).text(label).prop("selected", !!picked[e.id]));
+                });
+                if (window.CustomSelect) window.CustomSelect.refresh($sel[0]);
+                $offered.prop("disabled", false);
+                $note.text(res.is_default
+                    ? "Pre-selected: employees with no bank account on file. Save to confirm."
+                    : (res.selected || []).length + " employee(s) marked Non-ATM for this payroll.");
+            })
+            .fail(function () { $note.text("Could not load employees — the Non-ATM list will not be changed."); });
+    }
 
     $(document).on("click", ".view_payroll", function () {
         var $id = $(this).attr("data-id");

@@ -8373,6 +8373,24 @@ class Action
         $stmt = $this->db->prepare("UPDATE payroll SET settings = ? WHERE id = ?");
         $stmt->bind_param('si', $settings_json, $id);
         if ($stmt->execute()) {
+            // Non-ATM employees (paid in cash) — only when the modal offered the
+            // picker, so an empty pick saves [] ("nobody") rather than nothing.
+            // Kept to employees actually in this run.
+            if (!empty($_POST['non_atm_offered'])
+                && $this->db->query("SHOW COLUMNS FROM payroll LIKE 'non_atm'")->num_rows) {
+                $pid = (int) $id;
+                $inRun = [];
+                $q = $this->db->query("SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $pid");
+                while ($q && ($r = $q->fetch_assoc())) $inRun[(int) $r['employee_id']] = true;
+                $picked = array_values(array_unique(array_filter(
+                    array_map('intval', (array) ($_POST['non_atm'] ?? [])),
+                    fn($eid) => isset($inRun[$eid])
+                )));
+                $json = json_encode($picked);
+                $st2 = $this->db->prepare("UPDATE payroll SET non_atm = ? WHERE id = ?");
+                $st2->bind_param('si', $json, $pid);
+                $st2->execute();
+            }
             return ['result' => true, 'message' => 'updated'];
         } else {
             return ['result' => false, 'message' => $stmt->error];

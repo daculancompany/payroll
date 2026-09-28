@@ -383,7 +383,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'save_payroll_item_etra' => 'payroll', 'delete_payroll_item_etra' => 'payroll',
         'get_payroll_rows_data' => 'payroll', 'payroll_history_details' => 'payroll',
         'payroll_sanity_check' => 'payroll', 'payroll_reconcile' => 'payroll',
-        'compare_payrolls' => 'payroll',
+        'compare_payrolls' => 'payroll', 'get_payroll_non_atm' => 'payroll',
         'remittance_breakdown' => 'payroll', 'isLock' => 'payroll',
         'relock_payroll_item' => 'payroll', 'unlock_payroll_item' => 'payroll',
         'set_payroll_item_review' => 'payroll', 'send_payroll_for_review' => 'payroll',
@@ -475,7 +475,7 @@ if (!defined('READ_ONLY_ACTIONS')) {
         // Pure read. A view-only head auditing what the scheduling office did is
         // the main reason the history exists, so it must not need write access.
         'duty_roster_history',
-        'get_payroll_rows_data', 'payroll_history_details', 'remittance_breakdown',
+        'get_payroll_rows_data', 'payroll_history_details', 'remittance_breakdown', 'get_payroll_non_atm',
         'isLock', 'dtr_review_progress', 'eport_payroll_reviews', 'eport_dtr_reviews',
     ]);
 }
@@ -1155,6 +1155,30 @@ if (!function_exists('payroll_settings_split')) {
         }
         $out['allow'] = $out['v2'] ? array_values(array_unique($out['allow'])) : [];
         return $out;
+    }
+}
+
+// Non-ATM (cash-paid) employees of one payroll run: the list picked in Payroll
+// Settings (payroll.non_atm, JSON ids), or — never set (NULL) — everyone in the
+// run with no bank account on file. Returns ['ids' => int[], 'is_default' => bool].
+// Tolerates databases where migrations/2026_09_payroll_non_atm.sql hasn't run.
+if (!function_exists('payroll_non_atm')) {
+    function payroll_non_atm(mysqli $db, int $payroll_id): array
+    {
+        $saved = null;
+        if ($db->query("SHOW COLUMNS FROM payroll LIKE 'non_atm'")->num_rows) {
+            $r = $db->query("SELECT non_atm FROM payroll WHERE id = " . (int) $payroll_id)->fetch_assoc();
+            if ($r && $r['non_atm'] !== null) $saved = json_decode($r['non_atm'], true);
+        }
+        if (is_array($saved)) return ['ids' => array_values(array_map('intval', $saved)), 'is_default' => false];
+
+        $ids = [];
+        $q = $db->query("SELECT DISTINCT pi.employee_id FROM payroll_items pi
+                         INNER JOIN employee e ON e.id = pi.employee_id
+                         WHERE pi.payroll_id = " . (int) $payroll_id . "
+                           AND TRIM(COALESCE(e.bank_account_no, '')) = ''");
+        while ($q && ($x = $q->fetch_assoc())) $ids[] = (int) $x['employee_id'];
+        return ['ids' => $ids, 'is_default' => true];
     }
 }
 

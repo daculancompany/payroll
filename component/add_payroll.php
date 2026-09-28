@@ -168,6 +168,21 @@ $payroll_section_rows = function (array $sec) use ($conn): array {
                     </div>
                     <?php endforeach; ?>
 
+                    <!-- Non-ATM (paid in cash): its own NONATM block on the paysheet and the
+                         ATM / NON ATM split on the Department Summary. Filled per run by
+                         payroll.js from ajax.php?action=get_payroll_non_atm. -->
+                    <hr class="my-3">
+                    <div class="d-flex align-items-center gap-2 mb-2">
+                        <i class="ri-hand-coin-line" style="color:#673bb6;font-size:16px;"></i>
+                        <span class="fw-bold" style="font-size:13px;color:#673bb6;">Non-ATM Employees (paid in cash)</span>
+                    </div>
+                    <input type="hidden" name="non_atm_offered" value="1" id="non-atm-offered" disabled>
+                    <select id="non-atm-select" name="non_atm[]" class="form-control form-control-sm" multiple
+                        data-placeholder="Select the employees paid in cash…"
+                        data-cs-multi="true" data-cs-title="Non-ATM" data-cs-icon="ri-hand-coin-line" data-cs-search="true">
+                    </select>
+                    <div id="non-atm-note" class="text-muted mt-1" style="font-size:11px;"></div>
+
                 </div>
                 <div class="modal-footer" style="background:#f8f9fa;">
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">

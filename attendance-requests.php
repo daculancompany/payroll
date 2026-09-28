@@ -30,7 +30,9 @@ if ($cq) while ($r = $cq->fetch_assoc()) {
     if ($r['status'] == 3) $counts['cancelled'] = (int)$r['c'];
 }
 if ($in_chain) {
-    $counts['awaiting'] = stage_awaiting_me_count($conn, $my_uid, 'attendance_requests', dept_scope_emp_sql('employee_id'));
+    // Same per-row check as the Approve button, so the card, the "Pending on Me"
+    // tab and the rows it shows always agree.
+    $counts['awaiting'] = count(stage_pending_on_me_ids($conn, $my_uid, 'attendance_requests', dept_scope_emp_sql('employee_id')));
 }
 $att_timelines = [];   // request id => timeline HTML for the trail modal
 $att_meta      = [];   // request id => employee / type / stage for the modal header
@@ -120,8 +122,17 @@ $reasonLabels = [
                         </div>
                         <div class="card-header border-bottom-dashed pt-3 pb-0">
                             <ul class="nav nav-tabs-custom card-header-tabs border-bottom-0" id="att-req-tabs" role="tablist">
+                                <?php $mine_first = $in_chain && $counts['awaiting'] > 0; ?>
+                                <?php if ($in_chain): ?>
                                 <li class="nav-item">
-                                    <a class="nav-link active" data-status="all" href="javascript:void(0);" role="tab">
+                                    <a class="nav-link <?= $mine_first ? 'active' : '' ?>" data-status="mine" href="javascript:void(0);" role="tab">
+                                        <i class="ri-user-follow-line me-1 align-bottom"></i>Pending on Me
+                                        <span class="badge bg-danger-subtle text-danger align-middle ms-1"><?= $counts['awaiting'] ?></span>
+                                    </a>
+                                </li>
+                                <?php endif; ?>
+                                <li class="nav-item">
+                                    <a class="nav-link <?= $mine_first ? '' : 'active' ?>" data-status="all" href="javascript:void(0);" role="tab">
                                         <i class="ri-file-list-3-line me-1 align-bottom"></i>All
                                         <span class="badge bg-primary-subtle text-primary align-middle ms-1"><?= $counts['total'] ?></span>
                                     </a>
@@ -210,6 +221,7 @@ $reasonLabels = [
                                             ];
                                         ?>
                                         <tr data-status="<?= (int)$row['status'] ?>"
+                                            data-mine="<?= $can_act_now ? 1 : 0 ?>"
                                             data-req-id="<?= (int)$row['id'] ?>"
                                             data-emp-id="<?= (int)$row['employee_id'] ?>"
                                             data-emp-name="<?= htmlspecialchars($row['employee_name']) ?>"
@@ -288,6 +300,7 @@ $reasonLabels = [
                                             </td>
                                             <td class="text-center req-status-cell">
                                                 <span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span>
+                                                <?php if ($can_act_now): ?><br><span class="badge bg-danger-subtle text-danger mt-1"><i class="ri-user-follow-line me-1"></i>Pending on you</span><?php endif; ?>
                                                 <!-- One chip per approval stage (icon coloured by verdict, stage in the tooltip) -->
                                                 <div class="lv-chips mt-1" style="font-size:14px;line-height:1;"><?= leave_stage_chips($row) ?></div>
                                                 <?php if ($cur_stage): ?>
@@ -505,12 +518,13 @@ function fmt12(t) {
 
 document.addEventListener('DOMContentLoaded', function () {
     if (window.jQuery && jQuery.fn.DataTable && !jQuery.fn.DataTable.isDataTable('#att-req-table')) {
-        var currentStatus = 'all';
+        var currentStatus = (jQuery('#att-req-tabs .nav-link.active').data('status') || 'all').toString();
 
         // Filter rows by the status stored on each <tr data-status="…">
         jQuery.fn.dataTable.ext.search.push(function (settings, data, dataIndex) {
             if (settings.nTable.id !== 'att-req-table' || currentStatus === 'all') return true;
             var row = settings.aoData[dataIndex].nTr;
+            if (currentStatus === 'mine') return row && row.getAttribute('data-mine') === '1';
             return row && row.getAttribute('data-status') === currentStatus;
         });
 

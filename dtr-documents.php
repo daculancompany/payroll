@@ -2783,7 +2783,8 @@ function recomputeEmp(e) {
         for (const r of (d.recs || [])) {
             r.flags = recFlags(r);
             d.wh += r.wh; d.ot += r.ot; d.aot += +r.auto_ot || 0; d.ut += r.ut; d.late += r.late;
-            e.totals.wh += r.wh; e.totals.ot += r.ot; e.totals.ut += r.ut; e.totals.late += r.late;
+            if (!+r.is_rest_day) e.totals.wh += r.wh; // rest-day work is OT, not Work Hrs
+            e.totals.ot += r.ot; e.totals.ut += r.ut; e.totals.late += r.late;
             if (r.status === 1) e.appr++; else if (r.status === 2) { e.disa++; d.status = 2; }
             else { e.pend++; if (hasBlocker(r)) e.exc++; if (d.status !== 2) d.status = 0; }
         }

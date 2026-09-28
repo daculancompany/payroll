@@ -1,7 +1,7 @@
 <?php
 // ── Bank Payout report — included via index.php ─────────────────────────
 // Pick a payroll → per-employee net pay with bank + account number, grouped
-// by bank, ready for bank-transfer upload (CSV) or printing. Employees with
+// by bank, ready for bank-transfer upload (Excel) or printing. Employees with
 // no bank/account on file are flagged so payouts don't silently bounce.
 
 $payrolls = [];
@@ -78,7 +78,7 @@ if ($sel_id) {
                                 <a href="index.php?page=bank-payout" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
                                 <?php endif; ?>
                                 <?php if ($rows): ?>
-                                <a class="btn btn-sm btn-outline-success" href="export-bank-payout.php?id=<?= $sel_id ?>"><i class="ri-file-excel-2-line me-1"></i>CSV</a>
+                                <a class="btn btn-sm btn-outline-success" href="export-bank-payout.php?id=<?= $sel_id ?>"><i class="ri-file-excel-2-line me-1"></i>Excel</a>
                                 <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()"><i class="ri-printer-line"></i></button>
                                 <?php endif; ?>
                                 <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-bankpayout">

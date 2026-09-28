@@ -517,7 +517,9 @@ if ($action === 'docs') {
             $D['aot']   = ($D['aot'] ?? 0) + dtr_auto_ot($row['work_hours'], (int)($row['is_rest_day'] ?? 0) === 1);
             $D['ut']   += (float)$row['undertime'];
             $D['late'] += (float)$row['late'];
-            $E['totals']['wh']   += (float)$row['work_hours'];
+            // Rest-day work is overtime, not regular hours — kept out of the
+            // Work Hrs total, matching the Form 48 sheet.
+            if ((int)($row['is_rest_day'] ?? 0) !== 1) $E['totals']['wh'] += (float)$row['work_hours'];
             $E['totals']['ot']   += (float)$row['overtime'];
             $E['totals']['ut']   += (float)$row['undertime'];
             $E['totals']['late'] += (float)$row['late'];

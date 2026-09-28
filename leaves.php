@@ -51,14 +51,22 @@ if ($cq) while ($r = $cq->fetch_assoc()) {
     if ($r['status'] == 3) $counts['cancelled'] = (int)$r['c'];
 }
 
+// "Pending on Me": requests sitting at a stage THIS user holds (earlier stages
+// already approved by others). Chain members only — Administrator is view-only.
+$show_mine = !$is_admin_view && in_array($my_role, [8, 9, 10, 11], true);
+$mine_ids  = $show_mine ? stage_pending_on_me_ids($conn, $my_uid, 'leave_requests', $lv_scope_emp) : [];
+$counts['mine'] = count($mine_ids);
+
 // Active status tab (server-side filter — avoids client-side lag on large lists).
-// ?lstatus= all | pending | approved | rejected | cancelled
-$tab_map    = ['all' => null, 'pending' => 0, 'approved' => 1, 'rejected' => 2, 'cancelled' => 3];
-$active_tab = strtolower(trim($_GET['lstatus'] ?? 'all'));
-if (!array_key_exists($active_tab, $tab_map)) $active_tab = 'all';
+// ?lstatus= mine | all | pending | approved | rejected | cancelled
+$tab_map    = ['mine' => 0, 'all' => null, 'pending' => 0, 'approved' => 1, 'rejected' => 2, 'cancelled' => 3];
+$default_tab = ($show_mine && $counts['mine'] > 0) ? 'mine' : 'all';
+$active_tab = strtolower(trim($_GET['lstatus'] ?? $default_tab));
+if (!array_key_exists($active_tab, $tab_map) || ($active_tab === 'mine' && !$show_mine)) $active_tab = 'all';
 $status_filter = $tab_map[$active_tab];
 $where_sql = 'WHERE 1=1'
     . ($status_filter === null ? '' : ' AND lr.status = ' . (int) $status_filter)
+    . ($active_tab === 'mine' ? ' AND lr.id IN (' . ($mine_ids ? implode(',', $mine_ids) : '0') . ')' : '')
     . $lv_scope_dept;
 
 // Render an approval-stage badge with approver + reason tooltip. The markup
@@ -146,7 +154,11 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                         <!-- Status tabs (server-side filtering via ?lstatus=…) -->
                         <ul class="nav nav-tabs nav-tabs-custom nav-success px-3 pt-2" role="tablist">
                             <?php
-                            $tabs = [
+                            $tabs = [];
+                            if ($show_mine) {
+                                $tabs['mine'] = ['<i class="ri-user-follow-line me-1"></i>Pending on Me', $counts['mine'], 'bg-danger-subtle text-danger'];
+                            }
+                            $tabs += [
                                 'all'      => ['All',      $counts['total'],    'bg-primary-subtle text-primary'],
                                 'pending'  => ['Pending',  $counts['pending'],  'bg-warning-subtle text-warning'],
                                 'approved' => ['Approved', $counts['approved'], 'bg-success-subtle text-success'],
@@ -226,6 +238,7 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                             // match their users.role.
                                             $can_act_now = $cur_stage && !$is_admin_view
                                                 && leave_user_can_act($conn, $my_uid, $cur_stage, (int) $row['employee_id']);
+                                            if ($active_tab === 'mine' && !$can_act_now) continue;
                                             $leave_timelines[$row['id']] = leave_timeline_html($row);
                                             $leave_meta[$row['id']] = [
                                                 'emp'   => $row['employee_name'],
@@ -290,7 +303,9 @@ function stageBadge($status, $by_name, $remarks, $at, $by_id = 0)
                                             <?php foreach ($leave_stage_defs as $skey => $sdef): ?>
                                             <td class="text-center"><?= stageBadge($row[$skey . '_status'], $row[$skey . '_name'] ?? '', $row[$skey . '_remarks'], $row[$skey . '_at'], (int) ($row[$skey . '_by'] ?? 0)) ?></td>
                                             <?php endforeach; ?>
-                                            <td class="text-center"><span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span></td>
+                                            <td class="text-center"><span class="badge <?= $sclass ?> rounded-pill"><?= $slabel ?></span>
+                                                <?php if ($can_act_now): ?><br><span class="badge bg-danger-subtle text-danger mt-1"><i class="ri-user-follow-line me-1"></i>Pending on you</span><?php endif; ?>
+                                            </td>
                                             <td class="text-center">
                                                 <?php
                                                 // No Delete on an APPROVED request — it already counts toward

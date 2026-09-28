@@ -3361,6 +3361,26 @@ if (!function_exists('leave_stages')) {
         return stage_awaiting_role_count($db, $user_id, $table, $legacy_scope_sql);
     }
 
+    /**
+     * Ids of the pending requests sitting at a stage THIS user may decide right
+     * now — the "Pending on Me" tab. Unlike stage_awaiting_me_count() (an SQL
+     * approximation) it runs the exact per-row check the Approve button uses
+     * (leave_current_stage + leave_user_can_act), so tab and buttons agree.
+     * $scope_sql is an " AND …" fragment on employee_id (dept_scope_emp_sql).
+     */
+    function stage_pending_on_me_ids(mysqli $db, int $user_id, string $table, string $scope_sql = ''): array
+    {
+        $table = leave_chain_table($table);
+        $cols  = implode(', ', array_map(fn($k) => "{$k}_status", array_keys(LEAVE_APPROVAL_STAGES)));
+        $ids = [];
+        $r = $db->query("SELECT id, employee_id, $cols FROM `$table` WHERE status = 0 $scope_sql");
+        while ($r && ($x = $r->fetch_assoc())) {
+            $stage = leave_current_stage($x);
+            if ($stage && leave_user_can_act($db, $user_id, $stage, (int) $x['employee_id'])) $ids[] = (int) $x['id'];
+        }
+        return $ids;
+    }
+
     /** Part of stage_awaiting_me_count: the stage this user's ROLE maps to (HR, legacy accounts). */
     function stage_awaiting_role_count(mysqli $db, int $user_id, string $table, string $legacy_scope_sql = ''): int
     {

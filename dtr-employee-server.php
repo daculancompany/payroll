@@ -926,6 +926,12 @@ if ($action === 'docs') {
                     ? ((int) $duty['is_rest_day'] === 1)
                     : ($rest !== null && $rest !== ''
                        && in_array((int)date('w', $d), array_map('intval', explode(',', $rest)), true));
+                // An approved leave on a date the roster left blank is a work day
+                // taken off — payroll pays it (isLeaveRestDay), so don't stamp OFF.
+                if ($isOff && !$duty && !empty($dutyMap[$eid])
+                    && ($leaveMap[$eid][$ymd]['s'] ?? null) === 1) {
+                    $isOff = false;
+                }
                 if ($isOff) $m[] = ['k' => 'off'];
                 $otFiled = false;
                 $hourReq = null;          // the filing itself, for the record card

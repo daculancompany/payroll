@@ -442,6 +442,19 @@ switch ($action) {
                 ];
             }
         }
+        // An approved leave on a date the roster left blank is a work day taken
+        // off — payroll pays it (isLeaveRestDay), so drop the fallback OFF stamp.
+        // Same rule as the admin sheet (dtr-employee-server.php).
+        if ($dutyByDate) {
+            foreach ($marks as $ymd => $mk) {
+                if (isset($dutyByDate[$ymd])) continue;
+                $approvedLeave = false;
+                foreach ($mk as $x) if ($x['k'] === 'leave' && $x['s'] === 1) $approvedLeave = true;
+                if ($approvedLeave) {
+                    $marks[$ymd] = array_values(array_filter($mk, fn($x) => $x['k'] !== 'off'));
+                }
+            }
+        }
 
         // Attendance requests (incident/OT) — same 'req' mark the admin sheet
         // carries; an approved OT request also turns that day's OT figure green

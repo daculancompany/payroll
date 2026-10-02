@@ -1433,6 +1433,22 @@ class Action
     }
 
     /**
+     * Rest-day test for an APPROVED LEAVE date. Only an explicit roster OFF
+     * skips it. A rostered employee's unpainted date is a work day they took
+     * leave on — the weekday CSV underneath (auto-assigned '0,6') is
+     * meaningless for rotating staff, and used to drop a Sat/Sun leave from
+     * pay while still charging the credit. Needs loadDutyRestMap() for the
+     * same range first: "rostered" means one published row in that range.
+     */
+    private function isLeaveRestDay($periods, $ymd, $employee_id)
+    {
+        $eid = (int) $employee_id;
+        if (isset($this->dutyRestMap[$eid][$ymd])) return $this->dutyRestMap[$eid][$ymd] === 1;
+        if (!empty($this->dutyRestMap[$eid])) return false;
+        return $this->isRestDay($periods, $ymd, $eid);
+    }
+
+    /**
      * The schedule period in effect on $ymd, from the same preloaded periods
      * restDaysForDate() reads (they carry ws.has_nsd / ws.nsd_rate as well).
      * Covering period, else the nearest — returning null for an uncovered date
@@ -6700,7 +6716,8 @@ class Action
                     if (!empty($leaveMap[$employee_id])) {
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
                             $ymd = date('Y-m-d', $d);
-                            if (isset($leaveMap[$employee_id][$ymd]) && !$this->isRestDay($restMap[$employee_id] ?? [], $ymd, $employee_id)) {
+                            // isLeaveRestDay: an approved leave on an unrostered date is paid.
+                            if (isset($leaveMap[$employee_id][$ymd]) && !$this->isLeaveRestDay($restMap[$employee_id] ?? [], $ymd, $employee_id)) {
                                 // A day that was PARTLY WORKED can only take leave for the
                                 // remainder of itself. "present" is already a fraction
                                 // (work_hours / day_hours), so without this cap a half-day
@@ -6718,7 +6735,12 @@ class Action
                             $eymd = date('Y-m-d', $d);
                             // Expected work days exclude rest days AND declared holidays
                             // (a holiday is paid non-working — never an absence).
-                            if (!$this->isRestDay($restMap[$employee_id] ?? [], $eymd, $employee_id) && empty($holidayDates[$eymd])) {
+                            // A leave date uses the leave rule, so a paid leave day is
+                            // also an expected day and can't hide a real absence.
+                            $eRest = isset($leaveMap[$employee_id][$eymd])
+                                ? $this->isLeaveRestDay($restMap[$employee_id] ?? [], $eymd, $employee_id)
+                                : $this->isRestDay($restMap[$employee_id] ?? [], $eymd, $employee_id);
+                            if (!$eRest && empty($holidayDates[$eymd])) {
                                 $expected_days++;
                             }
                         }

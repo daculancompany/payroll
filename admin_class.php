@@ -10475,6 +10475,7 @@ class Action
                 'total_amount'         => $total_amount,
                 'overtime_amount'      => $overtime_amount,
                 'late_amount'          => $late_amount,
+                'undertime_amount'     => $__e['under_amt'],
                 'legal_amount'         => $legal_amount,
                 'sunday_amount'        => $sunday_amount,
                 'special_amount'       => $special_amount,
@@ -10489,6 +10490,7 @@ class Action
                 'paid_leave'           => $row['paid_leave'] ?? 0,
                 'paid_leave_amount'    => ($row['paid_leave'] ?? 0) * $row['per_day'],
                 'late'                 => $row['late'],
+                'under_time'           => $row['under_time'],
                 'rate_type'            => $row['rate_type'] ?? 'daily',
             ];
         }

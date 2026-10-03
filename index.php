@@ -1415,7 +1415,7 @@ function getRole($login_role)
         <script src="assets2/js/visitors-logs.js"></script>
     <?php } ?>
     <?php if ($page == 'payroll_calculations') { ?>
-        <script src="assets2/js/payroll_calculations.js"></script>
+        <script src="<?= av('assets2/js/payroll_calculations.js') ?>"></script>
     <?php } ?>
     <?php if (in_array($page, ['payroll-report','loan-deduction-ledger','payroll-register','employee-masterlist','attendance-summary'])) { ?>
         <script src="assets2/js/reports.js"></script>

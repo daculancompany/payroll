@@ -597,7 +597,7 @@
         }
         if (ed || e.absent > 0) h += earnRow('Absences', fld(e, 'absent', e.absent) + ' day(s) × ' + fmt(e.per_day), e.absent_amt, true);
         if (ed || e.late_min > 0) h += earnRow('Late', fld(e, 'late', Math.round(e.late_min)) + ' min', e.late_amt, true);
-        if (e.ut_min > 0) h += earnRow('Undertime', fmt2(e.ut_min) + ' min', e.ut_amt, true);
+        if (ed || e.ut_min > 0) h += earnRow('Undertime', fld(e, 'under_time', fmt2(e.ut_min)) + ' min', e.ut_amt, true);
         if (!ed && !(e.absent > 0) && !(e.late_min > 0) && !(e.ut_min > 0)) h += '<tr><td colspan="3" style="color:#4a7d4a;font-size:11.5px;">No absences or tardiness this period.</td></tr>';
         h += '</table></div>';
 
@@ -2016,6 +2016,7 @@
             e.present = pick(inp('present'), e.present);
             e.absent = pick(inp('absent'), e.absent);
             e.late_min = pick(inp('late'), e.late_min);
+            e.ut_min = pick(inp('under_time'), e.ut_min);
             e.ot_hrs = pick(inp('ot'), e.ot_hrs);
             e.nsd_amt = pick(inp('nsd_amount'), e.nsd_amt);
             e.per_day = pick(inp('per_day'), e.per_day);
@@ -2049,6 +2050,7 @@
             e.spc_amt = pick(cell('special_amount'), e.spc_amt);
             e.ot_amt = pick(cell('overtime_amount'), e.ot_amt);
             e.late_amt = pick(cell('late_amount'), e.late_amt);
+            e.ut_amt = pick(cell('undertime_amount'), e.ut_amt);
             var be = cell('total_basic_rate');
             if (be === null) be = cell('total_amount');
             if (be !== null) e.basic_earned = be;

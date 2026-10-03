@@ -3757,7 +3757,7 @@ window.PCW_META = <?= json_encode([
 
 
 <!-- deferred so it runs after the deferred jQuery/bootstrap/sweetalert above -->
-<script defer src="assets2/js/payroll_calculations.js"></script>
+<script defer src="<?= av('assets2/js/payroll_calculations.js') ?>"></script>
 
 <?php
 // Employee quick-view drawer (avatar / name clicks on the sheet). "Full

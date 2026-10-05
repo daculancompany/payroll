@@ -19,7 +19,7 @@ $noBank  = 0;
 $t_net   = 0;
 
 if ($sel_id) {
-    $st = $conn->prepare("SELECT id, ref_no, date_from, date_to, status FROM payroll WHERE id = ?");
+    $st = $conn->prepare("SELECT id, ref_no, type, date_from, date_to, status FROM payroll WHERE id = ?");
     $st->bind_param('i', $sel_id);
     $st->execute();
     $sel_pay = $st->get_result()->fetch_assoc();
@@ -27,7 +27,7 @@ if ($sel_id) {
     if ($sel_pay) {
         $it = $conn->prepare("
             SELECT pi.employee_id,
-                   e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS name,
+                   e.employee_no, e.lastname, e.firstname, e.middlename,
                    e.bank_account_no, b.bank_name, d.name AS department
             FROM payroll_items pi
             INNER JOIN employee e ON e.id = pi.employee_id
@@ -35,7 +35,7 @@ if ($sel_id) {
             LEFT JOIN department d ON d.id = e.department_id
             WHERE pi.payroll_id = ?
             GROUP BY pi.employee_id
-            ORDER BY b.bank_name IS NULL, b.bank_name ASC, e.lastname ASC
+            ORDER BY e.lastname ASC, e.firstname ASC, e.middlename ASC
         ");
         $it->bind_param('i', $sel_id);
         $it->execute();
@@ -58,6 +58,10 @@ if ($sel_id) {
 <style>
     .bp-missing td { background: #fff8e1 !important; }
     .bp-acct { font-family: ui-monospace, monospace; letter-spacing: .3px; }
+    .bp-title { text-align: center; color: #e8253a; font-weight: 800; line-height: 1.3; margin-bottom: 12px; }
+    .bp-title div:first-child { font-size: 18px; }
+    .bp-title div:last-child { font-size: 15px; }
+    @media print { .bp-search { display: none !important; } }
 </style>
 <div class="main-content">
     <div class="page-content">
@@ -128,6 +132,11 @@ if ($sel_id) {
                                     </div>
                                 <?php endif; ?>
 
+                                <div class="bp-title">
+                                    <div>BANKLIST</div>
+                                    <div><?= htmlspecialchars(paysheet_banklist_title($sel_pay)) ?></div>
+                                </div>
+
                                 <!-- Per-bank summary -->
                                 <div class="row g-2 mb-3">
                                     <?php foreach ($byBank as $bk => $s): ?>
@@ -140,32 +149,42 @@ if ($sel_id) {
                                     <?php endforeach; ?>
                                 </div>
 
+                                <div class="bp-search d-flex align-items-center gap-2 mb-2">
+                                    <div class="position-relative" style="max-width:320px;flex:1;">
+                                        <i class="ri-search-line position-absolute text-muted" style="left:10px;top:50%;transform:translateY(-50%);"></i>
+                                        <input type="search" id="bp-search" class="form-control form-control-sm" style="padding-left:30px;"
+                                               placeholder="Search name, account no., bank…" autocomplete="off">
+                                    </div>
+                                    <small class="text-muted" id="bp-search-info"></small>
+                                </div>
+
                                 <div class="table-responsive">
-                                    <table class="table table-sm table-bordered align-middle">
+                                    <table class="table table-sm table-bordered align-middle" id="bp-table">
                                         <thead class="table-dark">
                                             <tr>
                                                 <th style="width:36px;" class="text-center">#</th>
-                                                <th>Employee No.</th>
-                                                <th>Name</th>
-                                                <th>Department</th>
+                                                <th>Bank Account No</th>
+                                                <th>LName</th>
+                                                <th>FName</th>
+                                                <th>MName</th>
                                                 <th>Bank</th>
-                                                <th>Account Number</th>
-                                                <th class="text-end">Net Pay</th>
+                                                <th class="text-end">Amount</th>
                                             </tr>
                                         </thead>
                                         <tbody>
                                             <?php $i = 0; foreach ($rows as $r): $i++;
                                                 $missing = empty($r['bank_name']) || empty($r['bank_account_no']); ?>
-                                                <tr class="<?= $missing ? 'bp-missing' : '' ?>">
-                                                    <td class="text-center"><?= $i ?></td>
-                                                    <td><?= htmlspecialchars($r['employee_no']) ?></td>
-                                                    <td><b><?= htmlspecialchars($r['name']) ?></b></td>
-                                                    <td style="font-size:12px;"><?= htmlspecialchars($r['department'] ?? '—') ?></td>
-                                                    <td>
-                                                        <?= $r['bank_name'] ? htmlspecialchars($r['bank_name']) : '<span class="text-danger fw-bold">No bank</span>' ?>
-                                                    </td>
+                                                <tr class="<?= $missing ? 'bp-missing' : '' ?>" data-net="<?= $r['net'] ?>"
+                                                    data-search="<?= htmlspecialchars(strtolower(implode(' ', [$r['employee_no'], $r['lastname'], $r['firstname'], $r['middlename'], $r['bank_account_no'], $r['bank_name'], $r['department']]))) ?>">
+                                                    <td class="text-center bp-no"><?= $i ?></td>
                                                     <td class="bp-acct">
                                                         <?= $r['bank_account_no'] ? htmlspecialchars($r['bank_account_no']) : '<span class="text-danger">—</span>' ?>
+                                                    </td>
+                                                    <td><b><?= htmlspecialchars(strtoupper((string) $r['lastname'])) ?></b></td>
+                                                    <td><?= htmlspecialchars(strtoupper((string) $r['firstname'])) ?></td>
+                                                    <td><?= htmlspecialchars(strtoupper((string) ($r['middlename'] ?? ''))) ?></td>
+                                                    <td style="font-size:12px;">
+                                                        <?= $r['bank_name'] ? htmlspecialchars($r['bank_name']) : '<span class="text-danger fw-bold">No bank</span>' ?>
                                                     </td>
                                                     <td class="text-end fw-bold"><?= number_format($r['net'], 2) ?></td>
                                                 </tr>
@@ -173,8 +192,8 @@ if ($sel_id) {
                                         </tbody>
                                         <tfoot>
                                             <tr class="fw-bold">
-                                                <th colspan="6" class="text-end">TOTAL (<?= count($rows) ?> employees)</th>
-                                                <th class="text-end">&#8369; <?= number_format($t_net, 2) ?></th>
+                                                <th colspan="6" class="text-end">TOTAL (<span id="bp-count"><?= count($rows) ?></span> employees)</th>
+                                                <th class="text-end">&#8369; <span id="bp-total"><?= number_format($t_net, 2) ?></span></th>
                                             </tr>
                                         </tfoot>
                                     </table>
@@ -187,6 +206,31 @@ if ($sel_id) {
         </div>
     </div>
 </div>
+
+<script>
+// Search: hide non-matching rows, renumber #, and re-total what's left.
+(function () {
+    var input = document.getElementById('bp-search');
+    if (!input) return;
+    var rows  = Array.prototype.slice.call(document.querySelectorAll('#bp-table tbody tr'));
+    var info  = document.getElementById('bp-search-info');
+    var fmt   = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function apply() {
+        var terms = input.value.toLowerCase().trim().split(/\s+/).filter(Boolean);
+        var n = 0, total = 0;
+        rows.forEach(function (tr) {
+            var hay = tr.getAttribute('data-search');
+            var hit = terms.every(function (t) { return hay.indexOf(t) !== -1; });
+            tr.style.display = hit ? '' : 'none';
+            if (hit) { n++; total += parseFloat(tr.getAttribute('data-net')) || 0; tr.querySelector('.bp-no').textContent = n; }
+        });
+        document.getElementById('bp-count').textContent = n;
+        document.getElementById('bp-total').textContent = fmt.format(total);
+        info.textContent = terms.length ? n + ' of ' + rows.length + ' shown' : '';
+    }
+    input.addEventListener('input', apply);
+})();
+</script>
 
 <!-- Filter modal — same shape as the Payroll List Report's filter -->
 <div class="modal fade" id="modal-filter-bankpayout" tabindex="-1" role="dialog">

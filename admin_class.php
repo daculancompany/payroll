@@ -5787,6 +5787,22 @@ class Action
         // Holiday days are deliberately NOT carried over: they are computed from
         // the holiday calendar now, so the fresh count must win.
         $manualKeep = [];
+        // VERIFIED employees (review_status = 1) are final: a recalculation must
+        // not touch their row at all. Their items survive the DELETE below, the
+        // rebuild's fresh duplicates are dropped afterwards, and the tax / net
+        // passes skip them. Clearing the Verified mark releases the row.
+        $frozenIds = [];   // payroll_items.id
+        $frozenEmp = [];   // employee_id
+        if ($recalculate) {
+            $vq = $this->db->query("SELECT id, employee_id FROM payroll_items
+                                    WHERE payroll_id = $id AND review_status = 1");
+            if ($vq) while ($v = $vq->fetch_assoc()) {
+                $frozenIds[] = (int) $v['id'];
+                $frozenEmp[] = (int) $v['employee_id'];
+            }
+        }
+        $frozenIdList  = $frozenIds ? implode(',', $frozenIds) : '';
+        $frozenEmpList = $frozenEmp ? implode(',', array_unique($frozenEmp)) : '';
 
         if ($recalculate) {
             $mq = $this->db->query(
@@ -5794,6 +5810,7 @@ class Action
                         COALESCE(tax_override, 0) AS tax_override,
                         other_deduction, adjustment, adjustment_remarks
                  FROM payroll_items WHERE payroll_id = " . $id
+                 . ($frozenIdList ? " AND id NOT IN ($frozenIdList)" : '')
             );
             if ($mq) {
                 while ($m = $mq->fetch_assoc()) {
@@ -5808,7 +5825,8 @@ class Action
                 }
             }
 
-            $this->db->query("DELETE FROM payroll_items where payroll_id = " . $id);
+            $this->db->query("DELETE FROM payroll_items where payroll_id = " . $id
+                . ($frozenIdList ? " AND id NOT IN ($frozenIdList)" : ''));
             $this->db->query("DELETE FROM loan_history where payroll_id = " . $id);
             $this->save_payroll_history($id, 3);
         } else {
@@ -6833,6 +6851,13 @@ class Action
                 $upd = $this->db->prepare("UPDATE payroll SET status = 1 WHERE id = ?");
                 $upd->bind_param("i", $id);
                 $upd->execute();
+                // Verified employees kept their original row; drop the duplicate
+                // the rebuild just inserted for them.
+                if ($frozenIdList) {
+                    $this->db->query("DELETE FROM payroll_items
+                        WHERE payroll_id = $id AND employee_id IN ($frozenEmpList)
+                          AND id NOT IN ($frozenIdList)");
+                }
                 // Put back the hand-typed columns snapshotted before the DELETE.
                 // An employee who dropped out of this run simply has no row to
                 // restore onto, which is the correct outcome.
@@ -6840,15 +6865,15 @@ class Action
                 // Recalculating DELETEs and re-INSERTs payroll_items, so every
                 // named one-off item is now pointing at a row id that no longer
                 // exists. Re-attach them by employee before committing.
-                $this->relink_payroll_extras($id);
+                $this->relink_payroll_extras($id, $frozenIds);
                 // Withholding tax needs the finished rows — gross, allowances and
                 // statutory contributions all have to exist before a taxable base
                 // can be derived. Runs before the net resync below so an
                 // auto-posted tax lands inside the net rather than after it.
-                $this->compute_payroll_tax($id);
+                $this->compute_payroll_tax($id, $frozenIds);
                 // Last, once every figure the net depends on is in place: store
                 // a net that matches the gross this run just produced.
-                $this->resync_payroll_nets($id);
+                $this->resync_payroll_nets($id, $frozenIds);
                 if ($dryRun) return ['result' => true, 'message' => 'preview']; // caller rolls back
                 $this->db->commit();
                 return ['result' => true, 'message' => 'save'];
@@ -7086,9 +7111,11 @@ class Action
      * year to date; method 1 applies the per-cutoff table. Both come from the
      * effectivity-dated tax_brackets table.
      */
-    private function compute_payroll_tax($payrollId)
+    private function compute_payroll_tax($payrollId, array $skipIds = [])
     {
         $payrollId = (int) $payrollId;
+        // Rows left out entirely — Verified employees on a recalculation.
+        $skipSql = $skipIds ? ' AND id NOT IN (' . implode(',', array_map('intval', $skipIds)) . ')' : '';
         if (!tax_bracket_config($this->db, 'semi_monthly', date('Y-m-d'))) return;   // unmigrated
 
         $pay = $this->db->query("SELECT date_from, date_to FROM payroll WHERE id = $payrollId")->fetch_assoc();
@@ -7143,7 +7170,7 @@ class Action
             }
         }
 
-        $rows = $this->db->query("SELECT * FROM payroll_items WHERE payroll_id = $payrollId");
+        $rows = $this->db->query("SELECT * FROM payroll_items WHERE payroll_id = $payrollId" . $skipSql);
         if (!$rows) return;
 
         $upd = $this->db->prepare(
@@ -7320,9 +7347,11 @@ class Action
      * Uses the shared payroll_earnings() formula, so the stored net is by
      * construction the same number the sheet renders.
      */
-    private function resync_payroll_nets($payrollId)
+    private function resync_payroll_nets($payrollId, array $skipIds = [])
     {
         $payrollId = (int) $payrollId;
+        // Rows left out entirely — Verified employees on a recalculation.
+        $skipSql = $skipIds ? ' AND pi.id NOT IN (' . implode(',', array_map('intval', $skipIds)) . ')' : '';
 
         // One-off items per row, folded in the same way resync_item_net() does:
         // kind 2 adds to gross, kind 1 adds to deductions.
@@ -7343,7 +7372,7 @@ class Action
             "SELECT pi.*, pay.type AS payroll_type
                FROM payroll_items pi
                INNER JOIN payroll pay ON pay.id = pi.payroll_id
-              WHERE pi.payroll_id = $payrollId"
+              WHERE pi.payroll_id = $payrollId" . $skipSql
         );
         if (!$rows) return;
 
@@ -7880,6 +7909,10 @@ class Action
     // Bulk-send several payroll batches for review (status 1 → 3). ids = array of payroll ids.
     function bulk_send_payroll_for_review()
     {
+        // Optional step, off by default (PAYROLL_EMPLOYEE_REVIEW_ENABLED in db_connect.php).
+        if (!PAYROLL_EMPLOYEE_REVIEW_ENABLED) {
+            return ['result' => false, 'message' => 'Employee payroll review is turned off. Lock the payroll to release payslips.'];
+        }
         $ids = $this->_intIds($_POST['ids'] ?? []);
         if (!$ids) return ['result' => false, 'message' => 'No payroll batches selected.'];
 
@@ -7921,6 +7954,9 @@ class Action
     }
     function remind_payroll_review()
     {
+        if (!PAYROLL_EMPLOYEE_REVIEW_ENABLED) {
+            return ['result' => false, 'message' => 'Employee payroll review is turned off.'];
+        }
         return $this->_remindReview('payroll');
     }
 
@@ -7944,6 +7980,9 @@ class Action
     // bumps that employee's review_sent_count.
     function notify_payroll_review_selected()
     {
+        if (!PAYROLL_EMPLOYEE_REVIEW_ENABLED) {
+            return ['result' => false, 'message' => 'Employee payroll review is turned off.'];
+        }
         $id  = isset($_POST['id']) ? (int) $_POST['id'] : 0;
         $raw = $_POST['item_ids'] ?? '';
         if (is_array($raw)) $raw = implode(',', $raw);
@@ -9676,13 +9715,18 @@ class Action
         $hasUnlock = $this->db->query("SHOW COLUMNS FROM payroll_items LIKE 'unlocked_at'");
         $unlockCol = ($hasUnlock && $hasUnlock->num_rows) ? 'i.unlocked_at' : 'NULL AS unlocked_at';
 
-        $row = $this->db->query("SELECT p.status, $unlockCol
+        $row = $this->db->query("SELECT p.status, $unlockCol, COALESCE(i.review_status, 0) AS review_status
                 FROM payroll_items i
                 INNER JOIN payroll p ON p.id = i.payroll_id
                 WHERE i.id = $itemId")->fetch_assoc();
         if (!$row) return ['result' => false, 'message' => 'Payroll item not found.'];
 
         $status = (int) $row['status'];
+        // A Verified employee's figures are final (recalculation skips them too);
+        // clearing the Verified mark is the way to edit again.
+        if ($status !== 2 && (int) $row['review_status'] === 1) {
+            return ['result' => false, 'message' => 'This employee is Verified. Clear the Verified mark first to edit.', 'reload' => true];
+        }
         if ($status === 1) return null;
         if ($status === 3 && !empty($row['unlocked_at'])) return null;
 
@@ -9777,7 +9821,7 @@ class Action
      * reappear the next time that employee turned up in the payroll.
      * Finally each touched row's stored net is recomputed to include them.
      */
-    private function relink_payroll_extras($payrollId)
+    private function relink_payroll_extras($payrollId, array $skipIds = [])
     {
         $payrollId = (int) $payrollId;
         $has = $this->db->query("SHOW TABLES LIKE 'payroll_item_extras'");
@@ -9805,9 +9849,11 @@ class Action
             LEFT JOIN payroll_items i ON i.id = x.payroll_item_id AND i.payroll_id = x.payroll_id
             WHERE x.payroll_id = $payrollId AND i.id IS NULL");
 
-        // Stored net must include the re-attached items.
+        // Stored net must include the re-attached items. Verified rows kept their
+        // id (so their items never moved) and are left exactly as they were.
         $ids = $this->db->query("SELECT DISTINCT payroll_item_id FROM payroll_item_extras
-                                 WHERE payroll_id = $payrollId");
+                                 WHERE payroll_id = $payrollId"
+            . ($skipIds ? ' AND payroll_item_id NOT IN (' . implode(',', array_map('intval', $skipIds)) . ')' : ''));
         if ($ids) while ($r = $ids->fetch_assoc()) $this->resync_item_net((int)$r['payroll_item_id']);
     }
 
@@ -10678,7 +10724,8 @@ class Action
             }
         }
 
-        $stmt3 = $this->db->prepare("UPDATE payroll_items SET net = ? WHERE id = ?");
+        // Verified employees are final — the page's net re-save leaves them alone.
+        $stmt3 = $this->db->prepare("UPDATE payroll_items SET net = ? WHERE id = ? AND COALESCE(review_status, 0) <> 1");
         if ($stmt3 === false) {
             throw new Exception('Failed to prepare the statement: ' . $this->db->error);
         }
@@ -11227,6 +11274,11 @@ class Action
     // in it so they can confirm/dispute their own payslip in the portal before it's locked.
     function send_payroll_for_review()
     {
+        // Optional step, off by default (PAYROLL_EMPLOYEE_REVIEW_ENABLED in db_connect.php).
+        // While off, no payroll may be parked in status 3 by a stale page or crafted request.
+        if (!PAYROLL_EMPLOYEE_REVIEW_ENABLED) {
+            return ['result' => false, 'message' => 'Employee payroll review is turned off. Lock the payroll to release payslips.'];
+        }
         $id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
         if (!$id) return ['result' => false, 'message' => 'Invalid parameters'];
 

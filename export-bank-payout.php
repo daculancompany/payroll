@@ -8,6 +8,7 @@ if (empty($_SESSION['is_login']) && empty($_SESSION['login_id'])) {
 }
 $conn = include 'db_connect.php';
 require_page_access('bank-payout', 'text');
+require_once __DIR__ . '/includes/paysheet.php';
 
 $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
 if (!$id) { http_response_code(400); exit('Missing payroll id'); }
@@ -16,8 +17,8 @@ $pay = $conn->query("SELECT ref_no, date_from, date_to FROM payroll WHERE id = $
 if (!$pay) { http_response_code(404); exit('Payroll not found'); }
 
 $q = $conn->prepare("
-    SELECT e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS name,
-           b.bank_name, e.bank_account_no, SUM(pi.net) AS net
+    SELECT pi.employee_id, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS name,
+           b.bank_name, e.bank_account_no
     FROM payroll_items pi
     INNER JOIN employee e ON e.id = pi.employee_id
     LEFT JOIN banks b ON b.id = e.bank_id
@@ -28,6 +29,8 @@ $q = $conn->prepare("
 $q->bind_param('i', $id);
 $q->execute();
 $res = $q->get_result();
+// Same net as the payroll sheet / payslip; Non-ATM (cash-paid) employees are not in it.
+$nets = paysheet_atm_net_by_employee($conn, $id);
 
 // .xlsx, not CSV: Excel reads a CSV account number as a number, shows it as
 // 1.23457E+15 and zeroes every digit past the 15th — the bank then gets the
@@ -47,6 +50,8 @@ $period = date('M j', strtotime($pay['date_from'])) . '-' . date('M j, Y', strto
 $total = 0;
 $row = 2;
 while ($r = $res->fetch_assoc()) {
+    if (!isset($nets[(int) $r['employee_id']])) continue;   // Non-ATM
+    $r['net'] = $nets[(int) $r['employee_id']];
     $total += (float) $r['net'];
     $sheet->setCellValueExplicit('A' . $row, (string) $r['employee_no'], $STR);
     $sheet->setCellValue('B' . $row, $r['name']);

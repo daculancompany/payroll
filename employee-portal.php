@@ -280,7 +280,8 @@ if (!function_exists('pp_pay_x')) {
 // Payslips awaiting this employee's review (status 3) and not yet signed off.
 $payroll_review_pending_count = 0;
 foreach ($payslips as $ps) {
-    if ((int)$ps['payroll_status'] === 3 && $ps['review_status'] === null) $payroll_review_pending_count++;
+    // None while the payroll review step is off (PAYROLL_EMPLOYEE_REVIEW_ENABLED).
+    if (PAYROLL_EMPLOYEE_REVIEW_ENABLED && (int)$ps['payroll_status'] === 3 && $ps['review_status'] === null) $payroll_review_pending_count++;
 }
 
 // ── Career summary from all payslips ───────────────────────────
@@ -3126,7 +3127,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'resolved_at'    => $ps['review_resolved_at'],
                     ];
                     // Needs action = out for review and not yet answered
-                    $needs = ($psStatus === 3 && $psReview === null);
+                    $needs = (PAYROLL_EMPLOYEE_REVIEW_ENABLED && $psStatus === 3 && $psReview === null);
                 ?>
                 <button type="button" class="psrow<?= $needs ? ' needs' : '' ?>"
                     data-payroll-id="<?= (int)$ps['payroll_id'] ?>"
@@ -3136,7 +3137,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         <span class="psrow-period"><?= date('M d', strtotime($ps['date_from'])) ?> – <?= date('M d, Y', strtotime($ps['date_to'])) ?></span>
                         <span class="psrow-meta">
                             <span class="psrow-ref"><?= htmlspecialchars($ps['ref_no']) ?></span>
-                            <?php if ($psStatus === 3 && $psReview === null): ?>
+                            <?php if ($needs): ?>
                                 <span class="psbadge review">Awaiting review</span>
                             <?php elseif ($psReview === 1): ?>
                                 <span class="psbadge ok">Confirmed</span>
@@ -5846,7 +5847,8 @@ function openPayslipDetails(payrollId) {
 
     var footer = document.getElementById('payroll-review-footer');
     if (!footer) return;
-    var canReview = parseInt(d.status, 10) === 3;
+    // View-only while the payroll review step is off (db_connect.php).
+    var canReview = <?= PAYROLL_EMPLOYEE_REVIEW_ENABLED ? 'true' : 'false' ?> && parseInt(d.status, 10) === 3;
     // Toggle a class, not inline display: these blocks carry Bootstrap's
     // .d-flex (display:flex !important), which would beat an inline style.
     footer.querySelectorAll('.prv-review-only').forEach(function (el) {

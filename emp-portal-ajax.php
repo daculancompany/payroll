@@ -617,6 +617,10 @@ switch ($action) {
 
     // ── Payslip review: employee submits confirm / dispute ──
     case 'submit_payroll_review': {
+        // Payslips are view-only while the review step is off (db_connect.php).
+        if (!PAYROLL_EMPLOYEE_REVIEW_ENABLED) {
+            echo json_encode(['result' => false, 'message' => 'Payslip comments are turned off.']); break;
+        }
         $payroll_id = (int) ($_POST['payroll_id'] ?? 0);
         $decision   = (int) ($_POST['decision'] ?? 0); // 1 = confirm, 2 = dispute
         $comment    = trim($_POST['comment'] ?? '');

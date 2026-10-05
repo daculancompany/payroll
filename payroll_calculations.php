@@ -78,6 +78,10 @@ if ($prvq) while ($prv = $prvq->fetch_assoc()) {
     elseif ((int)$prv['status'] === 2) $payrollReviewDisputed++;
 }
 $payrollReviewPending = max(0, $payrollReviewTotalEmp - $payrollReviewConfirmed - $payrollReviewDisputed);
+// Employee sign-off UI (Review tab, filter chips, "Awaiting employee review"
+// chips): only while the optional step is on (db_connect.php), or for a payroll
+// that already collected sign-offs, so those stay readable.
+$pcwReviewOn = PAYROLL_EMPLOYEE_REVIEW_ENABLED || count($payrollReviewRows) > 0;
 
 // Rows an admin reopened for correction while the batch is out for review.
 // Drives the Save button (hidden at status 3 otherwise) and the header banner.
@@ -218,6 +222,8 @@ if ($commaSeparatedSites !== '') {
  * rule server-side; this one only decides whether to render an <input>.
  */
 function pcw_row_editable($status, $row) {
+    // Verified employees are final — read-only until the mark is cleared.
+    if ((int)($row['review_status'] ?? 0) === 1) return false;
     if ((int)$status === 1) return true;
     return (int)$status === 3 && !empty($row['unlocked_at']);
 }
@@ -606,7 +612,7 @@ $refund_names = [];   // refund id => display name
                             <button type="button" title="Payroll summary by department — view, then download the PDF" data-bs-toggle="modal" data-bs-target="#modal-dept-summary" class="pcw-btn"><i class="ri-building-2-line"></i> Dept.</button>
                         <?php } ?>
                         <button type="button" title="Totals per contribution, deduction, loan, and refund type" onclick="openRemitModal()" class="pcw-btn"><i class="ri-hand-coin-line"></i> Remittance</button>
-                        <?php if ($status == 1) { ?>
+                        <?php if ($status == 1 && PAYROLL_EMPLOYEE_REVIEW_ENABLED) { ?>
                             <button type="button" title="Send employees their payslip for review before locking" onclick="sendPayrollForReview(<?= $id ?>)" class="pcw-btn good"><i class="ri-user-received-2-line"></i> Send for Review</button>
                         <?php } ?>
                         <?php if ($status !== 2) { ?>
@@ -647,7 +653,7 @@ $refund_names = [];   // refund id => display name
                                     <button type="button" data-rv="3"><i class="ri-loader-4-line" style="color:#3f7fe0;"></i> Reviewing</button>
                                     <button type="button" data-rv="0"><i class="ri-checkbox-blank-circle-line" style="color:#a29cac;"></i> No mark</button>
                                 </div>
-                                <?php if (in_array((int)$status, [2, 3], true)): ?>
+                                <?php if ($pcwReviewOn && in_array((int)$status, [2, 3], true)): ?>
                                 <?php /* The employees' own sign-off, separate from the reviewer's
                                          colour mark above — lets HR pull up every disputed payslip
                                          (or everyone still silent) in one click. */ ?>
@@ -799,7 +805,7 @@ $refund_names = [];   // refund id => display name
                             <div class="pcw-rtabs" id="pcw-rtabs">
                                 <button type="button" class="pcw-rtab active" data-rtab="sum"><i class="ri-user-3-line"></i> Summary</button>
                                 <button type="button" class="pcw-rtab" data-rtab="ins"><i class="ri-donut-chart-fill"></i> Insights</button>
-                                <?php if (in_array((int)$status, [2, 3], true)): ?>
+                                <?php if ($pcwReviewOn && in_array((int)$status, [2, 3], true)): ?>
                                 <button type="button" class="pcw-rtab" data-rtab="rev">
                                     <i class="ri-user-received-2-line"></i> Review
                                     <?php if ($pcwUnreadMsgs > 0): ?>
@@ -816,7 +822,7 @@ $refund_names = [];   // refund id => display name
                             <div class="pcw-rpane" data-rpane="ins">
                                 <div class="pcw-ins-body" id="pcw-insights"></div>
                             </div>
-                            <?php if (in_array((int)$status, [2, 3], true)): ?>
+                            <?php if ($pcwReviewOn && in_array((int)$status, [2, 3], true)): ?>
                             <div class="pcw-rpane" data-rpane="rev">
                             <div class="pcw-rv-status">
                                 <?php if ((int)$status === 3): ?>
@@ -1599,28 +1605,46 @@ $refund_names = [];   // refund id => display name
 
                                                     if (count($contributions_settings) > 0) {
                                                         foreach ($contributions_settings as $i2 =>  $k) {
+                                                            // An employee can carry several lines of one type (e.g. 11
+                                                            // PHARMACY charges, each its own employee_deductions row).
+                                                            // The column is their SUM — taking only the last line made
+                                                            // the net, which page load re-saves, short by the rest.
                                                             $deduction_amount = 0;
+                                                            $ded_lines = [];
                                                             if ($k['type'] == 1) {
                                                                 foreach ($contributions as $kd) {
                                                                     if ($kd["contribution_id"] == $k["id"]) {
-                                                                        $deduction_amount = $kd["amount"];
+                                                                        $deduction_amount += (float) $kd["amount"];
+                                                                        $ded_lines[] = (float) $kd["amount"];
                                                                     }
                                                                 }
                                                             }
                                                             if ($k['type'] == 2) {
                                                                 foreach ($deductions as $kd) {
                                                                     if ($kd["deduction_id"] == $k["id"]) {
-                                                                        $deduction_amount = $kd["amount"];
+                                                                        $deduction_amount += (float) $kd["amount"];
+                                                                        $ded_lines[] = (float) $kd["amount"];
                                                                     }
                                                                 }
                                                             }
                                                             if ($k['type'] == 3) {
                                                                 foreach ($loans as $kd) {
                                                                     if ($kd["deduction_id"] == $k["id"]) {
-                                                                        $deduction_amount = $kd["amount"];
+                                                                        $deduction_amount += (float) $kd["amount"];
+                                                                        $ded_lines[] = (float) $kd["amount"];
                                                                     }
                                                                 }
                                                             }
+                                                            $deduction_amount = round($deduction_amount, 2);
+                                                            // Editing writes only the FIRST matching line
+                                                            // (updateContributionAmount), so a multi-line total is
+                                                            // shown read-only — each line keeps its own amount for
+                                                            // the balance run-down on lock.
+                                                            $ded_multi = count($ded_lines) > 1;
+                                                            $ded_ro    = $ded_multi ? ' readonly' : $rowRO;
+                                                            $ded_title = $ded_multi
+                                                                ? ' title="' . count($ded_lines) . ' lines: ' . implode(' + ', array_map(function ($a) { return number_format($a, 2); }, $ded_lines)) . '"'
+                                                                : '';
 
                                                             $total_deductions += $deduction_amount;
                                                             $t_contrib[$k['id']] = ($t_contrib[$k['id']] ?? 0) + $deduction_amount;
@@ -1632,7 +1656,7 @@ $refund_names = [];   // refund id => display name
                                                             <td style="min-width: 90px;" class="text-right">
                                                                 <?php if ($rowShowInputs) { ?>
                                                                     <div class="input-group mb-3">
-                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
+                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class"<?= $ded_ro ?><?= $ded_title ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
                                                                         <!-- <div class="input-group-append">
                                                                             <button
                                                                                 onclick="updateData(this, <?= $row['id'] ?>, '<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>', <?= $k['id'] ?>)"
@@ -1645,7 +1669,7 @@ $refund_names = [];   // refund id => display name
                                                                         </div> -->
                                                                     </div>
                                                                 <?php } else { ?>
-                                                                    <b><?= number_format($deduction_amount, 2) ?></b>
+                                                                    <b<?= $ded_title ?>><?= number_format($deduction_amount, 2) ?></b>
                                                                 <?php } ?>
                                                             </td>
                                                         <?php } ?>
@@ -2378,28 +2402,46 @@ $refund_names = [];   // refund id => display name
 
                                                     if (count($contributions_settings) > 0) {
                                                         foreach ($contributions_settings as $i2 =>  $k) {
+                                                            // An employee can carry several lines of one type (e.g. 11
+                                                            // PHARMACY charges, each its own employee_deductions row).
+                                                            // The column is their SUM — taking only the last line made
+                                                            // the net, which page load re-saves, short by the rest.
                                                             $deduction_amount = 0;
+                                                            $ded_lines = [];
                                                             if ($k['type'] == 1) {
                                                                 foreach ($contributions as $kd) {
                                                                     if ($kd["contribution_id"] == $k["id"]) {
-                                                                        $deduction_amount = $kd["amount"];
+                                                                        $deduction_amount += (float) $kd["amount"];
+                                                                        $ded_lines[] = (float) $kd["amount"];
                                                                     }
                                                                 }
                                                             }
                                                             if ($k['type'] == 2) {
                                                                 foreach ($deductions as $kd) {
                                                                     if ($kd["deduction_id"] == $k["id"]) {
-                                                                        $deduction_amount = $kd["amount"];
+                                                                        $deduction_amount += (float) $kd["amount"];
+                                                                        $ded_lines[] = (float) $kd["amount"];
                                                                     }
                                                                 }
                                                             }
                                                             if ($k['type'] == 3) {
                                                                 foreach ($loans as $kd) {
                                                                     if ($kd["deduction_id"] == $k["id"]) {
-                                                                        $deduction_amount = $kd["amount"];
+                                                                        $deduction_amount += (float) $kd["amount"];
+                                                                        $ded_lines[] = (float) $kd["amount"];
                                                                     }
                                                                 }
                                                             }
+                                                            $deduction_amount = round($deduction_amount, 2);
+                                                            // Editing writes only the FIRST matching line
+                                                            // (updateContributionAmount), so a multi-line total is
+                                                            // shown read-only — each line keeps its own amount for
+                                                            // the balance run-down on lock.
+                                                            $ded_multi = count($ded_lines) > 1;
+                                                            $ded_ro    = $ded_multi ? ' readonly' : $rowRO;
+                                                            $ded_title = $ded_multi
+                                                                ? ' title="' . count($ded_lines) . ' lines: ' . implode(' + ', array_map(function ($a) { return number_format($a, 2); }, $ded_lines)) . '"'
+                                                                : '';
 
                                                             $total_deductions += $deduction_amount;
                                                             $t_contrib[$k['id']] = ($t_contrib[$k['id']] ?? 0) + $deduction_amount;
@@ -2411,7 +2453,7 @@ $refund_names = [];   // refund id => display name
                                                             <td style="min-width: 90px;" class="text-right">
                                                                 <?php if ($rowShowInputs) { ?>
                                                                     <div class="input-group mb-3">
-                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class"<?= $rowRO ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
+                                                                        <input type="text" value="<?= $deduction_amount ?>" data-id="<?= $row['id'] ?>" data-type='<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>' data-dd_id="<?= $k['id'] ?>" class="form-control input-class"<?= $ded_ro ?><?= $ded_title ?> placeholder="Enter Amount" aria-label="Enter Amount" aria-describedby="basic-addon2">
                                                                         <!-- <div class="input-group-append">
                                                                             <button
                                                                                 onclick="updateData(this, <?= $row['id'] ?>, '<?= $k['type'] == 1 ? 'contribution' : ($k['type'] == 3 ? 'loan' : 'deduction') ?>', <?= $k['id'] ?>)"
@@ -2424,7 +2466,7 @@ $refund_names = [];   // refund id => display name
                                                                         </div> -->
                                                                     </div>
                                                                 <?php } else { ?>
-                                                                    <b><?= number_format($deduction_amount, 2) ?></b>
+                                                                    <b<?= $ded_title ?>><?= number_format($deduction_amount, 2) ?></b>
                                                                 <?php } ?>
                                                             </td>
                                                         <?php } ?>
@@ -3741,6 +3783,8 @@ window.PCW_META = <?= json_encode([
     'status'     => (int)$status,
     // Paid history — the page renders as a viewer, with no control that writes.
     'locked'     => $pcwLocked ? 1 : 0,
+    // Employee sign-off UI on/off (see $pcwReviewOn).
+    'review_on'  => $pcwReviewOn ? 1 : 0,
     'type'       => (int)$payroll_type,
     'from'       => date('M j, Y', strtotime($payroll['date_from'])),
     'to'         => date('M j, Y', strtotime($payroll['date_to'])),

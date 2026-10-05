@@ -15,7 +15,7 @@ if (!isset($_GET['id'])) { return; }
 $id = (int)$_GET['id'];
 
 $query = "SELECT a.*,
-    l.date_from, l.date_to, l.settings, l.ref_no, l.type AS payroll_type,
+    l.date_from, l.date_to, l.settings, l.ref_no, l.type AS payroll_type, l.status AS payroll_status,
     f.site_code, f.site_name, f.site_address,
     e.employee_no, e.lastname, e.firstname, e.middlename, e.basic_pay,
     d.name as department, p.name as position
@@ -39,6 +39,13 @@ if (!$payroll) {
 if (!$is_staff_session && (int)$payroll['employee_id'] !== (int)($_SESSION['emp_id'] ?? 0)) {
     http_response_code(403);
     exit('Not authorized.');
+}
+// ...and only once it is released — the same rule as the portal's payslip list
+// (Locked, or out for review). A draft (0/1) is not the employee's to see yet,
+// even by typing its URL.
+if (!$is_staff_session && !in_array((int)$payroll['payroll_status'], [2, 3], true)) {
+    http_response_code(403);
+    exit('This payslip is not released yet.');
 }
 
 $contributions_settings = json_decode($payroll['settings'], true) ?: [];
@@ -104,19 +111,19 @@ foreach ($contributions_settings as $k) {
     if ($k['type'] == 1) {
         $r = $conn->query("SELECT contribution FROM contributions WHERE id={$k['id']}")->fetch_assoc();
         $name = $r['contribution'] ?? '—';
-        foreach ($contributions_raw as $kd) { if ($kd['contribution_id'] == $k['id']) $amt = $kd['amount']; }
+        foreach ($contributions_raw as $kd) { if ($kd['contribution_id'] == $k['id']) $amt += (float) $kd['amount']; }
         $contributions_list[] = ['name' => $name, 'amount' => $amt];
         $total_contributions += $amt;
     } elseif ($k['type'] == 2) {
         $r = $conn->query("SELECT deduction FROM deductions WHERE id={$k['id']}")->fetch_assoc();
         $name = $r['deduction'] ?? '—';
-        foreach ($deductions_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt = $kd['amount']; }
+        foreach ($deductions_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt += (float) $kd['amount']; }
         $deductions_list[] = ['name' => $name, 'amount' => $amt];
         $total_deductions += $amt;
     } elseif ($k['type'] == 3) {
         $r = $conn->query("SELECT loan_type FROM contribution_loan_types WHERE clt_id={$k['id']}")->fetch_assoc();
         $name = $r['loan_type'] ?? '—';
-        foreach ($loans_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt = $kd['amount']; }
+        foreach ($loans_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt += (float) $kd['amount']; }
         $loans_list[] = ['name' => $name, 'amount' => $amt];
         $total_loans += $amt;
     }

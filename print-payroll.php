@@ -555,21 +555,21 @@ LEFT JOIN sites f ON f.id = a.site_id
                                     if ($k['type'] == 1) {
                                         foreach ($contributions as $kd) {
                                             if ($kd["contribution_id"] == $k["id"]) {
-                                                $deduction_amount = $kd["amount"];
+                                                $deduction_amount += (float) $kd["amount"];
                                             }
                                         }
                                     }
                                     if ($k['type'] == 2) {
                                         foreach ($deductions as $kd) {
                                             if ($kd["deduction_id"] == $k["id"]) {
-                                                $deduction_amount = $kd["amount"];
+                                                $deduction_amount += (float) $kd["amount"];
                                             }
                                         }
                                     }
                                     if ($k['type'] == 3) {
                                         foreach ($loans as $kd) {
                                             if ($kd["deduction_id"] == $k["id"]) {
-                                                $deduction_amount = $kd["amount"];
+                                                $deduction_amount += (float) $kd["amount"];
                                             }
                                         }
                                     }

@@ -3,6 +3,9 @@
 // Pick a payroll → per-employee net pay with bank + account number, grouped
 // by bank, ready for bank-transfer upload (Excel) or printing. Employees with
 // no bank/account on file are flagged so payouts don't silently bounce.
+// Net comes from the paysheet builder (not the stored payroll_items.net) and
+// Non-ATM (cash-paid) employees are left out — see paysheet_atm_net_by_employee().
+require_once __DIR__ . '/includes/paysheet.php';
 
 $payrolls = [];
 $pr = $conn->query("SELECT id, ref_no, date_from, date_to, status FROM payroll WHERE status >= 1 ORDER BY date_from DESC");
@@ -23,7 +26,7 @@ if ($sel_id) {
 
     if ($sel_pay) {
         $it = $conn->prepare("
-            SELECT pi.employee_id, SUM(pi.net) AS net,
+            SELECT pi.employee_id,
                    e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS name,
                    e.bank_account_no, b.bank_name, d.name AS department
             FROM payroll_items pi
@@ -36,8 +39,11 @@ if ($sel_id) {
         ");
         $it->bind_param('i', $sel_id);
         $it->execute();
-        $res = $it->get_result();
+        $res  = $it->get_result();
+        $nets = paysheet_atm_net_by_employee($conn, $sel_id);
         while ($row = $res->fetch_assoc()) {
+            if (!isset($nets[(int) $row['employee_id']])) continue;   // Non-ATM
+            $row['net'] = $nets[(int) $row['employee_id']];
             $rows[] = $row;
             $t_net += (float) $row['net'];
             $bk = $row['bank_name'] ?: '— No bank on file —';

@@ -735,7 +735,7 @@
         if (e.rv === 1) chips += '<span class="pp-chip g">✓ Reviewer: verified</span>';
         else if (e.rv === 2) chips += '<span class="pp-chip r">! Reviewer: issue' + (e.rv_c ? ' — ' + esc(e.rv_c) : '') + '</span>';
         else if (e.rv === 3) chips += '<span class="pp-chip b">● Reviewer: checking</span>';
-        if (M.status === 2 || M.status === 3) {
+        if (M.review_on && (M.status === 2 || M.status === 3)) {
             if (e.emp_rv === 1) chips += '<span class="pp-chip g">Employee confirmed</span>';
             else if (e.emp_rv === 2) chips += '<span class="pp-chip r">Employee disputed</span>';
             else chips += '<span class="pp-chip o">Awaiting employee review</span>';
@@ -1629,7 +1629,7 @@
                 2: ['bad',  'ri-error-warning-line',    'Employee disputed'],
                 0: ['wait', 'ri-time-line',             'Awaiting employee review']
             };
-            var rv = (M.status === 2 || M.status === 3) ? (rvMap[e.emp_rv] || rvMap[0]) : null;
+            var rv = (M.review_on && (M.status === 2 || M.status === 3)) ? (rvMap[e.emp_rv] || rvMap[0]) : null;
             rvChip.className = 'al-fs rv' + (rv ? ' ' + rv[0] : '');
             rvChip.style.display = rv ? '' : 'none';
             if (rv) rvChip.innerHTML = '<i class="' + rv[1] + '"></i>' + rv[2];

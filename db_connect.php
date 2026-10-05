@@ -629,6 +629,22 @@ if (!defined('PAYROLL_EXCLUDED_CLASSIFICATIONS')) {
     define('PAYROLL_EXCLUDED_CLASSIFICATIONS', ['INTERM', 'INTERN']);
 }
 
+// ── Employee payroll review step (GLOBAL, OPTIONAL) ─────────────────────
+// Whether a calculated payroll is sent to the employees (status 3) so they can
+// confirm / dispute / comment on their payslip in the portal before Lock.
+//
+//   false (default) → the step is SKIPPED entirely. Admins Lock straight from
+//                     Calculated; the payslip appears in the portal only once
+//                     Locked, view-only (no comment box, no Confirm/Dispute).
+//                     Send for Review / Notify / Remind are hidden and refused
+//                     server-side, as is the employee's submit_payroll_review.
+//   true            → Calculated → Send for Review (employees sign off) → Lock.
+//
+// Payrolls that already have employee reviews keep their Review panel.
+if (!defined('PAYROLL_EMPLOYEE_REVIEW_ENABLED')) {
+    define('PAYROLL_EMPLOYEE_REVIEW_ENABLED', false);
+}
+
 // ── Employee DTR review step (GLOBAL, OPTIONAL) ─────────────────────────
 // Whether a DTR batch must be sent to the employees for their own sign-off
 // (confirm / dispute in the portal) before it can be approved for payroll.

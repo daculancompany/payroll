@@ -149,7 +149,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             if (!isset($jsonFor[$t])) continue;
             $decoded[$t] ??= (json_decode($row[$jsonFor[$t]] ?? '', true) ?: []);
             $amt = 0.0;
-            foreach ($decoded[$t] as $d) if (($d[$idKey[$t]] ?? null) == $k['id']) $amt = (float) $d['amount'];
+            foreach ($decoded[$t] as $d) if (($d[$idKey[$t]] ?? null) == $k['id']) $amt += (float) $d['amount'];
             if ($t === 1 && (int) $k['id'] === PAYSHEET_SSS_ID) { $sss += $amt; continue; }
             $otherDed += $amt;
             $breakdown[paysheet_ded_bucket($t, (int) $k['id'])] += $amt;
@@ -165,6 +165,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         $net = $gross - ($sss + $tax + $otherDed) + $refunds + (float) ($row['adjustment'] ?? 0);
 
         $line = [
+            'employee_id' => (int) $row['employee_id'],   // not a column — for paysheet_atm_net_by_employee()
             'emp_no' => (string) $row['employee_no'],
             'name'   => strtoupper(trim($row['lastname'] . ', ' . $row['firstname'] . ' ' . ($row['middlename'] ?? ''))),
             'rate'   => $e['is_monthly'] ? (float) $row['basic_pay'] : (float) $row['per_day'],
@@ -217,6 +218,22 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         'nonatm_net' => $nonAtmNet,
         'breakdown'  => $breakdown,   // sums to grand['other']
     ];
+}
+
+/**
+ * Net pay per ATM employee for one run — [employee_id => net], NONATM block
+ * left out. Same figures as the paysheet / Detailed table, so the bank payout
+ * never quotes the stored payroll_items.net, which goes stale whenever a
+ * deduction, extra or ticked setting changes after the last calculate.
+ */
+function paysheet_atm_net_by_employee(mysqli $conn, int $payroll_id): array
+{
+    $nets = [];
+    foreach (paysheet_build($conn, $payroll_id)['groups'] as $g) {
+        if ($g['id'] === PAYSHEET_NONATM) continue;
+        foreach ($g['rows'] as $r) $nets[$r['employee_id']] = ($nets[$r['employee_id']] ?? 0) + $r['net'];
+    }
+    return array_map(fn($n) => round($n, 2), $nets);
 }
 
 /** "DEPT 13" label for a group ('' for the unassigned and NONATM blocks). */

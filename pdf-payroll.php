@@ -89,7 +89,10 @@ $density = [
     'monthly'  => 'table { font-size: 6.5px !important; } th, td { padding: 2px 1px !important; } th { width: auto !important; }',
     'employer' => 'table { font-size: 7px !important; } th, td { padding: 2px !important; }',
     'dept'     => '',
-    'paysheet' => '',
+    // Room for the per-page header + signature footer (print-paysheet.php).
+    // dompdf applies @page margins as the <html> margin, so the generic
+    // "html, body { margin: 0 }" above would erase them — restate on html.
+    'paysheet' => '@page { margin: 78px 14px 74px; } html { margin: 78px 14px 74px !important; }',
     'payslip'  => '',
 ];
 
@@ -197,6 +200,17 @@ $dompdf->setBasePath(__DIR__ . '/');      // resolve relative image paths (logo)
 $dompdf->loadHtml($html, 'UTF-8');
 $dompdf->setPaper($paper, $orientation);
 $dompdf->render();
+
+// "Page X of Y" in the paysheet's footer band — CSS counter(pages) prints 0
+// in dompdf, so stamp it on the canvas once the page count is known.
+if ($src === 'paysheet') {
+    $canvas = $dompdf->getCanvas();
+    $canvas->page_text(
+        $canvas->get_width() - 80, $canvas->get_height() - 18,
+        'Page {PAGE_NUM} of {PAGE_COUNT}',
+        $dompdf->getFontMetrics()->getFont('Helvetica'), 7, [0.33, 0.33, 0.33]
+    );
+}
 
 $pdfOut = $dompdf->output();
 if ($cacheFile !== null) {

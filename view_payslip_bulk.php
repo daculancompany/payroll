@@ -85,19 +85,19 @@ function buildPayslip($conn, $id) {
         if ($k['type'] == 1) {
             $r = $conn->query("SELECT contribution FROM contributions WHERE id={$k['id']}")->fetch_assoc();
             $name = $r['contribution'] ?? '—';
-            foreach ($contrib_raw as $kd) { if ($kd['contribution_id'] == $k['id']) $amt = $kd['amount']; }
+            foreach ($contrib_raw as $kd) { if ($kd['contribution_id'] == $k['id']) $amt += (float) $kd['amount']; }
             $contributions_list[] = ['name' => $name, 'amount' => $amt];
             $total_cont += $amt;
         } elseif ($k['type'] == 2) {
             $r = $conn->query("SELECT deduction FROM deductions WHERE id={$k['id']}")->fetch_assoc();
             $name = $r['deduction'] ?? '—';
-            foreach ($deduct_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt = $kd['amount']; }
+            foreach ($deduct_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt += (float) $kd['amount']; }
             $deductions_list[] = ['name' => $name, 'amount' => $amt];
             $total_ded += $amt;
         } elseif ($k['type'] == 3) {
             $r = $conn->query("SELECT loan_type FROM contribution_loan_types WHERE clt_id={$k['id']}")->fetch_assoc();
             $name = $r['loan_type'] ?? '—';
-            foreach ($loans_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt = $kd['amount']; }
+            foreach ($loans_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt += (float) $kd['amount']; }
             $loans_list[] = ['name' => $name, 'amount' => $amt];
             $total_loan += $amt;
         }

@@ -219,6 +219,7 @@ $(document).ready(function () {
                 d.department_id = $("#filter-department").val();
                 d.area_id = $("#filter-area").val();
                 d.fingerprint = $("#filter-fingerprint").val();
+                d.bank = $("#filter-bank").val();
             },
         },
         columns: [
@@ -275,6 +276,10 @@ $(document).ready(function () {
     });
 
     $("#filter-fingerprint").on("change", function () {
+        oTable.draw();
+    });
+
+    $("#filter-bank").on("change", function () {
         oTable.draw();
     });
 });

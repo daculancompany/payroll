@@ -1761,7 +1761,8 @@ $refund_names = [];   // refund id => display name
 
                                                     // One-off deductions are already inside $total_deductions (Other
                                                     // Deductions column above); one-off earnings are already in gross.
-                                                    $net = $gross_salary -  $total_deductions + $total_refunds;
+                                                    // Net to the centavo, .xx5 to the even centavo — same as the paysheet / bank list.
+                                                    $net = round($gross_salary -  $total_deductions + $total_refunds, 2, PHP_ROUND_HALF_EVEN);
                                                     $t_net += $net;
                                                     $pcwEmployees[] = [
                                                         'id' => (int)$row['id'], 'emp' => (int)$row['employee_id'], 'site' => (int)$row['site_id'],
@@ -2566,7 +2567,8 @@ $refund_names = [];   // refund id => display name
 
                                                     // One-off deductions are already inside $total_deductions (Other
                                                     // Deductions column above); one-off earnings are already in gross.
-                                                    $net = $gross_salary -  $total_deductions + $total_refunds + $adjustment;
+                                                    // Net to the centavo, .xx5 to the even centavo — same as the paysheet / bank list.
+                                                    $net = round($gross_salary -  $total_deductions + $total_refunds + $adjustment, 2, PHP_ROUND_HALF_EVEN);
                                                     $t_net += $net;
                                                     $pcwEmployees[] = [
                                                         'id' => (int)$row['id'], 'emp' => (int)$row['employee_id'], 'site' => (int)$row['site_id'],

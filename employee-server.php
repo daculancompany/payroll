@@ -19,6 +19,7 @@ $status        = isset($request['status'])        && $request['status']        !
 $position_id   = isset($request['position_id'])   && $request['position_id']   !== '' ? (int)$request['position_id']   : null;
 $department_id = isset($request['department_id']) && $request['department_id'] !== '' ? (int)$request['department_id'] : null;
 $fingerprint   = isset($request['fingerprint'])   && $request['fingerprint']   !== '' ? (int)$request['fingerprint']   : null;
+$bank          = isset($request['bank'])          && $request['bank']          !== '' ? (int)$request['bank']          : null;
 $area_id       = isset($request['area_id'])       && $request['area_id']       !== '' ? (int)$request['area_id']       : null;
 
 // Department Heads are locked to their own department regardless of the UI filter.
@@ -80,10 +81,20 @@ if ($fingerprint === 1) {
 
 
 
+// Bank account: 1 = bank on file AND an account number, 0 = missing either
+// (the same rule Bank Payout uses to flag a row).
+$has_bank = "(EXISTS (SELECT 1 FROM banks b WHERE b.id = e.bank_id) AND TRIM(COALESCE(e.bank_account_no, '')) <> '')";
+$filter_bank = '';
+if ($bank === 1) {
+    $filter_bank = " AND $has_bank";
+} elseif ($bank === 0) {
+    $filter_bank = " AND NOT $has_bank";
+}
+
 $sql = "SELECT e.id, e.loan, e.employee_no, e.firstname, e.middlename, e.lastname, e.salary, e.basic_pay, e.ot_rate, e.status, e.rate_type, d.name AS department, p.name AS position, cl.clasification AS clasification FROM employee e
         LEFT JOIN department d ON e.department_id = d.id
         LEFT JOIN position p ON e.position_id = p.id
-        LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department $filter_area $filter_fingerprint";
+        LEFT JOIN clasification cl ON e.clasification_id = cl.id WHERE e.id != 0 $filter_status $_filter_payroll_type $filter_position $filter_department $filter_area $filter_fingerprint $filter_bank";
 
 if (!empty($request['search']['value'])) {
     $searchValue = mysqli_real_escape_string($conn, $request['search']['value']);

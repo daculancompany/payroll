@@ -170,7 +170,11 @@ foreach ((json_decode($payroll['refunds'] ?? '', true) ?: []) as $__r) {
 // with the stored net printed two numbers from different moments: after a
 // recalculate changed gross, Gross − Deductions no longer equalled the Net on
 // the same page. Same arithmetic as resync_item_net().
-$net_pay = $gross_salary - $total_all_deductions + $ps_refunds + $adjustment;
+// Net to the centavo, .xx5 to the even centavo — same as the paysheet and bank
+// list (includes/paysheet.php), so the slip quotes the amount deposited. Gross
+// is then shown as net + deductions so the slip still adds up.
+$net_pay = round($gross_salary - $total_all_deductions + $ps_refunds + $adjustment, 2, PHP_ROUND_HALF_EVEN);
+$gross_salary = round($net_pay + $total_all_deductions - $ps_refunds - $adjustment, 2);
 
 // ── Employee Rate box ──
 $hourly_rate = $payroll['per_day'] / $dayHours;

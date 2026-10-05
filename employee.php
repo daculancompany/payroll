@@ -127,7 +127,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 									<?php endwhile; ?>
 								</select>
 							</div>
-							<div class="col-sm-3">
+							<div class="col-sm-2">
 								<div class="filter-label"><i class="ri-building-3-line me-1"></i>Department</div>
 								<?php require_once 'dept-scope.php'; $dept_lock = dept_scope_id(); ?>
 								<select class="form-control form-control-sm" id="filter-department" data-placeholder="All Departments" data-cs-title="Department" data-cs-icon="ri-building-3-line" <?= $dept_lock ? 'disabled' : '' ?>>
@@ -139,7 +139,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 									<?php endwhile; ?>
 								</select>
 							</div>
-							<div class="col-sm-3">
+							<div class="col-sm-2">
 								<div class="filter-label"><i class="ri-node-tree me-1"></i>Area</div>
 								<?php /* Ward/section, narrowed client-side by the Department filter.
 
@@ -179,6 +179,14 @@ $emp_hide_pay = is_timekeeper($login_role);
 									<option value="">ALL</option>
 									<option value="1">Enrolled</option>
 									<option value="0">Not enrolled</option>
+								</select>
+							</div>
+							<div class="col-sm-2">
+								<div class="filter-label"><i class="ri-bank-card-line me-1"></i>Bank Account</div>
+								<select class="form-control form-control-sm" id="filter-bank" data-placeholder="All" data-cs-title="Bank Account" data-cs-icon="ri-bank-card-line">
+									<option value="">ALL</option>
+									<option value="1">With bank account</option>
+									<option value="0">No bank / no account</option>
 								</select>
 							</div>
 						</div>

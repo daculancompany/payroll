@@ -184,6 +184,18 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             'other'  => $otherDed,
             'net'    => $net,
         ];
+        // Round each cell to the centavo BEFORE totalling, so every total is the
+        // sum of the amounts actually printed and paid. Half-centavos (60 min
+        // late at 1,095/day = 136.875) are common; rounding them all UP drifted
+        // the #53 ATM total 0.20 above the exact sum, so .xx5 goes to the even
+        // centavo instead — the per-row amounts then add up to the exact total.
+        // NET is rounded from the exact figure (it is what gets deposited); GROSS
+        // is then net + deductions − refunds − adjustment, so every printed row
+        // still adds up across even when gross alone would round the other way.
+        $line['rate'] = round($line['rate'], 2, PHP_ROUND_HALF_EVEN);
+        foreach ($sumKeys as $k) $line[$k] = round($line[$k], 2, PHP_ROUND_HALF_EVEN);
+        $line['gross'] = round($line['net'] + $line['sss'] + $line['tax'] + $line['other']
+                             - $refunds - (float) ($row['adjustment'] ?? 0), 2);
 
         $isNonAtm = isset($nonAtm[(int) $row['employee_id']]);
         $gid = $isNonAtm ? PAYSHEET_NONATM : (int) ($row['dept_id'] ?? 0);
@@ -233,7 +245,22 @@ function paysheet_atm_net_by_employee(mysqli $conn, int $payroll_id): array
         if ($g['id'] === PAYSHEET_NONATM) continue;
         foreach ($g['rows'] as $r) $nets[$r['employee_id']] = ($nets[$r['employee_id']] ?? 0) + $r['net'];
     }
-    return array_map(fn($n) => round($n, 2), $nets);
+    return array_map(fn($n) => round($n, 2, PHP_ROUND_HALF_EVEN), $nets);
+}
+
+/**
+ * Second title line of the bank list: "MONTHLY PAYROLL AUGUST 16-31, 2026"
+ * (or "... AUGUST 26 - SEPTEMBER 10, 2026" when the run crosses a month).
+ */
+function paysheet_banklist_title(array $payroll): string
+{
+    $type = [1 => 'MONTHLY ', 2 => 'SEMI-MONTHLY '][(int) ($payroll['type'] ?? 0)] ?? '';
+    $f = strtotime($payroll['date_from']);
+    $t = strtotime($payroll['date_to']);
+    $period = date('Y-m', $f) === date('Y-m', $t)
+        ? date('F j', $f) . '-' . date('j, Y', $t)
+        : date('F j', $f) . ' - ' . date('F j, Y', $t);
+    return strtoupper($type . 'PAYROLL ' . $period);
 }
 
 /** "DEPT 13" label for a group ('' for the unassigned and NONATM blocks). */

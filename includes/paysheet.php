@@ -18,7 +18,7 @@
  *   MEAL             one-off earnings labelled "…meal…"
  *   BACKPAY          one-off earnings labelled "Backpay"
  *   SSS              the SSS contribution (id 1); MPF has no source yet → 0
- *   OTHER DEDUCTION  every other ticked contribution / deduction / loan
+*   OTHER DEDUCTION  every other ticked contribution / deduction / loan
  *                    (PhilHealth, Pag-IBIG, …) + one-off deductions
  *   NET PAY          gross − deductions + refunds + adjustment (as on screen)
  */
@@ -329,16 +329,25 @@ function paysheet_table_html(array $ps): string
  * breakdown. Inline styles only — the same markup is shown in the web view
  * (paysheet.php?view=summary) and printed to PDF (print-payroll-dept.php).
  */
-function paysheet_summary_html(array $ps): string
+/**
+ * Department Summary columns → paysheet total keys (SSS PROV. = the paysheet's
+ * MPF column). Shared by the web view / PDF (paysheet_summary_html) and the
+ * Excel export (export-payroll-dept.php) so they list the same figures.
+ */
+function paysheet_summary_columns(): array
 {
-    // Summary columns → paysheet total keys (SSS PROV. = the paysheet's MPF column).
-    $cols = [
+    return [
         'basic' => 'BASIC PAY', 'otnd' => 'OT/ND', 'allow' => 'ALLOWANCE',
         'adj1' => 'HAZARD', 'adj2' => 'MEAL ALLOWANCE', 'adj3' => 'BACKPAY',
         'under' => 'UT', 'late' => 'LATE', 'gross' => 'GROSS AMOUNT',
         'sss' => 'SSS', 'mpf' => 'SSS PROV.', 'tax' => 'W/TAX',
         'other' => 'O. DEDUCTIONS', 'net' => 'AMOUNT DUE',
     ];
+}
+
+function paysheet_summary_html(array $ps): string
+{
+    $cols = paysheet_summary_columns();
     $fmt  = fn($v) => number_format((float) $v, 2);
     $h    = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES);
     $cell = 'border:1px solid #000;padding:3px 5px;';

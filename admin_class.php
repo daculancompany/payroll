@@ -5845,7 +5845,8 @@ class Action
                 INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
                 INNER JOIN employee ON  DTR_details.employee_id = employee.id
                 WHERE date(DTR_details.date_time) BETWEEN ? AND ?  AND $dtrWhere
-                AND DTR.site_id IN ($commaSeparatedSites) $exclude_clause";
+                AND DTR.site_id IN ($commaSeparatedSites) $exclude_clause
+                AND employee.status = 1";   // inactive (resigned) employees are not paid through payroll
 
             $stmt = $this->db->prepare($sql);
             // Bind the date parameters only
@@ -6643,7 +6644,10 @@ class Action
                                 $loans[] = [
                                     "amount" => $damount,
                                     "deduction_id" => $row['loan_type'],
-                                    "type" => 2
+                                    "type" => 2,
+                                    // The exact loan, so Lock / Unlock move THIS loan's
+                                    // balance — not whichever row of the type comes first.
+                                    "loan_id" => (int) $row['loan_id']
                                 ];
                             }
                         }
@@ -7547,7 +7551,7 @@ class Action
                         if ($balance <= 0) continue;
                         $damount = (float) $row['damount'];
                         if ($balance < $damount) $damount = $balance;
-                        $loans[] = ["amount" => $damount, "deduction_id" => $row['loan_type'], "type" => 2];
+                        $loans[] = ["amount" => $damount, "deduction_id" => $row['loan_type'], "type" => 2, "loan_id" => (int) $row['loan_id']];
                     }
                 } elseif ($setting['type'] == 4) {
                     $refunds[] = ["amount" => 0, "refund_id" => (int) $setting['id']];
@@ -11148,15 +11152,30 @@ class Action
                     $loans = json_decode($row['loans'], true);
                     $employee_id = $row['employee_id'];
 
-                    foreach ($loans as $loan_d) {
-                        $loan_query = "SELECT * FROM loans WHERE loan_type = ? AND employee_id = ?";
-                        $loan_stmt = $this->db->prepare($loan_query);
-                        $loan_stmt->bind_param("ii", $loan_d['deduction_id'], $row['employee_id']);
+                    $usedLoanIds = [0];   // loans already matched for this item
+                    foreach (($loans ?: []) as $loan_d) {
+                        // Lines calculated since loan_id was stored name their loan
+                        // exactly. Older lines only carry the type: take the oldest
+                        // OPEN loan of it — the first row of the type used to be
+                        // taken even when already paid off, so the deduction landed
+                        // on a closed loan (capped to 0) and the live one never moved.
+                        if (!empty($loan_d['loan_id'])) {
+                            $loan_stmt = $this->db->prepare("SELECT * FROM loans WHERE loan_id = ? AND employee_id = ?");
+                            $loan_stmt->bind_param("ii", $loan_d['loan_id'], $row['employee_id']);
+                        } else {
+                            // Two open loans of one type give two lines: each takes the next one.
+                            $loan_stmt = $this->db->prepare("SELECT * FROM loans WHERE loan_type = ? AND employee_id = ?
+                                                              AND loan_status = 0 AND loan_balance > 0
+                                                              AND loan_id NOT IN (" . implode(',', array_map('intval', $usedLoanIds)) . ")
+                                                              ORDER BY loan_id ASC LIMIT 1");
+                            $loan_stmt->bind_param("ii", $loan_d['deduction_id'], $row['employee_id']);
+                        }
                         $loan_stmt->execute();
                         $loan_list = $loan_stmt->get_result()->fetch_array();
 
                         if ($loan_list) {
                             $loan_id = $loan_list['loan_id'];
+                            $usedLoanIds[] = (int) $loan_id;
                             $amount = $loan_d['amount'];
                             $current_bal = $loan_list['loan_balance'];
                             $payroll_id = $id;

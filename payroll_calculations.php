@@ -2701,6 +2701,7 @@ $refund_names = [];   // refund id => display name
                     <div class="xl-ribbon">
                         <span class="xl-ribbon-title"><i class="ri-building-2-line"></i> Department Summary</span>
                         <div class="xl-ribbon-actions">
+                            <a class="xl-btn" href="export-payroll-dept.php?id=<?= $id ?>" title="Download the Department Summary as Excel"><i class="ri-file-excel-2-line"></i> Download Excel</a>
                             <a class="xl-btn" href="pdf-payroll.php?src=dept&id=<?= $id ?>&download=1" title="Download the Department Summary as PDF"><i class="ri-file-pdf-2-line"></i> Download PDF</a>
                             <div class="xl-ribbon-sep"></div>
                             <button type="button" data-bs-dismiss="modal" class="xl-btn" title="Close"><i class="ri-close-line"></i> Close</button>

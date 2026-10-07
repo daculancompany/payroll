@@ -3,14 +3,25 @@
 // and amortizing employee deductions. Included via index.php (?page=loan-deduction-ledger).
 
 $f_status = isset($_GET['status']) ? $_GET['status'] : 'active';   // active | paid | all
-$f_kind   = isset($_GET['kind'])   ? $_GET['kind']   : 'all';      // all | loan | deduction
+$f_kind   = isset($_GET['kind'])   ? $_GET['kind']   : 'all';      // all | loan | sss | pagibig | other_loan | deduction
 $f_q      = isset($_GET['q']) ? trim($_GET['q']) : '';
 
+// Loan group from the loan type name: SSS, Pag-IBIG (HDMF) or anything else.
+function ldl_loan_group($name) {
+    $n = strtolower($name);
+    if (strpos($n, 'sss') !== false) return 'sss';
+    if (strpos($n, 'hdmf') !== false || strpos($n, 'pag-ibig') !== false || strpos($n, 'pagibig') !== false) return 'pagibig';
+    return 'other_loan';
+}
+$group_lbl = ['sss' => 'SSS Loan', 'pagibig' => 'Pag-IBIG Loan', 'other_loan' => 'Other Loan', 'deduction' => 'Deduction'];
+$group_badge = ['sss' => 'bg-primary', 'pagibig' => 'bg-success', 'other_loan' => 'bg-danger', 'deduction' => 'bg-warning text-dark'];
+
 // ── Pull loans + amortizing deductions into one ledger ──
-// The kind filter skips whole queries; the rest is filtered in PHP below.
+// Both are always loaded so the type tabs can show counts; kind/status/search
+// are filtered in PHP below.
 $rows = [];
 
-if ($f_kind !== 'deduction') {
+{
     $lq = $conn->query("
         SELECT l.loan_id, l.employee_id, l.loan_amount AS original, l.damount AS per_period,
                l.loan_balance AS balance, l.loan_status AS status,
@@ -22,11 +33,11 @@ if ($f_kind !== 'deduction') {
         ORDER BY e.lastname, e.firstname
     ");
     while ($r = $lq->fetch_assoc()) {
-        $rows[] = ['kind' => 'Loan', 'key' => 'L' . $r['loan_id'], 'id' => (int)$r['loan_id']] + $r;
+        $rows[] = ['kind' => 'Loan', 'group' => ldl_loan_group($r['name']), 'key' => 'L' . $r['loan_id'], 'id' => (int)$r['loan_id']] + $r;
     }
 }
 
-if ($f_kind !== 'loan') {
+{
     $dq = $conn->query("
         SELECT ed.id, ed.employee_id, ed.total_amount AS original, ed.amount AS per_period,
                ed.balance, ed.status, ed.effective_date AS start_date, ed.reference_no,
@@ -38,19 +49,25 @@ if ($f_kind !== 'loan') {
         ORDER BY e.lastname, e.firstname
     ");
     while ($r = $dq->fetch_assoc()) {
-        $rows[] = ['kind' => 'Deduction', 'key' => 'D' . $r['id'], 'id' => (int)$r['id']] + $r;
+        $rows[] = ['kind' => 'Deduction', 'group' => 'deduction', 'key' => 'D' . $r['id'], 'id' => (int)$r['id']] + $r;
     }
 }
 
 // ── Apply filters + totals ──
 $t_orig = $t_bal = $t_paid = 0;
 $view = [];
+$tab_count = ['all' => 0, 'loan' => 0, 'sss' => 0, 'pagibig' => 0, 'other_loan' => 0, 'deduction' => 0];
 foreach ($rows as $r) {
     $paid = (float)$r['original'] - (float)$r['balance'];
     $isPaid = ((int)$r['status'] === 1) || (float)$r['balance'] <= 0;
     if ($f_status === 'active' && $isPaid) continue;
     if ($f_status === 'paid'   && !$isPaid) continue;
     if ($f_q !== '' && stripos($r['emp'] . ' ' . $r['employee_no'] . ' ' . $r['name'] . ' ' . ($r['reference_no'] ?? ''), $f_q) === false) continue;
+    // Tab counts respect status + search but not the type itself.
+    $tab_count['all']++; $tab_count[$r['group']]++;
+    if ($r['kind'] === 'Loan') $tab_count['loan']++;
+    if ($f_kind === 'loan' && $r['kind'] !== 'Loan') continue;
+    if ($f_kind !== 'all' && $f_kind !== 'loan' && $r['group'] !== $f_kind) continue;
     $r['paid'] = $paid; $r['isPaid'] = $isPaid;
     $view[] = $r;
     $t_orig += (float)$r['original']; $t_bal += (float)$r['balance']; $t_paid += $paid;
@@ -82,7 +99,7 @@ function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
 // "Active (unpaid)" + "All types" is the default view, so it alone is not a
 // filter worth echoing back in the summary bar.
 $has_filter = ($f_q !== '' || $f_kind !== 'all' || $f_status !== 'active');
-$kind_lbl   = ['all' => 'All', 'loan' => 'Loans only', 'deduction' => 'Deductions only'];
+$kind_lbl   = ['all' => 'All', 'loan' => 'All loans', 'sss' => 'SSS loans', 'pagibig' => 'Pag-IBIG loans', 'other_loan' => 'Other loans', 'deduction' => 'Deductions only'];
 $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => 'All'];
 ?>
 <style>
@@ -94,6 +111,12 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
     .ldl-hist table { margin:0; font-size:11px; }
     .ldl-hist th { background:#edebf3; color:#4e3483; padding:5px 8px; }
     .ldl-hist td { padding:5px 8px; }
+    .ldl-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+    .ldl-tabs a { font-size:12px; padding:5px 12px; border-radius:20px; border:1px solid #e0d9ef; color:#4e3483; background:#fff; text-decoration:none; }
+    .ldl-tabs a.active { background:#673bb6; border-color:#673bb6; color:#fff; }
+    .ldl-tabs a .n { display:inline-block; min-width:18px; margin-left:4px; padding:0 5px; border-radius:9px; font-size:10px; font-weight:700; background:#edebf3; color:#4e3483; text-align:center; }
+    .ldl-tabs a.active .n { background:rgba(255,255,255,.25); color:#fff; }
+    @media print { .ldl-tabs { display:none; } }
 </style>
 
 <div class="main-content">
@@ -125,7 +148,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                 <?php if ($has_filter): ?>
                 <a href="index.php?page=loan-deduction-ledger" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
                 <?php endif; ?>
-                <button type="button" onclick="repExportCSV('ldl-table','loan-deduction-ledger.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
+                <button type="button" onclick="repExportCSV('ldl-table','loan-deduction-ledger<?= $f_kind !== 'all' ? '-' . $f_kind : '' ?>.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
                 <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
                 <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-ledger">
                     <i class="ri-filter-3-line me-1"></i>Filter
@@ -133,6 +156,14 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
             </div>
         </div>
         <div class="card-body">
+
+            <!-- Type tabs: split loans by SSS / Pag-IBIG / other (keeps status + search) -->
+            <div class="ldl-tabs">
+                <?php foreach (['all' => 'All', 'sss' => 'SSS Loans', 'pagibig' => 'Pag-IBIG Loans', 'other_loan' => 'Other Loans', 'deduction' => 'Deductions'] as $k => $lbl):
+                    $qs = http_build_query(['page' => 'loan-deduction-ledger', 'kind' => $k, 'status' => $f_status] + ($f_q !== '' ? ['q' => $f_q] : [])); ?>
+                <a href="index.php?<?= $qs ?>" class="<?= $f_kind === $k ? 'active' : '' ?>"><?= $lbl ?><span class="n"><?= $tab_count[$k] ?></span></a>
+                <?php endforeach; ?>
+            </div>
 
             <?php if ($has_filter): ?>
             <div class="rpt-filter-bar">
@@ -171,7 +202,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                                     <?php endif; ?>
                                 </td>
                                 <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" data-emp-quickview="<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
-                                <td><span class="badge <?= $r['kind']==='Loan'?'bg-danger':'bg-warning text-dark' ?>"><?= $r['kind'] ?></span></td>
+                                <td><span class="badge <?= $group_badge[$r['group']] ?>"><?= $group_lbl[$r['group']] ?></span></td>
                                 <td><?= htmlspecialchars($r['name']) ?><?php if (!empty($r['reference_no'])): ?><br><small class="text-muted" style="font-family:monospace;" title="Reference number">#<?= htmlspecialchars($r['reference_no']) ?></small><?php endif; ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['original']) ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['per_period']) ?></td>
@@ -241,7 +272,10 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                         <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-price-tag-3-line me-1"></i>Type</label>
                         <select name="kind" class="form-control" data-cs-icon="ri-price-tag-3-line">
                             <option value="all"       <?= $f_kind==='all'?'selected':'' ?>>All</option>
-                            <option value="loan"      <?= $f_kind==='loan'?'selected':'' ?>>Loans only</option>
+                            <option value="loan"      <?= $f_kind==='loan'?'selected':'' ?>>All loans</option>
+                            <option value="sss"       <?= $f_kind==='sss'?'selected':'' ?>>SSS loans</option>
+                            <option value="pagibig"   <?= $f_kind==='pagibig'?'selected':'' ?>>Pag-IBIG loans</option>
+                            <option value="other_loan"<?= $f_kind==='other_loan'?'selected':'' ?>>Other loans</option>
                             <option value="deduction" <?= $f_kind==='deduction'?'selected':'' ?>>Deductions only</option>
                         </select>
                     </div>

@@ -233,6 +233,13 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
     .ded-q-now { background:#e6f4ea; color:#1e7b34; }
     .ded-q-wait { background:#eef0f4; color:#5f6b7a; }
     .ded-desc { font-size:11px; color:#5f6b7a; margin-top:2px; max-width:320px; white-space:normal; }
+    .ded-st { font-weight:700; font-size:10.5px; }
+    .ded-st-rec  { background:#e7f0ff; color:#1c5fd1; }
+    .ded-st-pay  { background:#fff4e0; color:#a35a00; }
+    .ded-st-once { background:#f1ecfa; color:#5b3a9e; }
+    .ded-st-paid { background:#e6f4ea; color:#1e7b34; }
+    .ded-st-off  { background:#f1f2f4; color:#7a828c; border:1px solid #e1e4e8; }
+    .ded-st-sub  { font-size:10px; color:#98a1b0; margin-top:2px; }
     .emp-empty i { font-size:34px; display:block; margin-bottom:6px; opacity:.5; }
     .emp-empty b { display:block; font-size:13px; color:#6b7484; margin-bottom:2px; }
     .emp-empty span { font-size:11.5px; }
@@ -1255,23 +1262,37 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     <td class="text-end"><?= $row['amortizing'] ? '<span class="emp-currency-val">&#8369; ' . number_format($row['total_amount'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
                                                     <td class="text-end"><?= $row['amortizing'] ? '<span class="emp-currency-val">&#8369; ' . number_format($row['balance'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
                                                     <td class="text-center">
-                                                        <?php if ((int) $row['type'] === 2): ?>
-                                                            <span class="badge ded-q-wait me-1" title="Taken in one payroll only">Once</span>
-                                                        <?php endif; ?>
+                                                        <?php
+                                                        // One badge that says both WHAT the row is and WHERE it stands:
+                                                        //   Every payroll   recurring, no total — never ends (Stop to end)
+                                                        //   Paying          has a total, still being collected
+                                                        //   Once            single deduction not yet taken
+                                                        //   Paid / Stopped  finished, or ended by hand
+                                                        $is_once = (int) $row['type'] === 2;
+                                                        $future  = !empty($row['effective_date']) && $row['effective_date'] > date('Y-m-d');
+                                                        $left_n  = ($row['amortizing'] && (float) $row['amount'] > 0) ? (int) ceil((float) $row['balance'] / (float) $row['amount']) : 0;
+                                                        ?>
                                                         <?php if (!$row['amortizing']): ?>
                                                             <?php if ((int) $row['status'] === 1): ?>
-                                                            <span class="badge bg-light text-muted border" title="Stopped by hand — not deducted">Stopped</span>
+                                                            <span class="badge ded-st ded-st-off" title="Stopped by hand — no longer deducted">Stopped</span>
                                                             <?php else: ?>
-                                                            <span class="badge bg-secondary">Recurring</span>
+                                                            <span class="badge ded-st ded-st-rec" title="Deducted every payroll with no end — use Stop to end it"><i class="ri-repeat-line me-1"></i>Every payroll</span>
+                                                            <div class="ded-st-sub"><?= $future ? 'starts ' . date('M d, Y', strtotime($row['effective_date'])) : 'no end date' ?></div>
                                                             <?php endif; ?>
                                                         <?php elseif (!$row['active']): ?>
-                                                            <span class="badge bg-success">Paid</span>
+                                                            <span class="badge ded-st ded-st-paid" title="Fully collected (or marked paid)"><i class="ri-check-line me-1"></i>Paid</span>
+                                                            <?php if ($is_once): ?><div class="ded-st-sub">once only</div><?php endif; ?>
                                                         <?php elseif ($in_group && isset($ded_queue[$rid])): $q = $ded_queue[$rid]; ?>
                                                             <?php if ($q[0] === 'now'): ?><span class="badge ded-q-now">Paying now · &#8369;<?= number_format($q[1], 2) ?></span>
                                                             <?php elseif ($q[0] === 'later'): ?><span class="badge ded-q-wait">Starts <?= date('M d, Y', strtotime($q[1])) ?></span>
                                                             <?php else: ?><span class="badge ded-q-wait"><?= $q[1] == 2 ? 'Next' : '#' . (int) $q[1] . ' in line' ?></span><?php endif; ?>
+                                                            <div class="ded-st-sub">in group</div>
+                                                        <?php elseif ($is_once): ?>
+                                                            <span class="badge ded-st ded-st-once" title="Taken in full in one payroll, then marked Paid"><i class="ri-checkbox-blank-circle-line me-1"></i>Once</span>
+                                                            <div class="ded-st-sub"><?= $future ? 'on ' . date('M d, Y', strtotime($row['effective_date'])) : 'next payroll' ?></div>
                                                         <?php else: ?>
-                                                            <span class="badge bg-warning text-dark">Active</span>
+                                                            <span class="badge ded-st ded-st-pay" title="Has a total — deducted each payroll until paid, like a loan"><i class="ri-loader-2-line me-1"></i>Paying</span>
+                                                            <div class="ded-st-sub"><?= $future ? 'starts ' . date('M d, Y', strtotime($row['effective_date'])) : '≈' . $left_n . ' payroll' . ($left_n == 1 ? '' : 's') . ' left' ?></div>
                                                         <?php endif; ?>
                                                     </td>
                                                     <td class="text-center">

@@ -335,6 +335,15 @@ async function lockPayroll(id) {
         confirmButtonText: allClear ? "Lock payroll" : "Lock anyway",
     });
     if (result.isConfirmed) {
+        // Locking commits loan/deduction balances and can take a few seconds —
+        // block the page so it can't be clicked twice or left mid-commit.
+        Swal.fire({
+            title: "Locking payroll…",
+            html: "Committing loan &amp; deduction balances. Please don't close this page.",
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => Swal.showLoading(),
+        });
         $.ajax({
             url: "ajax.php?action=update_payroll_status",
             method: "POST",
@@ -342,8 +351,9 @@ async function lockPayroll(id) {
                 id: id,
                 status: 2,
             },
-            error: (xhr, status, error) => handleError(error || ""),
+            error: (xhr, status, error) => { Swal.close(); handleError(error || ""); },
             success: function (res) {
+                Swal.close();
                 if (res) {
                     showToast("Payroll locked.", "success");
                     setTimeout(() => location.reload(), 1200);

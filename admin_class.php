@@ -4684,6 +4684,10 @@ class Action
         $effective    = $_POST['effective_date'] ?? [];
         $type         = $_POST['type'] ?? [];
         $reference    = $_POST['reference_no'] ?? [];
+        $description  = $_POST['description'] ?? [];
+        // The description column arrives with migrations/2026_10_deduction_description.sql;
+        // until it runs, saving simply skips it.
+        $has_desc     = $this->hasDeductionDescription();
 
         // EDIT of one existing row. The same modal posts it, so the fields
         // still arrive as one-element arrays; only the presence of `id`
@@ -4694,9 +4698,13 @@ class Action
         $save = [];
         foreach ($deduction_id as $k => $v) {
             $did   = (int)$v;
-            $amt   = (float)($amount[$k] ?? 0);
-            $total = (float)($total_amount[$k] ?? 0);
-            $t     = isset($type[$k]) ? (int)$type[$k] : 1;
+            $amt   = (float) str_replace(',', '', (string) ($amount[$k] ?? 0));
+            $total = (float) str_replace(',', '', (string) ($total_amount[$k] ?? 0));
+            // type 1 = recurring (every payroll; a total makes it stop when paid),
+            // type 2 = once only: a one-payroll balance of exactly the amount, so
+            // the normal amortizing path takes it once and Lock marks it paid.
+            $t     = (isset($type[$k]) && (int) $type[$k] === 2) ? 2 : 1;
+            if ($t === 2) $total = $amt;
             // total_amount > 0 → amortizing deduction; opening balance = total.
             $balance = $total > 0 ? $total : 0;
             $edate = !empty($effective[$k])
@@ -4708,6 +4716,10 @@ class Action
             // Optional voucher / slip number, same rules as a loan's reference_no.
             $ref = mb_substr(trim((string) ($reference[$k] ?? '')), 0, 100);
             $data .= ", reference_no = " . ($ref !== '' ? "'" . $this->db->real_escape_string($ref) . "'" : "NULL") . " ";
+            if ($has_desc) {
+                $desc = mb_substr(trim((string) ($description[$k] ?? '')), 0, 255);
+                $data .= ", description = " . ($desc !== '' ? "'" . $this->db->real_escape_string($desc) . "'" : "NULL") . " ";
+            }
             $save[] = $this->db->query("INSERT INTO employee_deductions set " . $data);
         }
 
@@ -4741,8 +4753,10 @@ class Action
         };
 
         $did   = (int) ($first('deduction_id') ?: $row['deduction_id']);
-        $amt   = (float) $first('amount');
-        $total = (float) $first('total_amount');
+        $amt   = (float) str_replace(',', '', (string) $first('amount'));
+        $total = (float) str_replace(',', '', (string) $first('total_amount'));
+        $t     = $first('type') !== null ? ((int) $first('type') === 2 ? 2 : 1) : (int) $row['type'];
+        if ($t === 2) $total = $amt;     // once only — see save_employee_deduction()
         $edate = trim((string) $first('effective_date'));
         $ref   = mb_substr(trim((string) $first('reference_no')), 0, 100);
 
@@ -4763,19 +4777,28 @@ class Action
             $status  = $balance <= 0 ? 1 : 0;
         } else {
             $balance = 0.0;
-            $status  = 0;        // recurring: never "paid off"
+            // Recurring with no total never "pays off"; keep a Stopped row stopped.
+            $status  = (float) $row['total_amount'] <= 0 ? (int) $row['status'] : 0;
         }
 
         $stmt = $this->db->prepare(
             "UPDATE employee_deductions
                 SET deduction_id = ?, amount = ?, total_amount = ?, balance = ?, status = ?,
-                    effective_date = ?, reference_no = ?
+                    effective_date = ?, reference_no = ?, type = ?
               WHERE id = ?"
         );
         $edate_val = ($edate !== '' && strtotime($edate) !== false) ? date('Y-m-d', strtotime($edate)) : null;
         $ref_val   = $ref !== '' ? $ref : null;
-        $stmt->bind_param('idddissi', $did, $amt, $total, $balance, $status, $edate_val, $ref_val, $id);
+        $stmt->bind_param('idddissii', $did, $amt, $total, $balance, $status, $edate_val, $ref_val, $t, $id);
         if (!$stmt->execute()) return ['result' => false, 'message' => $stmt->error];
+
+        if ($this->hasDeductionDescription()) {
+            $desc = mb_substr(trim((string) $first('description')), 0, 255);
+            $desc_val = $desc !== '' ? $desc : null;
+            $ds = $this->db->prepare("UPDATE employee_deductions SET description = ? WHERE id = ?");
+            $ds->bind_param('si', $desc_val, $id);
+            $ds->execute();
+        }
 
         return [
             'result'  => true,
@@ -4786,13 +4809,155 @@ class Action
         ];
     }
 
+    /**
+     * Group several amortizing deductions of ONE employee under a single
+     * per-payroll amount (or add them to an existing group). Payroll then takes
+     * at most that amount from the group, oldest row first — see
+     * includes/deduction_groups.php. Takes effect at the next (re)calculation.
+     */
+    function save_deduction_group()
+    {
+        $employee_id = (int) ($_POST['employee_id'] ?? 0);
+        $group_id    = (int) ($_POST['group_id'] ?? 0);
+        $per_payroll = round((float) ($_POST['per_payroll'] ?? 0), 2);
+        $ids = array_values(array_unique(array_filter(array_map('intval', (array) ($_POST['ded_ids'] ?? [])))));
+
+        if ($employee_id <= 0) return ['result' => false, 'message' => 'Invalid employee.'];
+        if (!$ids)             return ['result' => false, 'message' => 'Select at least one deduction.'];
+        if ($group_id <= 0 && $per_payroll <= 0) return ['result' => false, 'message' => 'Enter how much to deduct per payroll.'];
+
+        // Every row must be this employee's, amortizing and still being paid.
+        $in = implode(',', $ids);
+        $ok = $this->db->query("SELECT COUNT(*) c FROM employee_deductions
+                                 WHERE id IN ($in) AND employee_id = $employee_id
+                                   AND total_amount > 0 AND status = 0 AND balance > 0")->fetch_assoc();
+        if ((int) $ok['c'] !== count($ids)) {
+            return ['result' => false, 'message' => 'Only active balance deductions of this employee can be grouped.'];
+        }
+
+        if ($group_id > 0) {
+            $g = $this->db->query("SELECT id FROM deduction_groups WHERE id = $group_id AND employee_id = $employee_id");
+            if (!$g || !$g->num_rows) return ['result' => false, 'message' => 'That group no longer exists.'];
+            if ($per_payroll > 0) {
+                $u = $this->db->prepare("UPDATE deduction_groups SET per_payroll = ? WHERE id = ?");
+                $u->bind_param('di', $per_payroll, $group_id);
+                $u->execute();
+            }
+        } else {
+            $by = (int) ($_SESSION['login_id'] ?? 0);
+            $i = $this->db->prepare("INSERT INTO deduction_groups (employee_id, per_payroll, created_by) VALUES (?, ?, ?)");
+            $i->bind_param('idi', $employee_id, $per_payroll, $by);
+            if (!$i->execute()) return ['result' => false, 'message' => $i->error];
+            $group_id = (int) $this->db->insert_id;
+        }
+
+        $this->db->query("UPDATE employee_deductions SET group_id = $group_id
+                           WHERE id IN ($in) AND employee_id = $employee_id");
+        $this->pruneDeductionGroups($employee_id);
+        return ['result' => true, 'message' => 'Deductions grouped. Applies from the next payroll calculation.'];
+    }
+
+    /** Change a deduction group's per-payroll amount. */
+    function update_deduction_group()
+    {
+        $employee_id = (int) ($_POST['employee_id'] ?? 0);
+        $group_id    = (int) ($_POST['group_id'] ?? 0);
+        $per_payroll = round((float) ($_POST['per_payroll'] ?? 0), 2);
+        if ($per_payroll <= 0) return ['result' => false, 'message' => 'Amount must be greater than zero.'];
+        $g = $this->db->query("SELECT id FROM deduction_groups WHERE id = $group_id AND employee_id = $employee_id");
+        if (!$g || !$g->num_rows) return ['result' => false, 'message' => 'That group no longer exists.'];
+
+        $u = $this->db->prepare("UPDATE deduction_groups SET per_payroll = ? WHERE id = ? AND employee_id = ?");
+        $u->bind_param('dii', $per_payroll, $group_id, $employee_id);
+        if (!$u->execute()) return ['result' => false, 'message' => $u->error];
+        return ['result' => true, 'message' => 'Per-payroll amount updated.'];
+    }
+
+    /** Dissolve a group: its rows go back to their own per-period amounts. */
+    function ungroup_deductions()
+    {
+        $employee_id = (int) ($_POST['employee_id'] ?? 0);
+        $group_id    = (int) ($_POST['group_id'] ?? 0);
+        $g = $this->db->query("SELECT id FROM deduction_groups WHERE id = $group_id AND employee_id = $employee_id");
+        if (!$g || !$g->num_rows) return ['result' => false, 'message' => 'That group no longer exists.'];
+
+        $this->db->query("UPDATE employee_deductions SET group_id = NULL WHERE group_id = $group_id AND employee_id = $employee_id");
+        $this->db->query("DELETE FROM deduction_groups WHERE id = $group_id AND employee_id = $employee_id");
+        return ['result' => true, 'message' => 'Group removed.'];
+    }
+
+    /** Drop this employee's groups that no longer hold any deduction row. */
+    private function pruneDeductionGroups($employee_id)
+    {
+        $employee_id = (int) $employee_id;
+        try {
+            $this->db->query("DELETE g FROM deduction_groups g
+                               LEFT JOIN employee_deductions ed ON ed.group_id = g.id
+                               WHERE g.employee_id = $employee_id AND ed.id IS NULL");
+        } catch (\Throwable $e) {
+            // Groups migration not applied yet — nothing to prune.
+        }
+    }
+
+    /**
+     * Mark one employee deduction Paid / Stopped (status 1) or reactivate it
+     * (status 0) — the deduction counterpart of settling a loan by hand.
+     *
+     * A balance deduction marked paid drops its remaining balance to 0 (paid
+     * outside payroll, waived…); reactivating re-derives it from the total less
+     * what locked payrolls actually withheld (deduction_history), exactly like
+     * update_employee_deduction(). A recurring deduction with no total just
+     * stops or resumes. Applies from the next payroll calculation.
+     */
+    function set_deduction_status()
+    {
+        $id     = (int) ($_POST['id'] ?? 0);
+        $status = (int) ($_POST['status'] ?? -1);
+        if ($status !== 0 && $status !== 1) return ['result' => false, 'message' => 'Invalid status.'];
+        $row = $this->db->query("SELECT * FROM employee_deductions WHERE id = $id")->fetch_assoc();
+        if (!$row) return ['result' => false, 'message' => 'Deduction not found.'];
+
+        $total = (float) $row['total_amount'];
+        if ($total <= 0) {
+            $this->db->query("UPDATE employee_deductions SET status = $status WHERE id = $id");
+            return ['result' => true, 'message' => $status ? 'Deduction stopped.' : 'Deduction resumed.'];
+        }
+        if ($status === 1) {
+            $this->db->query("UPDATE employee_deductions SET status = 1, balance = 0 WHERE id = $id");
+            return ['result' => true, 'message' => 'Marked as paid.'];
+        }
+        $paid = (float) $this->db->query("SELECT COALESCE(SUM(amount), 0) FROM deduction_history WHERE ded_id = $id")->fetch_row()[0];
+        $balance = round(max(0.0, $total - $paid), 2);
+        if ($balance <= 0) {
+            return ['result' => false, 'message' => 'Payroll has already withheld the full ' . number_format($total, 2) . ' — raise the total first to reactivate it.'];
+        }
+        $u = $this->db->prepare("UPDATE employee_deductions SET status = 0, balance = ? WHERE id = ?");
+        $u->bind_param('di', $balance, $id);
+        $u->execute();
+        return ['result' => true, 'message' => 'Reactivated — ' . number_format($balance, 2) . ' left to collect.'];
+    }
+
+    /** True once migrations/2026_10_deduction_description.sql has run. */
+    private function hasDeductionDescription()
+    {
+        static $has = null;
+        if ($has === null) {
+            $r = $this->db->query("SHOW COLUMNS FROM employee_deductions LIKE 'description'");
+            $has = $r && $r->num_rows > 0;
+        }
+        return $has;
+    }
+
     function delete_employee_deduction()
     {
         extract($_POST);
 
+        $emp = $this->db->query("SELECT employee_id FROM employee_deductions WHERE id = " . (int)$id)->fetch_assoc();
         $delete = $this->db->query("DELETE FROM employee_deductions where id = " . (int)$id);
 
         if ($delete) {
+            // The row may have been the last one in its deduction group.
+            if ($emp) $this->pruneDeductionGroups($emp['employee_id']);
             return 1;
         }
     }
@@ -6539,6 +6704,9 @@ class Action
                     $loans = [];
                     $loans = [];
                     $refunds = [];
+                    // Amortizing rows that belong to a deduction group, keyed by
+                    // group id — allocated together after the settings loop.
+                    $grouped_rows = [];
                     foreach ($settings as $setting) {
                         if ($setting['type'] == 1) {
                             $contibution_id = $setting['id'];
@@ -6608,14 +6776,23 @@ class Action
                                     if ((int) $row['status'] === 1) continue;
                                     $balance = (float) $row['balance'];
                                     if ($balance <= 0) continue;
+                                    // Grouped: the group's per-payroll amount governs,
+                                    // not this row's own amount — allocated below.
+                                    if (!empty($row['group_id'])) {
+                                        $grouped_rows[(int) $row['group_id']][] = $row;
+                                        continue;
+                                    }
                                     $ded = (float) $row['amount'];
                                     if ($balance < $ded) $ded = $balance;
                                     $deduction_amount += $ded;
                                     $deductions[] = ["amount" => $ded, "deduction_id" => (int) $row['deduction_id'], "type" => 1, "ded_row_id" => (int) $row['id'], "amortizing" => 1];
                                 } else {
-                                    // Flat recurring deduction — unchanged behavior.
+                                    // Flat recurring deduction; status 1 = Stopped by hand.
+                                    if ((int) $row['status'] === 1) continue;
                                     $deduction_amount += $row['amount'];
-                                    $deductions[] = ["amount" => $row['amount'], "deduction_id" => (int) $row['deduction_id'], "type" => 1];
+                                    // ded_row_id lets the payslip / reports show this row's
+                                    // description; Lock ignores it (no "amortizing" flag).
+                                    $deductions[] = ["amount" => $row['amount'], "deduction_id" => (int) $row['deduction_id'], "type" => 1, "ded_row_id" => (int) $row['id']];
                                 }
                             }
                         }
@@ -6656,6 +6833,9 @@ class Action
                             $refunds[] = ["amount" => 0, "refund_id" => (int)  $setting['id']];
                         }
                     }
+                    // Deduction groups: one per-payroll amount for several amortizing
+                    // rows, paid one at a time, oldest first.
+                    $this->applyDeductionGroups($grouped_rows, $employee_id, $deductions, $deduction_amount);
                     // ── Resolve this employee's configured allowances for THIS run ──
                     // Each row contributes per its type (Monthly / Semi-Monthly /
                     // Once) and its effectivity window; see
@@ -7454,6 +7634,39 @@ class Action
     }
 
     /**
+     * Allocate grouped amortizing deductions (see includes/deduction_groups.php)
+     * and append them to the payroll item's deductions, in the same shape as an
+     * ungrouped amortizing row so Lock / Unlock commit them unchanged.
+     *
+     * @param array $grouped_rows employee_deductions rows keyed by group_id
+     */
+    private function applyDeductionGroups(array $grouped_rows, $employee_id, array &$deductions, &$deduction_amount)
+    {
+        if (!$grouped_rows) return;
+        require_once __DIR__ . '/includes/deduction_groups.php';
+        $gids = implode(',', array_map('intval', array_keys($grouped_rows)));
+        $gq = $this->db->query("SELECT id, per_payroll FROM deduction_groups
+                                WHERE id IN ($gids) AND employee_id = " . (int) $employee_id);
+        $group_amt = [];
+        while ($gq && ($g = $gq->fetch_assoc())) $group_amt[(int) $g['id']] = (float) $g['per_payroll'];
+
+        foreach ($grouped_rows as $gid => $grows) {
+            // A dangling group_id (group row gone) falls back to the per-row
+            // rule rather than silently deducting nothing.
+            $alloc = isset($group_amt[$gid])
+                ? allocate_group($grows, $group_amt[$gid])
+                : array_map(function ($r) {
+                      $r['alloc'] = min((float) $r['amount'], (float) $r['balance']);
+                      return $r;
+                  }, $grows);
+            foreach ($alloc as $r) {
+                $deduction_amount += $r['alloc'];
+                $deductions[] = ["amount" => $r['alloc'], "deduction_id" => (int) $r['deduction_id'], "type" => 1, "ded_row_id" => (int) $r['id'], "amortizing" => 1, "group_id" => (int) $gid];
+            }
+        }
+    }
+
+    /**
      * Insert payroll items for FIXED-rate (salaried) employees who need no
      * attendance. They are paid the full salary share for the period
      * (present=0, absent=0 → the monthly/fixed formula pays basic_pay in full),
@@ -7503,6 +7716,7 @@ class Action
             $contributions = [];
             $loans = [];
             $refunds = [];
+            $grouped_rows = [];
             foreach ($settings as $setting) {
                 if ($setting['type'] == 1) {
                     $cid = $setting['id'];
@@ -7527,13 +7741,18 @@ class Action
                             if ((int) $row['status'] === 1) continue;
                             $balance = (float) $row['balance'];
                             if ($balance <= 0) continue;
+                            if (!empty($row['group_id'])) {      // allocated per group below
+                                $grouped_rows[(int) $row['group_id']][] = $row;
+                                continue;
+                            }
                             $ded = (float) $row['amount'];
                             if ($balance < $ded) $ded = $balance;
                             $deduction_amount += $ded;
                             $deductions[] = ["amount" => $ded, "deduction_id" => (int) $row['deduction_id'], "type" => 1, "ded_row_id" => (int) $row['id'], "amortizing" => 1];
                         } else {
+                            if ((int) $row['status'] === 1) continue;      // Stopped by hand
                             $deduction_amount += $row['amount'];
-                            $deductions[] = ["amount" => $row['amount'], "deduction_id" => (int) $row['deduction_id'], "type" => 1];
+                            $deductions[] = ["amount" => $row['amount'], "deduction_id" => (int) $row['deduction_id'], "type" => 1, "ded_row_id" => (int) $row['id']];
                         }
                     }
                 } elseif ($setting['type'] == 3) {
@@ -7557,6 +7776,7 @@ class Action
                     $refunds[] = ["amount" => 0, "refund_id" => (int) $setting['id']];
                 }
             }
+            $this->applyDeductionGroups($grouped_rows, $employee_id, $deductions, $deduction_amount);
 
             $contributions_j = json_encode($contributions);
             $deductions_j = json_encode($deductions);

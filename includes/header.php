@@ -30,6 +30,7 @@ if (!isset($page_title)) {
         'payroll'              => 'Payroll',
         'payroll_items'        => 'Payroll Items',
         'payroll-register'     => 'Payroll Register',
+        'deductions-report'    => 'Deductions Report',
         'payroll-report'       => 'Payroll Report',
         'payroll-comparison'   => 'Payroll Comparison',
         'bir-alphalist'        => 'BIR Alphalist',

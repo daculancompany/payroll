@@ -432,6 +432,7 @@ if (!defined('ACTION_PAGE_MAP')) {
         'save_loan_type' => 'loans', 'delete_loan_type' => 'loans',
         'save_employee_allowance' => 'employee-details', 'delete_employee_allowance' => 'employee-details',
         'save_employee_deduction' => 'employee-details', 'delete_employee_deduction' => 'employee-details',
+        'set_deduction_status' => 'employee-details', 'save_deduction_group' => 'employee-details', 'update_deduction_group' => 'employee-details', 'ungroup_deductions' => 'employee-details',
         'save_employee_contribution' => 'employee-details', 'delete_employee_contribution' => 'employee-details',
         // fingerprints are their own permission: the Timekeeper's whole job is
         // enrolling them, while the rest of the detail page stays read-only

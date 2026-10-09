@@ -4,6 +4,7 @@
 $report_groups = [
     'Accounting' => [
         ['payroll-register',       'Payroll Register',        'ri-file-list-3-line',       '#673bb6', 'Per-run register: gross, contributions, deductions, loans, tax and net pay for every employee.'],
+        ['deductions-report',      'Deductions Report',        'ri-scissors-cut-line',      '#f57c00', 'What was withheld per employee and per deduction / loan type (Pharmacy, COOP, SSS loan…) over any period, with per-payroll detail.'],
         ['loan-deduction-ledger',  'Loan & Deduction Ledger', 'ri-bank-card-line',         '#d32f2f', 'Running balances and full payment history for loans and amortizing deductions.'],
         ['remittance-report',      'Government Remittance',    'ri-government-line',         '#1976d2', 'SSS, PhilHealth, Pag-IBIG, provident fund and withholding tax per period.'],
         ['payroll-comparison',     'Payroll Comparison',       'ri-git-commit-line',        '#6f42c1', 'Compare two payroll periods side by side to spot variances.'],

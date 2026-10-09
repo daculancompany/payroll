@@ -1185,6 +1185,75 @@ switch ($action) {
         break;
     }
 
+    // ── Other balances: per-payroll history for ONE amortizing deduction ──
+    // (Hospital, Pharmacy…). Same JSON shape as loan_payment_history so the
+    // portal's loan modal renders it; scoped to the session employee.
+    case 'deduction_payment_history': {
+        $ded_id = (int) ($_POST['ded_id'] ?? $_GET['ded_id'] ?? 0);
+        if ($ded_id <= 0) { echo json_encode(['result' => false, 'message' => 'Invalid balance']); break; }
+
+        $ds = $conn->prepare(
+            "SELECT ed.id, ed.amount, ed.total_amount, ed.balance, ed.effective_date,
+                    ed.status, ed.reference_no, d.deduction AS type_name
+             FROM employee_deductions ed
+             INNER JOIN deductions d ON d.id = ed.deduction_id
+             WHERE ed.id = ? AND ed.employee_id = ? AND ed.total_amount > 0"
+        );
+        $ds->bind_param('ii', $ded_id, $emp_id);
+        $ds->execute();
+        $ded = $ds->get_result()->fetch_assoc();
+        if (!$ded) { echo json_encode(['result' => false, 'message' => 'Balance not found']); break; }
+
+        $hs = $conn->prepare(
+            "SELECT dh.ded_his_id, dh.amount, dh.current_bal, dh.new_bal,
+                    p.ref_no, p.date_from, p.date_to
+             FROM deduction_history dh
+             LEFT JOIN payroll p ON p.id = dh.payroll_id
+             WHERE dh.ded_id = ? AND dh.employee_id = ?
+             ORDER BY p.date_to DESC, dh.ded_his_id DESC"
+        );
+        $hs->bind_param('ii', $ded_id, $emp_id);
+        $hs->execute();
+        $res = $hs->get_result();
+
+        $rows = [];
+        $paid_total = 0.0;
+        while ($r = $res->fetch_assoc()) {
+            $paid_total += (float) $r['amount'];
+            $period = ($r['date_from'] && $r['date_to'])
+                ? date('M j', strtotime($r['date_from'])) . ' – ' . date('M j, Y', strtotime($r['date_to']))
+                : 'Unlinked payroll';
+            $rows[] = [
+                'id'      => (int) $r['ded_his_id'],
+                'period'  => $period,
+                'ref_no'  => $r['ref_no'] ?: '',
+                'amount'  => (float) $r['amount'],
+                'before'  => (float) $r['current_bal'],
+                'after'   => (float) $r['new_bal'],
+            ];
+        }
+
+        $eff = ($ded['effective_date'] && $ded['effective_date'] !== '0000-00-00')
+            ? date('M d, Y', strtotime($ded['effective_date'])) : '';
+        echo json_encode([
+            'result' => true,
+            'kind'   => 'ded',
+            'loan'   => [
+                'type_name'      => trim(preg_replace('/\s+/', ' ', $ded['type_name'])),
+                'loan_amount'    => (float) $ded['total_amount'],
+                'loan_balance'   => (float) $ded['balance'],
+                'damount'        => (float) $ded['amount'],
+                'loan_date'      => $eff,
+                'effective_date' => $eff,
+                'reference_no'   => (string) ($ded['reference_no'] ?? ''),
+                'settled'        => (int) $ded['status'] === 1 || (float) $ded['balance'] <= 0,
+            ],
+            'paid_posted' => $paid_total,
+            'rows'        => $rows,
+        ]);
+        break;
+    }
+
     // ── Loans: per-payroll deduction history for ONE of the employee's loans ──
     // Mirrors the admin loan-deduction-ledger, scoped to the session employee so
     // a crafted loan_id can never read someone else's amortization.

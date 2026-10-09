@@ -694,6 +694,20 @@ $s4->bind_param('i', $emp_id); $s4->execute();
 $loans = $s4->get_result()->fetch_all(MYSQLI_ASSOC);
 $total_loan_balance = array_sum(array_column($loans, 'loan_balance'));
 
+// ── Other balances: amortizing deductions (Hospital, Pharmacy, Laboratory…) ──
+// Only deductions with a total/balance are debts; recurring ones (COOP) aren't.
+$s4d = $conn->prepare("
+    SELECT ed.*, d.deduction AS type_name
+    FROM employee_deductions ed INNER JOIN deductions d ON d.id = ed.deduction_id
+    WHERE ed.employee_id = ? AND ed.total_amount > 0 AND ed.status = 0 AND ed.balance > 0
+    ORDER BY ed.effective_date ASC, ed.id ASC
+");
+$s4d->bind_param('i', $emp_id); $s4d->execute();
+$bal_deds = $s4d->get_result()->fetch_all(MYSQLI_ASSOC);
+$total_ded_balance = array_sum(array_column($bal_deds, 'balance'));
+$total_owed = $total_loan_balance + $total_ded_balance;
+$owed_count = count($loans) + count($bal_deds);
+
 // ── Latest payslip computed values ─────────────────────────────
 $pm = $late_amt = $ut_amt = $all_tot = $abs_amt = $ot_amt = 0;
 $lgl_amt = $sun_amt = $spc_amt = $sub_tot = $gross = $tot_ded = 0;
@@ -2361,7 +2375,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </button>
         <button class="tab-btn tab-secondary" onclick="switchTab('loans',this)">
             <i class="ri-bank-line"></i><span class="tab-label">Loans</span>
-            <?php if (count($loans)): ?><span class="badge-count"><?= count($loans) ?></span><?php endif; ?>
+            <?php if ($owed_count): ?><span class="badge-count"><?= $owed_count ?></span><?php endif; ?>
         </button>
         <button class="tab-btn tab-secondary" onclick="switchTab('contrib',this)">
             <i class="ri-shield-check-line"></i><span class="tab-label">Contributions</span>
@@ -2411,7 +2425,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <button type="button" class="more-item" onclick="goMore('loans')">
                 <span class="more-ic" style="background:#fdf0f6;color:#e83e8c;"><i class="ri-bank-line"></i></span>
                 <span class="more-lbl">Loans</span>
-                <?php if (count($loans)): ?><span class="more-dot"><?= count($loans) ?></span><?php endif; ?>
+                <?php if ($owed_count): ?><span class="more-dot"><?= $owed_count ?></span><?php endif; ?>
             </button>
             <button type="button" class="more-item" onclick="goMore('contrib')">
                 <span class="more-ic" style="background:#f2f0f7;color:#4e3483;"><i class="ri-shield-check-line"></i></span>
@@ -2541,8 +2555,8 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </div>
                 <?php endif; ?>
                 <div class="est">
-                    <div class="est-v" style="color:#e83e8c;">₱<?= number_format($total_loan_balance, 0) ?></div>
-                    <div class="est-l">Loan Balance</div>
+                    <div class="est-v" style="color:#e83e8c;">₱<?= number_format($total_owed, 0) ?></div>
+                    <div class="est-l">Loans &amp; Balances</div>
                 </div>
             </div>
         </div>
@@ -3341,8 +3355,8 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 
     <!-- ── Tab: Loans ── -->
     <div class="tab-panel" id="tab-loans">
-        <div class="sec"><i class="ri-bank-line"></i>Active Loans</div>
         <?php if (count($loans)): ?>
+        <div class="sec"><i class="ri-bank-line"></i>Active Loans</div>
         <?php foreach ($loans as $loan):
             $paid = max(0, $loan['loan_amount'] - $loan['loan_balance']);
             $pct  = $loan['loan_amount'] > 0 ? round($paid / $loan['loan_amount'] * 100, 1) : 0;
@@ -3381,11 +3395,69 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <?php endif; ?>
             <div class="loan-tap-hint"><i class="ri-history-line"></i>Tap to see every deduction for this loan</div>
         </div>
-        <?php endforeach; ?>
-        <!-- Loan total -->
-        <div style="background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:12px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
-            <span style="color:rgba(255,255,255,.8);font-size:12px;font-weight:700;">TOTAL LOAN BALANCE</span>
-            <span style="color:#fff;font-size:20px;font-weight:900;">₱<?= n2($total_loan_balance) ?></span>
+        <?php endforeach; endif; ?>
+
+        <?php if (count($bal_deds)): ?>
+        <div class="sec"<?= count($loans) ? ' style="margin-top:16px;"' : '' ?>><i class="ri-hospital-line"></i>Other Balances</div>
+        <?php foreach ($bal_deds as $dd):
+            $d_name = trim(preg_replace('/\s+/', ' ', $dd['type_name']));
+            $paid = max(0, $dd['total_amount'] - $dd['balance']);
+            $pct  = $dd['total_amount'] > 0 ? round($paid / $dd['total_amount'] * 100, 1) : 0;
+            $periods_left = $dd['amount'] > 0 ? ceil($dd['balance'] / $dd['amount']) : '?';
+        ?>
+        <div class="loan-c loan-tap" role="button" tabindex="0" title="Tap to view payment history"
+             onclick="openLoanDetail(<?= (int)$dd['id'] ?>,'ded')"
+             onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openLoanDetail(<?= (int)$dd['id'] ?>,'ded');}">
+            <div class="loan-head">
+                <div>
+                    <div class="loan-type-lbl"><?= htmlspecialchars($d_name) ?></div>
+                    <?php if (!empty($dd['reference_no'])): ?>
+                    <div style="font-size:11px;color:#6642aa;font-family:monospace;margin-top:2px;" title="Reference number"><i class="ri-hashtag me-1"></i><?= htmlspecialchars($dd['reference_no']) ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($dd['description'])): ?>
+                    <div style="font-size:11.5px;color:#5f6b7a;margin-top:2px;"><i class="ri-file-text-line me-1"></i><?= htmlspecialchars($dd['description']) ?></div>
+                    <?php endif; ?>
+                    <?php if (!empty($dd['effective_date']) && $dd['effective_date'] !== '0000-00-00'): ?>
+                    <div style="font-size:11px;color:#aaa;margin-top:2px;">Since <?= date('M d, Y', strtotime($dd['effective_date'])) ?></div>
+                    <?php endif; ?>
+                </div>
+                <div class="loan-bal-wrap">
+                    <div style="text-align:right;">
+                        <div style="font-size:10px;color:#888;">Remaining Balance</div>
+                        <div class="loan-bal-val">₱<?= n2($dd['balance']) ?></div>
+                    </div>
+                    <i class="ri-arrow-right-s-line loan-chev"></i>
+                </div>
+            </div>
+            <div class="loan-progwrap">
+                <div class="loan-prog"><div class="loan-prog-bar" style="width:<?= $pct ?>%;"></div></div>
+                <span class="loan-pct"><?= $pct ?>% paid</span>
+            </div>
+            <div class="loan-meta">
+                <span class="lm-i"><em>Paid</em><b>₱<?= n2($paid) ?></b></span>
+                <span class="lm-i"><em>Original</em><b>₱<?= n2($dd['total_amount']) ?></b></span>
+                <span class="lm-i"><em>Per period</em><b>₱<?= n2($dd['amount']) ?></b></span>
+            </div>
+            <?php if (is_numeric($periods_left) && $periods_left > 0): ?>
+            <div class="loan-est"><i class="ri-time-line me-1"></i>~<?= $periods_left ?> payroll period<?= $periods_left>1?'s':'' ?> remaining</div>
+            <?php endif; ?>
+            <div class="loan-tap-hint"><i class="ri-history-line"></i>Tap to see every deduction for this balance</div>
+        </div>
+        <?php endforeach; endif; ?>
+
+        <?php if ($owed_count): ?>
+        <!-- Loans + other balances total -->
+        <div style="background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:12px;padding:14px 18px;margin-top:4px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <span style="color:rgba(255,255,255,.8);font-size:12px;font-weight:700;">TOTAL BALANCE</span>
+                <span style="color:#fff;font-size:20px;font-weight:900;">₱<?= n2($total_owed) ?></span>
+            </div>
+            <?php if (count($loans) && count($bal_deds)): ?>
+            <div style="display:flex;justify-content:space-between;color:rgba(255,255,255,.7);font-size:11px;font-weight:600;margin-top:4px;">
+                <span>Loans ₱<?= n2($total_loan_balance) ?></span>
+                <span>Other balances ₱<?= n2($total_ded_balance) ?></span>
+            </div>
+            <?php endif; ?>
         </div>
         <?php else: ?>
         <div class="empty-state success"><div class="empty-ic"><i class="ri-check-double-line"></i></div><p>No active loans. You're debt-free!</p></div>
@@ -5918,11 +5990,11 @@ function loanDetailHtml(d) {
         + '<span class="loan-pct">' + pct + '% paid</span></div>';
 
     h += '<div class="lnh-sum">'
-        + loanBox('Loan amount', peso(L.loan_amount))
+        + loanBox(d.kind === 'ded' ? 'Original amount' : 'Loan amount', peso(L.loan_amount))
         + loanBox('Remaining balance', peso(L.loan_balance), 'bal')
         + loanBox('Paid so far', peso(paid))
         + loanBox('Per period', peso(L.damount))
-        + loanBox('Granted', escapeHtml(L.loan_date || '—'))
+        + (d.kind === 'ded' ? '' : loanBox('Granted', escapeHtml(L.loan_date || '—')))
         + loanBox('First deduction', escapeHtml(L.effective_date || L.loan_date || '—'))
         + (L.reference_no ? loanBox('Reference no.', escapeHtml(L.reference_no)) : '')
         + '</div>';
@@ -5933,7 +6005,7 @@ function loanDetailHtml(d) {
     if (!rows.length) {
         h += '<div class="lnh-empty"><i class="ri-inbox-line"></i>'
             + 'No deductions posted yet. Amortization appears here once a payroll that '
-            + 'includes this loan is processed.</div>';
+            + 'includes this ' + (d.kind === 'ded' ? 'balance' : 'loan') + ' is processed.</div>';
         return h;
     }
 
@@ -5955,34 +6027,37 @@ function loanDetailHtml(d) {
     return h;
 }
 
-function openLoanDetail(loanId) {
+function openLoanDetail(loanId, kind) {
     loanId = parseInt(loanId, 10);
     if (!loanId) return;
+    var isDed = kind === 'ded';
+    // Loans and deductions are separate tables, so their ids can collide.
+    var cacheKey = (isDed ? 'D' : 'L') + loanId;
     var body  = document.getElementById('loan-detail-body');
     var title = document.getElementById('loan-detail-title');
-    var cached = LOAN_HIST_CACHE[loanId];
+    var cached = LOAN_HIST_CACHE[cacheKey];
 
     body.innerHTML = cached
         ? loanDetailHtml(cached)
         : '<div class="lnh-load"><i class="ri-loader-4-line"></i>Loading your deduction history…</div>';
-    if (title) title.textContent = cached ? cached.loan.type_name : 'Loan Details';
+    if (title) title.textContent = cached ? cached.loan.type_name : (isDed ? 'Balance Details' : 'Loan Details');
     new bootstrap.Modal(document.getElementById('modal-loan-detail')).show();
 
     // Always refetch: a payroll processed since the last open would otherwise
     // leave a stale ledger behind the cached view.
-    fetch('emp-portal-ajax.php?action=loan_payment_history', {
+    fetch('emp-portal-ajax.php?action=' + (isDed ? 'deduction_payment_history' : 'loan_payment_history'), {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'loan_id=' + encodeURIComponent(loanId)
+        body: (isDed ? 'ded_id=' : 'loan_id=') + encodeURIComponent(loanId)
     }).then(function (r) { return r.json(); }).then(function (res) {
         if (!res || !res.result || !res.loan) {
             if (!cached) {
                 body.innerHTML = '<div class="lnh-err"><i class="ri-information-line me-1"></i>'
-                    + escapeHtml((res && res.message) || 'Could not load this loan.') + '</div>';
+                    + escapeHtml((res && res.message) || (isDed ? 'Could not load this balance.' : 'Could not load this loan.')) + '</div>';
             }
             return;
         }
-        LOAN_HIST_CACHE[loanId] = res;
+        LOAN_HIST_CACHE[cacheKey] = res;
         body.innerHTML = loanDetailHtml(res);
         if (title) title.textContent = res.loan.type_name;
     }).catch(function () {

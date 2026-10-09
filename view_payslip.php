@@ -104,6 +104,9 @@ $total_loans         = 0;
 
 $contributions_raw = json_decode($payroll['contributions'], true) ?: [];
 $deductions_raw    = json_decode($payroll['deductions'],    true) ?: [];
+// What each deduction line was for (employee_deductions.description), by type.
+require_once __DIR__ . '/includes/deductions_withheld.php';
+$ded_notes = dw_ded_notes($conn, $deductions_raw);
 $loans_raw         = json_decode($payroll['loans'],         true) ?: [];
 
 foreach ($contributions_settings as $k) {
@@ -118,7 +121,7 @@ foreach ($contributions_settings as $k) {
         $r = $conn->query("SELECT deduction FROM deductions WHERE id={$k['id']}")->fetch_assoc();
         $name = $r['deduction'] ?? '—';
         foreach ($deductions_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt += (float) $kd['amount']; }
-        $deductions_list[] = ['name' => $name, 'amount' => $amt];
+        $deductions_list[] = ['name' => $name, 'amount' => $amt, 'notes' => $ded_notes[(int) $k['id']] ?? []];
         $total_deductions += $amt;
     } elseif ($k['type'] == 3) {
         $r = $conn->query("SELECT loan_type FROM contribution_loan_types WHERE clt_id={$k['id']}")->fetch_assoc();
@@ -443,6 +446,7 @@ body {
 .item .amt.red { color: #111; }
 .item.bold td { font-weight: 700; color: #111; }
 .item .sub-lbl { font-size: 8pt; color: #333; padding-left: 16px; }
+.item .sub-note { font-size: 7pt; color: #777; font-style: italic; padding: 0 0 2px 26px; }
 .item .sub-amt { font-size: 8pt; color: #333; font-weight: 600; text-align: right; width: 90px; white-space: nowrap; }
 .item .sub-amt.red { color: #333; }
 
@@ -849,7 +853,7 @@ body.has-toolbar { padding-top: 50px; }
     <table class="item" style="<?= $c['amount']==0?'opacity:.45':'' ?>"><tr>
         <td class="sub-lbl"><?= htmlspecialchars($c['name']) ?></td>
         <td class="sub-amt red">₱ <?= number_format($c['amount'], 2) ?></td>
-    </tr></table>
+    </tr><?php foreach ($c['notes'] ?? [] as $n): ?><tr><td class="sub-note" colspan="2">↳ <?= htmlspecialchars($n['desc']) ?><?= count($c['notes']) > 1 ? ' — ₱ ' . number_format($n['amount'], 2) : '' ?></td></tr><?php endforeach; ?></table>
     <?php endforeach; endif; ?>
 
     <?php if (!empty($loans_list)): ?>

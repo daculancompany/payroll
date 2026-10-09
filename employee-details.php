@@ -136,7 +136,7 @@ $loan_agg = $fetch_agg("SELECT COUNT(*) cnt,
 $contri_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(amount),0) amt
     FROM employee_contributions WHERE employee_id = $emp_id");
 $deduct_agg = $fetch_agg("SELECT COUNT(*) cnt,
-        COALESCE(SUM(CASE WHEN total_amount <= 0 OR status = 0 THEN amount ELSE 0 END),0) amt,
+        COALESCE(SUM(CASE WHEN status = 0 THEN amount ELSE 0 END),0) amt,
         COALESCE(SUM(CASE WHEN total_amount > 0 AND status = 0 THEN balance ELSE 0 END),0) bal,
         COALESCE(SUM(total_amount > 0 AND status = 0),0) active,
         COALESCE(SUM(total_amount <= 0),0) recurring
@@ -219,6 +219,20 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
 
     /* ---- Table empty states ---- */
     .emp-empty { text-align:center; padding:28px 10px; color:#98a1b0; }
+    /* Deduction groups (Deductions tab) */
+    .ded-selbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:9px 12px; margin-bottom:10px;
+                  background:#f3effa; border:1px solid #d9cdef; border-radius:10px; font-size:12.5px; color:#4e3483; }
+    .ded-selbar > i { font-size:18px; }
+    .ded-hint { font-size:11.5px; color:#98a1b0; margin:-4px 0 8px; }
+    #table-deductions tr.ded-group-hd > td { background:#f6f3fb !important; border-left:3px solid #673bb6; font-size:12.5px; }
+    .ded-group-tag { background:#673bb6; color:#fff; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700; }
+    #table-deductions tr.ded-in-group > td:first-child { border-left:3px solid #d9cdef; }
+    #table-deductions tr.ded-hist > td { background:#fbfdfc !important; padding:6px 10px 10px 34px; }
+    .ded-hist table { font-size:11px; }
+    .ded-hist th { background:#edebf3; color:#4e3483; }
+    .ded-q-now { background:#e6f4ea; color:#1e7b34; }
+    .ded-q-wait { background:#eef0f4; color:#5f6b7a; }
+    .ded-desc { font-size:11px; color:#5f6b7a; margin-top:2px; max-width:320px; white-space:normal; }
     .emp-empty i { font-size:34px; display:block; margin-bottom:6px; opacity:.5; }
     .emp-empty b { display:block; font-size:13px; color:#6b7484; margin-bottom:2px; }
     .emp-empty span { font-size:11.5px; }
@@ -1129,41 +1143,133 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         </div>
                                     </div>
                                 </div>
-                                <div class="table-responsive">
-                                    <table id="table-deductions" class="table table-hover table-bordered align-middle">
-                                        <thead class="table-dark">
-                                            <tr>
-                                                <th><i class="ri-subtract-line me-1"></i>Deduction Name</th>
-                                                <th class="text-end"><i class="ri-money-dollar-circle-line me-1"></i>Amount</th>
-                                                <th class="text-end"><i class="ri-bank-card-line me-1"></i>Total</th>
-                                                <th class="text-end"><i class="ri-wallet-3-line me-1"></i>Balance</th>
-                                                <th class="text-center"><i class="ri-pulse-line me-1"></i>Status</th>
-                                                <th class="text-center" style="width:100px;"><i class="ri-settings-3-line me-1"></i>Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <?php
-                                            $deductions = $conn->query("SELECT ea.*,d.deduction as dname FROM employee_deductions ea INNER JOIN deductions d ON d.id = ea.deduction_id WHERE ea.employee_id=" . $emp_id . " ORDER BY ea.type ASC, DATE(ea.effective_date) ASC, d.deduction ASC");
-                                            while ($row = $deductions->fetch_assoc()):
-                                            ?>
-                                                <?php $amortizing = (float)$row['total_amount'] > 0; ?>
-                                                <tr>
+                                <?php
+                                // ── Deductions, grouped: amortizing rows can share ONE per-payroll
+                                //    amount and are paid one at a time, oldest first
+                                //    (includes/deduction_groups.php). Works before the
+                                //    groups migration too — everything is then ungrouped.
+                                require_once __DIR__ . '/includes/deduction_groups.php';
+                                $ded_has_groups = (bool) $conn->query("SHOW COLUMNS FROM employee_deductions LIKE 'group_id'")->num_rows;
+                                $ded_rows = [];
+                                $dq = $conn->query("SELECT ea.*, d.deduction AS dname FROM employee_deductions ea
+                                                    INNER JOIN deductions d ON d.id = ea.deduction_id
+                                                    WHERE ea.employee_id = $emp_id
+                                                    ORDER BY ea.type ASC, DATE(ea.effective_date) ASC, ea.id ASC");
+                                while ($r = $dq->fetch_assoc()) {
+                                    $r['dname'] = trim(preg_replace('/\s+/', ' ', $r['dname']));
+                                    $r['amortizing'] = (float) $r['total_amount'] > 0;
+                                    $r['active'] = $r['amortizing'] && (int) $r['status'] === 0 && (float) $r['balance'] > 0;
+                                    $ded_rows[(int) $r['id']] = $r;
+                                }
+                                // Payment history for every row, in one query.
+                                $ded_hist = [];
+                                if ($ded_rows) {
+                                    $hq = $conn->query("SELECT dh.ded_id, dh.amount, dh.current_bal, dh.new_bal, p.ref_no, p.date_from, p.date_to
+                                                        FROM deduction_history dh LEFT JOIN payroll p ON p.id = dh.payroll_id
+                                                        WHERE dh.employee_id = $emp_id AND dh.ded_id IN (" . implode(',', array_keys($ded_rows)) . ")
+                                                        ORDER BY p.date_to DESC, dh.ded_his_id DESC");
+                                    while ($hq && ($h = $hq->fetch_assoc())) $ded_hist[(int) $h['ded_id']][] = $h;
+                                }
+                                // Groups, numbered per employee in creation order.
+                                $ded_groups = [];
+                                if ($ded_has_groups) {
+                                    $gq = $conn->query("SELECT id, per_payroll FROM deduction_groups WHERE employee_id = $emp_id ORDER BY id");
+                                    $gn = 0;
+                                    while ($gq && ($g = $gq->fetch_assoc())) {
+                                        $g['no'] = ++$gn; $g['rows'] = []; $g['remaining'] = 0.0;
+                                        $ded_groups[(int) $g['id']] = $g;
+                                    }
+                                }
+                                $ungrouped = [];
+                                foreach ($ded_rows as $id => $r) {
+                                    $gid = (int) ($r['group_id'] ?? 0);
+                                    if ($gid && isset($ded_groups[$gid]) && $r['amortizing']) {
+                                        $ded_groups[$gid]['rows'][] = $r;
+                                        if ($r['active']) $ded_groups[$gid]['remaining'] += (float) $r['balance'];
+                                    } else {
+                                        $ungrouped[] = $r;
+                                    }
+                                }
+                                // Queue label per grouped row — the same allocation payroll will
+                                // make. Rows whose first deduction date is still ahead wait.
+                                $ded_queue = [];
+                                $today = date('Y-m-d');
+                                foreach ($ded_groups as $gid => &$g) {
+                                    usort($g['rows'], 'deduction_group_order');
+                                    $due = array_filter($g['rows'], function ($r) use ($today) {
+                                        return $r['active'] && (empty($r['effective_date']) || $r['effective_date'] <= $today);
+                                    });
+                                    $paying = [];
+                                    foreach (allocate_group(array_values($due), $g['per_payroll']) as $a) $paying[(int) $a['id']] = $a['alloc'];
+                                    $pos = count($paying);
+                                    foreach ($g['rows'] as $r) {
+                                        $rid = (int) $r['id'];
+                                        if (!$r['active'])                 $ded_queue[$rid] = ['done'];
+                                        elseif (isset($paying[$rid]))      $ded_queue[$rid] = ['now', $paying[$rid]];
+                                        elseif (!empty($r['effective_date']) && $r['effective_date'] > $today)
+                                                                           $ded_queue[$rid] = ['later', $r['effective_date']];
+                                        else                               $ded_queue[$rid] = ['wait', ++$pos];
+                                    }
+                                    $g['payrolls'] = $g['per_payroll'] > 0 ? (int) ceil($g['remaining'] / $g['per_payroll']) : 0;
+                                }
+                                unset($g);
+                                $ded_can_group = $ded_has_groups && !$emp_readonly;
+                                $ded_cols = $ded_can_group ? 8 : 7;
+                                $ded_group_opts = [];
+                                foreach ($ded_groups as $gid => $g) {
+                                    if ($g['rows']) $ded_group_opts[] = ['id' => $gid, 'no' => $g['no'], 'per_payroll' => (float) $g['per_payroll']];
+                                }
+
+                                $ded_row_html = function ($row, $in_group) use ($emp_readonly, $ded_can_group, $ded_hist, $ded_queue, $ded_cols) {
+                                    $rid = (int) $row['id'];
+                                    $h = $ded_hist[$rid] ?? [];
+                                    ob_start(); ?>
+                                                <tr class="ded-row<?= $in_group ? ' ded-in-group' : '' ?>">
+                                                    <?php if ($ded_can_group): ?>
+                                                    <td class="text-center" style="width:34px;">
+                                                        <?php if ($row['active']): ?>
+                                                        <input type="checkbox" class="form-check-input ded-pick" value="<?= $rid ?>"
+                                                               data-bal="<?= (float) $row['balance'] ?>" data-name="<?= esc($row['dname']) ?>" title="Select to group">
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <?php endif; ?>
                                                     <td>
+                                                        <?php if ($h): ?>
+                                                        <button type="button" class="btn btn-sm btn-link p-0 me-1 ded-hist-toggle" data-id="<?= $rid ?>" title="Deduction history"><i class="ri-arrow-right-s-line"></i></button>
+                                                        <?php endif; ?>
                                                         <span style="font-weight:600;"><?= esc($row['dname']) ?></span>
                                                         <?php if (!empty($row['reference_no'])): ?>
                                                             <div style="font-size:10px;color:#6642aa;font-family:monospace;margin-top:1px;" title="Reference number">
                                                                 <i class="ri-hashtag me-1"></i><?= esc($row['reference_no']) ?>
                                                             </div>
                                                         <?php endif; ?>
+                                                        <?php if (!empty($row['description'])): ?>
+                                                            <div class="ded-desc" title="Description"><i class="ri-file-text-line me-1"></i><?= esc($row['description']) ?></div>
+                                                        <?php endif; ?>
                                                     </td>
-                                                    <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format($row['amount'], 2) ?></span></td>
-                                                    <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['total_amount'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
-                                                    <td class="text-end"><?= $amortizing ? '<span class="emp-currency-val">&#8369; ' . number_format($row['balance'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
+                                                    <td class="text-nowrap"><?= !empty($row['effective_date']) && $row['effective_date'] !== '0000-00-00' ? date('M d, Y', strtotime($row['effective_date'])) : '<span class="text-muted">—</span>' ?></td>
+                                                    <td class="text-end">
+                                                        <?php if ($in_group): ?><span class="text-muted" title="The group's per-payroll amount applies instead">—</span>
+                                                        <?php else: ?><span class="emp-currency-val">&#8369; <?= number_format($row['amount'], 2) ?></span><?php endif; ?>
+                                                    </td>
+                                                    <td class="text-end"><?= $row['amortizing'] ? '<span class="emp-currency-val">&#8369; ' . number_format($row['total_amount'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
+                                                    <td class="text-end"><?= $row['amortizing'] ? '<span class="emp-currency-val">&#8369; ' . number_format($row['balance'], 2) . '</span>' : '<span class="text-muted">—</span>' ?></td>
                                                     <td class="text-center">
-                                                        <?php if (!$amortizing): ?>
+                                                        <?php if ((int) $row['type'] === 2): ?>
+                                                            <span class="badge ded-q-wait me-1" title="Taken in one payroll only">Once</span>
+                                                        <?php endif; ?>
+                                                        <?php if (!$row['amortizing']): ?>
+                                                            <?php if ((int) $row['status'] === 1): ?>
+                                                            <span class="badge bg-light text-muted border" title="Stopped by hand — not deducted">Stopped</span>
+                                                            <?php else: ?>
                                                             <span class="badge bg-secondary">Recurring</span>
-                                                        <?php elseif ((int)$row['status'] === 1): ?>
+                                                            <?php endif; ?>
+                                                        <?php elseif (!$row['active']): ?>
                                                             <span class="badge bg-success">Paid</span>
+                                                        <?php elseif ($in_group && isset($ded_queue[$rid])): $q = $ded_queue[$rid]; ?>
+                                                            <?php if ($q[0] === 'now'): ?><span class="badge ded-q-now">Paying now · &#8369;<?= number_format($q[1], 2) ?></span>
+                                                            <?php elseif ($q[0] === 'later'): ?><span class="badge ded-q-wait">Starts <?= date('M d, Y', strtotime($q[1])) ?></span>
+                                                            <?php else: ?><span class="badge ded-q-wait"><?= $q[1] == 2 ? 'Next' : '#' . (int) $q[1] . ' in line' ?></span><?php endif; ?>
                                                         <?php else: ?>
                                                             <span class="badge bg-warning text-dark">Active</span>
                                                         <?php endif; ?>
@@ -1184,10 +1290,28 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                                 'balance'        => (float) $row['balance'],
                                                                 'effective_date' => $row['effective_date'],
                                                                 'reference_no'   => $row['reference_no'],
+                                                                'description'    => $row['description'] ?? '',
+                                                                'type'           => (int) $row['type'],
                                                             ]), ENT_QUOTES) ?>"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Deduction">
                                                             <i class="ri-pencil-line"></i>
                                                         </button>
+                                                        <?php
+                                                        // Settle by hand, like a loan: balance rows are marked Paid,
+                                                        // open-ended recurring rows are Stopped; both can be reactivated.
+                                                        $is_off = (int) $row['status'] === 1 || ($row['amortizing'] && (float) $row['balance'] <= 0);
+                                                        if ($is_off): ?>
+                                                        <button type="button" class="btn btn-sm btn-outline-success ded-set-status" data-id="<?= $rid ?>" data-status="0"
+                                                            data-name="<?= esc($row['dname']) ?>" data-bs-toggle="tooltip" title="<?= $row['amortizing'] ? 'Reactivate' : 'Resume' ?>">
+                                                            <i class="ri-play-circle-line"></i>
+                                                        </button>
+                                                        <?php else: ?>
+                                                        <button type="button" class="btn btn-sm btn-outline-secondary ded-set-status" data-id="<?= $rid ?>" data-status="1"
+                                                            data-name="<?= esc($row['dname']) ?>" data-kind="<?= $row['amortizing'] ? 'paid' : 'stop' ?>"
+                                                            data-bal="<?= (float) $row['balance'] ?>" data-bs-toggle="tooltip" title="<?= $row['amortizing'] ? 'Mark as paid' : 'Stop' ?>">
+                                                            <i class="<?= $row['amortizing'] ? 'ri-checkbox-circle-line' : 'ri-stop-circle-line' ?>"></i>
+                                                        </button>
+                                                        <?php endif; ?>
                                                         <button type="button" data-id="<?= $row['id'] ?>"
                                                             class="btn btn-sm btn-outline-danger remove_deduction"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Delete Deduction">
@@ -1196,9 +1320,85 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                         <?php endif; ?>
                                                     </td>
                                                 </tr>
-                                            <?php endwhile; ?>
-                                            <?php if (!$deductions->num_rows): ?>
-                                                <tr><td colspan="6">
+                                                <?php if ($h): ?>
+                                                <tr class="ded-hist" id="ded-hist-<?= $rid ?>" style="display:none;">
+                                                    <td colspan="<?= $ded_cols ?>">
+                                                        <table class="table table-sm table-bordered mb-0">
+                                                            <thead><tr><th>Payroll</th><th>Period</th><th class="text-end">Deducted</th><th class="text-end">Balance Before</th><th class="text-end">Balance After</th></tr></thead>
+                                                            <tbody>
+                                                                <?php foreach ($h as $x): ?>
+                                                                <tr>
+                                                                    <td><?= esc($x['ref_no'] ?? '—') ?></td>
+                                                                    <td><?= $x['date_from'] ? date('M d', strtotime($x['date_from'])) . ' – ' . date('M d, Y', strtotime($x['date_to'])) : '—' ?></td>
+                                                                    <td class="text-end">&#8369; <?= number_format($x['amount'], 2) ?></td>
+                                                                    <td class="text-end">&#8369; <?= number_format($x['current_bal'], 2) ?></td>
+                                                                    <td class="text-end">&#8369; <?= number_format($x['new_bal'], 2) ?></td>
+                                                                </tr>
+                                                                <?php endforeach; ?>
+                                                            </tbody>
+                                                        </table>
+                                                    </td>
+                                                </tr>
+                                                <?php endif; ?>
+                                    <?php return ob_get_clean();
+                                };
+                                ?>
+                                <?php if ($ded_can_group): ?>
+                                <div id="ded-selbar" class="ded-selbar" style="display:none;">
+                                    <i class="ri-checkbox-multiple-line"></i>
+                                    <span><b id="ded-sel-count">0</b> selected · Total balance <b>&#8369;<span id="ded-sel-total">0.00</span></b></span>
+                                    <button type="button" class="btn btn-sm text-white ms-auto" id="ded-group-btn" style="background:#673bb6;border-color:#673bb6;">
+                                        <i class="ri-stack-line me-1"></i>Group &amp; set per-payroll amount
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="ded-sel-clear">Clear</button>
+                                </div>
+                                <div class="ded-hint"><i class="ri-information-line me-1"></i>Tick several balance deductions to group them under one amount per payroll — they are then paid one at a time, oldest first.</div>
+                                <?php endif; ?>
+                                <div class="table-responsive">
+                                    <table id="table-deductions" class="table table-hover table-bordered align-middle"
+                                           data-emp="<?= (int) $emp_id ?>" data-groups="<?= esc(json_encode($ded_group_opts)) ?>">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <?php if ($ded_can_group): ?>
+                                                <th class="text-center"><input type="checkbox" class="form-check-input" id="ded-pick-all" title="Select all active balances"></th>
+                                                <?php endif; ?>
+                                                <th><i class="ri-subtract-line me-1"></i>Deduction Name</th>
+                                                <th><i class="ri-calendar-line me-1"></i>Start Date</th>
+                                                <th class="text-end"><i class="ri-money-dollar-circle-line me-1"></i>Per Payroll</th>
+                                                <th class="text-end"><i class="ri-bank-card-line me-1"></i>Total</th>
+                                                <th class="text-end"><i class="ri-wallet-3-line me-1"></i>Balance</th>
+                                                <th class="text-center"><i class="ri-pulse-line me-1"></i>Status</th>
+                                                <th class="text-center" style="width:140px;"><i class="ri-settings-3-line me-1"></i>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($ded_groups as $gid => $g): if (!$g['rows']) continue; ?>
+                                                <tr class="ded-group-hd">
+                                                    <td colspan="<?= $ded_cols ?>">
+                                                        <div class="d-flex align-items-center flex-wrap gap-2">
+                                                            <span class="ded-group-tag"><i class="ri-stack-line me-1"></i>Group <?= $g['no'] ?></span>
+                                                            <span><b>&#8369;<?= number_format($g['per_payroll'], 2) ?></b> per payroll</span>
+                                                            <span class="text-muted">·</span>
+                                                            <?php if ($g['remaining'] > 0): ?>
+                                                            <span>Remaining <b>&#8369;<?= number_format($g['remaining'], 2) ?></b></span>
+                                                            <span class="text-muted">· ≈<?= $g['payrolls'] ?> payroll<?= $g['payrolls'] == 1 ? '' : 's' ?> · paid one at a time, oldest first</span>
+                                                            <?php else: ?>
+                                                            <span class="badge bg-success">Done — all paid</span>
+                                                            <?php endif; ?>
+                                                            <?php if (!$emp_readonly): ?>
+                                                            <span class="ms-auto d-flex gap-1">
+                                                                <button type="button" class="btn btn-sm btn-outline-primary ded-group-edit" data-id="<?= $gid ?>" data-no="<?= $g['no'] ?>" data-amt="<?= (float) $g['per_payroll'] ?>" data-rem="<?= round($g['remaining'], 2) ?>"><i class="ri-pencil-line me-1"></i>Edit amount</button>
+                                                                <button type="button" class="btn btn-sm btn-outline-danger ded-group-ungroup" data-id="<?= $gid ?>" data-no="<?= $g['no'] ?>"><i class="ri-link-unlink me-1"></i>Ungroup</button>
+                                                            </span>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                <?php foreach ($g['rows'] as $row) echo $ded_row_html($row, true); ?>
+                                            <?php endforeach; ?>
+                                            <?php foreach ($ungrouped as $row) echo $ded_row_html($row, false); ?>
+                                            <?php if (!$ded_rows): ?>
+                                                <tr><td colspan="<?= $ded_cols ?>">
                                                     <div class="emp-empty">
                                                         <i class="ri-subtract-line"></i>
                                                         <b>No deductions recorded</b>
@@ -1209,6 +1409,69 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         </tbody>
                                     </table>
                                 </div>
+
+                                <?php
+                                // ── Withheld per payroll: what each LOCKED payroll actually took,
+                                //    per deduction / loan type (recurring ones included) ──
+                                require_once __DIR__ . '/includes/deductions_withheld.php';
+                                $wh_pays = [];
+                                $wq = $conn->query("SELECT p.id, p.ref_no, p.date_from, p.date_to, p.status FROM payroll p
+                                                    INNER JOIN payroll_items pi ON pi.payroll_id = p.id AND pi.employee_id = $emp_id
+                                                    WHERE p.status = 2 ORDER BY p.date_to DESC, p.id DESC");
+                                while ($wq && ($p = $wq->fetch_assoc())) $wh_pays[(int) $p['id']] = $p;
+                                $wh = dw_collect($conn, $wh_pays, ['employee_id' => $emp_id]);
+                                $wh_cols = $wh['cols'];
+                                $wh_emp  = $wh['emps'][$emp_id] ?? null;
+                                $wh_kind = ['ded' => 'Deduction', 'loan' => 'Loan', 'extra' => 'One-off'];
+                                ?>
+                                <div class="d-flex align-items-center mt-4 mb-2">
+                                    <h6 class="mb-0 flex-grow-1" style="color:#4e3483;font-weight:800;"><i class="ri-scissors-cut-line me-1"></i>Withheld per Payroll</h6>
+                                    <?php if ($wh_emp && function_exists('page_allowed') && page_allowed('deductions-report')): ?>
+                                    <a class="btn btn-sm btn-outline-secondary" href="index.php?<?= esc(http_build_query(['page' => 'deductions-report', 'q' => $employee_no ?? '', 'from' => min(array_column($wh_pays, 'date_to')), 'to' => date('Y-m-d')])) ?>">
+                                        <i class="ri-external-link-line me-1"></i>Deductions Report
+                                    </a>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="ded-hint mt-0">Every deduction and loan taken from this employee by a <b>locked</b> payroll — recurring ones (COOP, Pharmacy…) included.</div>
+                                <?php if (!$wh_emp): ?>
+                                    <div class="emp-empty"><i class="ri-scissors-cut-line"></i><b>Nothing withheld yet</b><span>Amounts appear here once a payroll that includes this employee is locked.</span></div>
+                                <?php else: ?>
+                                <div class="table-responsive">
+                                    <table id="table-withheld" class="table table-sm table-bordered align-middle">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th>Payroll</th>
+                                                <th>Period</th>
+                                                <?php foreach ($wh_cols as $c): ?>
+                                                <th class="text-end" style="white-space:normal;min-width:90px;"><?= esc($c['label']) ?><div style="font-size:9.5px;font-weight:600;opacity:.75;text-transform:none;"><?= $wh_kind[$c['kind']] ?></div></th>
+                                                <?php endforeach; ?>
+                                                <th class="text-end">Total</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php foreach ($wh_pays as $pid => $p): if (empty($wh_emp['pay'][$pid])) continue; $amts = $wh_emp['pay'][$pid]; ?>
+                                            <tr>
+                                                <td style="font-family:monospace;"><?= esc($p['ref_no']) ?></td>
+                                                <td class="text-nowrap"><?= date('M d', strtotime($p['date_from'])) ?> – <?= date('M d, Y', strtotime($p['date_to'])) ?></td>
+                                                <?php foreach ($wh_cols as $k => $c): $v = $amts[$k] ?? 0; $wn = $wh_emp['notes'][$pid][$k] ?? []; ?>
+                                                <td class="text-end"><?= $v ? '&#8369; ' . number_format($v, 2) : '<span class="text-muted">—</span>' ?>
+                                                    <?php foreach ($wn as $n): ?><div class="ded-desc ms-auto" style="font-style:italic;">↳ <?= esc($n['desc']) ?><?= count($wn) > 1 ? ' — &#8369;' . number_format($n['amount'], 2) : '' ?></div><?php endforeach; ?>
+                                                </td>
+                                                <?php endforeach; ?>
+                                                <td class="text-end fw-bold">&#8369; <?= number_format(array_sum($amts), 2) ?></td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                        <tfoot>
+                                            <tr style="font-weight:800;background:#f6f3fb;">
+                                                <td colspan="2" class="text-end">TOTAL</td>
+                                                <?php foreach ($wh_cols as $k => $c): ?><td class="text-end">&#8369; <?= number_format($wh_emp['tot'][$k] ?? 0, 2) ?></td><?php endforeach; ?>
+                                                <td class="text-end">&#8369; <?= number_format($wh_emp['sum'], 2) ?></td>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                                <?php endif; ?>
                             </div>
 
                             <!-- SITES TAB -->

@@ -40,7 +40,7 @@ $rows = [];
 {
     $dq = $conn->query("
         SELECT ed.id, ed.employee_id, ed.total_amount AS original, ed.amount AS per_period,
-               ed.balance, ed.status, ed.effective_date AS start_date, ed.reference_no,
+               ed.balance, ed.status, ed.effective_date AS start_date, ed.reference_no, ed.*,
                d.deduction AS name, e.employee_no, CONCAT(e.lastname, ', ', e.firstname) AS emp
         FROM employee_deductions ed
         INNER JOIN deductions d ON d.id = ed.deduction_id
@@ -203,7 +203,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                                 </td>
                                 <td><a href="index.php?page=employee-details&id=<?= (int)$r['employee_id'] ?>" data-emp-quickview="<?= (int)$r['employee_id'] ?>" class="rpt-emp-link" title="View employee details"><?= htmlspecialchars($r['emp']) ?></a><br><small class="text-muted"><?= htmlspecialchars($r['employee_no']) ?></small></td>
                                 <td><span class="badge <?= $group_badge[$r['group']] ?>"><?= $group_lbl[$r['group']] ?></span></td>
-                                <td><?= htmlspecialchars($r['name']) ?><?php if (!empty($r['reference_no'])): ?><br><small class="text-muted" style="font-family:monospace;" title="Reference number">#<?= htmlspecialchars($r['reference_no']) ?></small><?php endif; ?></td>
+                                <td><?= htmlspecialchars($r['name']) ?><?php if (!empty($r['reference_no'])): ?><br><small class="text-muted" style="font-family:monospace;" title="Reference number">#<?= htmlspecialchars($r['reference_no']) ?></small><?php endif; ?><?php if (!empty($r['description'])): ?><br><small class="text-muted" title="Description"><i class="ri-file-text-line me-1"></i><?= htmlspecialchars($r['description']) ?></small><?php endif; ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['original']) ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['per_period']) ?></td>
                                 <td class="rpt-num" style="color:#2e7d32;"><?= ldl_money($r['paid']) ?></td>

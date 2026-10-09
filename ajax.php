@@ -277,6 +277,18 @@ if ($action == "save_employee_deduction") {
 	if (is_array($save)) echo json_encode($save);
 	elseif ($save)       echo $save;
 }
+if ($action == "set_deduction_status") {
+	echo json_encode($crud->set_deduction_status());
+}
+if ($action == "save_deduction_group") {
+	echo json_encode($crud->save_deduction_group());
+}
+if ($action == "update_deduction_group") {
+	echo json_encode($crud->update_deduction_group());
+}
+if ($action == "ungroup_deductions") {
+	echo json_encode($crud->ungroup_deductions());
+}
 if ($action == "delete_employee_deduction") {
 	$save = $crud->delete_employee_deduction();
 	if ($save)

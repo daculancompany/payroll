@@ -397,13 +397,21 @@ async function islock(id, isLock) {
     });
 
     if (result.isConfirmed) {
+        Swal.fire({
+            title: message + "ing payroll…",
+            text: "Please wait.",
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => Swal.showLoading(),
+        });
         $.ajax({
             url: "ajax.php?action=isLock222",
             method: "POST",
             data: { id: id, isLock },
             dataType: "JSON",
-            error: (err) => handleError(),
+            error: (err) => { Swal.close(); handleError(); },
             success: function (res) {
+                Swal.close();
                 if (res?.result) {
                     showToast(message + " successful.", "success");
                     reloadPayrollTable();

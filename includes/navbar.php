@@ -397,7 +397,7 @@ $__ar_pill = $__ar_pending > 0
 
                 <!-- ===== REPORTS ===== -->
                 <?php
-                $rep_acct = ['payroll-register','loan-deduction-ledger','remittance-report','payroll-comparison','payroll-report','bank-payout','bir-alphalist'];
+                $rep_acct = ['payroll-register','deductions-report','loan-deduction-ledger','remittance-report','payroll-comparison','payroll-report','bank-payout','bir-alphalist'];
                 $rep_hris = ['employee-masterlist','attendance-summary'];
                 $rep_all  = array_merge(['reports'], $rep_acct, $rep_hris);
                 $rep_shown = array_filter($rep_all, 'page_allowed');
@@ -422,6 +422,7 @@ $__ar_pill = $__ar_pending > 0
                     <div class="menu-dropdown collapse <?= in_array($page, $rep_acct) ? 'show' : '' ?>" id="sidebarAcctReports">
                         <ul class="nav nav-sm flex-column">
                             <li class="nav-item"><a href="payroll-register" class="nav-link <?= $page === 'payroll-register' ? 'active' : '' ?>"><i class="ri-file-list-3-line me-1"></i>Payroll Register</a></li>
+                            <li class="nav-item"><a href="index.php?page=deductions-report" class="nav-link <?= $page === 'deductions-report' ? 'active' : '' ?>"><i class="ri-scissors-cut-line me-1"></i>Deductions Report</a></li>
                             <li class="nav-item"><a href="loan-deduction-ledger" class="nav-link <?= $page === 'loan-deduction-ledger' ? 'active' : '' ?>"><i class="ri-bank-card-line me-1"></i>Loan &amp; Deduction Ledger</a></li>
                             <li class="nav-item"><a href="remittance-report" class="nav-link <?= $page === 'remittance-report' ? 'active' : '' ?>"><i class="ri-government-line me-1"></i>Remittance Report</a></li>
                             <li class="nav-item"><a href="index.php?page=bank-payout" class="nav-link <?= $page === 'bank-payout' ? 'active' : '' ?>"><i class="ri-bank-line me-1"></i>Bank Payout</a></li>

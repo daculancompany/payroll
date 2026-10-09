@@ -299,7 +299,8 @@ function safeDataTable(selector, opts) {
 }
 let tloan = safeDataTable("#table-loan");
 let tcontribution = safeDataTable("#table-contributions");
-let tdeductions = safeDataTable("#table-deductions");
+// #table-deductions stays a plain table: its group header and history sub-rows
+// (colspans) are not something DataTables can sort or page.
 let tsites = safeDataTable("#table-sites");
 let tleave = safeDataTable("#table-leave", { order: [[0, "desc"]] });
 let tschedhist = safeDataTable("#table-schedule-history", { order: [[3, "desc"]] });
@@ -598,6 +599,8 @@ $("#employee-contribution").on("submit", async function (e) {
 $("#employee-deduction").on("submit", async function (e) {
     e.preventDefault();
     var form = $(this);
+    var kindErr = dedKindRefresh();
+    if (kindErr) { Swal.fire({ icon: "warning", title: "Check the amounts", text: kindErr }); return; }
 
     form.parsley().validate();
 
@@ -728,7 +731,9 @@ function resetDeductionModal() {
     f.reset();
     $("#deduction-row-id").val("");
     $("#deduction_id").val("").trigger("change");
-    $("#total_amount").val("0");
+    $("#total_amount").val("");
+    $('#employee-deduction input[name="type[]"][value="1"]').prop("checked", true);
+    dedKindRefresh();
     $("#deduction-modal-title").html('<i class="ri-subtract-line me-2" style="color:#673bb6;"></i>Add Deduction');
     $("#deduction-submit-btn").html('<i class="ri-add-line me-1"></i>Add Deduction');
     $("#deduction-edit-note").remove();
@@ -744,9 +749,12 @@ $(document).on("click", ".edit_deduction", function () {
     // select2 needs the change event to repaint its own rendering.
     $("#deduction_id").val(String(row.deduction_id)).trigger("change");
     $("#amount").val(row.amount);
-    $("#total_amount").val(row.total_amount);
+    $("#total_amount").val(Number(row.total_amount) > 0 ? row.total_amount : "");
+    $('#employee-deduction input[name="type[]"][value="' + (Number(row.type) === 2 ? 2 : 1) + '"]').prop("checked", true);
+    dedKindRefresh();
     $("#edate").val(row.effective_date || "");
     $("#deduction_reference_no").val(row.reference_no || "");
+    $("#deduction_description").val(row.description || "");
 
     $("#deduction-modal-title").html('<i class="ri-pencil-line me-2" style="color:#673bb6;"></i>Edit Deduction');
     $("#deduction-submit-btn").html('<i class="ri-save-line me-1"></i>Save Changes');
@@ -765,6 +773,184 @@ $(document).on("click", ".edit_deduction", function () {
 });
 
 $(document).on("hidden.bs.modal", "#modal-deduction", resetDeductionModal);
+
+// ── Recurring / Once only switch + live hint ──
+function dedNum(v) { return parseFloat(String(v || "").replace(/,/g, "")) || 0; }
+function dedKind() { return $('#employee-deduction input[name="type[]"]:checked').val() === "2" ? "once" : "recurring"; }
+/** Returns an error message when the amounts can't be right, else "". */
+function dedKindRefresh() {
+    var once = dedKind() === "once";
+    var amt = dedNum($("#amount").val()), tot = dedNum($("#total_amount").val());
+    $("#ded-total-wrap").toggle(!once);
+    $("#ded-amt-label").text(once ? "Amount" : "Deduct per payroll");
+    var hint = "", err = "";
+    if (once) {
+        hint = "Taken in full in the first payroll on or after the start date, then marked Paid.";
+    } else if (tot > 0 && amt > tot) {
+        err = "The per-payroll amount (₱" + amt.toFixed(2) + ") is more than the total owed (₱" + tot.toFixed(2) + ") — did you swap them?";
+    } else if (tot > 0 && amt > 0) {
+        hint = "≈ " + Math.ceil(tot / amt) + " payroll(s) of ₱" + amt.toFixed(2) + ", then it stops and shows Paid.";
+    } else if (tot > 0) {
+        hint = "Enter how much to take each payroll.";
+    } else {
+        hint = "No total: ₱" + (amt ? amt.toFixed(2) : "—") + " every payroll with no end. Use Stop on the row to end it.";
+    }
+    $("#ded-kind-hint").toggleClass("warn", !!err).text(err || hint);
+    return err;
+}
+$(document).on("change input", '#employee-deduction input[name="type[]"], #amount, #total_amount', dedKindRefresh);
+$(function () { if ($("#employee-deduction").length) dedKindRefresh(); });
+
+// ── Deduction groups: tick balances → one per-payroll amount, paid oldest first ──
+var DED_EMP = parseInt($("#table-deductions").attr("data-emp"), 10) || 0;
+function dedPeso(v) {
+    return Number(v).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function dedSelected() {
+    return $(".ded-pick:checked").map(function () {
+        return { id: parseInt(this.value, 10), bal: parseFloat($(this).attr("data-bal")) || 0 };
+    }).get();
+}
+function dedRefreshBar() {
+    var sel = dedSelected();
+    var total = sel.reduce(function (t, r) { return t + r.bal; }, 0);
+    $("#ded-sel-count").text(sel.length);
+    $("#ded-sel-total").text(dedPeso(total));
+    $("#ded-selbar").toggle(sel.length > 0);
+    var all = $(".ded-pick").length;
+    $("#ded-pick-all").prop("checked", all > 0 && sel.length === all);
+}
+$(document).on("change", ".ded-pick", dedRefreshBar);
+$(document).on("change", "#ded-pick-all", function () {
+    $(".ded-pick").prop("checked", this.checked);
+    dedRefreshBar();
+});
+$(document).on("click", "#ded-sel-clear", function () {
+    $(".ded-pick, #ded-pick-all").prop("checked", false);
+    dedRefreshBar();
+});
+$(document).on("click", ".ded-hist-toggle", function () {
+    var row = $("#ded-hist-" + $(this).attr("data-id"));
+    var open = row.is(":visible");
+    row.toggle(!open);
+    $(this).find("i").attr("class", open ? "ri-arrow-right-s-line" : "ri-arrow-down-s-line");
+});
+
+function dedPost(action, data, okMsg) {
+    Swal.fire({ title: "Saving…", allowOutsideClick: false, allowEscapeKey: false, didOpen: function () { Swal.showLoading(); } });
+    $.ajax({
+        url: "ajax.php?action=" + action, method: "POST", dataType: "JSON",
+        data: $.extend({ employee_id: DED_EMP }, data),
+        error: function () { Swal.close(); handleError(); },
+        success: function (res) {
+            if (res && res.result) {
+                Swal.fire({ icon: "success", title: okMsg, text: res.message || "", timer: 1600, showConfirmButton: false })
+                    .then(function () { location.reload(); });
+            } else {
+                Swal.fire({ icon: "error", title: "Not saved", text: (res && res.message) || "Something went wrong." });
+            }
+        },
+    });
+}
+
+$(document).on("click", "#ded-group-btn", async function () {
+    var sel = dedSelected();
+    if (!sel.length) return;
+    var total = sel.reduce(function (t, r) { return t + r.bal; }, 0);
+    var groups = [];
+    try { groups = JSON.parse($("#table-deductions").attr("data-groups") || "[]"); } catch (e) {}
+
+    var opts = '<option value="0">New group</option>' + groups.map(function (g) {
+        return '<option value="' + g.id + '" data-amt="' + g.per_payroll + '">Add to Group ' + g.no + " (₱" + dedPeso(g.per_payroll) + "/payroll)</option>";
+    }).join("");
+    var res = await Swal.fire({
+        title: "Group " + sel.length + " deduction" + (sel.length === 1 ? "" : "s"),
+        html:
+            '<div style="font-size:13px;margin-bottom:10px;">Total balance <b>₱' + dedPeso(total) + "</b></div>" +
+            (groups.length ? '<select id="ded-g-target" class="form-select mb-2">' + opts + "</select>" : "") +
+            '<label for="ded-g-amt" style="font-size:12px;color:#673bb6;font-weight:600;display:block;text-align:left;">Deduct how much per payroll?</label>' +
+            '<input id="ded-g-amt" type="number" min="1" step="0.01" class="form-control" placeholder="e.g. 500">' +
+            '<div id="ded-g-hint" style="font-size:12px;color:#888;margin-top:6px;text-align:left;">Paid one at a time, oldest first. Applies from the next payroll calculation.</div>',
+        showCancelButton: true,
+        confirmButtonText: "Save group",
+        confirmButtonColor: "#673bb6",
+        focusConfirm: false,
+        didOpen: function () {
+            var $amt = $("#ded-g-amt"), $t = $("#ded-g-target");
+            function hint() {
+                var a = parseFloat($amt.val()) || 0;
+                var gt = $t.length ? parseInt($t.val(), 10) : 0;
+                var base = "Paid one at a time, oldest first. Applies from the next payroll calculation.";
+                $("#ded-g-hint").text(a > 0 && !gt ? "≈ " + Math.ceil(total / a) + " payroll(s) to clear ₱" + dedPeso(total) + ". " + base : base);
+            }
+            $t.on("change", function () {
+                var gt = parseInt(this.value, 10);
+                $amt.val(gt ? $(this).find(":selected").attr("data-amt") : "");
+                hint();
+            });
+            $amt.on("input", hint).trigger("focus");
+        },
+        preConfirm: function () {
+            var gid = $("#ded-g-target").length ? parseInt($("#ded-g-target").val(), 10) : 0;
+            var amt = parseFloat($("#ded-g-amt").val()) || 0;
+            if (amt <= 0) { Swal.showValidationMessage("Enter how much to deduct per payroll."); return false; }
+            return { gid: gid, amt: amt };
+        },
+    });
+    if (!res.isConfirmed) return;
+    dedPost("save_deduction_group", {
+        group_id: res.value.gid,
+        per_payroll: res.value.amt,
+        ded_ids: sel.map(function (r) { return r.id; }),
+    }, "Grouped");
+});
+
+$(document).on("click", ".ded-group-edit", async function () {
+    var gid = $(this).attr("data-id"), no = $(this).attr("data-no");
+    var cur = parseFloat($(this).attr("data-amt")) || 0, rem = parseFloat($(this).attr("data-rem")) || 0;
+    var res = await Swal.fire({
+        title: "Group " + no + " — per payroll",
+        html: '<div style="font-size:13px;margin-bottom:8px;">Remaining <b>₱' + dedPeso(rem) + "</b></div>",
+        input: "number",
+        inputValue: cur,
+        inputAttributes: { min: "1", step: "0.01" },
+        showCancelButton: true,
+        confirmButtonText: "Save",
+        confirmButtonColor: "#673bb6",
+        inputValidator: function (v) { if (!(parseFloat(v) > 0)) return "Enter an amount greater than zero."; },
+    });
+    if (!res.isConfirmed) return;
+    dedPost("update_deduction_group", { group_id: gid, per_payroll: parseFloat(res.value) }, "Updated");
+});
+
+// Mark paid / Stop / Reactivate one deduction (like settling a loan by hand).
+$(document).on("click", ".ded-set-status", async function () {
+    var id = $(this).attr("data-id"), st = parseInt($(this).attr("data-status"), 10);
+    var name = $(this).attr("data-name") || "this deduction", kind = $(this).attr("data-kind");
+    var bal = parseFloat($(this).attr("data-bal")) || 0;
+    var cfg = st === 1
+        ? (kind === "paid"
+            ? { title: "Mark " + name + " as paid?", text: "The remaining ₱" + dedPeso(bal) + " will no longer be deducted (e.g. paid in cash or waived).", btn: "Mark as paid", color: "#2e7d32" }
+            : { title: "Stop " + name + "?", text: "It will not be deducted from the next payroll on. You can resume it any time.", btn: "Stop", color: "#d33" })
+        : { title: "Reactivate " + name + "?", text: "It will be deducted again from the next payroll calculation.", btn: "Reactivate", color: "#673bb6" };
+    var res = await Swal.fire({ title: cfg.title, text: cfg.text, icon: "question", showCancelButton: true, confirmButtonText: cfg.btn, confirmButtonColor: cfg.color });
+    if (!res.isConfirmed) return;
+    dedPost("set_deduction_status", { id: id, status: st }, st === 1 ? (kind === "paid" ? "Marked as paid" : "Stopped") : "Reactivated");
+});
+
+$(document).on("click", ".ded-group-ungroup", async function () {
+    var gid = $(this).attr("data-id"), no = $(this).attr("data-no");
+    var res = await Swal.fire({
+        title: "Ungroup Group " + no + "?",
+        text: "Its deductions go back to their own per-period amounts from the next payroll calculation.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        confirmButtonText: "Ungroup",
+    });
+    if (!res.isConfirmed) return;
+    dedPost("ungroup_deductions", { group_id: gid }, "Ungrouped");
+});
 
 function add_contritions(e) {
     $("#modal-contrition").modal("show");

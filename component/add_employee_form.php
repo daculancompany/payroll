@@ -440,26 +440,36 @@
                             </div>
                         </div>
                         <div class="col-12">
-                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
-                                Amount <span class="text-danger">*</span>
-                            </label>
-                            <div class="input-group">
-                                <span class="input-group-text">&#8369;</span>
-                                <input type="text" id="amount" name="amount[]" class="form-control filterme"
-                                    placeholder="0.00"
-                                    data-parsley-required-message="Please enter amount." required>
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">How often</label>
+                            <div class="ded-kind-pick" role="radiogroup">
+                                <label class="ded-kind-opt"><input type="radio" name="type[]" value="1" checked>
+                                    <span><b><i class="ri-repeat-line me-1"></i>Recurring</b><small>Every payroll — set a total to stop when paid, like a loan</small></span></label>
+                                <label class="ded-kind-opt"><input type="radio" name="type[]" value="2">
+                                    <span><b><i class="ri-checkbox-circle-line me-1"></i>Once only</b><small>Taken in one payroll, then marked Paid</small></span></label>
                             </div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
-                                Total <small style="text-transform:none;color:#888;">(leave 0 for a recurring deduction; set an amount to amortize like a loan)</small>
+                                <span id="ded-amt-label">Deduct per payroll</span> <span class="text-danger">*</span>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text">&#8369;</span>
+                                <input type="text" id="amount" name="amount[]" class="form-control filterme"
+                                    placeholder="e.g. 200.00"
+                                    data-parsley-required-message="Please enter the amount." required>
+                            </div>
+                        </div>
+                        <div class="col-12" id="ded-total-wrap">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                Total owed <small style="text-transform:none;color:#888;">(optional — the whole charge; deductions stop once it is paid. Leave blank for no end, e.g. COOP)</small>
                             </label>
                             <div class="input-group">
                                 <span class="input-group-text">&#8369;</span>
                                 <input type="text" id="total_amount" name="total_amount[]" class="form-control"
-                                    placeholder="0.00" value="0">
+                                    placeholder="e.g. 1,331.00" value="">
                             </div>
                         </div>
+                        <div class="col-12"><div id="ded-kind-hint" class="ded-kind-hint"></div></div>
                         <div class="col-12">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
                                 Reference No. <span class="text-muted" style="text-transform:none;font-weight:600;">(optional)</span>
@@ -474,6 +484,14 @@
                             <small class="text-muted" style="font-size:10px;">
                                 Voucher / slip / control number, for tracing.
                             </small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
+                                Description <span class="text-muted" style="text-transform:none;font-weight:600;">(optional)</span>
+                            </label>
+                            <textarea id="deduction_description" class="form-control" name="description[]" rows="2"
+                                maxlength="255" placeholder="What is it for? e.g. CBC + Urinalysis, Amoxicillin 500mg x2"
+                                data-parsley-maxlength="255"></textarea>
                         </div>
                     </div>
                 </div>
@@ -772,6 +790,17 @@
 
 <!-- ── Import Employees (upload → preview → commit) ──────────────── -->
 <style>
+    /* Deduction modal: Recurring / Once only switch */
+    .ded-kind-pick { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .ded-kind-opt { display:flex; gap:8px; align-items:flex-start; border:1px solid #e0d9ef; border-radius:10px; padding:9px 11px; cursor:pointer; margin:0; background:#fff; }
+    .ded-kind-opt:has(input:checked) { border-color:#673bb6; background:#f6f3fb; box-shadow:0 0 0 2px rgba(103,59,182,.12); }
+    .ded-kind-opt input { margin-top:3px; accent-color:#673bb6; }
+    .ded-kind-opt b { display:block; font-size:12.5px; color:#4e3483; }
+    .ded-kind-opt small { display:block; font-size:10.5px; color:#888; line-height:1.3; }
+    .ded-kind-hint { font-size:11.5px; color:#5f6b7a; background:#f6f7fa; border-radius:8px; padding:7px 10px; }
+    .ded-kind-hint.warn { background:#fff4e5; color:#b35c00; }
+    @media (max-width:480px) { .ded-kind-pick { grid-template-columns:1fr; } }
+
     /* Scoped styling for the import wizard */
     #modal-upload .imp-steps { display: flex; align-items: center; gap: 6px; font-size: 10.5px; }
     #modal-upload .imp-step {

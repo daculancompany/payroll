@@ -78,6 +78,8 @@ function buildPayslip($conn, $id) {
     $total_cont = 0; $total_ded = 0; $total_loan = 0;
     $contrib_raw = json_decode($p['contributions'], true) ?: [];
     $deduct_raw  = json_decode($p['deductions'],    true) ?: [];
+    require_once __DIR__ . '/includes/deductions_withheld.php';
+    $ded_notes   = dw_ded_notes($conn, $deduct_raw);   // descriptions per deduction type
     $loans_raw   = json_decode($p['loans'],         true) ?: [];
 
     foreach ($settings as $k) {
@@ -92,7 +94,7 @@ function buildPayslip($conn, $id) {
             $r = $conn->query("SELECT deduction FROM deductions WHERE id={$k['id']}")->fetch_assoc();
             $name = $r['deduction'] ?? '—';
             foreach ($deduct_raw as $kd) { if ($kd['deduction_id'] == $k['id']) $amt += (float) $kd['amount']; }
-            $deductions_list[] = ['name' => $name, 'amount' => $amt];
+            $deductions_list[] = ['name' => $name, 'amount' => $amt, 'notes' => $ded_notes[(int) $k['id']] ?? []];
             $total_ded += $amt;
         } elseif ($k['type'] == 3) {
             $r = $conn->query("SELECT loan_type FROM contribution_loan_types WHERE clt_id={$k['id']}")->fetch_assoc();
@@ -207,6 +209,7 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
 .item td { font-size:9pt; padding:2.5px 2px; vertical-align:top; border-bottom:1px solid #f3f3f3; color:#111; }
 .item tr:last-child td { border-bottom:none; }
 .item .sub-lbl { font-size:8pt; color:#111; padding-left:16px; }
+.item .sub-note { font-size:7pt; color:#555; font-style:italic; padding:0 0 2px 26px; }
 .item .sub-amt { font-size:8pt; color:#111; font-weight:600; text-align:right; width:90px; white-space:nowrap; }
 .item.bold td { font-weight:700; color:#111; }
 .item .amt { text-align:right; font-weight:700; color:#111; white-space:nowrap; width:90px; }
@@ -355,7 +358,7 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <?php if (!empty($deductions_list)): ?>
     <div class="grp-lbl">Other Deductions</div>
     <?php foreach ($deductions_list as $c): ?>
-    <table class="item" style="<?= $c['amount']==0?'opacity:.45':'' ?>"><tr><td class="sub-lbl"><?= htmlspecialchars($c['name']) ?></td><td class="sub-amt">₱ <?= number_format($c['amount'], 2) ?></td></tr></table>
+    <table class="item" style="<?= $c['amount']==0?'opacity:.45':'' ?>"><tr><td class="sub-lbl"><?= htmlspecialchars($c['name']) ?></td><td class="sub-amt">₱ <?= number_format($c['amount'], 2) ?></td></tr><?php foreach ($c['notes'] ?? [] as $n): ?><tr><td class="sub-note" colspan="2">↳ <?= htmlspecialchars($n['desc']) ?><?= count($c['notes']) > 1 ? ' — ₱ ' . number_format($n['amount'], 2) : '' ?></td></tr><?php endforeach; ?></table>
     <?php endforeach; endif; ?>
     <?php if (!empty($loans_list)): ?>
     <div class="grp-lbl">Loans</div>

@@ -920,6 +920,7 @@ function getRole($login_role)
                 'reports'              => 'reports',
                 'loan-deduction-ledger' => 'loan-deduction-ledger',
                 'payroll-register'     => 'payroll-register',
+                'deductions-report'    => 'deductions-report',
                 'employee-masterlist'  => 'employee-masterlist',
                 'attendance-summary'   => 'attendance-summary',
                 'leave-dashboard'      => 'leave-dashboard',

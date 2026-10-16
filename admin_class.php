@@ -5049,8 +5049,28 @@ class Action
         $id = intval($id); // Ensure ID is an integer
         $amount = floatval($amount); // Ensure amount is a valid number
 
-        if ($id <= 0 || $amount < 0) {
+        if ($amount < 0) {
             return 0; // Invalid data
+        }
+
+        // No row yet (a contribution type added after the employee was created,
+        // e.g. MP2): create it, unless one already exists for this pair.
+        if ($id <= 0) {
+            $employee_id     = (int) ($employee_id ?? 0);
+            $contribution_id = (int) ($contribution_id ?? 0);
+            if ($employee_id <= 0 || $contribution_id <= 0) return 0;
+
+            $chk = $this->db->prepare("SELECT id FROM employee_contributions WHERE employee_id = ? AND contribution_id = ? LIMIT 1");
+            $chk->bind_param("ii", $employee_id, $contribution_id);
+            $chk->execute();
+            $existing = $chk->get_result()->fetch_assoc();
+            if ($existing) {
+                $id = (int) $existing['id'];
+            } else {
+                $stmt = $this->db->prepare("INSERT INTO employee_contributions (employee_id, contribution_id, amount, payroll_type) VALUES (?, ?, ?, 1)");
+                $stmt->bind_param("iid", $employee_id, $contribution_id, $amount);
+                return $stmt->execute() ? 1 : 0;
+            }
         }
 
         // Use prepared statements to prevent SQL injection

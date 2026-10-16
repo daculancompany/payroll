@@ -1054,7 +1054,13 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                         </thead>
                                         <tbody>
                                             <?php
-                                            $contributions = $conn->query("SELECT ea.*,c.contribution,ea.id AS contribution_unique FROM employee_contributions ea LEFT JOIN contributions c ON ea.contribution_id = c.id WHERE ea.employee_id=" . $emp_id);
+                                            // Driven by the contributions master so a newly added type
+                                            // (e.g. MP2) shows here at 0 and can be set — new employees
+                                            // only get SSS/PHIC/HDMF rows on creation.
+                                            $contributions = $conn->query("SELECT c.id AS contribution_id, c.contribution, COALESCE(ea.id, 0) AS id, COALESCE(ea.amount, 0) AS amount
+                                                FROM contributions c
+                                                LEFT JOIN employee_contributions ea ON ea.contribution_id = c.id AND ea.employee_id = " . (int) $emp_id . "
+                                                ORDER BY c.id ASC");
                                             while ($row = $contributions->fetch_assoc()):
                                             ?>
                                                 <tr>
@@ -1063,7 +1069,7 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                                     <td class="text-center">
                                                         <?php if (!$emp_readonly): ?>
                                                         <button type="button"
-                                                            data-id="<?= $row['id'] ?>" data-name="<?= esc($row['contribution']) ?>" data-amount="<?= $row['amount'] ?>"
+                                                            data-id="<?= $row['id'] ?>" data-cid="<?= $row['contribution_id'] ?>" data-emp="<?= (int) $emp_id ?>" data-name="<?= esc($row['contribution']) ?>" data-amount="<?= $row['amount'] ?>"
                                                             class="btn btn-sm btn-outline-primary"
                                                             onclick="editContriAmount(this)"
                                                             data-bs-toggle="tooltip" data-bs-placement="top" title="Edit Amount">

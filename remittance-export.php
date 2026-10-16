@@ -9,6 +9,9 @@ if (!$id) { exit('Missing payroll id'); }
 
 function rr_bucket($name) {
     $n = strtoupper(trim($name));
+    // Before the Pag-IBIG check: "Pag-IBIG MP2" is voluntary savings, remitted
+    // separately from the regular Pag-IBIG share.
+    if (strpos($n, 'MP2') !== false)        return 'MP2';
     if (strpos($n, 'SSS') !== false)        return 'SSS';
     if (strpos($n, 'PHIC') !== false || strpos($n, 'PHILHEALTH') !== false || strpos($n, 'PHIL') !== false) return 'PhilHealth';
     if (strpos($n, 'HDMF') !== false || strpos($n, 'PAG') !== false) return 'Pag-IBIG';
@@ -52,36 +55,37 @@ fprintf($out, chr(0xEF).chr(0xBB).chr(0xBF)); // UTF-8 BOM for Excel
 fputcsv($out, ['Government Remittance Report']);
 fputcsv($out, ['Payroll', $pay['ref_no'], 'Period', date('M d, Y', strtotime($pay['date_from'])).' - '.date('M d, Y', strtotime($pay['date_to']))]);
 fputcsv($out, []);
-fputcsv($out, ['Employee No','Name','SSS No','PhilHealth No','Pag-IBIG No','TIN','SSS','PhilHealth','Pag-IBIG','SSS Fund','Tax','Total']);
+fputcsv($out, ['Employee No','Name','SSS No','PhilHealth No','Pag-IBIG No','TIN','SSS','PhilHealth','Pag-IBIG','MP2','SSS Fund','Tax','Total']);
 
-$T = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0,'fund'=>0,'tax'=>0,'grand'=>0];
+$T = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0,'MP2'=>0,'fund'=>0,'tax'=>0,'grand'=>0];
 while ($row = $res->fetch_assoc()) {
-    $b = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0];
+    $b = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0,'MP2'=>0];
     $json = json_decode($row['contributions'], true);
     if (is_array($json)) foreach ($json as $c) {
         $bk = rr_bucket($contrib_names[(int)($c['contribution_id'] ?? 0)] ?? 'Other');
         if (isset($b[$bk])) $b[$bk] += (float)($c['amount'] ?? 0);
     }
     // Fallback to employee_contributions if the payslip had no itemised contributions
-    if ($b['SSS'] == 0 && $b['PhilHealth'] == 0 && $b['Pag-IBIG'] == 0 && isset($ec_map[(int)$row['employee_id']])) {
+    if ($b['SSS'] == 0 && $b['PhilHealth'] == 0 && $b['Pag-IBIG'] == 0 && $b['MP2'] == 0 && isset($ec_map[(int)$row['employee_id']])) {
         foreach ($ec_map[(int)$row['employee_id']] as $cid => $amt) {
             $bk = rr_bucket($contrib_names[$cid] ?? 'Other');
+            if ($bk === 'MP2') continue; // opt-in per payroll, never guessed
             if (isset($b[$bk])) $b[$bk] += (float)$amt;
         }
     }
     $fund = (float)$row['sss_fund']; $tax = (float)$row['tax'];
-    $total = $b['SSS'] + $b['PhilHealth'] + $b['Pag-IBIG'] + $fund + $tax;
+    $total = $b['SSS'] + $b['PhilHealth'] + $b['Pag-IBIG'] + $b['MP2'] + $fund + $tax;
     fputcsv($out, [
         $row['employee_no'], $row['name'], $row['sss_no'], $row['ph_no'], $row['hdmf_no'], $row['tin_no'],
         number_format($b['SSS'],2,'.',''), number_format($b['PhilHealth'],2,'.',''), number_format($b['Pag-IBIG'],2,'.',''),
-        number_format($fund,2,'.',''), number_format($tax,2,'.',''), number_format($total,2,'.','')
+        number_format($b['MP2'],2,'.',''), number_format($fund,2,'.',''), number_format($tax,2,'.',''), number_format($total,2,'.','')
     ]);
-    $T['SSS']+=$b['SSS']; $T['PhilHealth']+=$b['PhilHealth']; $T['Pag-IBIG']+=$b['Pag-IBIG'];
+    $T['SSS']+=$b['SSS']; $T['PhilHealth']+=$b['PhilHealth']; $T['Pag-IBIG']+=$b['Pag-IBIG']; $T['MP2']+=$b['MP2'];
     $T['fund']+=$fund; $T['tax']+=$tax; $T['grand']+=$total;
 }
 fputcsv($out, []);
 fputcsv($out, ['','TOTAL','','','','',
-    number_format($T['SSS'],2,'.',''), number_format($T['PhilHealth'],2,'.',''), number_format($T['Pag-IBIG'],2,'.',''),
+    number_format($T['SSS'],2,'.',''), number_format($T['PhilHealth'],2,'.',''), number_format($T['Pag-IBIG'],2,'.',''), number_format($T['MP2'],2,'.',''),
     number_format($T['fund'],2,'.',''), number_format($T['tax'],2,'.',''), number_format($T['grand'],2,'.','')]);
 fclose($out);
 exit;

@@ -6,6 +6,9 @@
 // Contribution name → bucket mapping (handles common aliases)
 function rr_bucket($name) {
     $n = strtoupper(trim($name));
+    // Before the Pag-IBIG check: "Pag-IBIG MP2" is voluntary savings, remitted
+    // separately from the regular Pag-IBIG share.
+    if (strpos($n, 'MP2') !== false)        return 'MP2';
     if (strpos($n, 'SSS') !== false)        return 'SSS';
     if (strpos($n, 'PHIC') !== false || strpos($n, 'PHILHEALTH') !== false || strpos($n, 'PHIL') !== false) return 'PhilHealth';
     if (strpos($n, 'HDMF') !== false || strpos($n, 'PAG') !== false) return 'Pag-IBIG';
@@ -22,7 +25,7 @@ $sel_id   = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $sel_pay  = null;
 $rows     = [];           // per-employee remittance rows
 $contrib_names = [];      // map contribution_id => name
-$totals   = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0,'SSS Fund'=>0,'Tax'=>0,'grand'=>0];
+$totals   = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0,'MP2'=>0,'SSS Fund'=>0,'Tax'=>0,'grand'=>0];
 
 if ($sel_id) {
     // selected payroll header
@@ -57,7 +60,7 @@ if ($sel_id) {
         $res = $it->get_result();
 
         while ($row = $res->fetch_assoc()) {
-            $b = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0];
+            $b = ['SSS'=>0,'PhilHealth'=>0,'Pag-IBIG'=>0,'MP2'=>0];
             $extra = [];
             $json = json_decode($row['contributions'], true);
             if (is_array($json)) {
@@ -71,28 +74,30 @@ if ($sel_id) {
             }
             // Fallback: if the payslip had no itemised contributions, use the
             // employee's configured employee_contributions amounts.
-            if ($b['SSS'] == 0 && $b['PhilHealth'] == 0 && $b['Pag-IBIG'] == 0 && empty($extra)
+            if ($b['SSS'] == 0 && $b['PhilHealth'] == 0 && $b['Pag-IBIG'] == 0 && $b['MP2'] == 0 && empty($extra)
                 && isset($ec_map[(int)$row['employee_id']])) {
                 foreach ($ec_map[(int)$row['employee_id']] as $cid => $amt) {
                     if ($amt == 0) continue;
                     $bk = rr_bucket($contrib_names[$cid] ?? 'Other');
+                    if ($bk === 'MP2') continue; // opt-in per payroll, never guessed
                     if (isset($b[$bk])) $b[$bk] += $amt; else { $extra[$bk] = ($extra[$bk] ?? 0) + $amt; }
                 }
             }
             $sssfund = (float)$row['sss_fund'];
             $tax     = (float)$row['tax'];
-            $line_total = $b['SSS'] + $b['PhilHealth'] + $b['Pag-IBIG'] + $sssfund + $tax + array_sum($extra);
+            $line_total = $b['SSS'] + $b['PhilHealth'] + $b['Pag-IBIG'] + $b['MP2'] + $sssfund + $tax + array_sum($extra);
 
             $rows[] = [
                 'employee_id' => $row['employee_id'],
                 'name' => $row['name'], 'employee_no' => $row['employee_no'],
                 'sss_no' => $row['sss_no'], 'ph_no' => $row['ph_no'], 'hdmf_no' => $row['hdmf_no'], 'tin_no' => $row['tin_no'],
-                'SSS' => $b['SSS'], 'PhilHealth' => $b['PhilHealth'], 'Pag-IBIG' => $b['Pag-IBIG'],
+                'SSS' => $b['SSS'], 'PhilHealth' => $b['PhilHealth'], 'Pag-IBIG' => $b['Pag-IBIG'], 'MP2' => $b['MP2'],
                 'SSS Fund' => $sssfund, 'Tax' => $tax, 'total' => $line_total,
             ];
             $totals['SSS']        += $b['SSS'];
             $totals['PhilHealth'] += $b['PhilHealth'];
             $totals['Pag-IBIG']   += $b['Pag-IBIG'];
+            $totals['MP2']        += $b['MP2'];
             $totals['SSS Fund']   += $sssfund;
             $totals['Tax']        += $tax;
             $totals['grand']      += $line_total;
@@ -131,6 +136,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
             ['SSS','ri-shield-check-line','#d32f2f','#fdecec'],
             ['PhilHealth','ri-heart-pulse-line','#1976d2','#e3f2fd'],
             ['Pag-IBIG','ri-home-4-line','#f57c00','#fff3e0'],
+            ['MP2','ri-hand-coin-line','#00897b','#e0f2f1'],
             ['SSS Fund','ri-safe-2-line','#6f42c1','#eef0f8'],
             ['Tax','ri-government-line','#673bb6','#eeeaf5'],
         ];
@@ -186,7 +192,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
             <?php if (!$sel_id): ?>
                 <div class="text-center text-muted py-5">
                     <i class="ri-government-line" style="font-size:40px;opacity:.4;display:block;margin-bottom:8px;"></i>
-                    <p class="mt-2">Pick a payroll period from <b>Filter</b> to view SSS, PhilHealth, Pag-IBIG and Tax remittances.</p>
+                    <p class="mt-2">Pick a payroll period from <b>Filter</b> to view SSS, PhilHealth, Pag-IBIG, MP2 and Tax remittances.</p>
                     <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-remittance">
                         <i class="ri-filter-3-line me-1"></i>Choose payroll period
                     </button>
@@ -203,6 +209,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                             <th class="rpt-num">SSS</th>
                             <th class="rpt-num">PhilHealth</th>
                             <th class="rpt-num">Pag-IBIG</th>
+                            <th class="rpt-num">MP2</th>
                             <th class="rpt-num">SSS Fund</th>
                             <th class="rpt-num">Tax</th>
                             <th class="rpt-num rpt-net">Total</th>
@@ -210,7 +217,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                     </thead>
                     <tbody>
                         <?php if (!count($rows)): ?>
-                        <tr><td colspan="8" class="text-center text-muted py-4">No payroll items in this period.</td></tr>
+                        <tr><td colspan="9" class="text-center text-muted py-4">No payroll items in this period.</td></tr>
                         <?php else: $i=0; foreach ($rows as $r): $i++; ?>
                         <tr>
                             <td style="color:#aaa;"><?= $i ?></td>
@@ -225,6 +232,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                             <td class="rpt-num"><?= $r['SSS'] ? rr_money($r['SSS']) : '<span style="color:#ddd;">—</span>' ?></td>
                             <td class="rpt-num"><?= $r['PhilHealth'] ? rr_money($r['PhilHealth']) : '<span style="color:#ddd;">—</span>' ?></td>
                             <td class="rpt-num"><?= $r['Pag-IBIG'] ? rr_money($r['Pag-IBIG']) : '<span style="color:#ddd;">—</span>' ?></td>
+                            <td class="rpt-num"><?= $r['MP2'] ? rr_money($r['MP2']) : '<span style="color:#ddd;">—</span>' ?></td>
                             <td class="rpt-num"><?= $r['SSS Fund'] ? rr_money($r['SSS Fund']) : '<span style="color:#ddd;">—</span>' ?></td>
                             <td class="rpt-num"><?= $r['Tax'] ? rr_money($r['Tax']) : '<span style="color:#ddd;">—</span>' ?></td>
                             <td class="rpt-num rpt-net"><?= rr_money($r['total']) ?></td>
@@ -237,6 +245,7 @@ function rr_money($v){ return '₱'.number_format((float)$v, 2); }
                             <td class="rpt-num"><?= rr_money($totals['SSS']) ?></td>
                             <td class="rpt-num"><?= rr_money($totals['PhilHealth']) ?></td>
                             <td class="rpt-num"><?= rr_money($totals['Pag-IBIG']) ?></td>
+                            <td class="rpt-num"><?= rr_money($totals['MP2']) ?></td>
                             <td class="rpt-num"><?= rr_money($totals['SSS Fund']) ?></td>
                             <td class="rpt-num"><?= rr_money($totals['Tax']) ?></td>
                             <td class="rpt-num rpt-net"><?= rr_money($totals['grand']) ?></td>

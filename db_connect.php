@@ -1351,6 +1351,9 @@ if (!function_exists('contribution_kind')) {
     function contribution_kind(string $name)
     {
         $n = strtoupper($name);
+        // MP2 is voluntary Pag-IBIG savings, not a statutory share: keep the flat
+        // amount and leave it taxable, even if someone names it "Pag-IBIG MP2".
+        if (strpos($n, 'MP2') !== false)  return null;
         if (strpos($n, 'SSS') !== false)  return 'sss';
         if (strpos($n, 'PHIC') !== false || strpos($n, 'PHIL') !== false) return 'phic';
         if (strpos($n, 'HDMF') !== false || strpos($n, 'PAG') !== false)  return 'hdmf';

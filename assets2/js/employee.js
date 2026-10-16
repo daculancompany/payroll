@@ -1399,6 +1399,8 @@ $(document).on("hide.bs.modal", "#modal-loan", function () {
 
 function editContriAmount(el) {
     $("#contribution-id").val($(el).attr("data-id"));
+    $("#contribution-cid").val($(el).attr("data-cid"));
+    $("#contribution-emp").val($(el).attr("data-emp"));
     $("#contribution-name").val($(el).attr("data-name"));
     $("#contribution-amount").val($(el).attr("data-amount"));
     $("#modal-contrition").modal("show");

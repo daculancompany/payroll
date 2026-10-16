@@ -512,6 +512,8 @@
 <div class="modal fade" id="modal-contrition" tabindex="-1" role="dialog">
     <form id="employee-contribution" novalidate>
         <input type="hidden" id="contribution-id" name="id" value="">
+        <input type="hidden" id="contribution-cid" name="contribution_id" value="">
+        <input type="hidden" id="contribution-emp" name="employee_id" value="">
         <div class="modal-dialog" role="document">
             <div class="modal-content">
                 <div class="modal-header">

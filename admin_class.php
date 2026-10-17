@@ -13352,6 +13352,14 @@ class Action
         $created = false;
         if ($ex) {
             $detailId = (int) $ex['id'];
+            // merge=1 (DTR Details "Create Attendance"): the typed punches are
+            // ADDED to the day, not a replacement list — keep what is there.
+            if (!empty($_POST['merge'])) {
+                $cur = $this->db->query("SELECT logs FROM DTR_details WHERE id = $detailId")->fetch_assoc();
+                foreach ((json_decode((string) ($cur['logs'] ?? ''), true) ?: []) as $lg) {
+                    if (!empty($lg['dateTime'])) $punches[] = ['dt' => $lg['dateTime']];
+                }
+            }
         } else {
             // Frozen-shift stamp for the day, the same way a first scan is
             // recorded — compute with no logs just to resolve the schedule.
@@ -13382,6 +13390,12 @@ class Action
             // Never leave an empty shell behind — the day only exists with punches.
             $this->db->query("DELETE FROM DTR_details WHERE id = $detailId AND logs = '[]'");
             return $resp;
+        }
+        $notes = mb_substr(trim((string) ($_POST['notes'] ?? '')), 0, 100);
+        if (!empty($resp['result']) && $notes !== '') {
+            $nst = $this->db->prepare("UPDATE DTR_details SET notes = ? WHERE id = ?");
+            $nst->bind_param('si', $notes, $detailId);
+            $nst->execute();
         }
         $resp['id']      = $detailId;
         $resp['date']    = $date;

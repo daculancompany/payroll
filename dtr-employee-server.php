@@ -201,6 +201,40 @@ if ($action === 'filter_opts') {
     exit;
 }
 
+if ($action === 'addable') {
+    // ── Active employees with NO record in this batch ───────────────────────
+    // The docs list is built from DTR_details, so someone who never scanned in
+    // the cutoff can't be found there. This feeds the "Add attendance" picker
+    // (dtr_add_day creates their first day). Same token search as 'docs'.
+    $q      = trim((string)($_GET['q'] ?? ''));
+    $where  = "e.status = 1 AND NOT EXISTS (SELECT 1 FROM DTR_details d WHERE d.ddtr_id = ? AND d.employee_id = e.id)";
+    $types  = 'i';
+    $params = [$ddtrId];
+    foreach (preg_split('/[\s,]+/', $q, -1, PREG_SPLIT_NO_EMPTY) as $tk) {
+        $where .= " AND (e.lastname LIKE ? OR e.firstname LIKE ? OR e.middlename LIKE ? OR e.employee_no LIKE ?)";
+        $like = '%' . $tk . '%';
+        $types .= 'ssss';
+        array_push($params, $like, $like, $like, $like);
+    }
+    $st = $conn->prepare("SELECT e.id, e.employee_no, e.lastname, e.firstname, e.middlename
+                          FROM employee e WHERE $where
+                          ORDER BY e.lastname ASC, e.firstname ASC LIMIT 50");
+    $st->bind_param($types, ...$params);
+    $st->execute();
+    $rows = [];
+    $res = $st->get_result();
+    while ($r = $res->fetch_assoc()) {
+        $rows[] = [
+            'id'   => (int)$r['id'],
+            'no'   => (string)$r['employee_no'],
+            'name' => trim($r['lastname'] . ', ' . $r['firstname'] . ' ' . $r['middlename']),
+        ];
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['result' => true, 'employees' => $rows]);
+    exit;
+}
+
 if ($action === 'docs') {
     // ── Document viewer (dtr-documents.php) ─────────────────────────────────
     // One page of employees as structured JSON. Each record's biometric/manual

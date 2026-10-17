@@ -1216,6 +1216,9 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                 <div class="ddv-search-wrap">
                     <i class="ri-search-2-line"></i>
                     <input id="ddv-q" type="text" placeholder="Search name, no., position...">
+                    <button type="button" class="ddv-filter-btn" id="ddv-add-emp-btn" onclick="addNewEmpAttendance()" title="Add attendance for an employee with no logs in this cutoff" style="display:none;">
+                        <i class="ri-user-add-line"></i>
+                    </button>
                     <button type="button" class="ddv-filter-btn" id="ddv-filter-btn" onclick="toggleFilterPop()" title="Filters">
                         <i class="ri-filter-3-line"></i>
                         <span class="ddv-filter-count" id="ddv-filter-count" style="display:none;">0</span>
@@ -1806,7 +1809,12 @@ function renderList() {
     const box = $id('ddv-list');
     $id('ddv-total').textContent = st.total ? st.total + ' total' : '';
     if (!st.emps.length) {
-        box.innerHTML = '<div class="ddv-list-empty"><i class="ri-search-eye-line" style="font-size:22px;display:block;margin-bottom:6px;"></i>No employees found.</div>';
+        box.innerHTML = '<div class="ddv-list-empty"><i class="ri-search-eye-line" style="font-size:22px;display:block;margin-bottom:6px;"></i>No employees found.'
+            + (CAN_ADD_DAY
+                ? '<div style="margin-top:8px;font-size:11px;">No logs in this cutoff?</div>'
+                  + '<button type="button" class="ddv-mini-btn pun" style="margin-top:6px;" onclick="addNewEmpAttendance()"><i class="ri-user-add-line"></i> Add attendance</button>'
+                : '')
+            + '</div>';
         return;
     }
     box.innerHTML = st.emps.map((e, i) => {
@@ -3324,6 +3332,7 @@ function peRenderEmpty() {
 }
 
 function editPunches(recId) {
+    peNewEmp = null;
     const hit = findRec(recId);
     if (!hit) return;
     peDate = hit.date;
@@ -3338,9 +3347,72 @@ function editPunches(recId) {
     bootstrap.Modal.getOrCreateInstance($id('modal-edit-punches')).show();
 }
 
+// Employee picked through addNewEmpAttendance — someone with NO record in this
+// batch, so not in st.emps. While set, the punch editor saves for them.
+let peNewEmp = null;
+if (CAN_ADD_DAY) $id('ddv-add-emp-btn').style.display = '';
+
+// The docs list only holds employees who already have a DTR row, so anyone who
+// never scanned this cutoff can't be searched there. Pick them from the active
+// roster instead (dtr-employee-server action=addable), pick the day, and open
+// the same punch editor — dtr_add_day creates their first day.
+async function addNewEmpAttendance() {
+    if (!CAN_ADD_DAY) return;
+    let list = [];
+    try {
+        const r = await fetch(`dtr-employee-server.php?action=addable&id=${DDTR_ID}&q=${encodeURIComponent(st.q)}`, { cache: 'no-store' });
+        const j = await r.json();
+        if (!j.result) throw new Error(j.message || 'Failed');
+        list = j.employees || [];
+    } catch (err) {
+        Swal.fire({ icon: 'error', title: 'Could not load employees', text: err.message || String(err) });
+        return;
+    }
+    if (!list.length) {
+        Swal.fire({ icon: 'info', title: 'No employee to add',
+            text: st.q ? `No active employee without attendance matches "${st.q}". Try a different search.`
+                       : 'Every active employee already has attendance in this cutoff.' });
+        return;
+    }
+    const empOpts = {};
+    list.forEach(x => { empOpts[x.id] = x.name + (x.no ? ' · ' + x.no : ''); });
+    const r1 = await Swal.fire({
+        title: 'Add attendance',
+        text: 'Employee with no logs in this cutoff' + (st.q ? ` (matching "${st.q}")` : '') + ':',
+        input: 'select', inputOptions: empOpts, inputPlaceholder: 'Select employee…',
+        inputValue: list.length === 1 ? String(list[0].id) : '',
+        inputValidator: v => v ? undefined : 'Pick an employee.',
+        showCancelButton: true, confirmButtonColor: '#6642aa', confirmButtonText: 'Next',
+    });
+    if (!r1.isConfirmed || !r1.value) return;
+    const emp = list.find(x => String(x.id) === String(r1.value));
+    const dayOpts = {};
+    eachDay(iso => { dayOpts[iso] = fmtDayLong(iso); });
+    const r2 = await Swal.fire({
+        title: 'Add attendance',
+        text: `${emp.name} — pick the day to add.`,
+        input: 'select', inputOptions: dayOpts, inputPlaceholder: 'Select a day…',
+        inputValidator: v => v ? undefined : 'Pick a day.',
+        showCancelButton: true, confirmButtonColor: '#6642aa', confirmButtonText: 'Next',
+    });
+    if (!r2.isConfirmed || !r2.value) return;
+    peNewEmp = emp;
+    peDate = r2.value;
+    $id('pe-rec-id').value = '';
+    $id('pe-new-date').value = r2.value;
+    $id('pe-title-lbl').textContent = 'Add attendance — ' + emp.name;
+    $id('pe-date-lbl').textContent = '· ' + fmtDayLong(r2.value);
+    $id('pe-rows').innerHTML = '';
+    peAddRow('', false);
+    peAddRow(r2.value + 'T17:00', false);   // time-in + time-out to fill in
+    bootstrap.Modal.getOrCreateInstance($id('modal-edit-punches')).show();
+    setTimeout(() => $id('pe-rows').querySelector('.pe-dt')?.focus(), 250);
+}
+
 // The same editor in "new day" mode: no record yet — the row is created on
 // Save together with the punches (dtr_add_day), never empty.
 function addDayPunches(date) {
+    peNewEmp = null;
     const e = st.emps[st.sel];
     if (!e || !date || !CAN_ADD_DAY) return;
     if (e.days[date]) { editPunches((e.days[date].recs || [])[0]?.id); return; }   // stale sheet — it exists after all
@@ -3370,7 +3442,7 @@ document.getElementById('form-edit-punches').addEventListener('submit', async fu
         const resp = newDate
             ? await $.ajax({
                 url: 'ajax.php?action=dtr_add_day', method: 'POST', dataType: 'JSON',
-                data: { ddtr_id: DDTR_ID, employee_id: emp ? emp.id : 0, date: newDate, punches: punches },
+                data: { ddtr_id: DDTR_ID, employee_id: peNewEmp ? peNewEmp.id : (emp ? emp.id : 0), date: newDate, punches: punches },
               })
             : await $.ajax({
                 url: 'ajax.php?action=save_dtr_punches', method: 'POST', dataType: 'JSON',
@@ -3381,7 +3453,16 @@ document.getElementById('form-edit-punches').addEventListener('submit', async fu
         // Refetch rather than hand-patch: the punches drive the Form 48 Arrival/
         // Departure cells as well as the record card, and those live in
         // e.days[date], not on the record — the same trap changeRecSchedule hit.
-        await loadPage(st.sel);
+        if (peNewEmp) {
+            // They're in the batch now — search them up so their sheet opens.
+            st.q = peNewEmp.no || peNewEmp.name;
+            $id('ddv-q').value = st.q;
+            st.page = 0;
+            peNewEmp = null;
+            await loadPage(0);
+        } else {
+            await loadPage(st.sel);
+        }
         await refreshBatch();    // the day went back to Pending — counts moved
         Swal.fire({ icon: 'success', title: 'Punches saved', text: resp.message, timer: 2600, showConfirmButton: false });
     } catch (err) {

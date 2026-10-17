@@ -58,8 +58,25 @@ $(document).ready(function () {
         form.parsley().validate();
 
         if (form.parsley().isValid()) {
-            e.preventDefault();
-            // $('.submitbutton').attr('disabled',true).html('Saving...');
+            // Saved through dtr_add_day — the same path as the DTR Documents day
+            // editor — so the row is shift-stamped and its hours computed, and an
+            // employee with no scans this cutoff still gets a proper DTR day.
+            const date = $("#date-picker").val();
+            const punches = buildPunches(date, form.find('[name="datetime_log[]"]').map((i, el) => el.value).get());
+            if (!punches) {
+                Swal.fire({ icon: "warning", title: "Invalid time", text: "Use a time like 08:00:00 AM." });
+                return;
+            }
+            if (punches.length === 1) {
+                const ok = await Swal.fire({
+                    icon: "question",
+                    title: "Time-in only?",
+                    text: "With a single punch the day stays incomplete (0 hrs) until a time-out is added. Save anyway?",
+                    showCancelButton: true,
+                    confirmButtonText: "Save anyway",
+                });
+                if (!ok.isConfirmed) return;
+            }
             Swal.fire({
                 title: "Saving, please wait...",
                 allowOutsideClick: false,
@@ -67,11 +84,17 @@ $(document).ready(function () {
                     Swal.showLoading();
                 },
             });
-            await new Promise((resolve) => setTimeout(resolve, 1000));
             $.ajax({
-                url: "ajax.php?action=save_employee_attendance",
+                url: "ajax.php?action=dtr_add_day",
                 method: "POST",
-                data: $(this).serialize(),
+                data: {
+                    ddtr_id: $("#id").val(),
+                    employee_id: $("#employee_id").val(),
+                    date: date,
+                    punches: punches,
+                    notes: form.find('[name="notes"]').val() || "",
+                    merge: 1,
+                },
                 dataType: "JSON",
                 error: (xhr, status, error) => {
                     Swal.close();
@@ -79,16 +102,13 @@ $(document).ready(function () {
                 },
                 success: function (res) {
                     if (res?.result) {
+                        $("#modal").modal("hide");
+                        resetAddForm(form);
+                        if (typeof refreshDtrPanel === "function") refreshDtrPanel();
                         Swal.fire({
                             icon: "success",
-                            title: "Success!",
-                            text: "Attendace  successfully saved.",
-                        }).then((result) => {
-                            if (result.isConfirmed) {
-                                $("#modal").modal("hide");
-                                form[0].reset();
-                                if (typeof refreshDtrPanel === "function") refreshDtrPanel();
-                            }
+                            title: "Attendance saved",
+                            text: res.message || "",
                         });
                     } else {
                         Swal.close();
@@ -160,6 +180,50 @@ function handleError(e) {
         e ? e : "Someting went wrong. Please contact administrator.",
         "Error Notification"
     );
+}
+
+// "08:00:00 PM" / "20:00:00" / "8:00 am" -> minutes since midnight, or null.
+function parseClock(str) {
+    const m = String(str || "").trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?$/);
+    if (!m) return null;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    if (m[3]) {
+        const pm = m[3].toUpperCase() === "PM";
+        if (h < 1 || h > 12) return null;
+        h = (h % 12) + (pm ? 12 : 0);
+    }
+    if (h > 23 || min > 59) return null;
+    return h * 60 + min;
+}
+
+// Turn the modal's time list into dated punches ({dt: 'YYYY-MM-DDTHH:mm'}).
+// A time earlier than the one before it rolls to the next day, so a night
+// shift's clock-out (10:00 PM -> 06:00 AM) lands on the following morning.
+function buildPunches(date, times) {
+    const out = [];
+    let dayOff = 0, prev = -1;
+    for (const t of times) {
+        if (!String(t || "").trim()) continue;
+        const mins = parseClock(t);
+        if (mins === null) return null;
+        if (prev >= 0 && mins <= prev) dayOff++;
+        prev = mins;
+        const d = new Date(date + "T00:00:00");
+        d.setDate(d.getDate() + dayOff);
+        const ymd = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+        out.push({ dt: ymd + "T" + String(Math.floor(mins / 60)).padStart(2, "0") + ":" + String(mins % 60).padStart(2, "0") });
+    }
+    return out.length ? out : null;
+}
+
+function resetAddForm(form) {
+    form[0].reset();
+    const items = $("#container-clone .item");
+    items.slice(1).remove();
+    items.first().find(".date").val("08:00:00");
+    $("#employee_id, #date-picker").val(null).trigger("change");
+    form.parsley().reset();
 }
 
 function addSchedule(id) {

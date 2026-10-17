@@ -1404,7 +1404,7 @@ function getRole($login_role)
         <script src="assets2/js/dtr.js"></script>
     <?php } ?>
     <?php if ($page == 'dtr-details') { ?>
-        <script src="assets2/js/dtr-details.js"></script>
+        <script src="<?= av('assets2/js/dtr-details.js') ?>"></script>
     <?php } ?>
     <?php if ($page == 'clusters') { ?>
         <script src="assets2/js/clusters.js"></script>

@@ -18,8 +18,10 @@
  *   MEAL             one-off earnings labelled "…meal…"
  *   BACKPAY          one-off earnings labelled "Backpay"
  *   SSS              the SSS contribution (id 1); MPF has no source yet → 0
-*   OTHER DEDUCTION  every other ticked contribution / deduction / loan
- *                    (PhilHealth, Pag-IBIG, …) + one-off deductions
+ *   PHILHEALTH       the PHIC contribution (id 2)
+ *   PAG-IBIG         the HDMF contribution (id 3)
+ *   OTHER DEDUCTION  every other ticked contribution / deduction / loan
+ *                    (MP2, loans, coop, …) + one-off deductions
  *   NET PAY          gross − deductions + refunds + adjustment (as on screen)
  */
 
@@ -40,6 +42,8 @@ if (!defined('PAYSHEET_COLUMNS')) {
         'gross'    => ['GROSS PAY', true],
         'sss'      => ['SSS CONTRIBUTION EMPLOYEE SHARE', true],
         'mpf'      => ['MPF', true],
+        'phic'     => ['PHILHEALTH', true],
+        'hdmf'     => ['PAG-IBIG', true],
         'tax'      => ['TAX', true],
         'other'    => ['OTHER DEDUCTION', true],
         'net'      => ['NET PAY', true],
@@ -49,14 +53,15 @@ if (!defined('PAYSHEET_COLUMNS')) {
     // Group key of the Non-ATM (paid in cash) block — always listed last.
     define('PAYSHEET_NONATM', -1);
     // O. DEDUCTIONS breakdown on the Department Summary, in print order.
-    // Every peso of OTHER DEDUCTION lands in exactly one bucket (paysheet_ded_bucket),
-    // except PhilHealth / Pag-IBIG, which the summary prints as their own PHIC /
-    // HDMF columns (line keys 'phic' / 'hdmf') and leaves out of O. DEDUCTIONS.
+    // Every peso of OTHER DEDUCTION lands in exactly one bucket (paysheet_ded_bucket).
+    // PhilHealth / Pag-IBIG have their own columns (line keys 'phic' / 'hdmf') and
+    // are not part of OTHER DEDUCTION / O. DEDUCTIONS.
     define('PAYSHEET_DED_BUCKETS', [
         'coop'       => 'COOP',
         'housing'    => 'HOUSING LOANS',
         'hdmf_loans' => 'HDMF LOANS',
         'sss_loans'  => 'SSS LOANS',
+        'mp2'        => 'MP2',
         'pharm'      => 'PHARMACY/HOSPITAL/LAB',
         'others'     => 'OTHERS',
     ]);
@@ -72,8 +77,9 @@ function paysheet_ded_bucket(int $type, int $id): string
     if ($type === 1) return [2 => 'phic', 3 => 'hdmf'][$id] ?? 'others';
     if ($type === 2) return [16 => 'coop', 15 => 'pharm', 17 => 'pharm', 18 => 'pharm'][$id] ?? 'others';
     if ($type === 3) {
-        if ($id === 13) return 'housing';                    // HDMF SAFE LOAN
-        if (in_array($id, [10, 11, 12], true)) return 'hdmf_loans';
+        if ($id === 14) return 'housing';                    // HOUSING LOAN
+        // MPL / emergency / calamity / SAFE LOAN (13 is HDMF SAFE LOAN, not housing)
+        if (in_array($id, [10, 11, 12, 13], true)) return 'hdmf_loans';
         if (in_array($id, [7, 8, 9], true)) return 'sss_loans';
     }
     return 'others';
@@ -120,9 +126,17 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
                        WHERE a.payroll_id = " . (int) $payroll_id . "
                        ORDER BY e.lastname ASC, e.firstname ASC");
 
+    // MP2 (voluntary Pag-IBIG savings) by name — it exists both as a contribution
+    // and as a loan type, and its ids differ per install.
+    $mp2 = [1 => [], 3 => []];
+    foreach ([1 => "SELECT id, contribution AS n FROM contributions", 3 => "SELECT clt_id AS id, loan_type AS n FROM contribution_loan_types"] as $t => $sql) {
+        $mq = $conn->query($sql);
+        while ($mq && ($m = $mq->fetch_assoc())) if (stripos($m['n'], 'MP2') !== false) $mp2[$t][(int) $m['id']] = true;
+    }
+
     $sumKeys = paysheet_sum_keys();
-    // Summary-only totals: PHIC / HDMF split out of 'other', and 'oded' = the rest.
-    $sumOnly = ['phic', 'hdmf', 'oded'];
+    // Summary-only total: 'oded' = O. DEDUCTIONS, the same figure as 'other'.
+    $sumOnly = ['oded'];
     $zero    = array_fill_keys(array_merge($sumKeys, $sumOnly), 0.0);
     $groups  = [];
     while ($q && ($row = $q->fetch_assoc())) {
@@ -154,7 +168,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             foreach ($decoded[$t] as $d) if (($d[$idKey[$t]] ?? null) == $k['id']) $amt += (float) $d['amount'];
             if ($t === 1 && (int) $k['id'] === PAYSHEET_SSS_ID) { $sss += $amt; continue; }
             $otherDed += $amt;
-            $bucket = paysheet_ded_bucket($t, (int) $k['id']);
+            $bucket = isset($mp2[$t][(int) $k['id']]) ? 'mp2' : paysheet_ded_bucket($t, (int) $k['id']);
             if ($bucket === 'phic')     $phic += $amt;
             elseif ($bucket === 'hdmf') $hdmf += $amt;
             else                        $breakdown[$bucket] += $amt;
@@ -185,8 +199,10 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             'gross'  => $gross,
             'sss'    => $sss,
             'mpf'    => 0.0,
+            'phic'   => $phic,
+            'hdmf'   => $hdmf,
             'tax'    => $tax,
-            'other'  => $otherDed,
+            'other'  => $otherDed - $phic - $hdmf,
             'net'    => $net,
         ];
         // Round each cell to the centavo BEFORE totalling, so every total is the
@@ -199,12 +215,12 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         // still adds up across even when gross alone would round the other way.
         $line['rate'] = round($line['rate'], 2, PHP_ROUND_HALF_EVEN);
         foreach ($sumKeys as $k) $line[$k] = round($line[$k], 2, PHP_ROUND_HALF_EVEN);
-        $line['gross'] = round($line['net'] + $line['sss'] + $line['tax'] + $line['other']
+        // OTHER DEDUCTION is the remainder of the rounded total, so the printed
+        // PHIC + HDMF + OTHER still equal the deductions behind NET.
+        $line['other'] = round(round($otherDed, 2, PHP_ROUND_HALF_EVEN) - $line['phic'] - $line['hdmf'], 2);
+        $line['gross'] = round($line['net'] + $line['sss'] + $line['phic'] + $line['hdmf'] + $line['tax'] + $line['other']
                              - $refunds - (float) ($row['adjustment'] ?? 0), 2);
-        // Summary split of OTHER DEDUCTION: PHIC + HDMF + O. DEDUCTIONS = other.
-        $line['phic'] = round($phic, 2, PHP_ROUND_HALF_EVEN);
-        $line['hdmf'] = round($hdmf, 2, PHP_ROUND_HALF_EVEN);
-        $line['oded'] = round($line['other'] - $line['phic'] - $line['hdmf'], 2);
+        $line['oded'] = $line['other'];   // Department Summary's O. DEDUCTIONS
 
         $isNonAtm = isset($nonAtm[(int) $row['employee_id']]);
         $gid = $isNonAtm ? PAYSHEET_NONATM : (int) ($row['dept_id'] ?? 0);
@@ -237,7 +253,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         'grand'      => $grand,
         'atm_net'    => $grand['net'] - $nonAtmNet,
         'nonatm_net' => $nonAtmNet,
-        'breakdown'  => $breakdown,   // sums to grand['oded'] (other minus PHIC / HDMF)
+        'breakdown'  => $breakdown,   // sums to grand['oded'] (= OTHER DEDUCTION)
     ];
 }
 

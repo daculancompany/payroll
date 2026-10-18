@@ -103,7 +103,7 @@ foreach ($moneyKeys as $k) {
 }
 
 // Column widths from the sample sheet.
-$widths = [9, 37, 12, 11, 10, 13, 14, 12, 11, 11, 10, 13, 12, 10, 10, 12, 12];
+$widths = [9, 37, 12, 11, 10, 13, 14, 12, 11, 11, 10, 13, 12, 10, 12, 12, 10, 12, 12];
 foreach ($widths as $i => $w) $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($i + 1))->setWidth($w);
 
 $sheet->freezePane('C2');

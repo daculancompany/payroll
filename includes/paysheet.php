@@ -49,10 +49,10 @@ if (!defined('PAYSHEET_COLUMNS')) {
     // Group key of the Non-ATM (paid in cash) block — always listed last.
     define('PAYSHEET_NONATM', -1);
     // O. DEDUCTIONS breakdown on the Department Summary, in print order.
-    // Every peso of OTHER DEDUCTION lands in exactly one bucket (paysheet_ded_bucket).
+    // Every peso of OTHER DEDUCTION lands in exactly one bucket (paysheet_ded_bucket),
+    // except PhilHealth / Pag-IBIG, which the summary prints as their own PHIC /
+    // HDMF columns (line keys 'phic' / 'hdmf') and leaves out of O. DEDUCTIONS.
     define('PAYSHEET_DED_BUCKETS', [
-        'phic'       => 'PHILHEALTH',
-        'hdmf'       => 'PAG-IBIG',
         'coop'       => 'COOP',
         'housing'    => 'HOUSING LOANS',
         'hdmf_loans' => 'HDMF LOANS',
@@ -121,7 +121,9 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
                        ORDER BY e.lastname ASC, e.firstname ASC");
 
     $sumKeys = paysheet_sum_keys();
-    $zero    = array_fill_keys($sumKeys, 0.0);
+    // Summary-only totals: PHIC / HDMF split out of 'other', and 'oded' = the rest.
+    $sumOnly = ['phic', 'hdmf', 'oded'];
+    $zero    = array_fill_keys(array_merge($sumKeys, $sumOnly), 0.0);
     $groups  = [];
     while ($q && ($row = $q->fetch_assoc())) {
         $row['payroll_type'] = $payroll['type'];   // payroll_earnings' legacy monthly-run override
@@ -143,7 +145,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         $jsonFor = [1 => 'contributions', 2 => 'deductions', 3 => 'loans'];
         $idKey   = [1 => 'contribution_id', 2 => 'deduction_id', 3 => 'deduction_id'];
         $decoded = [];
-        $sss = $otherDed = 0.0;
+        $sss = $otherDed = $phic = $hdmf = 0.0;
         foreach ($deds as $k) {
             $t = (int) $k['type'];
             if (!isset($jsonFor[$t])) continue;
@@ -152,7 +154,10 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             foreach ($decoded[$t] as $d) if (($d[$idKey[$t]] ?? null) == $k['id']) $amt += (float) $d['amount'];
             if ($t === 1 && (int) $k['id'] === PAYSHEET_SSS_ID) { $sss += $amt; continue; }
             $otherDed += $amt;
-            $breakdown[paysheet_ded_bucket($t, (int) $k['id'])] += $amt;
+            $bucket = paysheet_ded_bucket($t, (int) $k['id']);
+            if ($bucket === 'phic')     $phic += $amt;
+            elseif ($bucket === 'hdmf') $hdmf += $amt;
+            else                        $breakdown[$bucket] += $amt;
         }
         $otherDed += $extraLess;
         $breakdown['others'] += $extraLess;   // one-off deductions
@@ -196,6 +201,10 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         foreach ($sumKeys as $k) $line[$k] = round($line[$k], 2, PHP_ROUND_HALF_EVEN);
         $line['gross'] = round($line['net'] + $line['sss'] + $line['tax'] + $line['other']
                              - $refunds - (float) ($row['adjustment'] ?? 0), 2);
+        // Summary split of OTHER DEDUCTION: PHIC + HDMF + O. DEDUCTIONS = other.
+        $line['phic'] = round($phic, 2, PHP_ROUND_HALF_EVEN);
+        $line['hdmf'] = round($hdmf, 2, PHP_ROUND_HALF_EVEN);
+        $line['oded'] = round($line['other'] - $line['phic'] - $line['hdmf'], 2);
 
         $isNonAtm = isset($nonAtm[(int) $row['employee_id']]);
         $gid = $isNonAtm ? PAYSHEET_NONATM : (int) ($row['dept_id'] ?? 0);
@@ -209,7 +218,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             ];
         }
         $groups[$gid]['rows'][] = $line;
-        foreach ($sumKeys as $k) $groups[$gid]['total'][$k] += $line[$k];
+        foreach (array_merge($sumKeys, $sumOnly) as $k) $groups[$gid]['total'][$k] += $line[$k];
     }
 
     // Department order: by id (the sheet's "DEPT n" labels); unassigned, then NONATM, last.
@@ -217,7 +226,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
     uksort($groups, fn($a, $b) => $rank($a) <=> $rank($b) ?: $a <=> $b);
 
     $grand = $zero;
-    foreach ($groups as $g) foreach ($sumKeys as $k) $grand[$k] += $g['total'][$k];
+    foreach ($groups as $g) foreach (array_merge($sumKeys, $sumOnly) as $k) $grand[$k] += $g['total'][$k];
     $nonAtmNet = (float) ($groups[PAYSHEET_NONATM]['total']['net'] ?? 0);
 
     $period = date('F d', strtotime($payroll['date_from'])) . ' - ' . date('F j, Y', strtotime($payroll['date_to']));
@@ -228,7 +237,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         'grand'      => $grand,
         'atm_net'    => $grand['net'] - $nonAtmNet,
         'nonatm_net' => $nonAtmNet,
-        'breakdown'  => $breakdown,   // sums to grand['other']
+        'breakdown'  => $breakdown,   // sums to grand['oded'] (other minus PHIC / HDMF)
     ];
 }
 
@@ -340,8 +349,8 @@ function paysheet_summary_columns(): array
         'basic' => 'BASIC PAY', 'otnd' => 'OT/ND', 'allow' => 'ALLOWANCE',
         'adj1' => 'HAZARD', 'adj2' => 'MEAL ALLOWANCE', 'adj3' => 'BACKPAY',
         'under' => 'UT', 'late' => 'LATE', 'gross' => 'GROSS AMOUNT',
-        'sss' => 'SSS', 'mpf' => 'SSS PROV.', 'tax' => 'W/TAX',
-        'other' => 'O. DEDUCTIONS', 'net' => 'AMOUNT DUE',
+        'sss' => 'SSS', 'mpf' => 'SSS PROV.', 'phic' => 'PHIC', 'hdmf' => 'HDMF',
+        'tax' => 'W/TAX', 'oded' => 'O. DEDUCTIONS', 'net' => 'AMOUNT DUE',
     ];
 }
 
@@ -379,7 +388,7 @@ function paysheet_summary_html(array $ps): string
     foreach ($ps['breakdown'] as $key => $amt) {
         if (abs($amt) >= 0.005) $right .= $row(PAYSHEET_DED_BUCKETS[$key], $amt);
     }
-    $right .= $row('TOTAL O. DEDUCTIONS', $ps['grand']['other'], true) . '</table>';
+    $right .= $row('TOTAL O. DEDUCTIONS', $ps['grand']['oded'], true) . '</table>';
 
     return $out . '<table class="ps-sum-foot" style="width:100%;border-collapse:collapse;margin-top:18px;"><tr>'
         . '<td style="width:50%;vertical-align:top;">' . $left . '</td>'

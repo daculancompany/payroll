@@ -113,7 +113,7 @@ foreach ($ps['breakdown'] as $key => $amt) {
     $row++;
 }
 $sheet->setCellValue("$labelCol$row", 'TOTAL O. DEDUCTIONS');
-$sheet->setCellValue("$amtCol$row", round((float) $ps['grand']['other'], 2));
+$sheet->setCellValue("$amtCol$row", round((float) $ps['grand']['oded'], 2));
 $sheet->getStyle("$labelCol$row:$amtCol$row")->getFont()->setBold(true);
 $sheet->getStyle("$labelCol$row:$amtCol$row")->getBorders()->getTop()->setBorderStyle(Border::BORDER_THIN);
 $sheet->getStyle("$amtCol$row")->getNumberFormat()->setFormatCode($money);

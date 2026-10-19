@@ -63,6 +63,7 @@ if (!defined('PAYSHEET_COLUMNS')) {
         'sss_loans'  => 'SSS LOANS',
         'mp2'        => 'MP2',
         'pharm'      => 'PHARMACY/HOSPITAL/LAB',
+        'salary_exc' => 'SALARY EXCESS',
         'others'     => 'OTHERS',
     ]);
 }
@@ -75,7 +76,8 @@ if (!defined('PAYSHEET_COLUMNS')) {
 function paysheet_ded_bucket(int $type, int $id): string
 {
     if ($type === 1) return [2 => 'phic', 3 => 'hdmf'][$id] ?? 'others';
-    if ($type === 2) return [16 => 'coop', 15 => 'pharm', 17 => 'pharm', 18 => 'pharm'][$id] ?? 'others';
+    // 15 PHARMACY, 17 HOSPITAL, 18 LABORATORY, 20 ACLS → pharm; 19 SALARY EXCESS
+    if ($type === 2) return [16 => 'coop', 15 => 'pharm', 17 => 'pharm', 18 => 'pharm', 20 => 'pharm', 19 => 'salary_exc'][$id] ?? 'others';
     if ($type === 3) {
         if ($id === 14) return 'housing';                    // HOUSING LOAN
         // MPL / emergency / calamity / SAFE LOAN (13 is HDMF SAFE LOAN, not housing)

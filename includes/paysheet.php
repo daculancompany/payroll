@@ -14,6 +14,8 @@
  * re-buckets them into its fixed columns:
  *   OT/ND            overtime + night diff + holiday / rest-day premiums
  *   ALLOWANCE        allowance slots + one-off earnings not bucketed below
+ *   ADJUSTMENT       manual adjustment + refunds (+ adds, − deducts) — counted
+ *                    in GROSS PAY, as HR's own paysheet does
  *   HAZARD           one-off earnings labelled "…hazard…"
  *   MEAL             one-off earnings labelled "…meal…"
  *   BACKPAY          one-off earnings labelled "Backpay"
@@ -22,7 +24,7 @@
  *   PAG-IBIG         the HDMF contribution (id 3)
  *   OTHER DEDUCTION  every other ticked contribution / deduction / loan
  *                    (MP2, loans, coop, …) + one-off deductions
- *   NET PAY          gross − deductions + refunds + adjustment (as on screen)
+ *   NET PAY          gross − deductions (as on screen)
  */
 
 if (!defined('PAYSHEET_COLUMNS')) {
@@ -34,6 +36,7 @@ if (!defined('PAYSHEET_COLUMNS')) {
         'basic'    => ['BASIC DAYS', true],
         'otnd'     => ['OT/ND', true],
         'allow'    => ['ALLOWANCE', true],
+        'adjust'   => ['ADJUSTMENT', true],
         'adj1'     => ['HAZARD', true],
         'adj2'     => ['MEAL ALLOWANCE', true],
         'adj3'     => ['BACKPAY', true],
@@ -205,6 +208,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             'hdmf'   => $hdmf,
             'tax'    => $tax,
             'other'  => $otherDed - $phic - $hdmf,
+            'adjust' => $refunds + (float) ($row['adjustment'] ?? 0),
             'net'    => $net,
         ];
         // Round each cell to the centavo BEFORE totalling, so every total is the
@@ -213,15 +217,15 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         // the #53 ATM total 0.20 above the exact sum, so .xx5 goes to the even
         // centavo instead — the per-row amounts then add up to the exact total.
         // NET is rounded from the exact figure (it is what gets deposited); GROSS
-        // is then net + deductions − refunds − adjustment, so every printed row
+        // is then net + deductions (ADJUSTMENT counted inside it), so every printed row
         // still adds up across even when gross alone would round the other way.
         $line['rate'] = round($line['rate'], 2, PHP_ROUND_HALF_EVEN);
         foreach ($sumKeys as $k) $line[$k] = round($line[$k], 2, PHP_ROUND_HALF_EVEN);
         // OTHER DEDUCTION is the remainder of the rounded total, so the printed
         // PHIC + HDMF + OTHER still equal the deductions behind NET.
         $line['other'] = round(round($otherDed, 2, PHP_ROUND_HALF_EVEN) - $line['phic'] - $line['hdmf'], 2);
-        $line['gross'] = round($line['net'] + $line['sss'] + $line['phic'] + $line['hdmf'] + $line['tax'] + $line['other']
-                             - $refunds - (float) ($row['adjustment'] ?? 0), 2);
+        // ADJUSTMENT sits inside GROSS, so the row reads GROSS − deductions = NET.
+        $line['gross'] = round($line['net'] + $line['sss'] + $line['phic'] + $line['hdmf'] + $line['tax'] + $line['other'], 2);
         $line['oded'] = $line['other'];   // Department Summary's O. DEDUCTIONS
 
         $isNonAtm = isset($nonAtm[(int) $row['employee_id']]);
@@ -364,7 +368,7 @@ function paysheet_table_html(array $ps): string
 function paysheet_summary_columns(): array
 {
     return [
-        'basic' => 'BASIC PAY', 'otnd' => 'OT/ND', 'allow' => 'ALLOWANCE',
+        'basic' => 'BASIC PAY', 'otnd' => 'OT/ND', 'allow' => 'ALLOWANCE', 'adjust' => 'ADJUSTMENT',
         'adj1' => 'HAZARD', 'adj2' => 'MEAL ALLOWANCE', 'adj3' => 'BACKPAY',
         'under' => 'UT', 'late' => 'LATE', 'gross' => 'GROSS AMOUNT',
         'sss' => 'SSS', 'mpf' => 'SSS PROV.', 'phic' => 'PHIC', 'hdmf' => 'HDMF',

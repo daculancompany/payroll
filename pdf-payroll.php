@@ -55,18 +55,25 @@ define('PDF_MODE', true);
 if ($isPayslip) { $_GET['preview'] = 1; }
 
 // All payslips of one payroll run: id is the PAYROLL id; the bulk sheet takes
-// the item ids. A 400-employee run is a few hundred pages of layout, so give
-// dompdf room (the result is cached, so only the first view pays for it).
+// the item ids. The All Payslips button asks for small chunks (offset/limit,
+// a few seconds each) and merges them in the browser; without offset the whole
+// run renders in one go, which takes minutes for a full run.
+$__chunk = null;
 if ($src === 'payslips') {
     $__pid = (int) $_GET['id'];
     $__ids = [];
     $__q = $conn->query("SELECT a.id FROM payroll_items a INNER JOIN employee e ON e.id = a.employee_id
                           WHERE a.payroll_id = $__pid ORDER BY e.lastname ASC, e.firstname ASC");
     while ($__q && ($__r = $__q->fetch_row())) $__ids[] = (int) $__r[0];
+    if (isset($_GET['offset'])) {
+        $__chunk = max(0, (int) $_GET['offset']);
+        $__ids   = array_slice($__ids, $__chunk, min(10, max(1, (int) ($_GET['limit'] ?? 5))));
+    } else {
+        @set_time_limit(600);
+        @ini_set('memory_limit', '1024M');
+    }
     if (!$__ids) { http_response_code(404); exit('No payslips in this payroll.'); }
     $_GET['ids'] = implode(',', $__ids);
-    @set_time_limit(600);
-    @ini_set('memory_limit', '1024M');
 }
 
 ob_start();
@@ -208,7 +215,9 @@ $cachePrefix = null;
 if ($cacheOk) {
     $hashSrc  = preg_replace(['/Generated:[^<]*/', '/<div class="date-val">[^<]*<\/div>/'], '', $html);
     $cacheKey = md5($hashSrc . '|' . $paper . '|' . $orientation);
-    $cachePrefix = $dompdfCache . '/' . $src . '-' . (int)$_GET['id'] . '-';
+    // Each payslip chunk caches (and prunes) on its own, not over its siblings.
+    $cachePrefix = $dompdfCache . '/' . $src . '-' . (int)$_GET['id'] . '-'
+                 . ($__chunk !== null ? 'o' . $__chunk . '-' : '');
     $cacheFile = $cachePrefix . $cacheKey . '.pdf';
     if (is_file($cacheFile)) {
         header('Content-Type: application/pdf');

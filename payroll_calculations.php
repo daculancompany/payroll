@@ -3519,10 +3519,114 @@ document.addEventListener('DOMContentLoaded', function () {
 function openPayslipPreview(itemId) {
     openPdfPreview('pdf-payroll.php?src=payslip&id=' + encodeURIComponent(itemId), 'Payslip PDF');
 }
-// Every payslip in the run as one PDF.
-// Rendered by dompdf like every other payroll print (A4, one payslip per page).
+// Every payslip in the run as ONE PDF, downloaded directly. dompdf renders the
+// run 5 payslips per request (a few seconds each, never near a server timeout),
+// the browser fetches the chunks 2 at a time and merges them with pdf-lib.
+// Unchanged chunks come straight from pdf-payroll.php's cache on a re-run.
+// Shared hosting answers bursts of PHP requests with an occasional 500, so a
+// failed chunk is retried up to PCW_SLIP_RETRIES times with a growing pause.
+var PCW_SLIP_CHUNK = 5, PCW_SLIP_PARALLEL = 2, PCW_SLIP_RETRIES = 3;
+function pcwLoadPdfLib() {
+    if (window.PDFLib) return Promise.resolve();
+    return new Promise(function (ok, fail) {
+        var sc = document.createElement('script');
+        sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+        sc.onload = ok;
+        sc.onerror = function () { fail(new Error('Could not load the PDF merger.')); };
+        document.head.appendChild(sc);
+    });
+}
 function printAllPayslips() {
-    openPdfPreview('pdf-payroll.php?src=payslips&id=<?= (int)$id ?>', 'All Payslips PDF');
+    var total = (window.PCW_DATA || []).length;
+    if (!total) return;
+    var offsets = [];
+    for (var o = 0; o < total; o += PCW_SLIP_CHUNK) offsets.push(o);
+    var parts = new Array(offsets.length), next = 0, done = 0, cancelled = false;
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var range = function (o) { return (o + 1) + '–' + Math.min(o + PCW_SLIP_CHUNK, total); };
+
+    Swal.fire({
+        title: 'Downloading payslips',
+        html: '<div id="aps-msg" style="font-size:14px;margin-bottom:10px;">Starting…</div>'
+            + '<div style="height:10px;background:#e6efe8;border-radius:5px;overflow:hidden;">'
+            + '<div id="aps-bar" style="height:100%;width:0;background:#107c41;transition:width .3s;"></div></div>'
+            + '<div id="aps-count" style="font-size:12px;color:#666;margin-top:6px;">0 / ' + total + ' done</div>',
+        allowOutsideClick: false, showConfirmButton: false,
+        showCancelButton: true, cancelButtonText: 'Cancel'
+    }).then(function (r) {
+        if (r.dismiss === Swal.DismissReason.cancel) { cancelled = true; if (ctrl) ctrl.abort(); }
+    });
+    var setMsg = function (t) { var m = document.getElementById('aps-msg'); if (m) m.textContent = t; };
+    var tick = function () {
+        var n = Math.min(done * PCW_SLIP_CHUNK, total);
+        var bar = document.getElementById('aps-bar'), cnt = document.getElementById('aps-count');
+        if (bar) bar.style.width = (n / total * 100) + '%';
+        if (cnt) cnt.textContent = n + ' / ' + total + ' done';
+    };
+
+    function fetchChunk(i, tries) {
+        var o = offsets[i];
+        setMsg('Downloading payslips ' + range(o) + ' of ' + total + '…');
+        return fetch('pdf-payroll.php?src=payslips&id=<?= (int)$id ?>&offset=' + o + '&limit=' + PCW_SLIP_CHUNK,
+                     { credentials: 'same-origin', signal: ctrl ? ctrl.signal : undefined })
+            .then(function (res) {
+                if (res.ok) return res.arrayBuffer();
+                // Keep the server's own message (PHP error text) for the report.
+                return res.text().then(function (t) {
+                    t = t.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+                    throw new Error('HTTP ' + res.status + (t ? ': ' + t : ''));
+                });
+            })
+            .then(function (buf) { parts[i] = buf; done++; tick(); })
+            .catch(function (e) {
+                if (cancelled) throw e;
+                if (tries < PCW_SLIP_RETRIES) {
+                    setMsg('Retrying payslips ' + range(o) + '…');
+                    return new Promise(function (r) { setTimeout(r, 1500 * (tries + 1)); })
+                        .then(function () { return fetchChunk(i, tries + 1); });
+                }
+                throw new Error('Payslips ' + range(o) + ' failed (' + e.message + ').');
+            });
+    }
+    function worker() {
+        if (cancelled || next >= offsets.length) return Promise.resolve();
+        var i = next++;
+        return fetchChunk(i, 0).then(worker);
+    }
+
+    pcwLoadPdfLib().then(function () {
+        var pool = [];
+        for (var w = 0; w < PCW_SLIP_PARALLEL; w++) pool.push(worker());
+        return Promise.all(pool);
+    }).then(function () {
+        if (cancelled) return;
+        setMsg('Combining ' + total + ' payslips into one PDF…');
+        return PDFLib.PDFDocument.create().then(function (out) {
+            var chain = Promise.resolve();
+            parts.forEach(function (buf) {
+                chain = chain.then(function () { return PDFLib.PDFDocument.load(buf); })
+                    .then(function (src) { return out.copyPages(src, src.getPageIndices()); })
+                    .then(function (pages) { pages.forEach(function (p) { out.addPage(p); }); });
+            });
+            return chain.then(function () { return out.save(); });
+        }).then(function (bytes) {
+            var url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+            var a = document.createElement('a');
+            a.href = url;
+            a.download = 'payslips-<?= date('Y-m-d', strtotime($payroll['date_from'])) ?>-to-<?= date('Y-m-d', strtotime($payroll['date_to'])) ?>.pdf';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', showConfirmButton: false, timer: 3000,
+                        title: total + ' payslips downloaded' });
+        });
+    }).catch(function (e) {
+        if (cancelled) return;
+        if (ctrl) ctrl.abort();
+        cancelled = true;
+        Swal.fire({ icon: 'error', title: 'Download stopped', text: e.message });
+    });
 }
 // Bulk selected payslips still preview as HTML in the modal above.
 function printPayslipPreview() {

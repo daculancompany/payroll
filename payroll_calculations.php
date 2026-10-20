@@ -605,6 +605,7 @@ $refund_names = [];   // refund id => display name
                             <i class="ri-table-line"></i> Table View
                         </button>
                         <button type="button" title="Paysheet PDF — grouped by department" onclick="openPdfPreview('pdf-payroll.php?src=paysheet&id=<?= $id ?>', 'Paysheet PDF')" class="pcw-btn"><i class="ri-printer-line"></i> Print</button>
+                        <button type="button" title="Preview / print every employee's payslip in this payroll" onclick="printAllPayslips()" class="pcw-btn"><i class="ri-file-copy-2-line"></i> All Payslips</button>
                         <?php if ($payroll_type == 5) { ?>
                             <!-- <button type="button" title="Detailed payroll PDF (every column)" onclick="openPdfPreview('pdf-payroll.php?src=monthly&id=<?= $id ?>', 'Payroll PDF')" class="pcw-btn"><i class="ri-file-list-3-line"></i> Detailed</button> -->
                         <?php } else { ?>
@@ -3292,11 +3293,12 @@ function openPayrollHistory(id) {
             </div>
             <div class="modal-body" style="background:#525659;padding:0;overflow:hidden;position:relative;">
                 <iframe id="pdf-preview-frame" title="PDF preview" style="width:100%;height:80vh;border:0;display:block;background:#525659;"
-                        onload="document.getElementById('pdf-preview-loading').style.display='none';"></iframe>
+                        onload="pdfLoadingDone();"></iframe>
                 <div id="pdf-preview-loading" role="status" aria-live="polite"
                      style="display:none;position:absolute;inset:0;background:rgba(82,86,89,.92);color:#fff;align-items:center;justify-content:center;flex-direction:column;gap:10px;">
                     <div class="spinner-border" style="width:2.5rem;height:2.5rem;" aria-hidden="true"></div>
-                    <div style="font-size:13px;">Generating PDF&hellip;</div>
+                    <div style="font-size:13px;" id="pdf-preview-loading-msg">Generating PDF&hellip;</div>
+                    <div style="font-size:12px;opacity:.8;" id="pdf-preview-loading-time"></div>
                 </div>
             </div>
             <div class="modal-footer" style="background:#fff;">
@@ -3322,11 +3324,34 @@ function pdfPreviewLoad() {
     var isPayslip = pdfPreviewUrl.indexOf('src=payslip') >= 0;
     var url = isPayslip ? pdfPreviewUrl : pdfPreviewUrl + '&paper=' + pdfPaper();
     document.getElementById('pdf-paper-wrap').style.setProperty('display', isPayslip ? 'none' : '', 'important');
-    document.getElementById('pdf-paper').value = pdfPaper();
+    // custom-select.js skins the <select>: set the value, then let it redraw.
+    var paperSel = document.getElementById('pdf-paper');
+    paperSel.value = pdfPaper();
+    if (window.CustomSelect && CustomSelect.refresh) CustomSelect.refresh(paperSel);
     document.getElementById('pdf-preview-download').href = url + '&download=1';
-    // dompdf takes a few seconds on the wide sheets — cover the frame until it loads.
-    document.getElementById('pdf-preview-loading').style.display = 'flex';
+    // dompdf takes a few seconds on the wide sheets — and minutes for every
+    // payslip of a run — so cover the frame, with a running timer, until it loads.
+    var isAll = pdfPreviewUrl.indexOf('src=payslips') >= 0;
+    document.getElementById('pdf-preview-loading-msg').textContent = isAll
+        ? 'Generating all ' + (window.PCW_DATA || []).length + ' payslips… the first time can take 2–3 minutes. Please keep this window open.'
+        : 'Generating PDF…';
+    pdfLoadingStart();
     document.getElementById('pdf-preview-frame').src = url;
+}
+var pdfLoadingTimer = null;
+function pdfLoadingStart() {
+    var t0 = Date.now(), el = document.getElementById('pdf-preview-loading-time');
+    document.getElementById('pdf-preview-loading').style.display = 'flex';
+    el.textContent = '';
+    clearInterval(pdfLoadingTimer);
+    pdfLoadingTimer = setInterval(function () {
+        var s = Math.floor((Date.now() - t0) / 1000);
+        el.textContent = 'Elapsed ' + Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+    }, 1000);
+}
+function pdfLoadingDone() {
+    clearInterval(pdfLoadingTimer);
+    document.getElementById('pdf-preview-loading').style.display = 'none';
 }
 function pdfPaperChanged(paper) {
     try { localStorage.setItem('pdfPaper', paper); } catch (e) {}
@@ -3493,6 +3518,11 @@ document.addEventListener('DOMContentLoaded', function () {
 // makes repeat views instant; only the first view after a data change renders.
 function openPayslipPreview(itemId) {
     openPdfPreview('pdf-payroll.php?src=payslip&id=' + encodeURIComponent(itemId), 'Payslip PDF');
+}
+// Every payslip in the run as one PDF.
+// Rendered by dompdf like every other payroll print (A4, one payslip per page).
+function printAllPayslips() {
+    openPdfPreview('pdf-payroll.php?src=payslips&id=<?= (int)$id ?>', 'All Payslips PDF');
 }
 // Bulk selected payslips still preview as HTML in the modal above.
 function printPayslipPreview() {

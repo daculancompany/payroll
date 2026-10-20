@@ -51,6 +51,13 @@ if (!defined('PAYSHEET_COLUMNS')) {
         'other'    => ['OTHER DEDUCTION', true],
         'net'      => ['NET PAY', true],
     ]);
+    // Short headers for the printed PDF, where every millimetre of width goes to
+    // a bigger type size. Screen and Excel keep the full PAYSHEET_COLUMNS labels.
+    define('PAYSHEET_SHORT_LABELS', [
+        'basic' => 'BASIC', 'allow' => 'ALLOW.', 'adjust' => 'ADJ.', 'adj2' => 'MEAL',
+        'under' => 'UT', 'gross' => 'GROSS', 'sss' => 'SSS', 'phic' => 'PHIC',
+        'hdmf' => 'HDMF', 'other' => 'OTHER DED.', 'net' => 'NET PAY',
+    ]);
     // Contribution id of SSS in the `contributions` master.
     define('PAYSHEET_SSS_ID', 1);
     // Group key of the Non-ATM (paid in cash) block — always listed last.
@@ -307,25 +314,33 @@ function paysheet_dept_label(array $g): string
 
 /**
  * The paysheet as an HTML <table> (inline styles only, so the same markup works
- * on screen and in dompdf). $money formats numbers.
+ * on screen and in dompdf). $keys limits it to those PAYSHEET_COLUMNS (in
+ * column order; null = every column). $short swaps in PAYSHEET_SHORT_LABELS —
+ * the printed PDF uses them so the type can be bigger.
  */
-function paysheet_table_html(array $ps): string
+function paysheet_table_html(array $ps, ?array $keys = null, bool $short = false): string
 {
-    $cols  = PAYSHEET_COLUMNS;
+    $cols  = $keys === null ? PAYSHEET_COLUMNS
+           : array_intersect_key(PAYSHEET_COLUMNS, array_flip($keys));
     $n     = count($cols);
+    $sums  = array_flip(paysheet_sum_keys());
+    $lead  = 0;   // leading label columns (EMP NO, NAME, RATE) merged on Grand Total
+    foreach ($cols as $k => $c) { if (isset($sums[$k])) break; $lead++; }
     $fmt   = fn($v) => number_format((float) $v, 2);
     $h     = fn($s) => htmlspecialchars((string) $s, ENT_QUOTES);
     $hdr   = 'background:#ffff00;font-weight:bold;text-align:center;vertical-align:middle;border:1px solid #000;padding:3px 4px;white-space:normal;';
     $cell  = 'border:1px solid #bbb;padding:2px 4px;';
     $num   = $cell . 'text-align:right;white-space:nowrap;';
     $tot   = 'font-weight:bold;border-top:1px solid #000;border-bottom:2px solid #000;';
+    // SSS + MPF share one long header on screen; short PDF labels name each.
+    $pair  = !$short && isset($cols['sss'], $cols['mpf']);
 
     $out  = '<table class="paysheet-table" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:11px;width:100%;">';
     $out .= '<thead><tr>';
     foreach ($cols as $k => $c) {
-        if ($k === 'mpf') continue;
-        $label = $k === 'rate' ? '' : $c[0];
-        $span  = $k === 'sss' ? ' colspan="2"' : '';
+        if ($k === 'mpf' && $pair) continue;
+        $label = $k === 'rate' ? '' : ($short ? (PAYSHEET_SHORT_LABELS[$k] ?? $c[0]) : $c[0]);
+        $span  = $k === 'sss' && $pair ? ' colspan="2"' : '';
         $out  .= '<th' . $span . ' style="' . $hdr . '">' . $h($label) . '</th>';
     }
     $out .= '</tr></thead><tbody>';
@@ -345,15 +360,19 @@ function paysheet_table_html(array $ps): string
             }
             $out .= '</tr>';
         }
-        $out .= '<tr class="ps-total"><td style="' . $cell . $tot . '">TOTAL</td>'
-              . '<td style="' . $cell . $tot . 'white-space:nowrap;">' . $h($g['name']) . '</td><td style="' . $cell . $tot . '"></td>';
-        foreach (paysheet_sum_keys() as $k) $out .= '<td style="' . $num . $tot . '">' . $fmt($g['total'][$k]) . '</td>';
+        $out .= '<tr class="ps-total">';
+        foreach ($cols as $k => $c) {
+            if (isset($sums[$k]))   $out .= '<td style="' . $num . $tot . '">' . $fmt($g['total'][$k]) . '</td>';
+            elseif ($k === 'emp_no') $out .= '<td style="' . $cell . $tot . '">TOTAL</td>';
+            elseif ($k === 'name')   $out .= '<td class="ps-name" style="' . $cell . $tot . 'white-space:nowrap;">' . $h($g['name']) . '</td>';
+            else                     $out .= '<td style="' . $cell . $tot . '"></td>';
+        }
         $out .= '</tr>';
     }
     if ($ps['groups']) {
         $gt = 'font-weight:bold;background:#fff7c2;border-top:2px solid #000;border-bottom:3px double #000;';
-        $out .= '<tr class="ps-grand"><td colspan="3" style="' . $cell . $gt . 'text-align:right;">Grand Total</td>';
-        foreach (paysheet_sum_keys() as $k) $out .= '<td style="' . $num . $gt . '">' . $fmt($ps['grand'][$k]) . '</td>';
+        $out .= '<tr class="ps-grand"><td colspan="' . $lead . '" style="' . $cell . $gt . 'text-align:right;">Grand Total</td>';
+        foreach ($cols as $k => $c) if (isset($sums[$k])) $out .= '<td style="' . $num . $gt . '">' . $fmt($ps['grand'][$k]) . '</td>';
         $out .= '</tr>';
     }
     return $out . '</tbody></table>';

@@ -59,6 +59,6 @@ if (!$ps['payroll']) { exit('Payroll not found.'); }
         </tr></table>
         <?php /* "Page X of Y" is stamped by pdf-payroll.php after layout. */ ?>
     </div>
-    <?= paysheet_table_html($ps) ?>
+    <?= paysheet_table_html($ps, null, true) ?>
 </body>
 </html>

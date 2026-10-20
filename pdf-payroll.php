@@ -36,6 +36,7 @@ $sources = [
     'dept'     => 'print-payroll-dept.php',
     'paysheet' => 'print-paysheet.php',  // paysheet grouped by department
     'payslip'  => 'view_payslip.php',   // individual payslip — portrait A4
+    'payslips' => 'view_payslip_bulk.php', // every payslip of payroll id — portrait A4, one per page
     '13th'     => 'print-13th-month.php', // 13th month register — id = year
 ];
 
@@ -46,12 +47,27 @@ if (!isset($sources[$src]) || !isset($_GET['id'])) {
 }
 
 // The single-employee payslip prints portrait on A4, unlike the wide landscape sheets.
-$isPayslip = ($src === 'payslip');
+$isPayslip = ($src === 'payslip' || $src === 'payslips');
 
 define('PDF_MODE', true);
 
 // Payslip: render its embeddable body without the on-screen toolbar / auto-print.
 if ($isPayslip) { $_GET['preview'] = 1; }
+
+// All payslips of one payroll run: id is the PAYROLL id; the bulk sheet takes
+// the item ids. A 400-employee run is a few hundred pages of layout, so give
+// dompdf room (the result is cached, so only the first view pays for it).
+if ($src === 'payslips') {
+    $__pid = (int) $_GET['id'];
+    $__ids = [];
+    $__q = $conn->query("SELECT a.id FROM payroll_items a INNER JOIN employee e ON e.id = a.employee_id
+                          WHERE a.payroll_id = $__pid ORDER BY e.lastname ASC, e.firstname ASC");
+    while ($__q && ($__r = $__q->fetch_row())) $__ids[] = (int) $__r[0];
+    if (!$__ids) { http_response_code(404); exit('No payslips in this payroll.'); }
+    $_GET['ids'] = implode(',', $__ids);
+    @set_time_limit(600);
+    @ini_set('memory_limit', '1024M');
+}
 
 ob_start();
 include __DIR__ . '/' . $sources[$src];
@@ -84,15 +100,16 @@ if ($isPayslip) {
 }
 
 // Paysheet type size per bond paper: its 20 columns must fit the sheet's long
-// edge (landscape), so the narrower the paper, the smaller the type.
+// edge (landscape), so the narrower the paper, the smaller the type. Short
+// headers (print-paysheet.php) and wrapping names buy the size.
 function paysheet_pdf_type(string $paper): string
 {
     [$font, $name] = [
-        'legal'  => ['8px', '110px'],   // 8.5 × 14
-        'folio'  => ['7.5px', '110px'], // 8.5 × 13 long bond
-        'a4'     => ['6.5px', '90px'],  // 8.27 × 11.69
-        'letter' => ['6px', '90px'],    // 8.5 × 11 short bond
-    ][$paper] ?? ['8px', '110px'];
+        'legal'  => ['10px', '120px'],  // 8.5 × 14
+        'folio'  => ['9.5px', '115px'], // 8.5 × 13 long bond
+        'a4'     => ['8.5px', '105px'], // 8.27 × 11.69
+        'letter' => ['7.5px', '100px'], // 8.5 × 11 short bond
+    ][$paper] ?? ['10px', '120px'];
     return " .paysheet-table { font-size: $font !important; }"
          . ' .paysheet-table th, .paysheet-table td { padding: 1px 2px !important; }'
          . " .paysheet-table td.ps-name { white-space: normal !important; width: $name !important; }";
@@ -163,7 +180,9 @@ $filename = 'payroll-' . $src . '-' . (int)$_GET['id'] . '.pdf';
 // name it after the pay period instead. view_payslip.php was included at this
 // scope above, so its $payroll row (period + employee) is already here; fall
 // back to the id-based name if that ever stops being true.
-if ($isPayslip && !empty($payroll['date_from']) && !empty($payroll['date_to'])) {
+if ($src === 'payslips') {
+    $filename = 'payslips-payroll-' . (int) $_GET['id'] . '.pdf';
+} elseif ($isPayslip && !empty($payroll['date_from']) && !empty($payroll['date_to'])) {
     $from = strtotime($payroll['date_from']);
     $to   = strtotime($payroll['date_to']);
     if ($from && $to) {

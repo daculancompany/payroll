@@ -3279,7 +3279,16 @@ function openPayrollHistory(id) {
         <div class="modal-content" style="border-radius:12px;overflow:hidden;">
             <div class="modal-header" style="background:#fff;color:#107c41;border-bottom:1px solid #e6efe8;">
                 <h5 class="modal-title mb-0" style="color:#107c41;"><i class="ri-file-pdf-2-line me-1"></i><span id="pdf-preview-title">PDF Preview</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div id="pdf-paper-wrap" class="d-flex align-items-center gap-2 ms-auto me-3">
+                    <label for="pdf-paper" class="mb-0 small text-muted text-nowrap">Bond paper</label>
+                    <select id="pdf-paper" class="form-select form-select-sm" style="width:auto;" onchange="pdfPaperChanged(this.value)">
+                        <option value="folio">Long 8.5 &times; 13</option>
+                        <option value="legal">Legal 8.5 &times; 14</option>
+                        <option value="letter">Short 8.5 &times; 11</option>
+                        <option value="a4">A4</option>
+                    </select>
+                </div>
+                <button type="button" class="btn-close ms-0" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" style="background:#525659;padding:0;overflow:hidden;">
                 <iframe id="pdf-preview-frame" title="PDF preview" style="width:100%;height:80vh;border:0;display:block;background:#525659;"></iframe>
@@ -3295,13 +3304,33 @@ function openPayrollHistory(id) {
 </div>
 <script>
 // All payroll prints render as PDF via dompdf and preview here — no browser print pop-ups.
+// The wide sheets render on the bond paper picked in the modal (remembered per
+// browser); the payslip is always A4 portrait, so it gets no picker.
+var pdfPreviewUrl = '';
+function pdfPaper() {
+    var p = 'legal';
+    try { p = localStorage.getItem('pdfPaper') || 'legal'; } catch (e) {}
+    return ['folio', 'legal', 'letter', 'a4'].indexOf(p) >= 0 ? p : 'legal';
+}
+function pdfPreviewLoad() {
+    var isPayslip = pdfPreviewUrl.indexOf('src=payslip') >= 0;
+    var url = isPayslip ? pdfPreviewUrl : pdfPreviewUrl + '&paper=' + pdfPaper();
+    document.getElementById('pdf-paper-wrap').style.setProperty('display', isPayslip ? 'none' : '', 'important');
+    document.getElementById('pdf-paper').value = pdfPaper();
+    document.getElementById('pdf-preview-download').href = url + '&download=1';
+    document.getElementById('pdf-preview-frame').src = url;
+}
+function pdfPaperChanged(paper) {
+    try { localStorage.setItem('pdfPaper', paper); } catch (e) {}
+    if (pdfPreviewUrl) pdfPreviewLoad();
+}
 function openPdfPreview(url, title) {
     var frame = document.getElementById('pdf-preview-frame');
     if (!frame) return;
     document.getElementById('pdf-preview-title').textContent = title || 'PDF Preview';
-    document.getElementById('pdf-preview-download').href = url + '&download=1';
-    frame.src = url;
-    new bootstrap.Modal(document.getElementById('modal-pdf-preview')).show();
+    pdfPreviewUrl = url;
+    pdfPreviewLoad();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-pdf-preview')).show();
 }
 </script>
 

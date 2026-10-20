@@ -34,8 +34,10 @@ if (!$ps['payroll']) { exit('Payroll not found.'); }
         .ps-sigs td { width: 25%; padding: 0 18px; vertical-align: top; }
         .ps-sig-lbl { font-weight: bold; }
         .ps-sig-line { margin-top: 26px; border-top: 1px solid #000; }
-        .paysheet-table { font-size: 10px !important; }
-        .paysheet-table th, .paysheet-table td { padding: 2px 3px !important; }
+        /* Type size + name wrapping depend on the bond paper chosen in the
+           preview — set per paper by paysheet_pdf_type() in pdf-payroll.php. */
+        .paysheet-table { font-size: 8px !important; }
+        .paysheet-table th, .paysheet-table td { padding: 1px 2px !important; }
         .paysheet-table thead { display: table-header-group; }
         .paysheet-table tr { page-break-inside: avoid; }
     </style>

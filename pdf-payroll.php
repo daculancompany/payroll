@@ -83,6 +83,21 @@ if ($isPayslip) {
     }
 }
 
+// Paysheet type size per bond paper: its 20 columns must fit the sheet's long
+// edge (landscape), so the narrower the paper, the smaller the type.
+function paysheet_pdf_type(string $paper): string
+{
+    [$font, $name] = [
+        'legal'  => ['8px', '110px'],   // 8.5 × 14
+        'folio'  => ['7.5px', '110px'], // 8.5 × 13 long bond
+        'a4'     => ['6.5px', '90px'],  // 8.27 × 11.69
+        'letter' => ['6px', '90px'],    // 8.5 × 11 short bond
+    ][$paper] ?? ['8px', '110px'];
+    return " .paysheet-table { font-size: $font !important; }"
+         . ' .paysheet-table th, .paysheet-table td { padding: 1px 2px !important; }'
+         . " .paysheet-table td.ps-name { white-space: normal !important; width: $name !important; }";
+}
+
 // Compact type per sheet so every column fits the page width.
 $density = [
     'payroll'  => 'table { font-size: 7px !important; } th, td { padding: 2px !important; }',
@@ -92,7 +107,8 @@ $density = [
     // Room for the per-page header + signature footer (print-paysheet.php).
     // dompdf applies @page margins as the <html> margin, so the generic
     // "html, body { margin: 0 }" above would erase them — restate on html.
-    'paysheet' => '@page { margin: 78px 14px 74px; } html { margin: 78px 14px 74px !important; }',
+    'paysheet' => '@page { margin: 78px 14px 74px; } html { margin: 78px 14px 74px !important; }'
+        . paysheet_pdf_type($paper),
     'payslip'  => '',
 ];
 

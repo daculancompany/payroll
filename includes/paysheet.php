@@ -226,6 +226,11 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         $line['other'] = round(round($otherDed, 2, PHP_ROUND_HALF_EVEN) - $line['phic'] - $line['hdmf'], 2);
         // ADJUSTMENT sits inside GROSS, so the row reads GROSS − deductions = NET.
         $line['gross'] = round($line['net'] + $line['sss'] + $line['phic'] + $line['hdmf'] + $line['tax'] + $line['other'], 2);
+        // Each earnings cell is rounded on its own (basic 8,582.625 + OT 1,711.665),
+        // so they can land ±0.01 off GROSS. The centavo goes into BASIC DAYS so the
+        // earnings columns also add up to GROSS across the row.
+        $line['basic'] = round($line['gross'] - ($line['otnd'] + $line['allow'] + $line['adjust'] + $line['adj1']
+                             + $line['adj2'] + $line['adj3'] - $line['under'] - $line['late']), 2);
         $line['oded'] = $line['other'];   // Department Summary's O. DEDUCTIONS
 
         $isNonAtm = isset($nonAtm[(int) $row['employee_id']]);
@@ -336,7 +341,7 @@ function paysheet_table_html(array $ps): string
             foreach ($cols as $k => $c) {
                 $out .= $c[1]
                     ? '<td style="' . $num . '">' . $fmt($r[$k]) . '</td>'
-                    : '<td style="' . $cell . 'white-space:nowrap;' . '">' . $h($r[$k]) . '</td>';
+                    : '<td class="ps-' . $k . '" style="' . $cell . 'white-space:nowrap;' . '">' . $h($r[$k]) . '</td>';
             }
             $out .= '</tr>';
         }

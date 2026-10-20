@@ -3290,8 +3290,14 @@ function openPayrollHistory(id) {
                 </div>
                 <button type="button" class="btn-close ms-0" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" style="background:#525659;padding:0;overflow:hidden;">
-                <iframe id="pdf-preview-frame" title="PDF preview" style="width:100%;height:80vh;border:0;display:block;background:#525659;"></iframe>
+            <div class="modal-body" style="background:#525659;padding:0;overflow:hidden;position:relative;">
+                <iframe id="pdf-preview-frame" title="PDF preview" style="width:100%;height:80vh;border:0;display:block;background:#525659;"
+                        onload="document.getElementById('pdf-preview-loading').style.display='none';"></iframe>
+                <div id="pdf-preview-loading" role="status" aria-live="polite"
+                     style="display:none;position:absolute;inset:0;background:rgba(82,86,89,.92);color:#fff;align-items:center;justify-content:center;flex-direction:column;gap:10px;">
+                    <div class="spinner-border" style="width:2.5rem;height:2.5rem;" aria-hidden="true"></div>
+                    <div style="font-size:13px;">Generating PDF&hellip;</div>
+                </div>
             </div>
             <div class="modal-footer" style="background:#fff;">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Close</button>
@@ -3318,6 +3324,8 @@ function pdfPreviewLoad() {
     document.getElementById('pdf-paper-wrap').style.setProperty('display', isPayslip ? 'none' : '', 'important');
     document.getElementById('pdf-paper').value = pdfPaper();
     document.getElementById('pdf-preview-download').href = url + '&download=1';
+    // dompdf takes a few seconds on the wide sheets — cover the frame until it loads.
+    document.getElementById('pdf-preview-loading').style.display = 'flex';
     document.getElementById('pdf-preview-frame').src = url;
 }
 function pdfPaperChanged(paper) {

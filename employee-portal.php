@@ -239,6 +239,18 @@ if ($ppExtrasHas && $payslips) {
     unset($__ps);
 }
 
+// The stored net / deduction_amount go stale when deductions or settings change
+// after Calculate — recompute both from the live figures, exactly as the
+// payslip, paysheet and bank list do (includes/payslip_figures.php).
+require_once __DIR__ . '/includes/payslip_figures.php';
+foreach ($payslips as &$__ps) {
+    $__f = buildPayslip($conn, (int)$__ps['item_id']);
+    if (!$__f) continue;
+    $__ps['net']              = $__f['net_pay'];
+    $__ps['deduction_amount'] = $__f['total_cont'] + $__f['total_ded'] + $__f['total_loan'];
+}
+unset($__ps);
+
 $latest   = $payslips[0] ?? null;
 
 // Rate-aware pay math for a payslip row — mirrors admin get_payroll_rows_data so the

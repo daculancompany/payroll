@@ -124,6 +124,14 @@ function buildPayslip($conn, $id) {
     // Manual signed adjustment (+ addition / − recovery), applied to net pay.
     $adjustment  = floatval($p['adjustment'] ?? 0);
     $adj_remarks = trim((string) ($p['adjustment_remarks'] ?? ''));
+    $ps_refunds  = 0.0;
+    foreach ((json_decode($p['refunds'] ?? '', true) ?: []) as $__r) $ps_refunds += (float) ($__r['amount'] ?? 0);
+    // NET from the figures on this page — the same formula as view_payslip.php,
+    // the paysheet and the bank list. The stored payroll_items.net goes stale
+    // whenever a deduction, extra or ticked setting changes after Calculate, and
+    // printing it gave payslips that disagreed with what the bank paid.
+    $net_pay = round($gross - $total_all_ded + $ps_refunds + $adjustment, 2, PHP_ROUND_HALF_EVEN);
+    $gross   = round($net_pay + $total_all_ded - $ps_refunds - $adjustment, 2);
 
     return compact('ps_extras','ps_x_add','ps_x_less','p','gross','allowance_amount','total_basic_rate','absent_amount',
                    'overtime_amount','late_amount','undertime_amount',
@@ -131,7 +139,7 @@ function buildPayslip($conn, $id) {
                    'contributions_list','deductions_list','loans_list',
                    'total_cont','total_ded','total_loan',
                    'other','tax','jei','jcc','sss','total_all_ded',
-                   'adjustment','adj_remarks');
+                   'adjustment','adj_remarks','ps_refunds','net_pay');
 }
 
 $payslips = [];
@@ -268,7 +276,7 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     $sss    = $ps['sss'];
     $adjustment  = $ps['adjustment'];
     $adj_remarks = $ps['adj_remarks'];
-    $net_pay = $p['net'];
+    $net_pay = $ps['net_pay'];
 ?>
 
 <div class="ps-wrap">

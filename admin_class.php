@@ -10217,9 +10217,10 @@ class Action
                 $type = (int)($cfg['type'] ?? 0);
                 if (!isset($srcFor[$type])) continue;
                 [$col, $idKey] = $srcFor[$type];
-                $amount = 0;
+                // Sum every matching line: an employee can carry two loans of one type.
+                $amount = 0.0;
                 foreach ($decoded[$col] as $entry) {
-                    if (($entry[$idKey] ?? null) == $cfg['id']) $amount = $entry['amount'] ?? 0;
+                    if (($entry[$idKey] ?? null) == $cfg['id']) $amount += (float)($entry['amount'] ?? 0);
                 }
                 $add($type, $cfg['id'], $amount);
             }

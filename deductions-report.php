@@ -11,19 +11,38 @@ $f_status = isset($_GET['status']) && $_GET['status'] === 'all' ? 'all' : 'locke
 $f_kind   = isset($_GET['kind']) && in_array($_GET['kind'], ['ded', 'loan', 'extra'], true) ? $_GET['kind'] : 'all';
 $f_type   = isset($_GET['type']) ? (string) $_GET['type'] : '';
 $f_q      = isset($_GET['q']) ? trim($_GET['q']) : '';
+$f_payroll = isset($_GET['payroll']) ? (int) $_GET['payroll'] : 0;   // one cutoff; overrides From/To
 if ($f_from > $f_to) { $t = $f_from; $f_from = $f_to; $f_to = $t; }
+
+// Payroll cutoffs for the picker, newest first.
+$cutoffs = [];
+$cq = $conn->query("SELECT id, ref_no, date_from, date_to, status FROM payroll
+                    WHERE status >= 1 AND date_from <> '0000-00-00' ORDER BY date_from DESC, id DESC");
+while ($cq && ($c = $cq->fetch_assoc())) {
+    $c['label'] = date('M d', strtotime($c['date_from'])) . ' – ' . date('M d, Y', strtotime($c['date_to']))
+                . ' (' . $c['ref_no'] . ')' . ((int) $c['status'] !== 2 ? ' — not locked' : '');
+    $cutoffs[(int) $c['id']] = $c;
+}
+if ($f_payroll && !isset($cutoffs[$f_payroll])) $f_payroll = 0;
 
 require_once __DIR__ . '/includes/deductions_withheld.php';
 [$ded_names, $loan_names] = dw_type_names($conn);
 
-// ── Payroll runs in range (by period end) ──
-$st_sql = $f_status === 'all' ? 'p.status >= 1' : 'p.status = 2';
-$ps = $conn->prepare("SELECT p.id, p.ref_no, p.date_from, p.date_to, p.status FROM payroll p
-                      WHERE $st_sql AND p.date_to BETWEEN ? AND ? ORDER BY p.date_to ASC, p.id ASC");
-$ps->bind_param('ss', $f_from, $f_to);
-$ps->execute();
+// ── Payroll runs: the one picked cutoff (locked or not), else every run in range (by period end) ──
 $pays = [];
-foreach ($ps->get_result()->fetch_all(MYSQLI_ASSOC) as $p) $pays[(int) $p['id']] = $p;
+if ($f_payroll) {
+    $pays[$f_payroll] = $cutoffs[$f_payroll];
+} else {
+    $st_sql = $f_status === 'all' ? 'p.status >= 1' : 'p.status = 2';
+    $ps = $conn->prepare("SELECT p.id, p.ref_no, p.date_from, p.date_to, p.status FROM payroll p
+                          WHERE $st_sql AND p.date_to BETWEEN ? AND ? ORDER BY p.date_to ASC, p.id ASC");
+    $ps->bind_param('ss', $f_from, $f_to);
+    $ps->execute();
+    foreach ($ps->get_result()->fetch_all(MYSQLI_ASSOC) as $p) $pays[(int) $p['id']] = $p;
+}
+// Carried on the per-type links so drilling into one type keeps the same payrolls.
+$keep_qs = $f_payroll ? ['payroll' => $f_payroll] : ['from' => $f_from, 'to' => $f_to, 'status' => $f_status];
+$csv_tag = $f_payroll ? $cutoffs[$f_payroll]['date_from'] . '_' . $cutoffs[$f_payroll]['date_to'] : $f_from . '_' . $f_to;
 
 // ── Collect: $cols = every type seen; $emps[eid] = totals per type + per payroll ──
 $dw = dw_collect($conn, $pays, ['q' => $f_q, 'kind' => $f_kind, 'type' => $f_type]);
@@ -104,8 +123,12 @@ $ncols = count($cols) + 2;
         <div class="card-body">
             <div class="rpt-filter-bar">
                 <i class="ri-filter-3-line" style="opacity:.85;"></i>
+                <?php if ($f_payroll): ?>
+                <span>Cutoff: <span class="val"><?= htmlspecialchars($cutoffs[$f_payroll]['label']) ?></span></span>
+                <?php else: ?>
                 <span>Period: <span class="val"><?= date('M d, Y', strtotime($f_from)) ?> – <?= date('M d, Y', strtotime($f_to)) ?></span></span>
                 <span>Payrolls: <span class="val"><?= $f_status === 'all' ? 'Calculated + locked' : 'Locked only' ?></span></span>
+                <?php endif; ?>
                 <?php if ($f_kind !== 'all'): ?><span>Kind: <span class="val"><?= $kind_lbl[$f_kind] ?></span></span><?php endif; ?>
                 <?php if ($f_type !== ''): ?><span>Type: <span class="val"><?= htmlspecialchars($type_opts[$f_type] ?? $f_type) ?></span></span><?php endif; ?>
                 <?php if ($f_q !== ''): ?><span>Search: <span class="val"><?= htmlspecialchars($f_q) ?></span></span><?php endif; ?>
@@ -114,7 +137,7 @@ $ncols = count($cols) + 2;
             <?php if (!$emps): ?>
                 <div class="text-center text-muted py-5">
                     <i class="ri-inbox-line" style="font-size:34px;opacity:.5;display:block;"></i>
-                    No deductions withheld in this period<?= $f_status === 'locked' ? ' (locked payrolls only — try “Calculated + locked” in Filter)' : '' ?>.
+                    No deductions withheld in this period<?= !$f_payroll && $f_status === 'locked' ? ' (locked payrolls only — try “Calculated + locked” in Filter)' : '' ?>.
                 </div>
             <?php else: ?>
 
@@ -125,7 +148,7 @@ $ncols = count($cols) + 2;
                     <tbody>
                         <?php foreach ($cols as $k => $c): ?>
                         <tr class="dr-type-row">
-                            <td><a href="index.php?<?= htmlspecialchars(http_build_query(['page' => 'deductions-report', 'from' => $f_from, 'to' => $f_to, 'status' => $f_status, 'type' => $k] + ($f_q !== '' ? ['q' => $f_q] : []))) ?>" title="Show only this type"><?= htmlspecialchars($c['label']) ?></a></td>
+                            <td><a href="index.php?<?= htmlspecialchars(http_build_query(['page' => 'deductions-report', 'type' => $k] + $keep_qs + ($f_q !== '' ? ['q' => $f_q] : []))) ?>" title="Show only this type"><?= htmlspecialchars($c['label']) ?></a></td>
                             <td><span class="badge <?= $kind_badge[$c['kind']][1] ?>"><?= $kind_badge[$c['kind']][0] ?></span></td>
                             <td class="text-end"><?= $col_emp[$k] ?></td>
                             <td class="text-end fw-bold"><?= dr_money($col_tot[$k]) ?></td>
@@ -213,7 +236,17 @@ $ncols = count($cols) + 2;
                 </div>
                 <div class="modal-body">
                     <?php $lblCss = 'font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;'; ?>
-                    <div class="row g-2 mb-3">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="<?= $lblCss ?>"><i class="ri-calendar-check-line me-1"></i>Payroll cutoff</label>
+                        <select name="payroll" id="dr-payroll" class="form-control" data-cs-icon="ri-calendar-check-line">
+                            <option value="">Date range below</option>
+                            <?php foreach ($cutoffs as $pid => $c): ?>
+                            <option value="<?= $pid ?>" <?= $f_payroll === $pid ? 'selected' : '' ?>><?= htmlspecialchars($c['label']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="text-muted">Pick one cutoff (kinsena) to match its Remittance and Department Summary.</small>
+                    </div>
+                    <div class="row g-2 mb-3" id="dr-range">
                         <div class="col-6">
                             <label class="form-label fw-semibold" style="<?= $lblCss ?>"><i class="ri-calendar-line me-1"></i>From</label>
                             <input type="date" name="from" value="<?= $f_from ?>" class="form-control">
@@ -235,7 +268,7 @@ $ncols = count($cols) + 2;
                                 <?php foreach ($kind_lbl as $k => $l): ?><option value="<?= $k ?>" <?= $f_kind === $k ? 'selected' : '' ?>><?= $l ?></option><?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-6">
+                        <div class="col-6" id="dr-status">
                             <label class="form-label fw-semibold" style="<?= $lblCss ?>"><i class="ri-lock-line me-1"></i>Payrolls</label>
                             <select name="status" class="form-control" data-cs-icon="ri-lock-line">
                                 <option value="locked" <?= $f_status === 'locked' ? 'selected' : '' ?>>Locked only</option>
@@ -287,7 +320,21 @@ $ncols = count($cols) + 2;
         var blob = new Blob([csv.join('\n')], { type: 'text/csv' });
         var a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'deductions-report-<?= $f_from ?>_<?= $f_to ?>.csv';
+        a.download = 'deductions-report-<?= $csv_tag ?>.csv';
         a.click();
     }
+    // A picked cutoff replaces the date range and the locked/calculated choice.
+    (function () {
+        var sel = document.getElementById('dr-payroll');
+        if (!sel) return;
+        function sync() {
+            var on = sel.value !== '';
+            ['dr-range', 'dr-status'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.style.display = on ? 'none' : '';
+            });
+        }
+        sel.addEventListener('change', sync);
+        sync();
+    })();
 </script>

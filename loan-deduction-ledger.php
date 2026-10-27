@@ -5,6 +5,25 @@
 $f_status = isset($_GET['status']) ? $_GET['status'] : 'active';   // active | paid | all
 $f_kind   = isset($_GET['kind'])   ? $_GET['kind']   : 'all';      // all | loan | sss | pagibig | other_loan | deduction
 $f_q      = isset($_GET['q']) ? trim($_GET['q']) : '';
+$f_payroll = isset($_GET['payroll']) ? (int)$_GET['payroll'] : 0;  // one cutoff's deductions only
+
+// Payroll periods for the cutoff filter, newest first.
+$payrolls = [];
+$pq = $conn->query("SELECT id, ref_no, date_from, date_to FROM payroll WHERE date_from <> '0000-00-00' ORDER BY date_from DESC, id DESC");
+while ($pq && ($p = $pq->fetch_assoc())) {
+    $p['label'] = date('M d', strtotime($p['date_from'])) . ' – ' . date('M d, Y', strtotime($p['date_to'])) . ' (' . $p['ref_no'] . ')';
+    $payrolls[(int)$p['id']] = $p;
+}
+if ($f_payroll && !isset($payrolls[$f_payroll])) $f_payroll = 0;
+
+// Amount each account had deducted in the selected cutoff, keyed like $rows' 'key'.
+$cut = [];
+if ($f_payroll) {
+    $cq = $conn->query("SELECT CONCAT('L', loan_id) AS k, SUM(amount) AS amt FROM loan_history WHERE payroll_id = $f_payroll GROUP BY loan_id
+                        UNION ALL
+                        SELECT CONCAT('D', ded_id), SUM(amount) FROM deduction_history WHERE payroll_id = $f_payroll GROUP BY ded_id");
+    while ($cq && ($c = $cq->fetch_assoc())) $cut[$c['k']] = (float)$c['amt'];
+}
 
 // Loan group from the loan type name: SSS, Pag-IBIG (HDMF) or anything else.
 function ldl_loan_group($name) {
@@ -54,14 +73,19 @@ $rows = [];
 }
 
 // ── Apply filters + totals ──
-$t_orig = $t_bal = $t_paid = 0;
+$t_orig = $t_bal = $t_paid = $t_cut = 0;
 $view = [];
 $tab_count = ['all' => 0, 'loan' => 0, 'sss' => 0, 'pagibig' => 0, 'other_loan' => 0, 'deduction' => 0];
 foreach ($rows as $r) {
     $paid = (float)$r['original'] - (float)$r['balance'];
     $isPaid = ((int)$r['status'] === 1) || (float)$r['balance'] <= 0;
-    if ($f_status === 'active' && $isPaid) continue;
-    if ($f_status === 'paid'   && !$isPaid) continue;
+    // A cutoff view lists what was deducted that payroll, paid-off or not.
+    if ($f_payroll) {
+        if (!isset($cut[$r['key']])) continue;
+    } else {
+        if ($f_status === 'active' && $isPaid) continue;
+        if ($f_status === 'paid'   && !$isPaid) continue;
+    }
     if ($f_q !== '' && stripos($r['emp'] . ' ' . $r['employee_no'] . ' ' . $r['name'] . ' ' . ($r['reference_no'] ?? ''), $f_q) === false) continue;
     // Tab counts respect status + search but not the type itself.
     $tab_count['all']++; $tab_count[$r['group']]++;
@@ -69,8 +93,9 @@ foreach ($rows as $r) {
     if ($f_kind === 'loan' && $r['kind'] !== 'Loan') continue;
     if ($f_kind !== 'all' && $f_kind !== 'loan' && $r['group'] !== $f_kind) continue;
     $r['paid'] = $paid; $r['isPaid'] = $isPaid;
+    $r['cut'] = $cut[$r['key']] ?? 0.0;
     $view[] = $r;
-    $t_orig += (float)$r['original']; $t_bal += (float)$r['balance']; $t_paid += $paid;
+    $t_orig += (float)$r['original']; $t_bal += (float)$r['balance']; $t_paid += $paid; $t_cut += $r['cut'];
 }
 
 // ── Payment history only for the ledgers actually displayed (not the whole
@@ -84,21 +109,25 @@ if ($loanIds) {
     $in = implode(',', $loanIds);
     $lh = $conn->query("SELECT lh.loan_id AS k, lh.amount, lh.current_bal, lh.new_bal, p.ref_no, p.date_from, p.date_to
                         FROM loan_history lh LEFT JOIN payroll p ON p.id = lh.payroll_id
-                        WHERE lh.loan_id IN ($in) ORDER BY lh.loan_his_id ASC");
+                        WHERE lh.loan_id IN ($in)" . ($f_payroll ? " AND lh.payroll_id = $f_payroll" : '') . " ORDER BY lh.loan_his_id ASC");
     while ($h = $lh->fetch_assoc()) $hist['L' . $h['k']][] = $h;
 }
 if ($dedIds) {
     $in = implode(',', $dedIds);
     $dh = $conn->query("SELECT dh.ded_id AS k, dh.amount, dh.current_bal, dh.new_bal, p.ref_no, p.date_from, p.date_to
                         FROM deduction_history dh LEFT JOIN payroll p ON p.id = dh.payroll_id
-                        WHERE dh.ded_id IN ($in) ORDER BY dh.ded_his_id ASC");
+                        WHERE dh.ded_id IN ($in)" . ($f_payroll ? " AND dh.payroll_id = $f_payroll" : '') . " ORDER BY dh.ded_his_id ASC");
     while ($h = $dh->fetch_assoc()) $hist['D' . $h['k']][] = $h;
 }
 function ldl_money($v){ return '₱' . number_format((float)$v, 2); }
 
 // "Active (unpaid)" + "All types" is the default view, so it alone is not a
 // filter worth echoing back in the summary bar.
-$has_filter = ($f_q !== '' || $f_kind !== 'all' || $f_status !== 'active');
+$has_filter = ($f_q !== '' || $f_kind !== 'all' || $f_status !== 'active' || $f_payroll);
+// Kept on the type tabs so switching SSS / Pag-IBIG stays on the same cutoff.
+$keep_qs = ['status' => $f_status] + ($f_q !== '' ? ['q' => $f_q] : []) + ($f_payroll ? ['payroll' => $f_payroll] : []);
+$csv_name = 'loan-deduction-ledger' . ($f_kind !== 'all' ? '-' . $f_kind : '')
+          . ($f_payroll ? '-' . $payrolls[$f_payroll]['date_from'] : '') . '.csv';
 $kind_lbl   = ['all' => 'All', 'loan' => 'All loans', 'sss' => 'SSS loans', 'pagibig' => 'Pag-IBIG loans', 'other_loan' => 'Other loans', 'deduction' => 'Deductions only'];
 $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => 'All'];
 ?>
@@ -148,7 +177,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                 <?php if ($has_filter): ?>
                 <a href="index.php?page=loan-deduction-ledger" class="btn btn-sm btn-outline-secondary"><i class="ri-close-line me-1"></i>Clear</a>
                 <?php endif; ?>
-                <button type="button" onclick="repExportCSV('ldl-table','loan-deduction-ledger<?= $f_kind !== 'all' ? '-' . $f_kind : '' ?>.csv')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
+                <button type="button" onclick="repExportCSV('ldl-table','<?= htmlspecialchars($csv_name) ?>')" class="btn btn-sm btn-outline-success"><i class="ri-file-excel-2-line me-1"></i>CSV</button>
                 <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-secondary"><i class="ri-printer-line"></i></button>
                 <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;" data-bs-toggle="modal" data-bs-target="#modal-filter-ledger">
                     <i class="ri-filter-3-line me-1"></i>Filter
@@ -160,7 +189,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
             <!-- Type tabs: split loans by SSS / Pag-IBIG / other (keeps status + search) -->
             <div class="ldl-tabs">
                 <?php foreach (['all' => 'All', 'sss' => 'SSS Loans', 'pagibig' => 'Pag-IBIG Loans', 'other_loan' => 'Other Loans', 'deduction' => 'Deductions'] as $k => $lbl):
-                    $qs = http_build_query(['page' => 'loan-deduction-ledger', 'kind' => $k, 'status' => $f_status] + ($f_q !== '' ? ['q' => $f_q] : [])); ?>
+                    $qs = http_build_query(['page' => 'loan-deduction-ledger', 'kind' => $k] + $keep_qs); ?>
                 <a href="index.php?<?= $qs ?>" class="<?= $f_kind === $k ? 'active' : '' ?>"><?= $lbl ?><span class="n"><?= $tab_count[$k] ?></span></a>
                 <?php endforeach; ?>
             </div>
@@ -170,7 +199,11 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                 <i class="ri-filter-3-line" style="opacity:.85;"></i>
                 <?php if ($f_q !== ''): ?><span>Search: <span class="val"><?= htmlspecialchars($f_q) ?></span></span><?php endif; ?>
                 <span>Type: <span class="val"><?= $kind_lbl[$f_kind] ?? 'All' ?></span></span>
+                <?php if ($f_payroll): ?>
+                <span>Cutoff: <span class="val"><?= htmlspecialchars($payrolls[$f_payroll]['label']) ?></span></span>
+                <?php else: ?>
                 <span>Status: <span class="val"><?= $status_lbl[$f_status] ?? 'Active (unpaid)' ?></span></span>
+                <?php endif; ?>
                 <span class="ms-auto"><span class="val"><?= count($view) ?></span> account(s)</span>
             </div>
             <?php endif; ?>
@@ -185,6 +218,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                             <th>Item</th>
                             <th class="rpt-num">Original</th>
                             <th class="rpt-num">Per Period</th>
+                            <?php if ($f_payroll): ?><th class="rpt-num">Deducted (this cutoff)</th><?php endif; ?>
                             <th class="rpt-num">Paid</th>
                             <th class="rpt-num">Balance</th>
                             <th>Start</th>
@@ -193,7 +227,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                     </thead>
                     <tbody>
                         <?php if (!$view): ?>
-                            <tr><td colspan="10" class="text-center text-muted py-4">No matching loans or deductions.</td></tr>
+                            <tr><td colspan="<?= $f_payroll ? 11 : 10 ?>" class="text-center text-muted py-4">No matching loans or deductions.</td></tr>
                         <?php else: foreach ($view as $r): $h = $hist[$r['key']] ?? []; ?>
                             <tr class="main">
                                 <td class="text-center">
@@ -206,6 +240,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                                 <td><?= htmlspecialchars($r['name']) ?><?php if (!empty($r['reference_no'])): ?><br><small class="text-muted" style="font-family:monospace;" title="Reference number">#<?= htmlspecialchars($r['reference_no']) ?></small><?php endif; ?><?php if (!empty($r['description'])): ?><br><small class="text-muted" title="Description"><i class="ri-file-text-line me-1"></i><?= htmlspecialchars($r['description']) ?></small><?php endif; ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['original']) ?></td>
                                 <td class="rpt-num"><?= ldl_money($r['per_period']) ?></td>
+                                <?php if ($f_payroll): ?><td class="rpt-num" style="font-weight:700;"><?= ldl_money($r['cut']) ?></td><?php endif; ?>
                                 <td class="rpt-num" style="color:#2e7d32;"><?= ldl_money($r['paid']) ?></td>
                                 <td class="rpt-num" style="color:#d32f2f;font-weight:700;"><?= ldl_money($r['balance']) ?></td>
                                 <td><?= $r['start_date'] && $r['start_date']!=='0000-00-00' ? date('M d, Y', strtotime($r['start_date'])) : '—' ?></td>
@@ -214,7 +249,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                             <?php if ($h): ?>
                             <tr class="ldl-hist" id="hist-<?= $r['key'] ?>" style="display:none;">
                                 <td></td>
-                                <td colspan="9">
+                                <td colspan="<?= $f_payroll ? 10 : 9 ?>">
                                     <table class="table table-sm table-bordered">
                                         <thead><tr><th>Payroll</th><th>Period</th><th class="rpt-num">Deducted</th><th class="rpt-num">Balance Before</th><th class="rpt-num">Balance After</th></tr></thead>
                                         <tbody>
@@ -239,6 +274,7 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                             <td colspan="4" class="text-end">TOTAL</td>
                             <td class="rpt-num"><?= ldl_money($t_orig) ?></td>
                             <td></td>
+                            <?php if ($f_payroll): ?><td class="rpt-num"><?= ldl_money($t_cut) ?></td><?php endif; ?>
                             <td class="rpt-num"><?= ldl_money($t_paid) ?></td>
                             <td class="rpt-num"><?= ldl_money($t_bal) ?></td>
                             <td colspan="2"></td>
@@ -278,6 +314,16 @@ $status_lbl = ['active' => 'Active (unpaid)', 'paid' => 'Fully paid', 'all' => '
                             <option value="other_loan"<?= $f_kind==='other_loan'?'selected':'' ?>>Other loans</option>
                             <option value="deduction" <?= $f_kind==='deduction'?'selected':'' ?>>Deductions only</option>
                         </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-line me-1"></i>Payroll cutoff <span class="text-muted fw-normal">(optional)</span></label>
+                        <select name="payroll" class="form-control" data-cs-icon="ri-calendar-line">
+                            <option value="">All cutoffs</option>
+                            <?php foreach ($payrolls as $pid => $p): ?>
+                            <option value="<?= $pid ?>" <?= $f_payroll === $pid ? 'selected' : '' ?>><?= htmlspecialchars($p['label']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <small class="text-muted">Shows only what was deducted in that payroll; Status is ignored.</small>
                     </div>
                     <div class="mb-1">
                         <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-pulse-line me-1"></i>Status</label>

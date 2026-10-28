@@ -15,7 +15,10 @@
      compact,                    // true → tighter type for modals
      days,                       // { 'YYYY-MM-DD': {in,out,am_in,am_out,pm_in,pm_out,wh,ot,ut,late[,late_tip,half_day]} }
      totals,                     // { wh, ot, ut, late }
-     marks                       // optional { 'YYYY-MM-DD': [marker,…] } — see markInfo()
+     marks,                      // optional { 'YYYY-MM-DD': [marker,…] } — see markInfo()
+     out                         // optional {} — filled with the TOTAL row's own
+                                 // { wh, ot, ut, late }; wh/ot are derived, so read
+                                 // them from here rather than recomputing
    }) => HTML string
 
    Every day between dateFrom..dateTo is emitted; days missing from `days`
@@ -331,6 +334,18 @@
                 + '</td>'
                 + '</tr>';
         });
+
+        // The TOTAL row's own figures, handed back to the caller. Work Hrs and
+        // paid OT are DERIVED here (rest-day hours move to the Overtime column,
+        // unfiled OT is not paid), so a host page that prints them anywhere else
+        // — a summary chip, a footer — has to read them from here or it will
+        // quietly disagree with the sheet directly above it.
+        if (opt.out) {
+            opt.out.wh = whShown;
+            opt.out.ot = otPaid;
+            opt.out.ut = Number(totals.ut || 0);
+            opt.out.late = Number(totals.late || 0);
+        }
 
         // ── Header: adds Work Hrs / Overtime / Late alongside the official cols ──
         var head = ampm

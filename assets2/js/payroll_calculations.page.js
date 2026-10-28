@@ -1495,6 +1495,9 @@
         var e = empById(itemId);
         if (!e) return;
         var body = document.getElementById('al-body');
+        // Filled by render() with the TOTAL row's own figures — the footer chips
+        // below print these rather than recomputing them (see there).
+        var sheetTot = {};
         if (window.DTRForm48) {
             body.innerHTML = window.DTRForm48.render({
                 name: e.name,
@@ -1505,7 +1508,8 @@
                 compact: true,
                 days: (e.dtr && e.dtr.days) || {},
                 marks: (e.dtr && e.dtr.marks) || {},
-                totals: (e.dtr && e.dtr.totals) || { wh: 0, ot: 0, ut: 0, late: 0 }
+                totals: (e.dtr && e.dtr.totals) || { wh: 0, ot: 0, ut: 0, late: 0 },
+                out: sheetTot
             });
         } else {
             body.innerHTML = '<div class="text-center text-muted py-4">DTR template failed to load.</div>';
@@ -1593,29 +1597,24 @@
         document.getElementById('al-days-count').textContent = e.dtr_days
             ? e.dtr_days + ' approved day' + (e.dtr_days === 1 ? '' : 's') : 'No approved attendance';
 
-        // Footer totals — same figures the Form 48 TOTAL row shows, plus this
-        // employee's standing in the batch's review round.
+        // Footer totals — read straight off the sheet that was just rendered, so
+        // the chips and the TOTAL row directly above them can never disagree.
+        // Both figures are DERIVED by the template: rest-day hours are overtime
+        // rather than regular hours, and OT is only what payroll pays (automatic
+        // in-shift OT plus filed-and-approved OT, capped at what was rendered).
+        // This used to carry its own copy of the OT rule, which knew about
+        // neither rest-day pay nor automatic OT and so reported 6.42 against the
+        // sheet's 25.00. e.dtr.totals is the raw server sum, kept only as a
+        // fallback for when the template failed to load.
         var tot = (e.dtr && e.dtr.totals) || { wh: 0, ot: 0, ut: 0, late: 0 };
-        // OT chip shows what payroll PAYS: per day min(rendered, approved
-        // hours), 0 with no approved request — the same rule as the sheet's
-        // TOTAL row and calculate_payroll, so all three always agree.
-        var otPaid = 0, dtrDays = (e.dtr && e.dtr.days) || {}, dtrMarks = (e.dtr && e.dtr.marks) || {};
-        Object.keys(dtrDays).forEach(function (iso) {
-            var dot = Number(dtrDays[iso].ot || 0);
-            if (dot <= 0) return;
-            var appr = false, apprH = 0;
-            (dtrMarks[iso] || []).forEach(function (m) {
-                // Either hour-carrying filing authorizes the day (a rest-day
-                // request names the whole day; the min() below caps it at what
-                // the scans rendered) — same set payroll reads server-side.
-                if (m.k === 'req' && (m.t === 'overtime' || m.t === 'rest_day') && m.s === 1) {
-                    appr = true; apprH += Number(m.h || 0);
-                }
-            });
-            if (appr) otPaid += apprH > 0 ? Math.min(dot, apprH) : dot;
-        });
-        [['al-tot-wh', tot.wh, 2], ['al-tot-ot', otPaid, 2],
-         ['al-tot-ut', tot.ut, 2], ['al-tot-late', tot.late, 0]].forEach(function (t) {
+        var shown = {
+            wh:   sheetTot.wh   != null ? sheetTot.wh   : tot.wh,
+            ot:   sheetTot.ot   != null ? sheetTot.ot   : tot.ot,
+            ut:   sheetTot.ut   != null ? sheetTot.ut   : tot.ut,
+            late: sheetTot.late != null ? sheetTot.late : tot.late
+        };
+        [['al-tot-wh', shown.wh, 2], ['al-tot-ot', shown.ot, 2],
+         ['al-tot-ut', shown.ut, 2], ['al-tot-late', shown.late, 0]].forEach(function (t) {
             var el = byId(t[0]);
             if (!el) return;
             var v = Number(t[1]) || 0;

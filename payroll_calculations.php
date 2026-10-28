@@ -133,7 +133,8 @@ if ($commaSeparatedSites !== '') {
     $df_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_from'])));
     $dt_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_to'])));
     $dtr_logs_q = $conn->query("SELECT DTR_details.employee_id, DTR_details.date_time, DTR_details.work_hours,
-            DTR_details.overtime, DTR_details.undertime, DTR_details.late, DTR_details.logs, DTR_details.is_rest_day, DTR.site_id
+            DTR_details.overtime, DTR_details.undertime, DTR_details.late, DTR_details.logs, DTR_details.is_rest_day,
+            DTR_details.schedule_id, DTR_details.notes, DTR.site_id
         FROM DTR_details
         INNER JOIN DTR ON DTR.id = DTR_details.ddtr_id
         WHERE DTR_details.date_time BETWEEN '$df_esc' AND '$dt_esc'
@@ -228,18 +229,49 @@ function pcw_row_editable($status, $row) {
     return (int)$status === 3 && !empty($row['unlocked_at']);
 }
 
+// ── Per-day Form 48 markers ──
+// Holiday / leave / shift / day-off context, built by the same helper the
+// dtr-documents sheet uses so both screens annotate a day identically: a blank
+// row states WHY it is blank (ANNUAL LEAVE / DAY OFF / LEGAL HOLIDAY) instead of
+// reading as a plain absence. Paid leave matters most here — calculate_payroll()
+// already PAYS it, so leaving the day unmarked made the payslip impossible to
+// reconcile against the sheet it is supposed to come from.
+require_once __DIR__ . '/includes/dtr_day_marks.php';
+$pcwDayMarks = [];   // eid => 'Y-m-d' => [marker, ...] in render order
+if ($commaSeparatedSites !== '') {
+    // The shift each day was RECORDED under. It outranks any roster lookup: it is
+    // what the figures were computed against, so it survives later schedule edits.
+    $pcwStampBy = [];
+    foreach ($dtrLogsByEmpSite as $eidKey => $bySite) {
+        foreach ($bySite as $siteRows) {
+            foreach ($siteRows as $sr) {
+                if (!isset($sr['schedule_id']) || $sr['schedule_id'] === null) continue;
+                $pcwStampBy[(int)$eidKey][date('Y-m-d', strtotime($sr['date_time']))] = (int)$sr['schedule_id'];
+            }
+        }
+    }
+    $pcwMarkEmpIds = [];
+    $meq = $conn->query("SELECT DISTINCT employee_id FROM payroll_items WHERE payroll_id = $id");
+    if ($meq) while ($mer = $meq->fetch_assoc()) $pcwMarkEmpIds[] = (int)$mer['employee_id'];
+    $pcwDayMarks = dtr_day_marks($conn, $pcwMarkEmpIds, $df_esc, $dt_esc, $pcwStampBy);
+}
+
 // Attendance requests (incident/OT) in the period — the same 'req' day marks
 // the dtr-documents sheet carries. The shared Form 48 template renders the R
 // badge from them and, when an APPROVED overtime request covers a day, turns
 // that day's OT figure green so authorized OT reads apart from raw excess.
-$pcwReqMarks = [];   // eid => 'Y-m-d' => [['k'=>'req','t'=>...,'s'=>...,'h'=>hrs], ...]
-$rmq = @$conn->query("SELECT employee_id, request_date, request_type, status,
-        COALESCE(ot_hours_requested, 0) AS hrs
-    FROM attendance_requests
-    WHERE status IN (0, 1) AND request_date BETWEEN '$df_esc' AND '$dt_esc'");
-if ($rmq) while ($rm = $rmq->fetch_assoc()) {
-    $pcwReqMarks[(int)$rm['employee_id']][date('Y-m-d', strtotime($rm['request_date']))][] =
-        ['k' => 'req', 't' => $rm['request_type'], 's' => (int)$rm['status'], 'h' => (float)$rm['hrs']];
+// Appended AFTER the markers above on purpose: a blank row takes its label and
+// colour from the FIRST reason it carries, and "ANNUAL LEAVE" explains an empty
+// day far better than "OT REQUEST" does.
+if ($commaSeparatedSites !== '') {
+    $rmq = @$conn->query("SELECT employee_id, request_date, request_type, status,
+            COALESCE(ot_hours_requested, 0) AS hrs
+        FROM attendance_requests
+        WHERE status IN (0, 1) AND request_date BETWEEN '$df_esc' AND '$dt_esc'");
+    if ($rmq) while ($rm = $rmq->fetch_assoc()) {
+        $pcwDayMarks[(int)$rm['employee_id']][date('Y-m-d', strtotime($rm['request_date']))][] =
+            ['k' => 'req', 't' => $rm['request_type'], 's' => (int)$rm['status'], 'h' => (float)$rm['hrs']];
+    }
 }
 
 // Builds the Form 48 payload (days map + totals) for one employee+site from
@@ -272,6 +304,13 @@ function pcw_dtr_sheet($days) {
         $cell['aot']  = dtr_auto_ot($d['work_hours'], (int)($d['is_rest_day'] ?? 0) === 1);
         $cell['ut']   = (float)$d['undertime'];
         $cell['late'] = (float)$d['late'];
+        // Rest day, the shift stamped on the row, and the day's notes — the same
+        // three the dtr-documents sheet carries. Rest-day work is overtime, so
+        // the template moves its hours out of Work Hrs; the stamp resolves to the
+        // shift chip; the notes ride the day-number hover and the Notes summary.
+        $cell['rest']     = ((int)($d['is_rest_day'] ?? 0) === 1);
+        $cell['sched_id'] = isset($d['schedule_id']) && $d['schedule_id'] !== null ? (int)$d['schedule_id'] : null;
+        $cell['note']     = trim((string)($d['notes'] ?? ''));
         // Raw punch list for the modal's Attendance Logs section (Form 48
         // render ignores this extra key).
         $cell['logs'] = array_map(function ($p) {
@@ -1794,7 +1833,7 @@ $refund_names = [];   // refund id => display name
                                                         'net' => (float)$net,
                                                         'prev_net' => $prevPayroll ? ($prevNetByEmpSite[$row['employee_id'] . '-' . $row['site_id']] ?? $prevNetByEmp[$row['employee_id']] ?? null) : null,
                                                         'dtr_days' => count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
-                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwReqMarks[(int)$row['employee_id']] ?? new stdClass()],
+                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwDayMarks[(int)$row['employee_id']] ?? new stdClass()],
                                                         'notes' => $pcwNotesByEmp[(int)$row['employee_id']] ?? [],
                                                         'msgs' => $pcwMsgsByEmp[(int)$row['employee_id']] ?? [],
                                                         'rv' => $rv, 'rv_c' => (string)($row['review_comment'] ?? ''),
@@ -2600,7 +2639,7 @@ $refund_names = [];   // refund id => display name
                                                         'net' => (float)$net,
                                                         'prev_net' => $prevPayroll ? ($prevNetByEmpSite[$row['employee_id'] . '-' . $row['site_id']] ?? $prevNetByEmp[$row['employee_id']] ?? null) : null,
                                                         'dtr_days' => count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
-                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwReqMarks[(int)$row['employee_id']] ?? new stdClass()],
+                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwDayMarks[(int)$row['employee_id']] ?? new stdClass()],
                                                         'notes' => $pcwNotesByEmp[(int)$row['employee_id']] ?? [],
                                                         'msgs' => $pcwMsgsByEmp[(int)$row['employee_id']] ?? [],
                                                         'rv' => $rv, 'rv_c' => (string)($row['review_comment'] ?? ''),
@@ -2849,9 +2888,10 @@ $refund_names = [];   // refund id => display name
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" style="background:#f0eff2;">
-                <!-- Employee + period + tabs pinned as ONE header — scrolling the
-                     day cards must never run content over the employee's name. -->
-                <div class="al-sticky-top">
+                <!-- Employee + period + tabs as one header block. Not pinned:
+                     a sticky header sits below the modal body's own padding, so
+                     the sheet scrolled through the band left above it. -->
+                <div class="al-head-top">
                 <div class="d-flex justify-content-between flex-wrap gap-2 mb-2">
                     <div>
                         <div class="al-meta-label"><i class="ri-user-line me-1"></i>Employee</div>
@@ -2869,7 +2909,7 @@ $refund_names = [];   // refund id => display name
                     <button type="button" class="pcw-tab" data-tab="msgs"><i class="ri-chat-3-line"></i> Messages <span class="pcw-tab-count" id="al-tab-msgs">0</span></button>
                     <button type="button" class="pcw-tab" data-tab="notes"><i class="ri-sticky-note-line"></i> Notes <span class="pcw-tab-count" id="al-tab-notes">0</span></button>
                 </div>
-                </div><!-- /.al-sticky-top -->
+                </div><!-- /.al-head-top -->
                 <div class="pcw-tab-panes">
                     <div class="pcw-tab-pane active" data-pane="dtr">
                         <div id="al-body" class="pcw-dtr-paper"></div>

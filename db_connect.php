@@ -1271,6 +1271,17 @@ if (!function_exists('payroll_allowance_by_id')) {
     }
 }
 
+// A day count for display: whole days stay whole ("2"), fractions show two
+// decimals ("0.50"). Mirrors days2() in assets2/js/payroll_calculations.page.js
+// so the sheet and the register read a half-day of leave the same way.
+if (!function_exists('payroll_days_label')) {
+    function payroll_days_label($n): string
+    {
+        $n = (float) $n;
+        return fmod($n, 1.0) == 0.0 ? (string) (int) $n : number_format($n, 2);
+    }
+}
+
 if (!function_exists('payroll_allowance_total')) {
     function payroll_allowance_total($row): float
     {
@@ -3496,10 +3507,10 @@ if (APP_ENV === 'prod') {
  * with only SELECT/INSERT/UPDATE/DELETE (no FILE, DROP or GRANT), and export
  * DB_USER/DB_PASS for it.
  */
-$servername = getenv('DB_HOST') ?: "localhost";
-$username   = getenv('DB_USER') ?: "root";
-$password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : "";
-$dbname     = getenv('DB_NAME') ?: "payroll_live_db";
+$servername = "localhost";
+$username = "u573277835_payroll";
+$password = ":nP7eSfO6l*=";
+$dbname = "u573277835_payroll";
 
 // Biometric scanner API key. Prefer the environment: a literal here is readable
 // by anyone who obtains the source or the git history, and rotating it means

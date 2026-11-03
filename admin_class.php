@@ -1449,6 +1449,76 @@ class Action
     }
 
     /**
+     * Every APPROVED leave date overlapping a range, PAID OR NOT, as
+     * [employee_id][Y-m-d] => day fraction (0.5 for a half-day date, else 1.0).
+     *
+     * Only ever used to choose which rest-day test a date gets. An UNPAID day
+     * off is still a day the employee was rostered to work, so it must take
+     * isLeaveRestDay()'s roster-first rule exactly as a paid one does. Without
+     * this, an LWOP date the roster left blank — the roster is routinely left
+     * blank on leave dates — fell through to isRestDay() and then to
+     * employee_schedules.rest_days, a weekday CSV that is stale or outright
+     * meaningless for rotating staff. The day dropped out of expected_days, so
+     * absent (= expected − present − paid_leave) never saw it and a monthly
+     * employee was paid the full half-month for a day they were not paid for.
+     *
+     * Deliberately NOT the same map as $leaveMap: that one drives paid_leave
+     * and must stay paid-only, or an unpaid day would be paid as present.
+     *
+     * Mirrors includes/dtr_day_marks.php, which already stamps leave on the DTR
+     * regardless of is_paid — which is why the DTR said LEAVE WITHOUT PAY while
+     * payroll treated the same date as a day off.
+     *
+     * The fraction is also what makes an UNPAID half-day chargeable as half a day:
+     * subtracting the paid fraction from this one leaves the unpaid part of the day,
+     * which is charged directly rather than inferred from the expected-minus-present
+     * residual (that residual also carries rest-day-duty and undertime spill, so
+     * rounding it finely would invent absences nobody took).
+     *
+     * Needs loadDutyRestMap() for the same range first, like isLeaveRestDay().
+     */
+    private function loadApprovedLeaveDates($date_from, $date_to): array
+    {
+        $pf = date('Y-m-d', strtotime($date_from));
+        $pt = date('Y-m-d', strtotime($date_to));
+        $map = [];
+        $q = $this->db->prepare(
+            "SELECT lr.employee_id, lr.dates, lr.date_from, lr.date_to,
+                    lr.is_half_day, lr.half_date
+             FROM leave_requests lr
+             WHERE lr.status = 1 AND lr.date_from <= ? AND lr.date_to >= ?"
+        );
+        if (!$q) return $map;
+        $q->bind_param('ss', $pt, $pf);
+        $q->execute();
+        $res = $q->get_result();
+        while ($lv = $res->fetch_assoc()) {
+            $days = [];
+            if (!empty($lv['dates'])) {
+                $decoded = json_decode($lv['dates'], true);
+                if (is_array($decoded)) $days = $decoded;
+            }
+            if (!$days) {   // fall back to the inclusive from..to range
+                for ($d = strtotime($lv['date_from']); $d <= strtotime($lv['date_to']); $d = strtotime('+1 day', $d)) {
+                    $days[] = date('Y-m-d', $d);
+                }
+            }
+            foreach ($days as $dy) {
+                $ymd = date('Y-m-d', strtotime($dy));
+                if ($ymd < $pf || $ymd > $pt) continue;
+                $frac = ((int) $lv['is_half_day'] === 1 && !empty($lv['half_date'])
+                         && date('Y-m-d', strtotime($lv['half_date'])) === $ymd) ? 0.5 : 1.0;
+                // Overlapping requests on one date → keep the larger fraction,
+                // exactly as the paid map does.
+                if (!isset($map[$lv['employee_id']][$ymd]) || $map[$lv['employee_id']][$ymd] < $frac) {
+                    $map[$lv['employee_id']][$ymd] = $frac;
+                }
+            }
+        }
+        return $map;
+    }
+
+    /**
      * The schedule period in effect on $ymd, from the same preloaded periods
      * restDaysForDate() reads (they carry ws.has_nsd / ws.nsd_rate as well).
      * Covering period, else the nearest — returning null for an uncovered date
@@ -6128,8 +6198,15 @@ class Action
 
                 // Preload approved PAID leave days per employee overlapping this period.
                 // Paid leave (leave_types.is_paid = 1) is treated as paid-present: it does
-                // NOT count as an absence (monthly) and IS paid (daily). Unpaid (LWOP) leave
-                // needs no handling — with no DTR row it already falls into the absent tally.
+                // NOT count as an absence (monthly) and IS paid (daily).
+                //
+                // Unpaid (LWOP) leave is NOT in this map and must not be — it would be paid
+                // as present. It used to be left out entirely on the reasoning that "with no
+                // DTR row it already falls into the absent tally", which only holds while the
+                // day survives expected_days. An LWOP date the roster left blank did not: it
+                // fell through to the weekday CSV and was read as a day off, so a monthly
+                // employee kept the full half-month. $anyLeaveMap below carries those dates
+                // for the rest-day decision only — see loadApprovedLeaveDates().
                 // Keyed [employee_id][Y-m-d] => day fraction (0.5 for the half-day date).
                 // ── Paid leave, capped at the employee's EARNED credits ──────────
                 // A `no_limit` type (e.g. Sick Leave) may be FILED without limit, but
@@ -6213,6 +6290,10 @@ class Action
                         }
                     }
                 }
+
+                // Approved leave dates in this period, paid or not. Used ONLY to decide
+                // whether a date is a rest day (expected_days below), never to pay anything.
+                $anyLeaveMap = $this->loadApprovedLeaveDates($pf, $pt);
 
                 // Preload declared-holiday dates (legal + special) in this period,
                 // keyed Y-m-d => calendar type (1 = legal, 3 = special).
@@ -6935,6 +7016,13 @@ class Action
                     // days in the period — counted as paid-present (own payslip line, and NOT
                     // an absence). Computed for all rate types; used below.
                     $paid_leave = 0;
+                    // The UNPAID remainder of those same days: an LWOP type, or the part of
+                    // a paid leave the year's credits no longer cover. Charged as an absence
+                    // directly (below) instead of being left to the expected-minus-present
+                    // residual, which also carries rest-day-duty and undertime spill and so
+                    // cannot be rounded finely without inventing absences. This is what lets
+                    // a HALF-day of unpaid leave cost exactly half a day.
+                    $unpaid_leave = 0;
                     if (!empty($leaveMap[$employee_id])) {
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
                             $ymd = date('Y-m-d', $d);
@@ -6951,23 +7039,66 @@ class Action
                             }
                         }
                     }
+                    // Unpaid portion of every approved leave day, on the same expected-day
+                    // and partly-worked rules the paid tally uses, so one date can never be
+                    // counted as both paid and unpaid.
+                    if (!empty($anyLeaveMap[$employee_id])) {
+                        foreach ($anyLeaveMap[$employee_id] as $ymd => $anyFrac) {
+                            if ($this->isLeaveRestDay($restMap[$employee_id] ?? [], $ymd, $employee_id)) continue;
+                            $paidFrac = (float) ($leaveMap[$employee_id][$ymd] ?? 0);
+                            $unpaidFrac = max(0, (float) $anyFrac - $paidFrac);
+                            if ($unpaidFrac <= 0) continue;
+                            $worked = (float) ($data['worked_frac'][$ymd] ?? 0);
+                            $unpaid_leave += min($unpaidFrac, max(0, 1 - $worked - $paidFrac));
+                        }
+                    }
+                    $unpaid_leave = round($unpaid_leave, 2);
                     if ($rate_type === 'monthly') {
                         $expected_days = 0;
                         for ($d = strtotime($date_from); $d <= strtotime($date_to); $d = strtotime('+1 day', $d)) {
                             $eymd = date('Y-m-d', $d);
                             // Expected work days exclude rest days AND declared holidays
                             // (a holiday is paid non-working — never an absence).
-                            // A leave date uses the leave rule, so a paid leave day is
-                            // also an expected day and can't hide a real absence.
-                            $eRest = isset($leaveMap[$employee_id][$eymd])
+                            // ANY approved leave date uses the leave rule — paid or unpaid.
+                            // A paid leave day is still an expected day (paid_leave below
+                            // keeps it from being an absence), and an UNPAID one is an
+                            // expected day the employee did not work, which is exactly an
+                            // absence. Asking isRestDay() here instead, as this used to for
+                            // unpaid leave, let the stale weekday CSV swallow an LWOP date
+                            // the roster had left blank and the day was never charged.
+                            $eRest = isset($anyLeaveMap[$employee_id][$eymd])
                                 ? $this->isLeaveRestDay($restMap[$employee_id] ?? [], $eymd, $employee_id)
                                 : $this->isRestDay($restMap[$employee_id] ?? [], $eymd, $employee_id);
                             if (!$eRest && empty($holidayDates[$eymd])) {
                                 $expected_days++;
                             }
                         }
-                        // Paid leave is not an absence.
-                        $absent = max(0, (int) round($expected_days - $present - $paid_leave));
+                        // Paid leave is not an absence; unpaid leave is, to the exact
+                        // fraction filed (absent is DECIMAL(6,2) —
+                        // migrations/2026_11_absent_decimal.sql).
+                        //
+                        // Charged in two parts on purpose. The unpaid-leave fraction is
+                        // known exactly, so it is added as-is. What is left over —
+                        // unexplained missing days — keeps the whole-day rounding it has
+                        // always had, because `present` also carries rest-day-duty and
+                        // undertime fractions that are not absences: rounding that residual
+                        // to the centavo would bill an employee who worked a 13-hour rest
+                        // day for a third of a day they never missed.
+                        // Days of the period nobody has accounted for.
+                        $gap = max(0, $expected_days - $present - $paid_leave);
+                        // Filed unpaid leave is charged to the exact fraction filed, but
+                        // never beyond the gap: a half-day of leave on a day `present`
+                        // already credits in full (an early-out is charged as undertime in
+                        // pesos, not as a lost day) must not also be billed as half a day.
+                        $unpaid_charge = min($unpaid_leave, $gap);
+                        // What is still missing keeps the whole-day rounding it has always
+                        // had — `present` also carries rest-day-duty and undertime
+                        // fractions that are not absences, so rounding this to the centavo
+                        // would bill an employee who worked a 13-hour rest day for a third
+                        // of a day they never missed. Capped at the gap so the rounding can
+                        // never charge more days than the period actually lost.
+                        $residual = max(0, (int) round($gap - $unpaid_charge));
+                        $absent = round(min($gap, $unpaid_charge + $residual), 2);
                     }
 
                     $sql2 = "INSERT INTO payroll_items
@@ -11318,6 +11449,47 @@ class Action
         while ($rw = $rr->fetch_assoc()) $restMap[$rw['employee_id']][] = $rw;
         $this->loadDutyRestMap($pay['date_from'], $pay['date_to']);
 
+        // Approved leave dates in the period, paid or not — this check has to ask the
+        // rest-day question exactly the way calculate_payroll() does, or it reports a
+        // disagreement that isn't there (and, as it did for unpaid leave, silently
+        // agrees with a figure that is wrong). See loadApprovedLeaveDates().
+        $anyLeaveMap = $this->loadApprovedLeaveDates($pay['date_from'], $pay['date_to']);
+
+        // Approved UNPAID leave days per employee in the period. They are accounted
+        // for — charged as an absence on the monthly basis, simply unworked and
+        // unpaid on the daily one — so they must not read as unexplained missing
+        // days below. Paid days are already carried by payroll_items.paid_leave.
+        $unpaidDays = [];
+        $ulq = $this->db->prepare(
+            "SELECT lr.employee_id, lr.dates, lr.date_from, lr.date_to
+             FROM leave_requests lr
+             INNER JOIN leave_types lt ON lt.id = lr.leave_type_id
+             WHERE lr.status = 1 AND lt.is_paid = 0
+               AND lr.date_from <= ? AND lr.date_to >= ?"
+        );
+        if ($ulq) {
+            $ulq->bind_param('ss', $pay['date_to'], $pay['date_from']);
+            $ulq->execute();
+            $ulres = $ulq->get_result();
+            while ($ul = $ulres->fetch_assoc()) {
+                $days = [];
+                if (!empty($ul['dates'])) {
+                    $decoded = json_decode($ul['dates'], true);
+                    if (is_array($decoded)) $days = $decoded;
+                }
+                if (!$days) {
+                    for ($d = strtotime($ul['date_from']); $d <= strtotime($ul['date_to']); $d = strtotime('+1 day', $d)) {
+                        $days[] = date('Y-m-d', $d);
+                    }
+                }
+                foreach ($days as $dy) {
+                    $uymd = date('Y-m-d', strtotime($dy));
+                    if ($uymd < $pay['date_from'] || $uymd > $pay['date_to']) continue;
+                    $unpaidDays[(int) $ul['employee_id']][$uymd] = true;
+                }
+            }
+        }
+
         // Declared holidays in the period — excluded from expected work days here
         // too, so this sanity check agrees with the generation absent logic.
         $holidayDates = [];
@@ -11360,11 +11532,29 @@ class Action
             }
             if (!$isFixed) {
                 $expected = 0;
+                $unpaid   = 0;
                 for ($d = strtotime($pay['date_from']); $d <= strtotime($pay['date_to']); $d = strtotime('+1 day', $d)) {
                     $symd = date('Y-m-d', $d);
-                    if (!$this->isRestDay($restMap[$eid] ?? [], $symd, $eid) && empty($holidayDates[$symd])) $expected++;
+                    $sRest = isset($anyLeaveMap[$eid][$symd])
+                        ? $this->isLeaveRestDay($restMap[$eid] ?? [], $symd, $eid)
+                        : $this->isRestDay($restMap[$eid] ?? [], $symd, $eid);
+                    if ($sRest || !empty($holidayDates[$symd])) continue;
+                    $expected++;
+                    if (!empty($unpaidDays[$eid][$symd])) $unpaid++;
                 }
                 $counted = (float) $r['present'] + (float) ($r['paid_leave'] ?? 0) + (float) $r['absent'];
+                // On the DAILY basis an unpaid leave day is accounted for by simply not
+                // being paid — there is no column for it, so credit it here or every LWOP
+                // day reads as a day that went missing.
+                //
+                // On the MONTHLY basis it is accounted for ONLY if `absent` actually
+                // charged it, which is precisely what this check exists to confirm.
+                // Crediting it unconditionally would re-blind the check to the bug it was
+                // just taught to see, so monthly rows are left to prove it through absent.
+                if (($r['rate_type'] ?? 'daily') !== 'monthly') {
+                    $counted += $unpaid;
+                }
+                $counted = min($expected, $counted);
                 $miss = $expected - $counted;
                 if ($miss >= 1) {
                     $missing[] = ['name' => $nm, 'expected' => $expected, 'counted' => round($counted, 2), 'missing' => round($miss, 1)];

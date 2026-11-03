@@ -485,7 +485,7 @@ $payroll_type = $payroll['type'];
                                     </td>
 
                                     <td class="text-center">
-                                        <?= $row['absent'] ?>
+                                        <?= payroll_days_label($row['absent']) ?>
                                     </td>
 
                                     <td class="text-right">

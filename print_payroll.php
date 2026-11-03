@@ -45,7 +45,7 @@ tr,td,th{
         <td><?php echo $row['employee_no'] ?></td>
         <td><?php echo ucwords($row['ename']) ?></td>
         <td class="text-right"><?php echo number_format($row['salary'],2) ?></td>
-        <td class="text-right"><?php echo $row['absent'] ?></td>
+        <td class="text-right"><?php echo payroll_days_label($row['absent']) ?></td>
         <td class="text-right"><?php echo $row['late'] ?></td>
         <td class="text-right"><?php echo number_format($row['allowance_amount'],2) ?></td>
         <td class="text-right"><?php echo number_format($row['deduction_amount'],2) ?></td>

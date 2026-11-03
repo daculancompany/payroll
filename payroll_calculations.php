@@ -1042,7 +1042,7 @@ $refund_names = [];   // refund id => display name
                             <div class="pay-stat absent">
                                 <div class="pay-stat-icon"><i class="ri-user-unfollow-line"></i></div>
                                 <div class="pay-stat-body">
-                                    <div class="pay-stat-val"><?= number_format($summary['total_absent']) ?></div>
+                                    <div class="pay-stat-val"><?= payroll_days_label($summary['total_absent']) ?></div>
                                     <div class="pay-stat-lbl">Total Absences</div>
                                 </div>
                             </div>
@@ -1401,7 +1401,7 @@ $refund_names = [];   // refund id => display name
                                                                 <div class="emp-meta-row">
                                                                     <span class="emp-no"><i class="ri-bank-card-line"></i><?= htmlspecialchars($row['employee_no']) ?></span>
                                                                     <span data-badges="<?= $row['id'] ?>">
-                                                                        <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= $row['absent'] ?> absent</span><?php endif; ?>
+                                                                        <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= payroll_days_label($row['absent']) ?> absent</span><?php endif; ?>
                                                                         <?php if ($row['late'] > 0): ?><span class="pay-badge late"><?= number_format($row['late']) ?> min late</span><?php endif; ?>
                                                                         <?php if ($row['absent'] <= 0 && $row['late'] <= 0): ?><span class="pay-badge clear">clear</span><?php endif; ?>
                                                                     </span>
@@ -1513,13 +1513,13 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['absent'] ?>" data-id="<?= $row['id'] ?>" data-type="absent" class="form-control input-class"<?= $rowRO ?> placeholder="absent" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= round((float)$row['absent'], 2) ?>" data-id="<?= $row['id'] ?>" data-type="absent" class="form-control input-class"<?= $rowRO ?> placeholder="absent" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'absent')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= $row['absent'] ?></b>
+                                                            <b><?= payroll_days_label($row['absent']) ?></b>
                                                         <?php } ?>
                                                     </td>
 
@@ -1879,7 +1879,7 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-right"><?= number_format($t_allow_total, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_perDay, 2) ?></th>
                                                 <th class="text-center"><?= number_format($total_number_days, 2) ?></th>
-                                                <th class="text-center"><?= number_format($t_absent_days, 0) ?></th>
+                                                <th class="text-center"><?= payroll_days_label($t_absent_days) ?></th>
                                                 <th class="text-right"><?= number_format($t_absent_amt, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_total_amount, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_legal_d, 0) ?></th>
@@ -2206,7 +2206,7 @@ $refund_names = [];   // refund id => display name
                                                                 <div class="emp-meta-row">
                                                                     <span class="emp-no"><i class="ri-bank-card-line"></i><?= htmlspecialchars($row['employee_no']) ?></span>
                                                                     <span data-badges="<?= $row['id'] ?>">
-                                                                        <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= $row['absent'] ?> absent</span><?php endif; ?>
+                                                                        <?php if ($row['absent'] > 0): ?><span class="pay-badge absent"><?= payroll_days_label($row['absent']) ?> absent</span><?php endif; ?>
                                                                         <?php if ($row['late'] > 0): ?><span class="pay-badge late"><?= number_format($row['late']) ?> min late</span><?php endif; ?>
                                                                         <?php if ($row['absent'] <= 0 && $row['late'] <= 0): ?><span class="pay-badge clear">clear</span><?php endif; ?>
                                                                     </span>

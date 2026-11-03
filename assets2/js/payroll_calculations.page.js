@@ -115,7 +115,7 @@
             var chk = S.ps[e.id] ? { checked: true } : null;
             var dots = '';
             if (f.neg) dots += '<span class="pcw-fdot neg" title="Zero / negative net"></span>';
-            if (f.abs) dots += '<span class="pcw-fdot abs" title="' + e.absent + ' absent"></span>';
+            if (f.abs) dots += '<span class="pcw-fdot abs" title="' + days2(e.absent) + ' absent"></span>';
             if (f.late) dots += '<span class="pcw-fdot lt" title="' + Math.round(e.late_min) + ' min late"></span>';
             if (f.disp) dots += '<span class="pcw-fdot disp" title="Disputed by employee"></span>';
             if (f.ok) dots += '<span class="pcw-fdot ok" title="Confirmed by employee"></span>';
@@ -595,7 +595,7 @@
             h += '<tr><td>Paid Leave</td><td class="qty">approved leave'
                 + (monthlyRate ? ' — not counted as absence' : '') + '</td><td class="amt">' + fmt2(e.pleave) + '</td></tr>';
         }
-        if (ed || e.absent > 0) h += earnRow('Absences', fld(e, 'absent', e.absent) + ' day(s) × ' + fmt(e.per_day), e.absent_amt, true);
+        if (ed || e.absent > 0) h += earnRow('Absences', fld(e, 'absent', days2(e.absent)) + ' day(s) × ' + fmt(e.per_day), e.absent_amt, true);
         if (ed || e.late_min > 0) h += earnRow('Late', fld(e, 'late', Math.round(e.late_min)) + ' min', e.late_amt, true);
         if (ed || e.ut_min > 0) h += earnRow('Undertime', fld(e, 'under_time', fmt2(e.ut_min)) + ' min', e.ut_amt, true);
         if (!ed && !(e.absent > 0) && !(e.late_min > 0) && !(e.ut_min > 0)) h += '<tr><td colspan="3" style="color:#4a7d4a;font-size:11.5px;">No absences or tardiness this period.</td></tr>';
@@ -605,9 +605,9 @@
         h += '<div class="pp-sec"><div class="pp-sec-title"><span class="ltr">B</span> Earnings'
             + '<span class="sec-amt" id="pp-sect-earn">' + fmt(e.gross) + '</span></div><table class="pp-table">';
         if (isMonthlyBatch) {
-            h += earnRow('Half-Month Basic (Quinsena)', '(' + fmt(e.monthly) + ' + allowance − absences) ÷ 2', e.basic_earned, false);
+            h += earnRow('Half-Month Basic (Quinsena)', fmt(e.monthly) + ' ÷ 2 − absences', e.basic_earned, false);
         } else if (monthlyRate) {
-            h += earnRow('Half-Month Basic', '(' + fmt(e.monthly) + ' − absences) ÷ 2', e.basic_earned, false);
+            h += earnRow('Half-Month Basic', fmt(e.monthly) + ' ÷ 2 − absences', e.basic_earned, false);
         } else if (e.pleave > 0) {
             // Daily rate with approved paid leave: split the basic figure so the
             // leave credit is a visible line (worked + leave = total basic rate).
@@ -617,7 +617,10 @@
         } else {
             h += earnRow('Basic Pay', days2(e.present) + ' day(s) × ' + fld(e, 'per_day', fmt(e.per_day)), e.basic_earned, false);
         }
-        if (ed || e.allow_amt) h += earnRow('Allowance' + (monthlyRate && !isMonthlyBatch ? ' (½ applied to gross)' : ''), fld(e, 'allowance_days', e.allow_days) + ' day(s) × ' + fmt(e.allow_rate), e.allow_amt, false);
+        // Added to gross WHOLE on both bases. payroll_earnings() stopped halving it
+        // on the monthly basis (allowance_amount × allowance_days is already a
+        // per-cutoff figure), so the old "½ applied to gross" note was stale.
+        if (ed || e.allow_amt) h += earnRow('Allowance', fld(e, 'allowance_days', e.allow_days) + ' day(s) × ' + fmt(e.allow_rate), e.allow_amt, false);
         // Configured allowance types ticked in Payroll Settings — one line each,
         // matching the per-type columns in the table (amounts frozen at calculation).
         (e.allow_types || []).forEach(function (a) {
@@ -909,7 +912,7 @@
             + '<div class="pcw-sum-tile ded"><div class="v">' + fmt(e.total_ded) + '</div><div class="l">Deductions</div></div>'
             + '<div class="pcw-sum-tile net"><div class="v">' + fmt(e.net) + '</div><div class="l">Net Pay</div></div>'
             + '<div class="pcw-sum-tile"><div class="v">' + days2(e.present) + '</div><div class="l">Days</div></div>'
-            + '<div class="pcw-sum-tile abs"><div class="v">' + e.absent + '</div><div class="l">Absent</div></div>'
+            + '<div class="pcw-sum-tile abs"><div class="v">' + days2(e.absent) + '</div><div class="l">Absent</div></div>'
             + '<div class="pcw-sum-tile lt"><div class="v">' + Math.round(e.late_min) + '</div><div class="l">Late (min)</div></div>'
             + '</div>';
         // Where the gross went — take-home vs deductions, values in the legend

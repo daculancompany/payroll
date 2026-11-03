@@ -11039,6 +11039,37 @@ class Action
                 $this->db->query("DELETE FROM deduction_history WHERE payroll_id = " . intval($id));
             }
 
+            // Locking freezes who is paid in cash. Left unset, payroll_non_atm()
+            // re-answers that question live on every print, from whoever in the
+            // run still has a blank bank_account_no — so encoding or clearing one
+            // account silently moved money between the ATM and NON ATM lines of a
+            // run that was already locked and paid (run 56: one employee, 13,812.89).
+            // Resolve it once here and store it, so every later reprint of the
+            // paysheet, the Department Summary and the bank payout matches the
+            // figures the run was locked on.
+            //
+            // Only when it was never set: a list HR picked in Payroll Settings is
+            // already frozen and must survive untouched, including the empty one
+            // ("nobody"), which payroll_non_atm() honours. Unlock deliberately
+            // leaves the column alone, so a re-lock reproduces the same split —
+            // which also makes this write idempotent.
+            if (!$isUnlock
+                && $this->db->query("SHOW COLUMNS FROM payroll LIKE 'non_atm'")->num_rows) {
+                $cur = $this->db->query("SELECT non_atm FROM payroll WHERE id = " . intval($id))->fetch_assoc();
+                if (!$cur || $cur['non_atm'] === null) {
+                    $frozen = json_encode(array_values(array_map(
+                        'intval',
+                        payroll_non_atm($this->db, $id)['ids']
+                    )));
+                    $stNa = $this->db->prepare("UPDATE payroll SET non_atm = ? WHERE id = ?");
+                    $stNa->bind_param('si', $frozen, $id);
+                    if (!$stNa->execute()) {
+                        throw new Exception('Failed to freeze the Non-ATM list: ' . $this->db->error);
+                    }
+                    $stNa->close();
+                }
+            }
+
             $stmt = $this->db->prepare("UPDATE payroll SET status = ? WHERE id = ?");
             $stmt->bind_param('si', $status, $id);
             $stmt->execute();

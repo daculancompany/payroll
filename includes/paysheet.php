@@ -116,7 +116,12 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
     if (!$payroll) return ['payroll' => null, 'period' => '', 'groups' => [], 'grand' => []];
 
     // Non-ATM (cash-paid) employees leave their department for the NONATM block.
-    $nonAtm = array_flip(payroll_non_atm($conn, $payroll_id)['ids']);
+    // is_default means nobody confirmed the list for this run, so membership is
+    // still being answered live from who has a blank bank_account_no — the
+    // reports flag that, because encoding or clearing one account shifts money
+    // between the ATM and NON ATM lines of an already-printed run.
+    $na       = payroll_non_atm($conn, $payroll_id);
+    $nonAtm   = array_flip($na['ids']);
     $breakdown = array_fill_keys(array_keys(PAYSHEET_DED_BUCKETS), 0.0);
 
     $split    = payroll_settings_split($payroll['settings']);
@@ -271,6 +276,7 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         'grand'      => $grand,
         'atm_net'    => $grand['net'] - $nonAtmNet,
         'nonatm_net' => $nonAtmNet,
+        'nonatm_is_default' => $na['is_default'],   // list never confirmed: split can still move
         'breakdown'  => $breakdown,   // sums to grand['oded'] (= OTHER DEDUCTION)
     ];
 }
@@ -313,6 +319,24 @@ function paysheet_dept_label(array $g): string
 }
 
 /**
+ * Shown while nobody has confirmed this run's Non-ATM list in Payroll Settings.
+ * Until they do, membership is re-decided on every print from who still has a
+ * blank bank_account_no, so one edited account silently moves money between the
+ * ATM and NON ATM lines of a sheet that was already printed and paid out.
+ * Empty once the list is saved, or once Lock freezes it.
+ */
+function paysheet_nonatm_notice(array $ps): string
+{
+    if (empty($ps['nonatm_is_default'])) return '';
+    return '<div class="ps-nonatm-note" style="font-family:Arial,Helvetica,sans-serif;font-size:10px;'
+        . 'color:#8a6100;background:#fff8e1;border:1px solid #f0d089;border-radius:3px;'
+        . 'padding:5px 8px;margin:6px 0;">'
+        . '<b>Non-ATM list not yet confirmed for this run.</b> The ATM / NON ATM split follows the '
+        . 'bank accounts on file and can still change. Confirm it in Payroll Settings.'
+        . '</div>';
+}
+
+/**
  * The paysheet as an HTML <table> (inline styles only, so the same markup works
  * on screen and in dompdf). $keys limits it to those PAYSHEET_COLUMNS (in
  * column order; null = every column). $short swaps in PAYSHEET_SHORT_LABELS —
@@ -335,7 +359,8 @@ function paysheet_table_html(array $ps, ?array $keys = null, bool $short = false
     // SSS + MPF share one long header on screen; short PDF labels name each.
     $pair  = !$short && isset($cols['sss'], $cols['mpf']);
 
-    $out  = '<table class="paysheet-table" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:11px;width:100%;">';
+    $out  = paysheet_nonatm_notice($ps);
+    $out .= '<table class="paysheet-table" style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:11px;width:100%;">';
     $out .= '<thead><tr>';
     foreach ($cols as $k => $c) {
         if ($k === 'mpf' && $pair) continue;
@@ -429,7 +454,8 @@ function paysheet_summary_html(array $ps): string
         . ($grand ? 'border-top:1px solid #000;text-decoration:underline;' : '') . '">' . $fmt($amt) . '</td></tr>';
     $box  = '<table style="border-collapse:collapse;font-family:Arial,Helvetica,sans-serif;font-size:11px;">';
     $left = $box . $row('ATM', $ps['atm_net']) . $row('NON ATM', $ps['nonatm_net'])
-          . $row('TOTAL', $ps['grand']['net'], true) . '</table>';
+          . $row('TOTAL', $ps['grand']['net'], true) . '</table>'
+          . paysheet_nonatm_notice($ps);
     $right = $box;
     foreach ($ps['breakdown'] as $key => $amt) {
         if (abs($amt) >= 0.005) $right .= $row(PAYSHEET_DED_BUCKETS[$key], $amt);

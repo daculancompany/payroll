@@ -248,6 +248,20 @@ foreach ($payslips as &$__ps) {
     if (!$__f) continue;
     $__ps['net']              = $__f['net_pay'];
     $__ps['deduction_amount'] = $__f['total_cont'] + $__f['total_ded'] + $__f['total_loan'];
+    // The rest of the figures NET was actually built from, so the portal's
+    // breakdown can add up to the net beside it instead of computing its own
+    // total. total_all_ded already folds in the one-off deducting extras, and
+    // the adjustment and refunds are what make gross - deductions != net on the
+    // payslips that carry them.
+    // Kept apart so the breakdown can name each bucket: the single row this fed
+    // was labelled "Contributions" while carrying deductions and loans too.
+    $__ps['pp_cont']        = $__f['total_cont'];
+    $__ps['pp_ded']         = $__f['total_ded'];
+    $__ps['pp_loan']        = $__f['total_loan'];
+    $__ps['pp_ded_total']   = $__f['total_all_ded'];
+    $__ps['pp_refunds']     = $__f['ps_refunds'];
+    $__ps['pp_adjustment']  = $__f['adjustment'];
+    $__ps['pp_adj_remarks'] = $__f['adj_remarks'];
 }
 unset($__ps);
 
@@ -723,6 +737,7 @@ $owed_count = count($loans) + count($bal_deds);
 // ── Latest payslip computed values ─────────────────────────────
 $pm = $late_amt = $ut_amt = $all_tot = $abs_amt = $ot_amt = 0;
 $lgl_amt = $sun_amt = $spc_amt = $sub_tot = $gross = $tot_ded = 0;
+$adj_row = $rfd_row = 0; $basic_row = 0; $basic_lbl = 'Basic Pay';
 if ($latest) {
     $pm       = payroll_per_minute($latest);
     $late_amt = $latest['late'] * $pm;
@@ -740,9 +755,21 @@ if ($latest) {
     $sub_tot  = $_pp['sub'];
     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
     $gross    = $_pp['gross'];
-    $tot_ded  = $latest['deduction_amount'] + $latest['other_deduction']
-              + $latest['tax'] + $latest['jei_advances'] + $latest['jcc_advances'] + $latest['sss_fund']
-              + (float)($latest['extra_less'] ?? 0);
+    // What this cutoff earned, NOT payroll_items.basic_pay — that column holds the
+    // MONTHLY rate, so a daily-rate employee was shown it as their "Basic Pay".
+    // Monthly shows the half-month share before absences, so the Absent row below
+    // subtracts down to Sub-Total.
+    $basic_row = $_pp['parts']['is_monthly'] ? $_pp['parts']['basic'] / 2 : $_pp['parts']['basic'];
+    $basic_lbl = $_pp['parts']['is_monthly']
+        ? 'Half-Month Basic'
+        : 'Basic Pay (' . nd($latest['present']) . 'd × ₱' . n2($latest['per_day']) . ')';
+    // From buildPayslip(), the same figure NET was computed from.
+    $tot_ded  = $latest['pp_ded_total']
+        ?? ($latest['deduction_amount'] + $latest['other_deduction']
+            + $latest['tax'] + $latest['jei_advances'] + $latest['jcc_advances'] + $latest['sss_fund']
+            + (float)($latest['extra_less'] ?? 0));
+    $adj_row  = (float) ($latest['pp_adjustment'] ?? 0);
+    $rfd_row  = (float) ($latest['pp_refunds'] ?? 0);
 }
 
 // ── Deduction composition of the latest payslip (donut chart) ──
@@ -3001,7 +3028,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <!-- Earnings -->
                 <div class="ps-col">
                     <div class="ps-col-title earn">Earnings</div>
-                    <div class="ps-row"><span class="ps-lbl">Basic Pay</span><span class="ps-val earn">₱<?= n2($latest['basic_pay']) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl"><?= htmlspecialchars($basic_lbl) ?></span><span class="ps-val earn">₱<?= n2($basic_row) ?></span></div>
                     <div class="ps-row"><span class="ps-lbl">Days Present</span><span class="ps-val"><?= n2($latest['present']) ?> days</span></div>
                     <?php if ($all_tot > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Allowance</span><span class="ps-val earn">₱<?= n2($all_tot) ?></span></div>
@@ -3037,8 +3064,14 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <!-- Deductions -->
                 <div class="ps-col">
                     <div class="ps-col-title ded">Deductions</div>
-                    <?php if ($latest['deduction_amount'] > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Contributions</span><span class="ps-val ded">₱<?= n2($latest['deduction_amount']) ?></span></div>
+                    <?php if (($latest['pp_cont'] ?? $latest['deduction_amount']) > 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Contributions</span><span class="ps-val ded">₱<?= n2($latest['pp_cont'] ?? $latest['deduction_amount']) ?></span></div>
+                    <?php endif; ?>
+                    <?php if (($latest['pp_ded'] ?? 0) > 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Deductions</span><span class="ps-val ded">₱<?= n2($latest['pp_ded']) ?></span></div>
+                    <?php endif; ?>
+                    <?php if (($latest['pp_loan'] ?? 0) > 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Loans</span><span class="ps-val ded">₱<?= n2($latest['pp_loan']) ?></span></div>
                     <?php endif; ?>
                     <?php if ($latest['sss_fund'] > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">SSS Provident Fund</span><span class="ps-val ded">₱<?= n2($latest['sss_fund']) ?></span></div>
@@ -3064,6 +3097,14 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <?php endif; ?>
                     <div style="flex:1;"></div>
                     <div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#dc3545;">Total Deductions</span><span class="ps-val ded" style="font-size:15px;font-weight:900;">₱<?= n2($tot_ded) ?></span></div>
+                    <?php /* Part of NET (= gross − deductions + refunds + adjustment), so the
+                             column does not add up to the net below without them. */ ?>
+                    <?php if ($rfd_row != 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Refund</span><span class="ps-val earn">₱<?= n2(abs($rfd_row)) ?></span></div>
+                    <?php endif; ?>
+                    <?php if ($adj_row != 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Adjustment</span><span class="ps-val <?= $adj_row < 0 ? 'ded' : 'earn' ?>"><?= $adj_row < 0 ? '−₱' : '₱' ?><?= n2(abs($adj_row)) ?></span></div>
+                    <?php endif; ?>
                 </div>
             </div>
             <div class="ps-net">
@@ -3114,7 +3155,13 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     $sub2   = $_pp2['sub'];
                     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
                     $gr2    = $_pp2['gross'];
-                    $ded2   = $ps['deduction_amount'] + $ps['other_deduction'] + $ps['tax'] + $ps['jei_advances'] + $ps['jcc_advances'] + $ps['sss_fund'];
+                    // Straight from buildPayslip(), which is what NET was computed from, so
+                    // the two columns cannot disagree. The hand-rolled sum this replaces
+                    // left out the one-off deducting extras.
+                    $ded2   = $ps['pp_ded_total']
+                        ?? ($ps['deduction_amount'] + $ps['other_deduction'] + $ps['tax'] + $ps['jei_advances'] + $ps['jcc_advances'] + $ps['sss_fund']);
+                    $adj2   = (float) ($ps['pp_adjustment'] ?? 0);
+                    $rfd2   = (float) ($ps['pp_refunds'] ?? 0);
                     $t_net+=$ps['net']; $t_gross+=$gr2; $t_ded+=$ded2;
                     $psStatus = (int) $ps['payroll_status'];
                     $psReview = $ps['review_status'] === null ? null : (int) $ps['review_status'];
@@ -3130,7 +3177,20 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'gross'   => n2($gr2), 'deductions' => n2($ded2), 'net' => n2($ps['net']),
                         // Full earnings breakdown (mirrors the Latest Payslip card)
                         'per_day'    => n2($ps['per_day']),
-                        'basic'      => n2($ps['basic_pay']),
+                        // What this cutoff actually earned, NOT payroll_items.basic_pay —
+                        // that column is the MONTHLY rate, so a daily-rate employee on
+                        // P500/day was shown "Basic Pay P11,000.00" above a Sub-Total of
+                        // P4,500. On the monthly basis this is the half-month share
+                        // BEFORE absences, so Basic - Absent = Sub-Total reads correctly.
+                        'basic'      => n2($_pp2['parts']['is_monthly']
+                                           ? $_pp2['parts']['basic'] / 2
+                                           : $_pp2['parts']['basic']),
+                        'basic_lbl'  => $_pp2['parts']['is_monthly']
+                                        ? 'Half-Month Basic'
+                                        : 'Basic Pay (' . nd($ps['present']) . 'd × ₱' . n2($ps['per_day']) . ')',
+                        'adjustment' => n2($adj2),
+                        'adj_remarks'=> $ps['pp_adj_remarks'] ?? '',
+                        'refunds'    => n2($rfd2),
                         'allow_days' => nd($ps['allowance_days']), 'allow_rate' => n2($ps['allowance_amount']), 'allow_amt' => n2($at2),
                         'absent_amt' => n2($ab2),
                         'subtotal'   => n2($sub2),
@@ -3141,7 +3201,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'late_min'   => number_format($ps['late']), 'late_amt' => n2($la2),
                         'ut_min'     => number_format($ps['under_time']), 'ut_amt' => n2($ut2),
                         // Full deductions breakdown
-                        'd_contrib'  => n2($ps['deduction_amount']),
+                        'd_contrib'  => n2($ps['pp_cont'] ?? $ps['deduction_amount']),
+                        'd_ded'      => n2($ps['pp_ded'] ?? 0),
+                        'd_loan'     => n2($ps['pp_loan'] ?? 0),
                         'd_sssfund'  => n2($ps['sss_fund']),
                         'd_tax'      => n2($ps['tax']),
                         'd_jei'      => n2($ps['jei_advances']),
@@ -5841,7 +5903,7 @@ function buildPayrollReviewBreakdown(d) {
 
     // ── Earnings column ──
     var earn = '<div class="ps-col-title earn">Earnings</div>'
-        + eRow('Basic Pay', d.basic)
+        + eRow(d.basic_lbl || 'Basic Pay', d.basic)
         + (pos(d.allow_amt) ? eRow('Allowance (' + d.allow_days + 'd × ₱' + d.allow_rate + ')', d.allow_amt) : '')
         + (pos(d.absent_amt) ? eRow('Absent', d.absent_amt, true) : '')
         + '<div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span>'
@@ -5857,15 +5919,28 @@ function buildPayrollReviewBreakdown(d) {
     // ── Deductions column ──
     var dedItems = ''
         + (pos(d.d_contrib) ? eRow('Contributions', d.d_contrib, false).replace('earn', 'ded') : '')
+        + (pos(d.d_ded) ? eRow('Deductions', d.d_ded, false).replace('earn', 'ded') : '')
+        + (pos(d.d_loan) ? eRow('Loans', d.d_loan, false).replace('earn', 'ded') : '')
         + (pos(d.d_sssfund) ? eRow('SSS Provident Fund', d.d_sssfund, false).replace('earn', 'ded') : '')
         + (pos(d.d_tax) ? eRow('Withholding Tax', d.d_tax, false).replace('earn', 'ded') : '')
         + (pos(d.d_jei) ? eRow('JEI Advances', d.d_jei, false).replace('earn', 'ded') : '')
         + (pos(d.d_jcc) ? eRow('JCC Advances', d.d_jcc, false).replace('earn', 'ded') : '')
         + (pos(d.d_other) ? eRow('Other Deductions', d.d_other, false).replace('earn', 'ded') : '');
     if (!dedItems) dedItems = '<div class="ps-row"><span class="ps-lbl dim">No deductions</span></div>';
+    // Refunds and the manual adjustment are part of NET (net = gross - deductions
+    // + refunds + adjustment), so without them the column simply did not add up to
+    // the net printed beside it — by the whole adjustment, several thousand pesos
+    // on the payslips that carry one.
+    var adjNum = parseFloat(String(d.adjustment || '0').replace(/,/g, '')) || 0;
+    var rfdNum = parseFloat(String(d.refunds || '0').replace(/,/g, '')) || 0;
+    var adjLbl = 'Adjustment' + (d.adj_remarks ? ' (' + escapeHtml(d.adj_remarks) + ')' : '');
+    var backRows = ''
+        + (rfdNum ? eRow('Refund', String(d.refunds).replace('-', '')) : '')
+        + (adjNum ? eRow(adjLbl, String(d.adjustment).replace('-', ''), adjNum < 0) : '');
     var ded = '<div class="ps-col-title ded">Deductions</div>' + dedItems
         + '<div class="ps-row" style="margin-top:4px;"><span class="ps-lbl" style="font-weight:800;color:#dc3545;">Total Deductions</span>'
-        + '<span class="ps-val ded" style="font-size:15px;font-weight:900;">₱' + d.deductions + '</span></div>';
+        + '<span class="ps-val ded" style="font-size:15px;font-weight:900;">₱' + d.deductions + '</span></div>'
+        + backRows;
 
     // ── Assemble ──
     return stats

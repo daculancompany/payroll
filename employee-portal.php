@@ -197,7 +197,7 @@ $portal_must_change = $portal_acct ? ((int)$portal_acct['must_change'] === 1) : 
 // Only payroll batches that are Ready for Review (3) or Locked (2) are visible here —
 // employees shouldn't see draft/unfinished numbers before HR sends them for review.
 $s2 = $conn->prepare("
-    SELECT pi.id AS item_id, pi.net, pi.basic_pay, pi.present, pi.per_day, pi.rate_type,
+    SELECT pi.id AS item_id, pi.net, pi.basic_pay, pi.present, pi.paid_leave, pi.per_day, pi.rate_type,
            pi.allowance_amount, pi.allowance_days, pi.absent, pi.late, pi.ot, pi.ot_rate,
            pi.deduction_amount, pi.other_deduction, pi.tax,
            pi.jei_advances, pi.jcc_advances, pi.sss_fund, pi.under_time,
@@ -738,6 +738,7 @@ $owed_count = count($loans) + count($bal_deds);
 $pm = $late_amt = $ut_amt = $all_tot = $abs_amt = $ot_amt = 0;
 $lgl_amt = $sun_amt = $spc_amt = $sub_tot = $gross = $tot_ded = 0;
 $adj_row = $rfd_row = 0; $basic_row = 0; $basic_lbl = 'Basic Pay';
+$pleave_row = $pleave_amt = 0;
 if ($latest) {
     $pm       = payroll_per_minute($latest);
     $late_amt = $latest['late'] * $pm;
@@ -759,7 +760,19 @@ if ($latest) {
     // MONTHLY rate, so a daily-rate employee was shown it as their "Basic Pay".
     // Monthly shows the half-month share before absences, so the Absent row below
     // subtracts down to Sub-Total.
-    $basic_row = $_pp['parts']['is_monthly'] ? $_pp['parts']['basic'] / 2 : $_pp['parts']['basic'];
+    // Daily: payroll_earnings' basic is (present + paid_leave) x per_day, so the
+    // worked part and the leave part are split onto their own lines the way the
+    // admin sheet does — a "Basic Pay (7d x P500)" row showing P4,000 would not
+    // match its own label. Monthly keeps the half-month share: paid leave is not
+    // an earnings line there, it only keeps the day from becoming an absence.
+    // DAILY ONLY. On the monthly/fixed basis the half-month share already pays
+    // the leave day — paid_leave merely stops it counting as an absence — so an
+    // earnings row here would claim money the gross does not contain.
+    $pleave_row = $_pp['parts']['is_monthly'] ? 0 : (float) ($latest['paid_leave'] ?? 0);
+    $pleave_amt = $pleave_row * (float) $latest['per_day'];
+    $basic_row  = $_pp['parts']['is_monthly']
+        ? $_pp['parts']['basic'] / 2
+        : $_pp['parts']['basic'] - $pleave_amt;
     $basic_lbl = $_pp['parts']['is_monthly']
         ? 'Half-Month Basic'
         : 'Basic Pay (' . nd($latest['present']) . 'd × ₱' . n2($latest['per_day']) . ')';
@@ -3029,6 +3042,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <div class="ps-col">
                     <div class="ps-col-title earn">Earnings</div>
                     <div class="ps-row"><span class="ps-lbl"><?= htmlspecialchars($basic_lbl) ?></span><span class="ps-val earn">₱<?= n2($basic_row) ?></span></div>
+                    <?php if ($pleave_amt > 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Paid Leave (<?= nd($pleave_row) ?> day<?= $pleave_row > 1 ? 's' : '' ?> × ₱<?= n2($latest['per_day']) ?>)</span><span class="ps-val earn">₱<?= n2($pleave_amt) ?></span></div>
+                    <?php endif; ?>
                     <div class="ps-row"><span class="ps-lbl">Days Present</span><span class="ps-val"><?= n2($latest['present']) ?> days</span></div>
                     <?php if ($all_tot > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Allowance</span><span class="ps-val earn">₱<?= n2($all_tot) ?></span></div>
@@ -3182,9 +3198,17 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         // P500/day was shown "Basic Pay P11,000.00" above a Sub-Total of
                         // P4,500. On the monthly basis this is the half-month share
                         // BEFORE absences, so Basic - Absent = Sub-Total reads correctly.
+                        // Daily splits the worked days from the paid-leave days: the basic
+                        // payroll_earnings returns is (present + paid_leave) x per_day, so a
+                        // row labelled "7d x P500" must not carry the leave day's P500 too.
                         'basic'      => n2($_pp2['parts']['is_monthly']
                                            ? $_pp2['parts']['basic'] / 2
-                                           : $_pp2['parts']['basic']),
+                                           : $_pp2['parts']['basic'] - (float) ($ps['paid_leave'] ?? 0) * (float) $ps['per_day']),
+                        // Daily only — see the Latest Payslip card above.
+                        'pleave_days'=> nd($_pp2['parts']['is_monthly'] ? 0 : ($ps['paid_leave'] ?? 0)),
+                        'pleave_amt' => n2($_pp2['parts']['is_monthly']
+                                           ? 0
+                                           : (float) ($ps['paid_leave'] ?? 0) * (float) $ps['per_day']),
                         'basic_lbl'  => $_pp2['parts']['is_monthly']
                                         ? 'Half-Month Basic'
                                         : 'Basic Pay (' . nd($ps['present']) . 'd × ₱' . n2($ps['per_day']) . ')',
@@ -5904,6 +5928,7 @@ function buildPayrollReviewBreakdown(d) {
     // ── Earnings column ──
     var earn = '<div class="ps-col-title earn">Earnings</div>'
         + eRow(d.basic_lbl || 'Basic Pay', d.basic)
+        + (pos(d.pleave_amt) ? eRow('Paid Leave (' + d.pleave_days + ' day(s) × ₱' + d.per_day + ')', d.pleave_amt) : '')
         + (pos(d.allow_amt) ? eRow('Allowance (' + d.allow_days + 'd × ₱' + d.allow_rate + ')', d.allow_amt) : '')
         + (pos(d.absent_amt) ? eRow('Absent', d.absent_amt, true) : '')
         + '<div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span>'

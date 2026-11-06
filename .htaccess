@@ -64,6 +64,11 @@ Require all granted
     Require all denied
 </Files>
 
+# Per-server DB credentials (read by db_connect.php) — never web-reachable
+<FilesMatch "^db_config(\.sample)?\.php$">
+    Require all denied
+</FilesMatch>
+
 # ── Never serve data, source or backup files ─────────────────────────────
 # Real files bypass the router by design (the -f rule below), so anything
 # sitting in this folder is downloadable by default. payroll.sql (full schema

@@ -13,11 +13,12 @@
  * and NET match the Detailed table / payslip to the centavo. The paysheet only
  * re-buckets them into its fixed columns:
  *   OT/ND            overtime + night diff + holiday / rest-day premiums
- *   ALLOWANCE        allowance slots + one-off earnings not bucketed below
+ *   ALLOWANCE        allowance slots + configured allowance types + one-off
+ *                    earnings, less anything bucketed below
  *   ADJUSTMENT       manual adjustment + refunds (+ adds, − deducts) — counted
  *                    in GROSS PAY, as HR's own paysheet does
- *   HAZARD           one-off earnings labelled "…hazard…"
- *   MEAL             one-off earnings labelled "…meal…"
+ *   HAZARD           earnings labelled "…hazard…" — one-off OR configured
+ *   MEAL             earnings labelled "…meal…"   — one-off OR configured
  *   BACKPAY          one-off earnings labelled "Backpay"
  *   SSS              the SSS contribution (id 1); MPF has no source yet → 0
  *   PHILHEALTH       the PHIC contribution (id 2)
@@ -97,6 +98,28 @@ function paysheet_ded_bucket(int $type, int $id): string
     return 'others';
 }
 
+/**
+ * Which earnings column a NAMED earning belongs to, by its label: 'adj1'
+ * HAZARD, 'adj2' MEAL ALLOWANCE, or null for the general ALLOWANCE column.
+ *
+ * The rule lives here because the same label can arrive two ways — as a one-off
+ * payroll_item_extras line, or as a configured allowance type frozen onto the
+ * item (payroll_items.allowances). It used to be inlined on the extras loop
+ * only, so the SAME "Hazard Pay" landed in HAZARD when typed as a one-off but
+ * in ALLOWANCE when set up as a recurring allowance — the paysheet changed
+ * shape depending on how HR happened to enter it.
+ *
+ * Backpay is NOT handled here: it has its own exact-match test
+ * (payroll_is_backpay_label) and only ever arrives as a one-off.
+ */
+function paysheet_earning_bucket($label): ?string
+{
+    $label = (string) $label;
+    if (preg_match('/hazard/i', $label)) return 'adj1';
+    if (preg_match('/meal/i', $label))   return 'adj2';
+    return null;
+}
+
 /** Columns summed on the TOTAL rows (RATE is not a sum). */
 function paysheet_sum_keys(): array
 {
@@ -165,10 +188,27 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
         foreach ($extras[(int) $row['id']] ?? [] as $x) {
             $amt = (float) $x['amount'];
             if ((int) $x['kind'] !== 2) { $extraLess += $amt; continue; }
-            if (payroll_is_backpay_label($x['label']))       $backpay += $amt;
-            elseif (preg_match('/hazard/i', $x['label']))    $hazard  += $amt;
-            elseif (preg_match('/meal/i', $x['label']))      $meal    += $amt;
-            else                                             $otherEarn += $amt;
+            if (payroll_is_backpay_label($x['label'])) { $backpay += $amt; continue; }
+            switch (paysheet_earning_bucket($x['label'])) {
+                case 'adj1': $hazard += $amt; break;
+                case 'adj2': $meal   += $amt; break;
+                default:     $otherEarn += $amt;
+            }
+        }
+        // Configured allowance types (payroll_items.allowances) follow the SAME
+        // label rule. They are already inside $e['allowance'], so what is moved
+        // to HAZARD / MEAL has to come back OUT of the ALLOWANCE column below —
+        // never added to gross again. Without this a recurring "Hazard Pay"
+        // showed up under ALLOWANCE while the identical one-off line showed up
+        // under HAZARD, so the two cutoffs either side of the switch-over did
+        // not line up on HR's paysheet.
+        $allowHazard = $allowMeal = 0.0;
+        foreach (payroll_allowance_list($row) as $__a) {
+            $amt = (float) ($__a['amount'] ?? 0);
+            switch (paysheet_earning_bucket($__a['label'] ?? '')) {
+                case 'adj1': $allowHazard += $amt; break;
+                case 'adj2': $allowMeal   += $amt; break;
+            }
         }
         $gross = $e['gross'] + $hazard + $meal + $backpay + $otherEarn;
 
@@ -207,9 +247,9 @@ function paysheet_build(mysqli $conn, int $payroll_id): array
             'rate'   => $e['is_monthly'] ? (float) $row['basic_pay'] : (float) $row['per_day'],
             'basic'  => $e['subtotal'],
             'otnd'   => $e['overtime'] + $e['nsd_amt'] + $e['legal_amt'] + $e['rest_amt'] + $e['special_amt'],
-            'allow'  => $e['allowance'] + $otherEarn,
-            'adj1'   => $hazard,
-            'adj2'   => $meal,
+            'allow'  => $e['allowance'] + $otherEarn - $allowHazard - $allowMeal,
+            'adj1'   => $hazard + $allowHazard,
+            'adj2'   => $meal + $allowMeal,
             'adj3'   => $backpay,
             'under'  => $e['under_amt'],
             'late'   => $e['late_amt'],

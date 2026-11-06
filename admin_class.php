@@ -4640,23 +4640,32 @@ class Action
         }
     }
 
+    // Same shape as save_deductions(): the name and description came straight
+    // off $_POST into the SQL text. Prepared, and a description that is not on
+    // the form no longer blanks the stored one.
     function save_allowances()
     {
-        extract($_POST);
+        $id        = (int) ($_POST['id'] ?? 0);
+        $allowance = trim((string) ($_POST['allowance'] ?? ''));
+        if ($allowance === '') return 0;
+        $has_desc  = array_key_exists('description', $_POST);
+        $desc      = trim((string) ($_POST['description'] ?? ''));
 
-        $data = " allowance='$allowance' ";
-
-        $data .= ", description = '$description' ";
-
-        if (empty($id)) {
-            $save = $this->db->query("INSERT INTO allowances set " . $data);
+        if ($id <= 0) {
+            $st = $this->db->prepare("INSERT INTO allowances (allowance, description) VALUES (?, ?)");
+            if (!$st) return 0;
+            $st->bind_param('ss', $allowance, $desc);
+        } elseif ($has_desc) {
+            $st = $this->db->prepare("UPDATE allowances SET allowance = ?, description = ? WHERE id = ?");
+            if (!$st) return 0;
+            $st->bind_param('ssi', $allowance, $desc, $id);
         } else {
-            $save = $this->db->query("UPDATE allowances set " . $data . " where id=" . $id);
+            $st = $this->db->prepare("UPDATE allowances SET allowance = ? WHERE id = ?");
+            if (!$st) return 0;
+            $st->bind_param('si', $allowance, $id);
         }
-
-        if ($save) {
-            return 1;
-        }
+        // The page shows "created" for 1 and "updated" for 2.
+        return $st->execute() ? ($id > 0 ? 2 : 1) : 0;
     }
 
     function delete_allowances()
@@ -4670,27 +4679,94 @@ class Action
         }
     }
 
+    // Adds recurring allowance rows for ONE employee. Two things were wrong
+    // here before:
+    //
+    //   1. Every value went into the SQL as an interpolated string straight off
+    //      $_POST via extract() — an injection hole on a screen any HR user can
+    //      reach. It is a prepared statement now.
+    //   2. effective_to was never written, although the column exists and
+    //      employee_allowance_amount_for_run() reads it. A recurring allowance
+    //      could therefore only be stopped by DELETING the row, which also
+    //      erases the record that it was ever paid.
     function save_employee_allowance()
     {
-        extract($_POST);
+        $employee_id = (int) ($_POST['employee_id'] ?? 0);
+        if ($employee_id <= 0) return 0;
 
-        foreach ($allowance_id as $k => $v) {
-            $data = " employee_id='$employee_id' ";
+        $ids    = (array) ($_POST['allowance_id']   ?? []);
+        $types  = (array) ($_POST['type']           ?? []);
+        $amts   = (array) ($_POST['amount']         ?? []);
+        $froms  = (array) ($_POST['effective_date'] ?? []);
+        $tos    = (array) ($_POST['effective_to']   ?? []);
 
-            $data .= ", allowance_id = '$allowance_id[$k]' ";
+        $has_eff_to = ($c = $this->db->query("SHOW COLUMNS FROM employee_allowances LIKE 'effective_to'")) && $c->num_rows;
 
-            $data .= ", type = '$type[$k]' ";
+        $sql = $has_eff_to
+            ? "INSERT INTO employee_allowances (employee_id, allowance_id, `type`, amount, effective_date, effective_to)
+               VALUES (?, ?, ?, ?, ?, ?)"
+            : "INSERT INTO employee_allowances (employee_id, allowance_id, `type`, amount, effective_date)
+               VALUES (?, ?, ?, ?, ?)";
 
-            $data .= ", amount = '$amount[$k]' ";
+        // APPEND-ONLY on purpose. The "New Allowance" modal opens with an empty
+        // table and posts only the rows just typed into it — the employee's
+        // existing allowances are listed on view_employee.php and removed there
+        // one at a time (delete_employee_allowance). A delete-then-insert here
+        // would wipe every allowance the employee already had.
+        $this->db->begin_transaction();
+        try {
+            $ins = $this->db->prepare($sql);
+            if (!$ins) throw new Exception($this->db->error);
 
-            $data .= ", effective_date = '$effective_date[$k]' ";
+            foreach ($ids as $k => $_) {
+                $aid  = (int) $ids[$k];
+                $type = (int) ($types[$k] ?? 1);
+                $amt  = round((float) ($amts[$k] ?? 0), 2);
+                $from = trim((string) ($froms[$k] ?? ''));
+                $to   = trim((string) ($tos[$k] ?? ''));
 
-            $save[] = $this->db->query("INSERT INTO employee_allowances set " . $data);
-        }
+                // Skip junk rather than storing it: a blank date in a NOT NULL
+                // DATE column becomes 0000-00-00, which strtotime() cannot read.
+                if ($aid <= 0 || $amt <= 0 || $from === '') continue;
+                if (!in_array($type, [1, 2, 3], true)) $type = 1;
+                // "Once" is paid in the cutoff holding its date — no end date.
+                if ($type === 3 || $to === '' || $to < $from) $to = null;
 
-        if (isset($save)) {
+                if ($has_eff_to) $ins->bind_param('iiidss', $employee_id, $aid, $type, $amt, $from, $to);
+                else             $ins->bind_param('iiids',  $employee_id, $aid, $type, $amt, $from);
+                if (!$ins->execute()) throw new Exception($ins->error);
+            }
+
+            $this->db->commit();
             return 1;
+        } catch (Exception $e) {
+            $this->db->rollback();
+            return 0;
         }
+    }
+
+    // Stop a recurring allowance from a given date, keeping the row. The
+    // calculation reads effective_to (employee_allowance_amount_for_run), so
+    // this takes effect on the next Calculate and leaves closed runs alone.
+    function end_employee_allowance()
+    {
+        $id = (int) ($_POST['id'] ?? 0);
+        $to = trim((string) ($_POST['effective_to'] ?? ''));
+        if ($id <= 0) return 0;
+        if ($to === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to) || strpos($to, '0000-00-00') === 0) return 0;
+
+        if (!(($c = $this->db->query("SHOW COLUMNS FROM employee_allowances LIKE 'effective_to'")) && $c->num_rows)) return 0;
+
+        // An end date before the start would make the row never apply AND read
+        // as nonsense on the screen; clamp it to the start instead.
+        $st = $this->db->prepare(
+            "UPDATE employee_allowances
+                SET effective_to = GREATEST(?, effective_date)
+              WHERE id = ?"
+        );
+        if (!$st) return 0;
+        $st->bind_param('si', $to, $id);
+        return $st->execute() ? 1 : 0;
     }
 
     function delete_employee_allowance()
@@ -4715,23 +4791,33 @@ class Action
         }
     }
 
+    // The Create/Edit Deduction form has had its Description field commented out
+    // for a while, so $description was never posted: extract($_POST) left it
+    // undefined, PHP emitted a notice straight into the AJAX response body, and
+    // the empty value overwrote whatever description the row already had. A
+    // field that is not on the form is now simply left alone on an update.
     function save_deductions()
     {
-        extract($_POST);
+        $id        = (int) ($_POST['id'] ?? 0);
+        $deduction = trim((string) ($_POST['deduction'] ?? ''));
+        if ($deduction === '') return 0;
+        $has_desc  = array_key_exists('description', $_POST);
+        $desc      = trim((string) ($_POST['description'] ?? ''));
 
-        $data = " deduction='$deduction' ";
-
-        $data .= ", description = '$description' ";
-
-        if (empty($id)) {
-            $save = $this->db->query("INSERT INTO deductions set " . $data);
+        if ($id <= 0) {
+            $st = $this->db->prepare("INSERT INTO deductions (deduction, description) VALUES (?, ?)");
+            if (!$st) return 0;
+            $st->bind_param('ss', $deduction, $desc);
+        } elseif ($has_desc) {
+            $st = $this->db->prepare("UPDATE deductions SET deduction = ?, description = ? WHERE id = ?");
+            if (!$st) return 0;
+            $st->bind_param('ssi', $deduction, $desc, $id);
         } else {
-            $save = $this->db->query("UPDATE deductions set " . $data . " where id=" . $id);
+            $st = $this->db->prepare("UPDATE deductions SET deduction = ? WHERE id = ?");
+            if (!$st) return 0;
+            $st->bind_param('si', $deduction, $id);
         }
-
-        if ($save) {
-            return 1;
-        }
+        return $st->execute() ? 1 : 0;
     }
 
     function delete_deductions()
@@ -7237,6 +7323,146 @@ class Action
      * dates is inserted inside the same transaction and vanishes with the
      * rollback. Only the batch's own employees are reported.
      */
+    /**
+     * What a Recalculate WOULD change, without changing anything.
+     *
+     * Same trick as preview_payroll_from_dtr() below: snapshot the figures,
+     * run calculate_payroll() in dry-run mode inside a transaction, read the
+     * result through the same get_payroll_rows_data() the sheet uses, then
+     * ROLL BACK. Nothing is committed on any path.
+     *
+     * Recalculate used to apply straight away and redirect, so there was no
+     * way to see what moved — a run where nothing changed (an allowance type
+     * left unticked in Payroll Settings, say) looked exactly like one that
+     * worked.
+     *
+     * Verified rows (review_status = 1) are skipped by the recalculation
+     * itself, so they can never appear as changed; they are counted and
+     * reported separately, because "only 2 people changed" is otherwise
+     * baffling on a 369-employee run.
+     */
+    function preview_recalculate()
+    {
+        $id = (int) ($_POST['id'] ?? 0);
+        if ($id <= 0) return ['result' => false, 'message' => 'Invalid payroll.'];
+
+        $pay = $this->db->query("SELECT id, ref_no, status FROM payroll WHERE id = $id")->fetch_assoc();
+        if (!$pay) return ['result' => false, 'message' => 'Payroll not found.'];
+        if ((int) $pay['status'] >= 2) {
+            return ['result' => false, 'message' => 'This payroll is locked — it cannot be recalculated.'];
+        }
+
+        $savedPost = $_POST;
+
+        // employee_id + name per item id; get_payroll_rows_data() returns item
+        // ids only, and the rebuild issues NEW item ids — so the two sides are
+        // matched on employee_id, which survives.
+        $meta = [];
+        $verified = 0;
+        $mq = $this->db->query("SELECT pi.id, pi.employee_id, pi.review_status,
+                                       CONCAT(e.lastname, ', ', e.firstname) AS name
+                                  FROM payroll_items pi
+                                  INNER JOIN employee e ON e.id = pi.employee_id
+                                 WHERE pi.payroll_id = $id");
+        if ($mq) while ($m = $mq->fetch_assoc()) {
+            $meta[(int) $m['id']] = $m;
+            if ((int) $m['review_status'] === 1) $verified++;
+        }
+
+        $snap = function (array $metaMap) use ($id) {
+            $_POST = ['payroll_id' => $id];
+            $data  = $this->get_payroll_rows_data();
+            $out   = [];
+            foreach (($data['rows'] ?? []) as $r) {
+                $m = $metaMap[(int) $r['id']] ?? null;
+                if (!$m) continue;
+                $out[(int) $m['employee_id']] = [
+                    'name'       => $m['name'],
+                    'verified'   => (int) $m['review_status'] === 1,
+                    'gross'      => round((float) $r['gross'], 2),
+                    'deductions' => round((float) $r['total_deductions'], 2),
+                    'net'        => round((float) $r['net'], 2),
+                ];
+            }
+            return $out;
+        };
+
+        $before = $snap($meta);
+
+        $this->db->begin_transaction();
+        try {
+            $_POST = ['id' => $id, 'type' => 'recalculate'];
+            $calc  = $this->calculate_payroll(true);
+            if (empty($calc['result'])) {
+                $this->db->rollback();
+                $_POST = $savedPost;
+                return ['result' => false, 'message' => $calc['message'] ?? 'Could not simulate the recalculation.'];
+            }
+            // Item ids change across the rebuild, so re-read the map.
+            $metaAfter = [];
+            $mq2 = $this->db->query("SELECT pi.id, pi.employee_id, pi.review_status,
+                                            CONCAT(e.lastname, ', ', e.firstname) AS name
+                                       FROM payroll_items pi
+                                       INNER JOIN employee e ON e.id = pi.employee_id
+                                      WHERE pi.payroll_id = $id");
+            if ($mq2) while ($m = $mq2->fetch_assoc()) $metaAfter[(int) $m['id']] = $m;
+            $after = $snap($metaAfter);
+        } catch (\Throwable $e) {
+            $this->db->rollback();
+            $_POST = $savedPost;
+            return ['result' => false, 'message' => 'Preview failed: ' . $e->getMessage()];
+        }
+
+        // Always discard — this is a simulation, never a save.
+        $this->db->rollback();
+        $_POST = $savedPost;
+
+        $rows = []; $unchanged = 0;
+        $tot = ['old_net' => 0.0, 'new_net' => 0.0, 'old_gross' => 0.0, 'new_gross' => 0.0];
+        foreach ($after as $eid => $a) {
+            $b = $before[$eid] ?? ['name' => $a['name'], 'gross' => 0.0, 'deductions' => 0.0, 'net' => 0.0, 'verified' => false];
+            $tot['old_net']   += $b['net'];   $tot['new_net']   += $a['net'];
+            $tot['old_gross'] += $b['gross']; $tot['new_gross'] += $a['gross'];
+            if (abs($a['net'] - $b['net']) < 0.005
+                && abs($a['gross'] - $b['gross']) < 0.005
+                && abs($a['deductions'] - $b['deductions']) < 0.005) { $unchanged++; continue; }
+            $rows[] = [
+                'employee_id' => (int) $eid,
+                'name'        => $a['name'],
+                'new'         => !isset($before[$eid]),
+                'old_gross'   => $b['gross'],  'new_gross' => $a['gross'],
+                'old_ded'     => $b['deductions'], 'new_ded' => $a['deductions'],
+                'old_net'     => $b['net'],    'new_net'   => $a['net'],
+                'delta'       => round($a['net'] - $b['net'], 2),
+            ];
+        }
+        // Someone in the run before but not after (removed by the rebuild).
+        foreach ($before as $eid => $b) {
+            if (isset($after[$eid])) continue;
+            $rows[] = [
+                'employee_id' => (int) $eid, 'name' => $b['name'], 'removed' => true,
+                'old_gross' => $b['gross'], 'new_gross' => 0.0,
+                'old_ded'   => $b['deductions'], 'new_ded' => 0.0,
+                'old_net'   => $b['net'], 'new_net' => 0.0,
+                'delta'     => round(-$b['net'], 2),
+            ];
+            $tot['old_net'] += $b['net']; $tot['old_gross'] += $b['gross'];
+        }
+        usort($rows, fn($x, $y) => strcmp($x['name'], $y['name']));
+        foreach ($tot as $k => $v) $tot[$k] = round($v, 2);
+        $tot['delta'] = round($tot['new_net'] - $tot['old_net'], 2);
+
+        return [
+            'result'    => true,
+            'ref_no'    => $pay['ref_no'],
+            'rows'      => $rows,
+            'changed'   => count($rows),
+            'unchanged' => $unchanged,
+            'verified'  => $verified,
+            'totals'    => $tot,
+        ];
+    }
+
     function preview_payroll_from_dtr()
     {
         $ddtrId = (int) ($_POST['ddtr_id'] ?? 0);

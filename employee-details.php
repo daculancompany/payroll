@@ -143,6 +143,20 @@ $deduct_agg = $fetch_agg("SELECT COUNT(*) cnt,
     FROM employee_deductions WHERE employee_id = $emp_id");
 $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pending
     FROM leave_requests WHERE employee_id = $emp_id");
+// Recurring allowances. "active" = in force today, which is what the next
+// Calculate will actually apply — a row that has been ended still shows in the
+// list (that is the point of effective_to) but must not be counted as live.
+$allow_agg = $fetch_agg("SELECT COUNT(*) cnt,
+        COALESCE(SUM(effective_to IS NULL OR effective_to >= CURDATE()),0) active
+    FROM employee_allowances WHERE employee_id = $emp_id");
+// Needed by the Add Allowance button in the action bar, which renders well
+// before the Allowances tab that consumes the rest of these.
+$allow_types  = [1 => 'Monthly', 2 => 'Semi-Monthly', 3 => 'Once'];
+$allow_master = [];
+if ($amq = $conn->query("SELECT id, allowance FROM allowances ORDER BY allowance ASC")) {
+    while ($r = $amq->fetch_assoc()) $allow_master[(int) $r['id']] = trim($r['allowance']);
+}
+$allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 'effective_to'")->num_rows;
 ?>
 <style>
     /* Brand purple comes from assets2/css/theme.css — recolour app-wide there. */
@@ -310,6 +324,15 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 <button type="button" class="btn btn-sm btn-warning text-dark" onclick="add_deductions()">
                                     <i class="ri-subtract-line me-1"></i>Add Deduction
                                 </button>
+                                <?php /* Sits with the other "add" actions rather than inside the
+                                        Allowances tab, so it reads as one row of controls. It also
+                                        switches to that tab, since the result appears there. */ ?>
+                                <?php if (!$emp_readonly): ?>
+                                <button type="button" class="btn btn-sm btn-success" onclick="empAllowanceAdd()"
+                                    <?= $allow_master ? '' : 'disabled title="Create an allowance type first"' ?>>
+                                    <i class="ri-gift-2-line me-1"></i>Add Allowance
+                                </button>
+                                <?php endif; ?>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -428,6 +451,12 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-deductions" role="tab">
                                     <i class="ri-subtract-line"></i><span class="d-none d-sm-inline">Deductions</span>
                                     <?php if ($deduct_agg['cnt'] > 0): ?><span class="tab-count"><?= $deduct_agg['cnt'] ?></span><?php endif; ?>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-allowances" role="tab">
+                                    <i class="ri-gift-2-line"></i><span class="d-none d-sm-inline">Allowances</span>
+                                    <?php if ($allow_agg['cnt'] > 0): ?><span class="tab-count"><?= $allow_agg['cnt'] ?></span><?php endif; ?>
                                 </a>
                             </li>
                             <!-- <li class="nav-item" role="presentation">
@@ -1501,6 +1530,107 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                                 <?php endif; ?>
                             </div>
 
+                            <!-- ALLOWANCES TAB -->
+                            <?php
+                            // Recurring allowances: defined once per employee and applied by
+                            // every Calculate inside their effectivity window
+                            // (employee_allowance_amount_for_run, db_connect.php). This screen
+                            // replaces view_employee.php, whose buttons called uni_modal() —
+                            // a helper that no longer exists anywhere in the app, so nothing
+                            // on it worked and no allowance could ever be assigned.
+                            // $allow_types / $allow_master / $allow_has_to are built in the
+                            // top block, where the action bar's button already needs them.
+                            $allow_rows = [];
+                            $aq = $conn->query("SELECT ea.*, a.allowance AS aname FROM employee_allowances ea
+                                                LEFT JOIN allowances a ON a.id = ea.allowance_id
+                                                WHERE ea.employee_id = $emp_id
+                                                ORDER BY ea.type ASC, DATE(ea.effective_date) ASC, ea.id ASC");
+                            while ($aq && ($r = $aq->fetch_assoc())) $allow_rows[] = $r;
+                            // A zero date is not a date. strtotime() does NOT reject 0000-00-00 —
+                            // it returns a negative timestamp that date() prints as "Nov 30,-0001".
+                            $allow_dt = function ($d) {
+                                $d = trim((string) $d);
+                                if ($d === '' || strpos($d, '0000-00-00') === 0) return null;
+                                $t = strtotime($d);
+                                return $t ? date('M d, Y', $t) : null;
+                            };
+                            $today_ymd = date('Y-m-d');
+                            ?>
+                            <div class="tab-pane" id="arrow-allowances" role="tabpanel">
+                                <div class="text-muted mt-2 mb-2" style="font-size:12px;">
+                                    Applied automatically by every Calculate inside the effectivity window.
+                                    The allowance type must also be ticked in that run&rsquo;s <b>Payroll Settings</b>.
+                                    <?php if (!$emp_readonly): ?>Use <b>Add Allowance</b> above to add one.<?php endif; ?>
+                                </div>
+                                <?php if (!$allow_master): ?>
+                                <div class="alert alert-warning py-2" style="font-size:12px;">
+                                    <i class="ri-error-warning-line me-1"></i>No allowance types exist yet.
+                                    Create one under <b>Payroll &rarr; Benefits &amp; Compensation &rarr; Allowances</b> first.
+                                </div>
+                                <?php endif; ?>
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-bordered align-middle">
+                                        <thead class="table-dark">
+                                            <tr>
+                                                <th><i class="ri-gift-2-line me-1"></i>Allowance</th>
+                                                <th style="width:130px;"><i class="ri-repeat-line me-1"></i>Type</th>
+                                                <th class="text-end" style="width:130px;"><i class="ri-money-dollar-circle-line me-1"></i>Amount</th>
+                                                <th style="width:210px;"><i class="ri-calendar-line me-1"></i>Effectivity</th>
+                                                <th class="text-center" style="width:110px;">Status</th>
+                                                <?php if (!$emp_readonly): ?><th class="text-center" style="width:110px;"><i class="ri-settings-3-line me-1"></i>Action</th><?php endif; ?>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                        <?php foreach ($allow_rows as $r):
+                                            $from = $allow_dt($r['effective_date']);
+                                            $to   = $allow_has_to ? $allow_dt($r['effective_to'] ?? null) : null;
+                                            $rawTo = $allow_has_to ? trim((string) ($r['effective_to'] ?? '')) : '';
+                                            $ended = $rawTo !== '' && strpos($rawTo, '0000-00-00') !== 0 && $rawTo < $today_ymd;
+                                        ?>
+                                            <tr<?= $ended ? ' class="table-light text-muted"' : '' ?>>
+                                                <td><span style="font-weight:600;"><?= esc($r['aname'] ?? '(deleted type)') ?></span></td>
+                                                <td><?= esc($allow_types[(int) $r['type']] ?? '—') ?></td>
+                                                <td class="text-end"><span class="emp-currency-val">&#8369; <?= number_format((float) $r['amount'], 2) ?></span></td>
+                                                <td style="font-size:12px;">
+                                                    <?php if ((int) $r['type'] === 3): ?>
+                                                        <?= $from ? esc($from) : '<span class="text-muted">no date</span>' ?>
+                                                    <?php else: ?>
+                                                        <?= $from ? esc($from) : '<span class="text-muted">since always</span>' ?>
+                                                        &rarr; <?= $to ? esc($to) : '<span class="text-muted">ongoing</span>' ?>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="text-center">
+                                                    <?php if ($ended): ?><span class="badge bg-secondary">Ended</span>
+                                                    <?php else: ?><span class="badge bg-success">Active</span><?php endif; ?>
+                                                </td>
+                                                <?php if (!$emp_readonly): ?>
+                                                <td class="text-center">
+                                                    <?php /* Ending keeps the row, and with it the record that it was paid;
+                                                            deleting is for a row entered by mistake. */ ?>
+                                                    <?php if ($allow_has_to && !$ended && (int) $r['type'] !== 3): ?>
+                                                    <button type="button" class="btn btn-sm btn-outline-secondary" title="Stop this allowance"
+                                                        onclick="empAllowanceEnd(<?= (int) $r['id'] ?>, '<?= esc($r['aname'] ?? '') ?>')"><i class="ri-stop-circle-line"></i></button>
+                                                    <?php endif; ?>
+                                                    <button type="button" class="btn btn-sm btn-outline-danger" title="Delete this row"
+                                                        onclick="empAllowanceDelete(<?= (int) $r['id'] ?>)"><i class="ri-delete-bin-line"></i></button>
+                                                </td>
+                                                <?php endif; ?>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                        <?php if (!$allow_rows): ?>
+                                            <tr><td colspan="<?= $emp_readonly ? 5 : 6 ?>">
+                                                <div class="emp-empty">
+                                                    <i class="ri-gift-2-line"></i>
+                                                    <b>No recurring allowances</b>
+                                                    <span>One-off amounts can still be added per payroll on the payroll sheet.</span>
+                                                </div>
+                                            </td></tr>
+                                        <?php endif; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
                             <!-- SITES TAB -->
                             <div class="tab-pane" id="arrow-sites" role="tabpanel">
                                 <div class="table-responsive mt-2">
@@ -2096,6 +2226,66 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
         </div>
     </div>
 
+    <!-- Add Recurring Allowance -->
+    <?php if (!$emp_readonly && !empty($allow_master)): ?>
+    <div class="modal fade" id="modal-emp-allowance" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <form id="form-emp-allowance">
+                    <div class="modal-header">
+                        <h6 class="modal-title"><i class="ri-gift-2-line me-2" style="color:#673bb6;"></i>Add Recurring Allowance</h6>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="employee_id" value="<?= (int) $emp_id ?>">
+                        <?php /* save_employee_allowance() takes parallel arrays (the old screen
+                                posted a batch), so one row is posted as one-element arrays. */ ?>
+                        <div class="mb-3">
+                            <label class="form-label" style="font-size:12px;font-weight:600;">Allowance</label>
+                            <select class="form-select" name="allowance_id[]" id="ea-allowance" required>
+                                <option value="">Select allowance…</option>
+                                <?php foreach ($allow_master as $aid => $aname): ?>
+                                <option value="<?= (int) $aid ?>"><?= esc($aname) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-7">
+                                <label class="form-label" style="font-size:12px;font-weight:600;">Type</label>
+                                <select class="form-select" name="type[]" id="ea-type">
+                                    <option value="2">Semi-Monthly — full amount every cutoff</option>
+                                    <option value="1">Monthly — half on a semi-monthly cutoff</option>
+                                    <option value="3">Once — only the cutoff holding the date</option>
+                                </select>
+                            </div>
+                            <div class="col-5">
+                                <label class="form-label" style="font-size:12px;font-weight:600;">Amount</label>
+                                <input type="number" step="0.01" min="0.01" class="form-control text-end" name="amount[]" id="ea-amount" required>
+                            </div>
+                            <div class="col-6">
+                                <label class="form-label" style="font-size:12px;font-weight:600;">Effective Date <span id="ea-from-hint" class="text-muted" style="font-weight:400;"></span></label>
+                                <input type="date" class="form-control" name="effective_date[]" id="ea-from" required>
+                            </div>
+                            <div class="col-6" id="ea-to-wrap">
+                                <label class="form-label" style="font-size:12px;font-weight:600;">Effective To <span class="text-muted" style="font-weight:400;">(optional)</span></label>
+                                <input type="date" class="form-control" name="effective_to[]" id="ea-to">
+                            </div>
+                        </div>
+                        <div class="alert alert-info py-2 mt-3 mb-0" style="font-size:11.5px;">
+                            <i class="ri-information-line me-1"></i>Applied on the next <b>Calculate</b>, and only if this
+                            allowance type is ticked in that run&rsquo;s Payroll Settings. Runs already calculated keep their frozen figures.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary"><i class="ri-add-line me-1"></i>Add Allowance</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <!-- Loan History Modal -->
     <div class="modal fade" id="modal-loan-history" tabindex="-1" role="dialog">
         <div class="modal-dialog modal-lg" role="document">
@@ -2376,5 +2566,152 @@ $leave_agg = $fetch_agg("SELECT COUNT(*) cnt, COALESCE(SUM(status = 0),0) pendin
                 start();
             }
         })();
+    </script>
+    <!-- Recurring allowances: add / end / delete -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        var TAB = '#arrow-allowances';
+
+        function showTab() {
+            var link = document.querySelector('#emp-tabs a[href="' + TAB + '"]');
+            if (link) bootstrap.Tab.getOrCreateInstance(link).show();
+        }
+
+        // The page reloads after a save, which would drop the viewer back on
+        // Overview — away from the row they just created. Reload onto the hash
+        // and reopen that tab here. Only a hash that names a real tab is used.
+        (function restoreTabFromHash() {
+            var h = window.location.hash;
+            if (!h) return;
+            var link = document.querySelector('#emp-tabs a[href="' + h + '"]');
+            if (link) bootstrap.Tab.getOrCreateInstance(link).show();
+        })();
+
+        function reloadOnTab() {
+            window.location.hash = TAB;
+            window.location.reload();
+        }
+
+        // "Once" is paid in the single cutoff holding its date, so it has no
+        // end date; the recurring types use the pair as a window.
+        function syncOnce() {
+            var once = $('#ea-type').val() === '3';
+            $('#ea-to-wrap').toggle(!once);
+            $('#ea-from-hint').text(once ? '(the cutoff it is paid in)' : '(first cutoff it applies)');
+            if (once) $('#ea-to').val('');
+        }
+
+        window.empAllowanceAdd = function () {
+            var f = document.getElementById('form-emp-allowance');
+            if (!f) return;
+            f.reset();
+            $('#ea-from').val(new Date().toISOString().slice(0, 10));
+            syncOnce();
+            showTab();   // the result appears there, so go there first
+            bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-emp-allowance')).show();
+        };
+
+        $(document).on('change', '#ea-type', syncOnce);
+
+        $(document).on('submit', '#form-emp-allowance', function (e) {
+            e.preventDefault();
+            var to = $('#ea-to').val(), from = $('#ea-from').val();
+            if (to && from && to < from) {
+                Swal.fire({ icon: 'warning', title: 'Check the dates', text: 'Effective To cannot be earlier than Effective Date.' });
+                return;
+            }
+            var $btn = $(this).find('button[type=submit]').prop('disabled', true);
+            $.ajax({
+                url: 'ajax.php?action=save_employee_allowance',
+                method: 'POST',
+                data: $(this).serialize(),
+                error: function () {
+                    $btn.prop('disabled', false);
+                    Swal.fire({ icon: 'error', title: 'Error', text: 'Something went wrong.' });
+                },
+                success: function (resp) {
+                    $btn.prop('disabled', false);
+                    // save_employee_allowance() returns 1 on success, 0 on a
+                    // rolled-back failure — do not reload on 0 or the row would
+                    // look saved when nothing was written.
+                    if (String(resp).trim() === '1') {
+                        // Say so before reloading: the page coming back looks the
+                        // same whether the row saved or the request quietly failed.
+                        bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-emp-allowance')).hide();
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Success!',
+                            text: 'Recurring allowance successfully added.',
+                        }).then(reloadOnTab);
+                    } else {
+                        Swal.fire({ icon: 'error', title: 'Not saved', text: 'The allowance could not be saved.' });
+                    }
+                }
+            });
+        });
+
+        window.empAllowanceEnd = function (id, name) {
+            Swal.fire({
+                title: 'Stop this allowance?',
+                html: 'From which date should <b>' + $('<div>').text(name || 'this allowance').html()
+                    + '</b> stop being paid?<br><span style="font-size:12px;color:#777;">'
+                    + 'It stays on the list as a record of what was paid.</span>',
+                input: 'date',
+                inputValue: new Date().toISOString().slice(0, 10),
+                showCancelButton: true,
+                confirmButtonText: 'Stop it',
+                inputValidator: function (v) { return v ? null : 'Pick a date.'; }
+            }).then(function (r) {
+                if (!r.isConfirmed) return;
+                $.ajax({
+                    url: 'ajax.php?action=end_employee_allowance',
+                    method: 'POST',
+                    data: { id: id, effective_to: r.value },
+                    error: function () { Swal.fire({ icon: 'error', title: 'Error', text: 'Something went wrong.' }); },
+                    success: function (resp) {
+                        if (String(resp).trim() === '1') {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Stopped',
+                                text: 'The allowance will not be paid from that date onward.',
+                            }).then(reloadOnTab);
+                        } else {
+                            Swal.fire({ icon: 'error', title: 'Not saved', text: 'Could not stop the allowance.' });
+                        }
+                    }
+                });
+            });
+        };
+
+        window.empAllowanceDelete = function (id) {
+            Swal.fire({
+                title: 'Delete this row?',
+                text: 'This erases the record that it was ever paid. To stop a live allowance, use Stop instead.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#d33',
+                confirmButtonText: 'Yes, delete'
+            }).then(function (r) {
+                if (!r.isConfirmed) return;
+                $.ajax({
+                    url: 'ajax.php?action=delete_employee_allowance',
+                    method: 'POST',
+                    data: { id: id },
+                    error: function () { Swal.fire({ icon: 'error', title: 'Error', text: 'Something went wrong.' }); },
+                    success: function (resp) {
+                        if (String(resp).trim() === '1') {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Deleted',
+                                text: 'The allowance row has been removed.',
+                            }).then(reloadOnTab);
+                        } else {
+                            Swal.fire({ icon: 'error', title: 'Not deleted', text: 'Could not delete the row.' });
+                        }
+                    }
+                });
+            });
+        };
+    });
     </script>
     <?php include 'component/add_employee_form.php'; ?>

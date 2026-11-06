@@ -1,6 +1,9 @@
 # Firebase service-account credentials — never commit
 firebase-service-account.json
 
+# Per-server DB credentials — each server keeps its own (template: db_config.sample.php)
+db_config.php
+
 # Runtime logs, generated PDF cache, DB dumps — keep the folder, not the contents
 logs/*
 !logs/.gitkeep

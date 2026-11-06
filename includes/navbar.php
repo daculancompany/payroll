@@ -317,9 +317,9 @@ $__ar_pill = $__ar_pending > 0
                      no batches, no pay settings, no 13th month, no loans, no
                      benefits. -->
                 <?php
-                $pay_pages  = ['payroll','pay-settings','thirteenth-month','loans','contributions','deductions','refunds'];
+                $pay_pages  = ['payroll','pay-settings','thirteenth-month','loans','contributions','deductions','refunds','allowances'];
                 $pay_shown  = array_filter($pay_pages, 'page_allowed');
-                $ben_pages  = ['contributions','deductions','refunds'];
+                $ben_pages  = ['contributions','deductions','refunds','allowances'];
                 $ben_shown  = array_filter($ben_pages, 'page_allowed');
                 ?>
                 <?php if ($pay_shown): ?>
@@ -378,6 +378,17 @@ $__ar_pill = $__ar_pending > 0
                             <li class="nav-item">
                                 <a href="deductions" class="nav-link <?= $page === 'deductions' ? 'active' : '' ?>">
                                     <i class="ri-subtract-line me-1"></i>Deductions
+                                </a>
+                            </li>
+                            <?php endif; ?>
+                            <?php /* The allowance master list. index.php has routed
+                                    page=allowances since the multi-allowance work, but
+                                    no menu ever linked to it, so the recurring-allowance
+                                    feature was only reachable by typing the URL. */ ?>
+                            <?php if (page_allowed('allowances')): ?>
+                            <li class="nav-item">
+                                <a href="index.php?page=allowances" class="nav-link <?= $page === 'allowances' ? 'active' : '' ?>">
+                                    <i class="ri-gift-2-line me-1"></i>Allowances
                                 </a>
                             </li>
                             <?php endif; ?>

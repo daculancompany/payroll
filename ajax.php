@@ -255,6 +255,11 @@ if ($action == "delete_employee_allowance") {
 	if ($save)
 		echo $save;
 }
+// Stop a recurring allowance without deleting it, so the record that it was
+// paid survives. Deleting the row was the only way before effective_to.
+if ($action == "end_employee_allowance") {
+	echo $crud->end_employee_allowance();
+}
 if ($action == "delete_employee_contribution") {
 	$save = $crud->delete_employee_contribution();
 	if ($save)
@@ -320,6 +325,10 @@ if ($action == "delete_payroll") {
 if ($action == "calculate_payroll") {
 	$save = $crud->calculate_payroll();
 	echo json_encode($save);
+}
+// Dry run of the same thing: reports what WOULD change and rolls back.
+if ($action == "preview_recalculate") {
+	echo json_encode($crud->preview_recalculate());
 }
 if ($action == "preview_payroll_from_dtr") {
 	$save = $crud->preview_payroll_from_dtr();

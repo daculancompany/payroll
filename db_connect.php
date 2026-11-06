@@ -375,7 +375,9 @@ if (!function_exists('page_allowed')) {
 if (!defined('ACTION_PAGE_MAP')) {
     define('ACTION_PAGE_MAP', [
         // payroll batches & computation
-        'calculate_payroll' => 'payroll', 'save_payroll' => 'payroll',
+        // preview_recalculate only simulates and rolls back, but it reads every
+        // figure in the run, so it sits behind the same permission as the real one.
+        'calculate_payroll' => 'payroll', 'preview_recalculate' => 'payroll', 'save_payroll' => 'payroll',
         'preview_payroll_from_dtr' => 'payroll', // DTR Documents preview shows pay figures → payroll access
         'delete_payroll' => 'payroll', 'save_payroll_amount' => 'payroll',
         'update_payroll_item' => 'payroll', 'update_payroll_item_new' => 'payroll',
@@ -430,7 +432,12 @@ if (!defined('ACTION_PAGE_MAP')) {
         'loan_history_details' => 'employee-details',
         // Loan type master list, managed from the Active Loans screen
         'save_loan_type' => 'loans', 'delete_loan_type' => 'loans',
+        // end_employee_allowance stops a recurring allowance from a date instead
+        // of deleting the row; it edits the same records as the other two, so it
+        // sits behind the same page permission. Unmapped, it would have fallen
+        // through to the session gate alone — any signed-in role could call it.
         'save_employee_allowance' => 'employee-details', 'delete_employee_allowance' => 'employee-details',
+        'end_employee_allowance' => 'employee-details',
         'save_employee_deduction' => 'employee-details', 'delete_employee_deduction' => 'employee-details',
         'set_deduction_status' => 'employee-details', 'save_deduction_group' => 'employee-details', 'update_deduction_group' => 'employee-details', 'ungroup_deductions' => 'employee-details',
         'save_employee_contribution' => 'employee-details', 'delete_employee_contribution' => 'employee-details',
@@ -3506,11 +3513,17 @@ if (APP_ENV === 'prod') {
  * MySQL instance. Create a dedicated user restricted to the payroll schema
  * with only SELECT/INSERT/UPDATE/DELETE (no FILE, DROP or GRANT), and export
  * DB_USER/DB_PASS for it.
+ *
+ * Per-server credentials live in db_config.php (git-ignored, never deployed —
+ * template: db_config.sample.php), so uploading this file can't overwrite
+ * them. Precedence: environment → db_config.php → XAMPP defaults below.
  */
-$servername = getenv('DB_HOST') ?: "localhost";
-$username   = getenv('DB_USER') ?: "root";
-$password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : "";
-$dbname     = getenv('DB_NAME') ?: "payroll_live_db";
+$__dbc = is_file(__DIR__ . '/db_config.php') ? (array) include __DIR__ . '/db_config.php' : [];
+$servername = getenv('DB_HOST') ?: ($__dbc['host'] ?? "localhost");
+$username   = getenv('DB_USER') ?: ($__dbc['user'] ?? "root");
+$password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : ($__dbc['pass'] ?? "");
+$dbname     = getenv('DB_NAME') ?: ($__dbc['name'] ?? "payroll_live_db");
+unset($__dbc);
 
 
 // Biometric scanner API key. Prefer the environment: a literal here is readable

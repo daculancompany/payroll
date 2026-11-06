@@ -288,12 +288,18 @@ $(document).ready(function () {
     $(document).on("click", ".calculate_payroll", function () {
         const id = $(this).attr("data-id");
         $(this).attr("disabled", true);
+        Swal.fire({
+            title: "Calculating\u2026",
+            allowOutsideClick: false,
+            didOpen: () => Swal.showLoading(),
+        });
         $.ajax({
             url: "ajax.php?action=calculate_payroll",
             method: "POST",
             dataType: "json",
             data: { id: id },
             error: (xhr, status, error) => {
+                Swal.close();
                 handleError(error || "");
                 $(".submitbutton").removeAttr("disabled");
             },
@@ -301,6 +307,7 @@ $(document).ready(function () {
                 if (res?.result) {
                     window.location.href = `index.php?page=payroll_calculations&id=${id}`;
                 } else {
+                    Swal.close();
                     handleError(res?.message || "");
                     $(".submitbutton").removeAttr("disabled");
                 }
@@ -423,34 +430,128 @@ async function islock(id, isLock) {
     }
 }
 
+// Recalculate now previews first. It used to be a bare "Are you sure?" that
+// applied straight away and redirected, so there was nothing to tell a run that
+// changed nothing from one that worked — the usual cause being an allowance
+// type left unticked in Payroll Settings.
+function peso(n) {
+    return (Number(n) || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function escHtml(s) {
+    return $("<div>").text(s == null ? "" : String(s)).html();
+}
+
+function recalcPreviewHtml(d) {
+    const t = d.totals || {};
+    if (!d.rows || !d.rows.length) {
+        return (
+            '<div style="text-align:left;font-size:13px;">' +
+            '<p style="margin:0 0 8px;"><b>Nothing would change.</b> Every figure stays exactly as it is.</p>' +
+            '<p style="margin:0;color:#777;font-size:12px;">' +
+            d.unchanged + " employee(s) unchanged" +
+            (d.verified ? " \u00b7 " + d.verified + " Verified and skipped by recalculation" : "") +
+            '.<br>If you expected a change, check that the allowance or deduction type is ticked in ' +
+            "<b>Payroll Settings</b> for this run.</p></div>"
+        );
+    }
+    let rows = "";
+    d.rows.forEach(function (r) {
+        const up = r.delta > 0;
+        const tag = r.removed ? ' <span style="color:#d33;font-size:10px;">removed</span>'
+                  : r.new    ? ' <span style="color:#107c41;font-size:10px;">new</span>' : "";
+        rows +=
+            "<tr>" +
+            '<td style="text-align:left;padding:3px 6px;">' + escHtml(r.name) + tag + "</td>" +
+            '<td style="text-align:right;padding:3px 6px;color:#777;">' + peso(r.old_net) + "</td>" +
+            '<td style="text-align:right;padding:3px 6px;font-weight:700;">' + peso(r.new_net) + "</td>" +
+            '<td style="text-align:right;padding:3px 6px;font-weight:700;color:' +
+            (up ? "#107c41" : "#d33") + ';">' + (up ? "+" : "") + peso(r.delta) + "</td>" +
+            "</tr>";
+    });
+    return (
+        '<div style="text-align:left;font-size:13px;">' +
+        "<p style=\"margin:0 0 8px;\"><b>" + d.changed + "</b> employee(s) would change \u00b7 " +
+        d.unchanged + " unchanged" +
+        (d.verified ? " \u00b7 " + d.verified + " Verified (skipped)" : "") + ".</p>" +
+        '<div style="max-height:320px;overflow:auto;border:1px solid #e8eaf6;border-radius:6px;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        '<thead><tr style="background:#f4f2fa;position:sticky;top:0;">' +
+        '<th style="text-align:left;padding:5px 6px;">Employee</th>' +
+        '<th style="text-align:right;padding:5px 6px;">Old Net</th>' +
+        '<th style="text-align:right;padding:5px 6px;">New Net</th>' +
+        '<th style="text-align:right;padding:5px 6px;">Change</th>' +
+        "</tr></thead><tbody>" + rows + "</tbody>" +
+        '<tfoot><tr style="background:#f4f2fa;font-weight:800;">' +
+        '<td style="text-align:left;padding:5px 6px;">TOTAL (whole run)</td>' +
+        '<td style="text-align:right;padding:5px 6px;">' + peso(t.old_net) + "</td>" +
+        '<td style="text-align:right;padding:5px 6px;">' + peso(t.new_net) + "</td>" +
+        '<td style="text-align:right;padding:5px 6px;color:' +
+        ((t.delta || 0) >= 0 ? "#107c41" : "#d33") + ';">' +
+        ((t.delta || 0) > 0 ? "+" : "") + peso(t.delta) + "</td>" +
+        "</tr></tfoot></table></div></div>"
+    );
+}
+
 async function recalculate(id) {
-    // Show confirmation dialog
+    Swal.fire({
+        title: "Checking what would change\u2026",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+    });
+
+    let preview;
+    try {
+        preview = await $.ajax({
+            url: "ajax.php?action=preview_recalculate",
+            method: "POST",
+            data: { id: id },
+            dataType: "JSON",
+        });
+    } catch (e) {
+        Swal.close();
+        handleError();
+        return;
+    }
+
+    if (!preview?.result) {
+        Swal.fire({ icon: "error", title: "Cannot recalculate", text: preview?.message || "Something went wrong." });
+        return;
+    }
+
+    const nothing = !preview.rows || !preview.rows.length;
     const result = await Swal.fire({
-        title: "Are you sure?",
-        text: "This action will modify existing values!",
-        icon: "warning",
+        title: "Recalculate " + escHtml(preview.ref_no || "") + "?",
+        html: recalcPreviewHtml(preview),
+        icon: nothing ? "info" : "warning",
+        width: nothing ? 520 : 720,
         showCancelButton: true,
         confirmButtonColor: "#3085d6",
         cancelButtonColor: "#d33",
-        confirmButtonText: "Yes, recalculate it!",
+        confirmButtonText: nothing ? "Recalculate anyway" : "Apply these changes",
+        cancelButtonText: "Cancel",
     });
+    if (!result.isConfirmed) return;
 
-    if (result.isConfirmed) {
-        $.ajax({
-            url: "ajax.php?action=calculate_payroll",
-            method: "POST",
-            data: { id: id, type: "recalculate" },
-            dataType: "JSON",
-            error: (err) => handleError(),
-            success: function (res) {
-                if (res?.result) {
-                    window.location.href = `index.php?page=payroll_calculations&id=${id}`;
-                } else {
-                    handleError(res?.message || "");
-                }
-            },
-        });
-    }
+    Swal.fire({
+        title: "Recalculating\u2026",
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading(),
+    });
+    $.ajax({
+        url: "ajax.php?action=calculate_payroll",
+        method: "POST",
+        data: { id: id, type: "recalculate" },
+        dataType: "JSON",
+        error: (err) => { Swal.close(); handleError(); },
+        success: function (res) {
+            if (res?.result) {
+                window.location.href = `index.php?page=payroll_calculations&id=${id}`;
+            } else {
+                Swal.close();
+                handleError(res?.message || "");
+            }
+        },
+    });
 }
 
 function formatDate(dateString) {

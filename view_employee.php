@@ -24,16 +24,32 @@ $emp = $conn->query("SELECT e.*,d.name as dname,p.name as pname FROM employee e 
 					<div class="card-body">
 						<ul class="list-group">
 							<?php
-							$allowances = $conn->query("SELECT ea.*,a.allowance as aname FROM employee_allowances ea inner join allowances a on a.id = ea.allowance_id where ea.employee_id=".$_GET['id']." order by ea.type asc,date(ea.effective_date) asc, a.allowance asc ");
+							$allowances = $conn->query("SELECT ea.*,a.allowance as aname FROM employee_allowances ea inner join allowances a on a.id = ea.allowance_id where ea.employee_id=".(int)$_GET['id']." order by ea.type asc,date(ea.effective_date) asc, a.allowance asc ");
 							$t_arr = array(1=>"Monthly",2=>"Semi-Monthly",3=>"Once");
+							// A valid stored date only. A legacy row saved before the form
+							// required one holds 0000-00-00 — and strtotime() does NOT
+							// reject that, it returns a negative timestamp that date()
+							// happily prints as "Nov 30,-0001". Screen the zero date out
+							// by value before parsing.
+							$a_dt = function ($d) {
+								$d = trim((string) $d);
+								if ($d === '' || strpos($d, '0000-00-00') === 0) return null;
+								$t = strtotime($d);
+								return $t ? date("M d,Y", $t) : null;
+							};
 							while($row=$allowances->fetch_assoc()):
+								$a_from = $a_dt($row['effective_date']);
+								$a_to   = $a_dt($row['effective_to'] ?? null);
 							?>
 						  <li class="list-group-item d-flex justify-content-between align-items-center alist" data-id="<?php echo $row['id'] ?>">
 						  	<span>
-						    <p><small><?php echo $row['aname'] ?> Allowance</small></p>
-						    <p><small>Type: <?php echo $t_arr[$row['type']] ?></small></p>
-						    <?php if($row['type'] == 3): ?>
-						    <p><small>Effective: <?php echo date("M d,Y",strtotime($row['effective_date'])) ?></small></p>
+						    <p><small><?php echo htmlspecialchars($row['aname']) ?> Allowance</small></p>
+						    <?php /* The amount and the effectivity window were not shown at
+						             all, so there was no way to tell a 700 hazard pay from a
+						             70 one, or to see that a row had already been ended. */ ?>
+						    <p><small>Type: <?php echo $t_arr[$row['type']] ?> &mdash; <b><?php echo number_format((float)$row['amount'], 2) ?></b></small></p>
+						    <?php if($a_from): ?>
+						    <p><small><?php echo $row['type'] == 3 ? 'Effective: ' : 'From: ' ?><?php echo $a_from ?><?php echo $a_to ? ' &mdash; to ' . $a_to : ($row['type'] == 3 ? '' : ' &mdash; ongoing') ?></small></p>
 						    <?php endif; ?>
 						    </span>
 						    <button class="badge badge-danger badge-pill btn remove_allowance" type="button"  data-id="<?php echo $row['id'] ?>"><i class="fa fa-trash"></i></button>

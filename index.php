@@ -39,6 +39,7 @@ if (!isset($_SESSION['ui_shell'])) {
         $__st->close();
     }
 }
+$_SESSION['in_v2'] = false;   // standalone pages follow the classic look
 if ($_SESSION['ui_shell'] === 'v2' && empty($_GET['classic'])) {
     $__q = $_GET;
     $__p = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($__q['page'] ?? ''));

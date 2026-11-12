@@ -546,8 +546,11 @@ $refund_names = [];   // refund id => display name
          here as well — this page's $.ajax calls write payroll items. -->
     <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : '', ENT_QUOTES, 'UTF-8') ?>">
     <script src="assets2/js/csrf.js"></script>
+    <?php $V2_STANDALONE = !empty($_SESSION['in_v2']); ?>
+    <?php if (!$V2_STANDALONE) { ?>
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/icons.min.css" rel="stylesheet">
+    <?php } ?>
     <link rel="stylesheet" href="assets2/css/my-style.css">
     <!-- Global DTR (Form 48) template — same sheet dtr-documents.php renders -->
     <link href="<?= av('assets2/css/dtr-form48.css') ?>" rel="stylesheet">
@@ -556,7 +559,7 @@ $refund_names = [];   // refund id => display name
          None of the inline scripts use jQuery at parse time, so order is safe. -->
     <script defer src="<?= av('assets2/js/dtr-form48.js') ?>"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
-    <script defer src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script defer src="<?= $V2_STANDALONE ? 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js' : 'assets/libs/bootstrap/js/bootstrap.bundle.min.js' ?>"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link href="<?= av('assets2/css/payroll_calculations.css') ?>" rel="stylesheet">
 
@@ -571,8 +574,9 @@ $refund_names = [];   // refund id => display name
          plain title= on this page (assets2/js/app-tooltip.js). -->
     <link rel="stylesheet" href="assets2/css/app-tooltip.css">
     <script defer src="assets2/js/app-tooltip.js"></script>
+    <?php /* v2 shell users: same theme + design system as app.php */ if ($V2_STANDALONE) include __DIR__ . '/includes/v2/standalone_head.php'; ?>
 </head>
-<body class="pcw-booting">
+<body class="pcw-booting<?= $V2_STANDALONE ? ' v2' : '' ?>">
 
     <!-- Loading overlay — the workbench stays hidden (.pcw-booting) until the
          sheet has parsed and rendered, then the overlay fades and the content
@@ -833,7 +837,7 @@ $refund_names = [];   // refund id => display name
                             </div>
                         </div>
                         <div class="pcw-paper-scroll">
-                            <div class="pcw-paper" id="pcw-paper">
+                            <div class="pcw-paper" id="pcw-paper" data-v2-paper data-bs-theme="light">
                                 <div class="pcw-doc-empty">Select an employee to view their pay computation sheet.</div>
                             </div>
                         </div>
@@ -4021,6 +4025,7 @@ window.PCW_META = <?= json_encode([
 // Employee quick-view drawer (avatar / name clicks on the sheet). "Full
 // details" opens in the same tab (per user preference — no target=_blank).
 include __DIR__ . '/component/employee_quick_view.php';
+if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.pcw-app, .modal, .offcanvas, #empQuickView'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
 ?>
 </body>
 </html>

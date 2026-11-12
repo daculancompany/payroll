@@ -29,6 +29,10 @@ if (empty($_SESSION['is_login'])) {
 
 $login_role = $_SESSION['login_role'];
 
+// Standalone pages (payroll_calculations, dtr-documents, duty-roster) follow
+// the shell the user came from: v2 look and theme here, classic otherwise.
+$_SESSION['in_v2'] = true;
+
 // Globals some routed fragments still expect from the classic index.php.
 $allowed_values   = [1, 2, 3, 4];
 $allowed_values_2 = [1, 2, 3];
@@ -50,12 +54,13 @@ if (!function_exists('getRole')) {
 $V2_ROUTES = require __DIR__ . '/routes.php';
 
 /**
- * Pages whose JS has been checked for in-place navigation: it can be loaded,
- * torn down and loaded again without stacking handlers or leaking timers.
- * Any other page is still reachable but does a normal full load inside the
- * v2 shell.
+ * Every routed page navigates in place (app-router.js gives each page a
+ * re-runnable script lifecycle). Pages listed in $V2_SPA_FULL still do a
+ * normal full load inside the v2 shell, for when a page's JS can't survive
+ * being loaded, torn down and loaded again.
  */
-$V2_SPA_SAFE = ['home', 'employee', 'payroll', 'profile', 'department', 'position', 'area', 'sites', 'users'];
+$V2_SPA_FULL = [];
+$V2_SPA_SAFE = array_values(array_diff(array_keys($V2_ROUTES), $V2_SPA_FULL));
 
 /** The signed-in user's saved appearance settings (users.settings JSON). */
 if (!isset($_SESSION['ui_settings'])) {

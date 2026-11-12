@@ -1,0 +1,141 @@
+/* v2 look for standalone pages (own <head>, outside app.php).
+   Loaded by includes/v2/standalone_head.php after the page's own CSS; the
+   `body.v2` prefix outranks the page rules. Inner details the page builds
+   (sheets, rows, chips) are recoloured by theme-adapter.js. */
+
+body.v2 {
+    font-family: var(--app-font);
+    background-color: var(--v2-bg);
+    background-image: radial-gradient(circle, rgba(var(--brand-rgb), .12) 1.2px, transparent 1.3px);
+    background-size: 22px 22px;
+    color: var(--v2-text);
+}
+html.ui-ct body.v2 { background: var(--ct-gradient) fixed; }
+html[data-bs-theme="dark"]:not(.ui-ct) body.v2 { background-image: radial-gradient(circle, rgba(255, 255, 255, .06) 1.2px, transparent 1.3px); }
+
+/* ── Payroll details workbench (payroll_calculations.php) ───────────────
+   Editor layout, like a PDF/Word editor:
+     title bar + toolbar   full width, hairline bottom border
+     left pane | canvas | right pane   flush, hairline dividers, no cards
+     canvas   grey desk with the white page centred and lifted
+   Overrides only; the markup and the classic look are unchanged. */
+body.v2 { background-image: none; overflow: hidden; }
+body.v2 .pcw-app { gap: 0; padding: 0; height: 100vh; }
+
+/* Title bar + toolbar */
+body.v2 .pcw-header {
+    border-radius: 0; border: 0; border-bottom: 1px solid var(--v2-border); box-shadow: none;
+    background: var(--v2-surface); padding: 8px 14px; gap: 10px 16px; min-height: 58px;
+}
+html.ui-ct body.v2 .pcw-header { background: var(--v2-top-bg); backdrop-filter: blur(10px); }
+body.v2 .pcw-h-left { gap: 10px; }
+body.v2 .pcw-back-btn {
+    width: 34px; height: 34px; padding: 0; justify-content: center; font-size: 0; gap: 0;
+    background: transparent; border-color: transparent; box-shadow: none; color: var(--v2-text-2);
+}
+body.v2 .pcw-back-btn i { font-size: 1.15rem; }
+body.v2 .pcw-back-btn:hover { background: var(--v2-hover); color: var(--v2-text); }
+body.v2 .pcw-title-icon { width: 34px; height: 34px; border-radius: 9px; font-size: 1rem; }
+body.v2 .pcw-h-title { font-size: .95rem; font-weight: 700; color: var(--v2-text); letter-spacing: -.01em; }
+body.v2 .pcw-meta-chips { gap: 0; margin-top: 2px; }
+body.v2 .pcw-meta-chip { background: none; border: 0; padding: 0 10px 0 0; color: var(--v2-text-3); font-weight: 500; font-size: .74rem; }
+body.v2 .pcw-meta-chip + .pcw-meta-chip { padding-left: 10px; border-left: 1px solid var(--v2-border); }
+body.v2 .pcw-meta-chip i { color: var(--v2-text-3); }
+
+/* Toolbar buttons: flat icon+label tools, primary actions stay solid */
+body.v2 .pcw-h-actions { gap: 2px; }
+body.v2 .pcw-h-actions .pcw-btn {
+    height: 34px; padding: 0 10px; gap: 6px; background: transparent; border: 1px solid transparent;
+    box-shadow: none; color: var(--v2-text-2); font-weight: 550; font-size: .8rem; border-radius: 8px;
+}
+body.v2 .pcw-h-actions .pcw-btn i { font-size: 1.05rem; color: var(--v2-text-3); }
+body.v2 .pcw-h-actions .pcw-btn:hover:not(:disabled) { background: var(--v2-hover); color: var(--v2-text); }
+body.v2 .pcw-h-actions .pcw-btn:hover:not(:disabled) i { color: var(--v2-text); }
+body.v2 .pcw-h-actions .pcw-btn.primary,
+body.v2 .pcw-h-actions .pcw-btn.good,
+body.v2 .pcw-h-actions .pcw-btn.danger { margin-left: 8px; border-radius: 8px; font-weight: 650; }
+body.v2 .pcw-h-actions .pcw-btn.primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+body.v2 .pcw-h-actions .pcw-btn.primary i { color: #fff; }
+body.v2 .pcw-h-actions .pcw-btn.good { background: rgba(22, 163, 74, .12); color: #15803d; }
+body.v2 .pcw-h-actions .pcw-btn.good i { color: inherit; }
+body.v2 .pcw-h-actions .pcw-btn.danger { background: rgba(225, 29, 72, .1); color: #be123c; }
+body.v2 .pcw-h-actions .pcw-btn.danger i { color: inherit; }
+html[data-bs-theme="dark"] body.v2 .pcw-h-actions .pcw-btn.good { color: #4ade80; }
+html[data-bs-theme="dark"] body.v2 .pcw-h-actions .pcw-btn.danger { color: #fb7185; }
+@media (max-width: 1500px) {
+    /* tight screens: tools collapse to icons (titles stay as tooltips) */
+    body.v2 .pcw-h-actions .pcw-btn:not(.primary):not(.good):not(.danger) { font-size: 0; gap: 0; width: 34px; padding: 0; justify-content: center; }
+    body.v2 .pcw-h-actions .pcw-btn:not(.primary):not(.good):not(.danger) i { font-size: 1.1rem; }
+}
+
+/* Panes: flush, hairline dividers */
+body.v2 .pcw-wrap { gap: 0; grid-template-columns: 300px minmax(0, 1fr) 330px; }
+body.v2 .pcw-right { gap: 0; }
+body.v2 .pcw-panel { border-radius: 0; border: 0; box-shadow: none; background: var(--v2-surface); }
+body.v2 .pcw-left { border-right: 1px solid var(--v2-border); }
+body.v2 .pcw-right { border-left: 1px solid var(--v2-border); }
+html.ui-ct body.v2 .pcw-panel { background: var(--v2-side-bg); }
+body.v2 .pcw-panel-head {
+    background: transparent; border-bottom: 1px solid var(--v2-border); padding: 10px 14px;
+    text-transform: uppercase; font-size: .68rem; letter-spacing: .07em; color: var(--v2-text-3); font-weight: 700;
+}
+body.v2 .pcw-panel-head i { color: var(--v2-text-3); }
+
+/* Employee list: flat rows like a document outline */
+body.v2 .pcw-search { padding: 10px 12px 8px; }
+body.v2 .pcw-search-wrap { background: var(--v2-input-bg); border-color: var(--v2-border-strong); border-radius: 9px; }
+body.v2 .pcw-search-wrap:focus-within { border-color: var(--brand-500); box-shadow: 0 0 0 3px rgba(var(--brand-rgb), .16); }
+body.v2 .pcw-search-wrap > i { color: var(--v2-text-3); }
+body.v2 .pcw-search-wrap input { color: var(--v2-text); }
+body.v2 .pcw-list { padding: 2px 6px 8px; }
+body.v2 .pcw-item {
+    margin-bottom: 1px; border: 0; border-left: 3px solid transparent; border-radius: 8px;
+    background: transparent; box-shadow: none; padding: 8px 10px;
+}
+body.v2 .pcw-item:hover { background: var(--v2-hover); }
+body.v2 .pcw-item.active { background: rgba(var(--brand-rgb), .12); box-shadow: none; border-left-color: var(--brand-500); }
+body.v2 .pcw-item.rv-ok:not(.active),
+body.v2 .pcw-item.rv-issue:not(.active),
+body.v2 .pcw-item.rv-chk:not(.active) { background: transparent; }
+body.v2 .pcw-item.rv-ok { border-left-color: #22c55e; }
+body.v2 .pcw-item.rv-issue { border-left-color: #f97316; }
+body.v2 .pcw-item.rv-chk { border-left-color: #3b82f6; }
+body.v2 .pcw-item input[type=checkbox] { accent-color: var(--brand-600); }
+body.v2 .pcw-item-av { border-radius: 9px; }
+body.v2 .pcw-item-name { color: var(--v2-text); font-weight: 650; }
+body.v2 .pcw-item-sub { color: var(--v2-text-3); }
+body.v2 .pcw-list-foot { border-top: 1px solid var(--v2-border); background: transparent; }
+
+/* Canvas: grey desk, white page lifted off it */
+body.v2 .pcw-center { background: #e7e9ee; }
+html[data-bs-theme="dark"] body.v2 .pcw-center { background: #07090e; }
+html.ui-ct body.v2 .pcw-center { background: rgba(0, 0, 0, .18); }
+html.ui-ct[data-bs-theme="light"] body.v2 .pcw-center { background: rgba(255, 255, 255, .25); }
+body.v2 .pcw-doc-toolbar {
+    max-width: none; margin: 0; padding: 6px 14px; min-height: 46px;
+    background: var(--v2-surface); border-bottom: 1px solid var(--v2-border);
+}
+html.ui-ct body.v2 .pcw-doc-toolbar { background: var(--v2-side-bg); }
+body.v2 .pcw-doc-nav .pcw-btn { height: 30px; padding: 0 8px; background: transparent; border-color: transparent; box-shadow: none; color: var(--v2-text-2); }
+body.v2 .pcw-doc-nav .pcw-btn:hover:not(:disabled) { background: var(--v2-hover); color: var(--v2-text); }
+body.v2 .pcw-doc-pos { color: var(--v2-text-3); font-variant-numeric: tabular-nums; }
+body.v2 .pcw-pg-btn { width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--v2-text-2); }
+body.v2 .pcw-pg-btn:hover { background: var(--v2-hover); color: var(--v2-text); }
+body.v2 .pcw-zoom-val { height: 30px; border-radius: 8px; border: 1px solid var(--v2-border); background: var(--v2-surface-2); color: var(--v2-text); font-variant-numeric: tabular-nums; }
+body.v2 .pcw-paper-scroll { padding: 32px 28px 64px; }
+body.v2 .pcw-paper {
+    background: #ffffff; border: 0; border-radius: 3px;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .08), 0 12px 32px -8px rgba(15, 23, 42, .22);
+}
+html[data-bs-theme="dark"] body.v2 .pcw-paper { box-shadow: 0 0 0 1px rgba(255, 255, 255, .04), 0 20px 50px -10px rgba(0, 0, 0, .8); }
+
+/* Right pane tabs */
+body.v2 .pcw-right .pcw-tabs { padding: 0 8px; margin-bottom: 10px; }
+
+/* Scrollbars on this page follow the theme too. */
+body.v2 *::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); background-clip: content-box; }
+
+/* Print stays on white paper, whatever the screen theme. */
+@media print {
+    body.v2 { background: #fff !important; color: #000 !important; }
+}

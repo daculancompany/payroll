@@ -795,3 +795,18 @@ body.v2-drawer-open #fcm-enable-banner { display: none !important; }
 html.v2-pending #main-content { visibility: hidden; animation: v2-reveal 0s linear 1.5s forwards; }
 @keyframes v2-reveal { to { visibility: visible; } }
 html.v2-adapting *, html.v2-adapting *::before, html.v2-adapting *::after { transition: none !important; }
+
+/* Printable documents (payslips, computation sheets, DTR forms) stay white
+   paper in every theme: mark the container data-v2-paper (+ data-bs-theme="light").
+   The theme adapter skips it, and the tokens inside are reset to light values. */
+[data-v2-paper] {
+    color-scheme: light;
+    --v2-surface: #ffffff; --v2-surface-2: #f7f8fb; --v2-surface-3: #eef1f6; --v2-raised: #ffffff;
+    --v2-border: #e4e8ef; --v2-border-strong: #d3d9e3;
+    --v2-text: #0f172a; --v2-text-2: #475569; --v2-text-3: #7b8799;
+    --v2-hover: rgba(15, 23, 42, .045); --v2-active: rgba(15, 23, 42, .075);
+    --v2-input-bg: #ffffff; --v2-table-head: #f7f8fb;
+    --app-surface: #ffffff; --app-surface-2: #f7f8fb; --app-text: #0f172a; --app-text-2: #475569; --app-border: #e4e8ef;
+    color: #0f172a;
+}
+html[data-bs-theme="dark"] [data-v2-paper], html.ui-ct [data-v2-paper] { box-shadow: 0 10px 40px -10px rgba(0, 0, 0, .55); }

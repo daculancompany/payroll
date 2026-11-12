@@ -1847,16 +1847,7 @@ function human_time_diff(int $ts): string {
                 }
             </style>
         
-    <!-- App-wide custom <select> control (also loaded globally from includes/header.php
-         for pages routed through index.php; this page renders standalone). -->
-    <link rel="stylesheet" href="assets2/css/custom-select.css">
-    <script defer src="assets2/js/custom-select.js"></script>
-
-    <!-- App-wide tooltip — one hover style for the whole app; also upgrades any
-         plain title= on this page (assets2/js/app-tooltip.js). -->
-    <link rel="stylesheet" href="assets2/css/app-tooltip.css">
-    <script defer src="assets2/js/app-tooltip.js"></script>
-</head>
+        </head>
         <body>
             ${printContent}
             <script>

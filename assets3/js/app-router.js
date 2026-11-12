@@ -208,7 +208,8 @@
     /** Map any link that points at a routed page (classic or v2 style) to app/<page>. */
     function toAppUrl(href) {
         var u;
-        try { u = new URL(href, location.href); } catch (e) { return null; }
+        // Relative paths resolve like links do: against <base href>.
+        try { u = new URL(href, document.baseURI); } catch (e) { return null; }
         if (u.origin !== location.origin) return null;
         var rel = u.pathname.indexOf(BASE.pathname) === 0 ? u.pathname.slice(BASE.pathname.length) : null;
         if (rel === null) return null;

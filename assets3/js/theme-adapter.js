@@ -21,7 +21,7 @@
     'use strict';
 
     var root = document.documentElement;
-    var SCOPE = '#main-content, .modal, .offcanvas, #empQuickView';
+    var SCOPE = window.V2_ADAPT_SCOPE || '#main-content, .modal, .offcanvas, #empQuickView';
     var SKIP_TAGS = { IMG: 1, VIDEO: 1, CANVAS: 1, SVG: 1, PATH: 1, SCRIPT: 1, STYLE: 1, OPTION: 1, BR: 1, HR: 1, INPUT: 0 };
     var touched = new Set();
     var saved = new WeakMap();          // el → { prop: [value, priority] }
@@ -86,7 +86,7 @@
     }
 
     function bgFor(c, m) {
-        if (isBrandPurple(c)) return 'var(--brand-600)';
+        if (isBrandPurple(c)) return m.paper ? 'var(--brand-700)' : 'var(--brand-600)';
         if (isPurple(c) && lum(c) > 195) return 'var(--app-tint)';
         if (!m.themed || lum(c) <= 195) return null;
         if (sat(c) < 14) return lum(c) > 246 ? 'var(--v2-surface)' : 'var(--v2-surface-2)';
@@ -110,6 +110,8 @@
             if (cs.display === 'none') return null;          // read again once shown
             var bi = cs.backgroundImage;
             o = {
+                // Inside a printable document: accent swap only, never darkened.
+                paper: !!el.closest('[data-v2-paper]'),
                 bg: parse(cs.backgroundColor),
                 stops: bi && bi.indexOf('gradient') !== -1 ? (bi.match(/rgba?\([^)]+\)/g) || []).map(parse).filter(Boolean) : null,
                 fg: parse(cs.color),
@@ -123,8 +125,10 @@
         return o;
     }
 
+    var LIGHT = { dark: false, themed: false, paper: true };   // deeper accent shades on white paper
     function decide(el, o, m) {
         if (!o || o.skip) return;
+        if (o.paper) m = LIGHT;
         var bg = o.bg;
         if (bg && bg[3] > 0.5) {
             var nb = bgFor(bg, m);
@@ -136,6 +140,10 @@
             else if (stops.some(isBrandPurple) && stops.every(function (c) { return sat(c) > 40; })) {
                 set(el, 'background-image', 'linear-gradient(90deg, var(--brand-500), var(--brand-700))');
             }
+            else if (stops.every(function (c) { return isPurple(c) && lum(c) > 195; })) {
+                set(el, 'background-image', 'none');           // old light-purple wash → accent tint
+                set(el, 'background-color', 'var(--app-tint)');
+            }
             else if (m.themed && stops.every(function (c) { return lum(c) > 195; })) {
                 set(el, 'background-image', 'none');
                 set(el, 'background-color', bgFor(stops[0], m) || 'var(--v2-surface-2)');
@@ -143,7 +151,7 @@
         }
         var fg = o.fg;
         if (fg) {
-            if (isBrandPurple(fg)) set(el, 'color', m.dark ? 'var(--brand-300)' : 'var(--brand-600)');
+            if (isBrandPurple(fg)) set(el, 'color', m.dark ? 'var(--brand-300)' : m.paper ? 'var(--brand-800)' : 'var(--brand-600)');
             else if (m.dark) {
                 var l = lum(fg), s = sat(fg);
                 if (l < 100 && s < 40) set(el, 'color', 'var(--v2-text)');
@@ -154,7 +162,7 @@
         o.borders.forEach(function (bc, i) {
             if (!bc || bc[3] === 0) return;
             var prop = 'border-' + SIDES[i] + '-color';
-            if (isBrandPurple(bc)) set(el, prop, 'var(--brand-500)');
+            if (isBrandPurple(bc)) set(el, prop, m.paper ? 'var(--brand-700)' : 'var(--brand-500)');
             else if (isPurple(bc) && lum(bc) > 180) set(el, prop, 'var(--app-tint-border)');
             else if (m.themed && lum(bc) > 185 && sat(bc) < 30) set(el, prop, 'var(--v2-border)');
             else if (m.themed && lum(bc) > 185) set(el, prop, 'rgba(' + vivid(bc).join(',') + ',.35)');

@@ -92,17 +92,30 @@ body.portal .portal-wrap { max-width: 1240px; }
     }
     html[data-header="solid"] body.portal .tab-strip { background: var(--v2-surface); backdrop-filter: none; }
     html.ui-ct[data-header="solid"] body.portal .tab-strip { background: var(--ct-base); }
-    body.portal .tab-btn { color: var(--v2-text-3); }
-    body.portal .tab-btn.active { color: var(--brand-600); background: transparent; }
+    /* Tab items take the app bar buttons' look: full-strength glyphs, and the
+       active item sits on the same quiet tile as the top bar buttons, with
+       the accent only on its icon. */
+    body.portal .tab-btn { color: var(--v2-text-2); }
+    body.portal .tab-btn i { color: var(--v2-text); opacity: .85; }
+    body.portal .tab-btn span.tab-label { color: var(--v2-text-2); }
+    body.portal .tab-btn.active { color: var(--v2-text); background: transparent; }
+    body.portal .tab-btn.active i { opacity: 1; color: var(--brand-600); }
+    html[data-bs-theme="dark"] body.portal .tab-btn.active i, html.ui-ct body.portal .tab-btn.active i { color: var(--brand-300); }
+    body.portal .tab-btn.active span.tab-label { color: var(--v2-text); font-weight: 700; }
+    body.portal .tab-btn.active::before {
+        background: var(--quiet-hover) !important; box-shadow: inset 0 0 0 1px var(--quiet-bd);
+        width: 58px; height: 32px; border-radius: 12px;
+    }
     /* Hover / press: the old portal CSS painted a lavender block with purple
-       text here. Same pill as the active item instead, just lighter. */
+       text here. The top bar's resting tile instead. */
     body.portal .tab-btn:not(.active):hover,
     body.portal .tab-btn:not(.active):focus-visible { background: transparent; color: var(--v2-text); }
+    body.portal .tab-btn:not(.active):hover i { opacity: 1; }
     body.portal .tab-btn:not(.active):hover::before,
     body.portal .tab-btn:not(.active):focus-visible::before {
         content: ''; position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
-        width: 58px; height: 30px; border-radius: 15px; z-index: -1;
-        background: var(--quiet-hover);
+        width: 58px; height: 32px; border-radius: 12px; z-index: -1;
+        background: var(--quiet-bg); box-shadow: inset 0 0 0 1px var(--quiet-bd);
     }
     /* Touch screens keep :hover after a tap; don't leave a pill behind */
     @media (hover: none) {
@@ -242,3 +255,12 @@ body.portal .mydtr-btn.primary { background: var(--acc-bg); border-color: var(--
     /* hover tooltips stick after a tap on touch screens */
     body.portal .v2-settings .ps-swatch[title] { -webkit-touch-callout: none; }
 }
+
+/* One chrome colour for the app bar and the bottom tab bar. On a colour
+   theme both were translucent over the gradient, so the top (blue end) and
+   the bottom (green end) came out different; there they share the theme's
+   solid base instead. Flat themes keep their near-solid bar colour. */
+html.ui-ct body.portal { --pt-chrome: color-mix(in srgb, var(--ct-base) 92%, #000); }
+html.ui-ct[data-bs-theme="light"] body.portal { --pt-chrome: color-mix(in srgb, var(--ct-base) 94%, #fff); }
+html.ui-ct body.portal .ptop,
+html.ui-ct body.portal .tab-strip { background: var(--pt-chrome) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }

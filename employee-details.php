@@ -105,7 +105,7 @@ if (!function_exists('ed_rest_pills')) {
         foreach ($labels as $i => $lb) {
             $on = in_array($i, $set, true);
             $out .= '<span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;font-size:10px;font-weight:700;margin-right:2px;'
-                . ($on ? 'background:#673bb6;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+                . ($on ? 'background:var(--app-primary);color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
         }
         return $out;
     }
@@ -165,12 +165,12 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
     :root { --emp-brand:var(--app-primary); --emp-brand-dark:var(--app-primary-dark); --emp-brand-soft:#eef0f8; --emp-brand-border:#c5cde8; }
 
     /* ---- Left profile sidebar ---- */
-    .emp-sidebar { border:1px solid #d0d7ee; border-radius:10px; overflow:hidden; background:#fff; box-shadow:0 2px 10px rgba(20,30,60,.05); }
+    .emp-sidebar { border:1px solid var(--app-tint-border, #d0d7ee); border-radius:10px; overflow:hidden; background:var(--app-surface, #fff); box-shadow:0 2px 10px rgba(20,30,60,.05); }
     .emp-sidebar-head { position:relative; background:linear-gradient(145deg, var(--emp-brand) 0%, var(--emp-brand-dark) 100%); color:#fff; text-align:center; padding:20px 14px 16px; overflow:hidden; }
     /* .emp-sidebar-head::before { content:""; position:absolute; top:-40px; right:-40px; width:140px; height:140px; border-radius:50%; background:rgba(255,255,255,.08); } */
     /* .emp-sidebar-head::after { content:""; position:absolute; bottom:-60px; left:-30px; width:120px; height:120px; border-radius:50%; background:rgba(255,255,255,.06); } */
     .emp-sidebar-head > * { position:relative; z-index:1; }
-    .emp-side-avatar { width:76px; height:76px; border-radius:50%; background:#fff; color:var(--emp-brand); font-size:27px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.2), 0 0 0 4px rgba(255,255,255,.25); }
+    .emp-side-avatar { width:76px; height:76px; border-radius:50%; background:var(--app-surface, #fff); color:var(--emp-brand); font-size:27px; font-weight:700; display:flex; align-items:center; justify-content:center; margin:0 auto 10px; letter-spacing:1px; box-shadow:0 2px 8px rgba(0,0,0,.2), 0 0 0 4px rgba(255,255,255,.25); }
     .emp-side-name { font-size:16px; font-weight:700; line-height:1.25; }
     .emp-side-role { font-size:12px; opacity:.9; margin-top:3px; }
     .emp-side-empno { font-family:monospace; font-size:12px; font-weight:700; letter-spacing:.5px; margin-top:6px; background:rgba(255,255,255,.15); display:inline-block; padding:2px 10px; border-radius:20px; }
@@ -178,29 +178,29 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
     .emp-side-stats { padding:4px 0; }
     .emp-side-stat { display:flex; align-items:center; justify-content:space-between; padding:9px 16px; border-bottom:1px solid #f1f3f9; }
     .emp-side-stat:last-child { border-bottom:none; }
-    .emp-side-stat-lbl { font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.3px; font-weight:700; }
+    .emp-side-stat-lbl { font-size:11px; color:var(--app-text-2, #888); text-transform:uppercase; letter-spacing:.3px; font-weight:700; }
     .emp-side-stat-val { font-size:14px; font-weight:700; color:var(--emp-brand); font-family:'Segoe UI',monospace; }
-    .emp-side-barcode { text-align:center; padding:12px 14px; border-top:1px solid #eef0f8; background:#f8f9fa; }
+    .emp-side-barcode { text-align:center; padding:12px 14px; border-top:1px solid #eef0f8; background:var(--app-surface-2, #f8f9fa); }
     @media (min-width:992px){ .emp-sidebar-sticky { position:sticky; top:80px; } }
 
     /* ---- Section cards (Overview) ---- */
-    .detail-section { border:1px solid #d0d7ee; border-radius:6px; margin-bottom:12px; overflow:hidden; }
+    .detail-section { border:1px solid var(--app-tint-border, #d0d7ee); border-radius:6px; margin-bottom:12px; overflow:hidden; }
     .detail-section-title { background:var(--emp-brand); color:#fff; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:6px 12px; display:flex; align-items:center; gap:6px; }
     .detail-row { display:flex; flex-wrap:wrap; }
     .detail-item { padding:7px 14px; border-bottom:1px solid #eef0f8; border-right:1px solid #eef0f8; flex:1; min-width:180px; transition:background .15s ease; }
     .detail-item:hover { background:#f8f7fb; }
     .detail-item:last-child { border-right:none; }
-    .detail-label { font-size:10px; color:#888; font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
-    .detail-value { font-size:13px; font-weight:600; color:#1a1a1a; }
+    .detail-label { font-size:10px; color:var(--app-text-2, #888); font-weight:700; text-transform:uppercase; letter-spacing:.3px; margin-bottom:2px; }
+    .detail-value { font-size:13px; font-weight:600; color:var(--app-text, #1a1a1a); }
     .emp-currency-val { font-weight:700; color:var(--emp-brand); font-family:'Segoe UI',monospace; }
     .cn-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:10px; margin-top:4px; }
     .cn-item { border:1px solid var(--emp-brand-border); border-radius:4px; padding:10px 12px; background:var(--emp-brand-soft); }
     .cn-item label { font-size:10px; color:var(--emp-brand); font-weight:700; text-transform:uppercase; letter-spacing:.3px; display:block; margin-bottom:5px; }
     .cn-item .form-control { font-size:13px; font-weight:600; border-color:var(--emp-brand-border); }
-    .barcode-wrap { background:#fff; border:1px solid #d0d7ee; border-radius:4px; padding:8px 12px; display:inline-block; }
+    .barcode-wrap { background:var(--app-surface, #fff); border:1px solid var(--app-tint-border, #d0d7ee); border-radius:4px; padding:8px 12px; display:inline-block; }
 
     /* ---- Custom segmented tab bar ---- */
-    .emp-tabs-nav { display:flex; gap:4px; flex-wrap:nowrap; background:#fff; border:1px solid #d0d7ee; border-radius:10px; padding:6px; margin-bottom:14px; overflow-x:auto; scrollbar-width:thin; box-shadow:0 2px 8px rgba(20,30,60,.04); }
+    .emp-tabs-nav { display:flex; gap:4px; flex-wrap:nowrap; background:var(--app-surface, #fff); border:1px solid var(--app-tint-border, #d0d7ee); border-radius:10px; padding:6px; margin-bottom:14px; overflow-x:auto; scrollbar-width:thin; box-shadow:0 2px 8px rgba(20,30,60,.04); }
     .emp-tabs-nav::-webkit-scrollbar { height:4px; }
     .emp-tabs-nav::-webkit-scrollbar-track { background:transparent; }
     .emp-tabs-nav::-webkit-scrollbar-thumb { background:var(--sb-thumb); border-radius:4px; border:0; }
@@ -216,7 +216,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
 
     /* ---- Summary stat cards ---- */
     .emp-stat-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; margin:6px 0 14px; }
-    .emp-stat-card { display:flex; align-items:center; gap:11px; background:#fff; border:1px solid #d0d7ee; border-radius:8px; padding:11px 14px; transition:all .18s ease; }
+    .emp-stat-card { display:flex; align-items:center; gap:11px; background:var(--app-surface, #fff); border:1px solid var(--app-tint-border, #d0d7ee); border-radius:8px; padding:11px 14px; transition:all .18s ease; }
     .emp-stat-card:hover { border-color:var(--emp-brand); box-shadow:0 3px 10px rgba(103,59,182,.12); transform:translateY(-1px); }
     .emp-stat-ic { width:38px; height:38px; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0; background:var(--emp-brand-soft); color:var(--emp-brand); }
     .emp-stat-ic.ic-brand { background:#eae5f2; color:var(--emp-brand); }
@@ -224,7 +224,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
     .emp-stat-ic.ic-warn { background:#fff4e0; color:#b45309; }
     .emp-stat-ic.ic-dark { background:#eceff4; color:#39434f; }
     .emp-stat-lbl { font-size:10px; color:#889; font-weight:700; text-transform:uppercase; letter-spacing:.4px; }
-    .emp-stat-val { font-size:16px; font-weight:700; color:#1a1a1a; line-height:1.2; font-family:'Segoe UI',monospace; }
+    .emp-stat-val { font-size:16px; font-weight:700; color:var(--app-text, #1a1a1a); line-height:1.2; font-family:'Segoe UI',monospace; }
     .emp-stat-val.text-brand { color:var(--emp-brand); }
     .emp-stat-val.text-loss { color:#d63939; }
 
@@ -237,22 +237,22 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
     .emp-empty { text-align:center; padding:28px 10px; color:#98a1b0; }
     /* Deduction groups (Deductions tab) */
     .ded-selbar { position:sticky; top:0; z-index:5; display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:9px 12px; margin-bottom:10px;
-                  background:#f3effa; border:1px solid #d9cdef; border-radius:10px; font-size:12.5px; color:#4e3483; }
+                  background:var(--app-primary-soft); border:1px solid #d9cdef; border-radius:10px; font-size:12.5px; color:var(--app-primary-dark); }
     .ded-selbar > i { font-size:18px; }
     .ded-hint { font-size:11.5px; color:#98a1b0; margin:-4px 0 8px; }
-    #table-deductions tr.ded-group-hd > td { background:#f6f3fb !important; border-left:3px solid #673bb6; font-size:12.5px; }
-    .ded-group-tag { background:#673bb6; color:#fff; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700; }
+    #table-deductions tr.ded-group-hd > td { background:#f6f3fb !important; border-left:3px solid var(--app-primary); font-size:12.5px; }
+    .ded-group-tag { background:var(--app-primary); color:#fff; border-radius:12px; padding:2px 10px; font-size:11px; font-weight:700; }
     #table-deductions tr.ded-in-group > td:first-child { border-left:3px solid #d9cdef; }
     #table-deductions tr.ded-hist > td { background:#fbfdfc !important; padding:6px 10px 10px 34px; }
     .ded-hist table { font-size:11px; }
-    .ded-hist th { background:#edebf3; color:#4e3483; }
+    .ded-hist th { background:#edebf3; color:var(--app-primary-dark); }
     .ded-q-now { background:#e6f4ea; color:#1e7b34; }
-    .ded-q-wait { background:#eef0f4; color:#5f6b7a; }
-    .ded-desc { font-size:11px; color:#5f6b7a; margin-top:2px; max-width:320px; white-space:normal; }
+    .ded-q-wait { background:#eef0f4; color:var(--app-text-2, #5f6b7a); }
+    .ded-desc { font-size:11px; color:var(--app-text-2, #5f6b7a); margin-top:2px; max-width:320px; white-space:normal; }
     .ded-st { font-weight:700; font-size:10.5px; }
     .ded-st-rec  { background:#e7f0ff; color:#1c5fd1; }
     .ded-st-pay  { background:#fff4e0; color:#a35a00; }
-    .ded-st-once { background:#f1ecfa; color:#5b3a9e; }
+    .ded-st-once { background:#f1ecfa; color:var(--app-primary-dark); }
     .ded-st-paid { background:#e6f4ea; color:#1e7b34; }
     .ded-st-off  { background:#f1f2f4; color:#7a828c; border:1px solid #e1e4e8; }
     .ded-st-sub  { font-size:10px; color:#98a1b0; margin-top:2px; }
@@ -263,7 +263,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
     /* ---- Insights tab ---- */
     .ins-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
     @media (max-width:991.98px){ .ins-grid { grid-template-columns:1fr; } }
-    .ins-chart-body { background:#fff; padding:8px 10px 2px; }
+    .ins-chart-body { background:var(--app-surface, #fff); padding:8px 10px 2px; }
     .ins-chart-body .apexcharts-tooltip { font-size:12px; }
 </style>
 
@@ -1000,14 +1000,14 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                                     <td>
                                                         <span style="font-weight:600;"><?= esc($row['loan_type']) ?></span>
                                                         <?php if (!empty($row['reference_no'])): ?>
-                                                            <div style="font-size:10px;color:#6642aa;font-family:monospace;margin-top:1px;" title="Reference number">
+                                                            <div style="font-size:10px;color:var(--app-primary);font-family:monospace;margin-top:1px;" title="Reference number">
                                                                 <i class="ri-hashtag me-1"></i><?= esc($row['reference_no']) ?>
                                                             </div>
                                                         <?php endif; ?>
                                                         <?php if (!empty($row['attachment'])): ?>
                                                             <a href="uploads/<?= rawurlencode($row['attachment']) ?>" class="att-view"
                                                                data-att-name="<?= htmlspecialchars($row['attachment']) ?>"
-                                                               title="View attached document" style="margin-left:4px;color:#673bb6;text-decoration:none;font-size:13px;">
+                                                               title="View attached document" style="margin-left:4px;color:var(--app-primary);text-decoration:none;font-size:13px;">
                                                                 <i class="ri-attachment-2"></i>
                                                             </a>
                                                         <?php endif; ?>
@@ -1015,7 +1015,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                                     <td>
                                                         <span style="font-size:12px;color:#555;"><i class="ri-calendar-2-line me-1 text-muted"></i><?= esc($row['loan_date']) ?></span>
                                                         <?php if (!empty($row['effective_date']) && $row['effective_date'] !== $row['loan_date']): ?>
-                                                            <div style="font-size:10px;color:#888;margin-top:2px;" title="Deductions start on this date">
+                                                            <div style="font-size:10px;color:var(--app-text-2, #888);margin-top:2px;" title="Deductions start on this date">
                                                                 <i class="ri-calendar-check-line me-1"></i>deducts from <?= esc($row['effective_date']) ?>
                                                             </div>
                                                         <?php endif; ?>
@@ -1283,7 +1283,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                                         <?php endif; ?>
                                                         <span style="font-weight:600;"><?= esc($row['dname']) ?></span>
                                                         <?php if (!empty($row['reference_no'])): ?>
-                                                            <div style="font-size:10px;color:#6642aa;font-family:monospace;margin-top:1px;" title="Reference number">
+                                                            <div style="font-size:10px;color:var(--app-primary);font-family:monospace;margin-top:1px;" title="Reference number">
                                                                 <i class="ri-hashtag me-1"></i><?= esc($row['reference_no']) ?>
                                                             </div>
                                                         <?php endif; ?>
@@ -1405,7 +1405,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                 <div id="ded-selbar" class="ded-selbar" style="display:none;">
                                     <i class="ri-checkbox-multiple-line"></i>
                                     <span><b id="ded-sel-count">0</b> selected · Total balance <b>&#8369;<span id="ded-sel-total">0.00</span></b></span>
-                                    <button type="button" class="btn btn-sm text-white ms-auto" id="ded-group-btn" style="background:#673bb6;border-color:#673bb6;">
+                                    <button type="button" class="btn btn-sm text-white ms-auto" id="ded-group-btn" style="background:var(--app-primary);border-color:var(--app-primary);">
                                         <i class="ri-stack-line me-1"></i>Group &amp; set per-payroll amount
                                     </button>
                                     <button type="button" class="btn btn-sm btn-outline-secondary" id="ded-sel-clear">Clear</button>
@@ -1483,7 +1483,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                 $wh_kind = ['ded' => 'Deduction', 'loan' => 'Loan', 'extra' => 'One-off'];
                                 ?>
                                 <div class="d-flex align-items-center mt-4 mb-2">
-                                    <h6 class="mb-0 flex-grow-1" style="color:#4e3483;font-weight:800;"><i class="ri-scissors-cut-line me-1"></i>Withheld per Payroll</h6>
+                                    <h6 class="mb-0 flex-grow-1" style="color:var(--app-primary-dark);font-weight:800;"><i class="ri-scissors-cut-line me-1"></i>Withheld per Payroll</h6>
                                     <?php if ($wh_emp && function_exists('page_allowed') && page_allowed('deductions-report')): ?>
                                     <a class="btn btn-sm btn-outline-secondary" href="index.php?<?= esc(http_build_query(['page' => 'deductions-report', 'q' => $employee_no ?? '', 'from' => min(array_column($wh_pays, 'date_to')), 'to' => date('Y-m-d')])) ?>">
                                         <i class="ri-external-link-line me-1"></i>Deductions Report
@@ -1663,8 +1663,8 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                                     <td class="text-center"><span style="font-family:monospace;font-size:12px;"><?= esc($row['device_id']) ?></span></td>
                                                     <td>
                                                         <div style="font-weight:600;font-size:13px;"><i class="ri-radio-button-line text-success me-1"></i><?= esc($row['site_name']) ?></div>
-                                                        <div style="font-size:11px;color:#666;"><i class="ri-hashtag text-muted me-1"></i><?= esc($row['site_code']) ?></div>
-                                                        <div style="font-size:11px;color:#888;"><i class="ri-map-pin-line text-muted me-1"></i><?= esc($row['site_address']) ?></div>
+                                                        <div style="font-size:11px;color:var(--app-text-2, #666);"><i class="ri-hashtag text-muted me-1"></i><?= esc($row['site_code']) ?></div>
+                                                        <div style="font-size:11px;color:var(--app-text-2, #888);"><i class="ri-map-pin-line text-muted me-1"></i><?= esc($row['site_address']) ?></div>
                                                     </td>
                                                     <td><span style="font-weight:600;"><?= esc($row['cluster']) ?></span></td>
                                                 </tr>
@@ -1708,7 +1708,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                         foreach ($labels as $i => $lb) {
                                             $on = in_array($i, $set, true);
                                             $out .= '<span style="display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;border-radius:50%;font-size:10px;font-weight:700;margin-right:2px;'
-                                                . ($on ? 'background:#673bb6;color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
+                                                . ($on ? 'background:var(--app-primary);color:#fff;' : 'background:#eef1f5;color:#c2c8d0;') . '">' . $lb . '</span>';
                                         }
                                         return $out;
                                     }
@@ -1741,8 +1741,8 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                                 &nbsp;<span class="badge bg-info">NSD <?= ($cur_sched['nsd_rate'] * 100) ?>%</span>
                                             <?php endif; ?>
                                         </div>
-                                        <div style="font-size:12px;color:#666;">Effective: <?= date('F d, Y', strtotime($cur_sched['effective_from'])) ?></div>
-                                        <div class="mt-1" style="font-size:12px;color:#666;">
+                                        <div style="font-size:12px;color:var(--app-text-2, #666);">Effective: <?= date('F d, Y', strtotime($cur_sched['effective_from'])) ?></div>
+                                        <div class="mt-1" style="font-size:12px;color:var(--app-text-2, #666);">
                                             <i class="ri-moon-line me-1"></i>Rest days: <?= ed_rest_pills($cur_sched['rest_days'] ?? '') ?>
                                         </div>
                                     </div>
@@ -2108,7 +2108,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                             <div class="modal-dialog modal-dialog-centered">
                                 <form id="form-adjust-credit" class="modal-content">
                                     <div class="modal-header">
-                                        <h6 class="modal-title" id="adjust-title"><i class="ri-coins-line me-2" style="color:#673bb6;"></i>Adjust Credits</h6>
+                                        <h6 class="modal-title" id="adjust-title"><i class="ri-coins-line me-2" style="color:var(--app-primary);"></i>Adjust Credits</h6>
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body">
@@ -2190,7 +2190,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                             document.getElementById('adj-mode').value = mode;
                             document.getElementById('adj-amount').value = '';
                             document.getElementById('adj-reason').value = '';
-                            document.getElementById('adjust-title').innerHTML = '<i class="ri-coins-line me-2" style="color:#673bb6;"></i>' + (isAdd ? 'Add' : 'Deduct') + ' Credits';
+                            document.getElementById('adjust-title').innerHTML = '<i class="ri-coins-line me-2" style="color:var(--app-primary);"></i>' + (isAdd ? 'Add' : 'Deduct') + ' Credits';
                             document.getElementById('adj-desc').innerHTML = (isAdd ? 'Add days to' : 'Deduct days from') + ' <b>' + b.dataset.typeName + '</b> balance.';
                             document.getElementById('adj-submit').className = 'btn btn-sm ' + (isAdd ? 'btn-success' : 'btn-danger');
                             new bootstrap.Modal(document.getElementById('modal-adjust-credit')).show();
@@ -2235,7 +2235,7 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
             <div class="modal-content">
                 <form id="form-emp-allowance">
                     <div class="modal-header">
-                        <h6 class="modal-title"><i class="ri-gift-2-line me-2" style="color:#673bb6;"></i>Add Recurring Allowance</h6>
+                        <h6 class="modal-title"><i class="ri-gift-2-line me-2" style="color:var(--app-primary);"></i>Add Recurring Allowance</h6>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
                     <div class="modal-body">

@@ -147,6 +147,13 @@ RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
+# ── v2 shell clean URLs → app.php ────────────────────────────────────────
+# /payroll/app                         → app.php (role landing page)
+# /payroll/app/employee                → app.php?page=employee
+# /payroll/app/employee-details?id=5   → app.php?page=employee-details&id=5
+RewriteRule ^app/?$ app.php [L,QSA]
+RewriteRule ^app/([a-zA-Z0-9_-]+)/?$ app.php?page=$1 [L,QSA]
+
 # ── Clean URL → index.php router ─────────────────────────────────────────
 # /payroll/employee          → index.php?page=employee
 # /payroll/dtr-details?id=5  → index.php?page=dtr-details&id=5

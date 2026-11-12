@@ -1,9 +1,9 @@
 <style>
-    .site-code-badge { background:#673bb6; color:#fff; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; display:inline-block; margin-bottom:3px; font-family:monospace; }
-    .site-name { font-size:13px; font-weight:600; color:#222; }
-    .site-addr { font-size:11px; color:#888; }
+    .site-code-badge { background:var(--app-primary); color:#fff; padding:2px 7px; border-radius:3px; font-size:11px; font-weight:700; display:inline-block; margin-bottom:3px; font-family:monospace; }
+    .site-name { font-size:13px; font-weight:600; color:var(--app-text, #222); }
+    .site-addr { font-size:11px; color:var(--app-text-2, #888); }
     .site-user { font-size:13px; font-weight:600; }
-    .site-cluster { font-size:12px; font-weight:600; color:#673bb6; }
+    .site-cluster { font-size:12px; font-weight:600; color:var(--app-primary); }
 
 </style>
 
@@ -14,7 +14,7 @@
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
                         <h4 class="mb-sm-0">
-                            <i class="ri-map-pin-2-line me-2" style="color:#673bb6;"></i>Sites
+                            <i class="ri-map-pin-2-line me-2" style="color:var(--app-primary);"></i>Sites
                         </h4>
                         <div class="page-title-right">
                             <ol class="breadcrumb m-0">
@@ -28,12 +28,12 @@
                 <div class="card" >
                     <div class="card-header align-items-center d-flex py-2">
                         <h4 class="card-title mb-0 flex-grow-1">
-                            <i class="ri-map-pin-2-line me-2" style="color:#673bb6;"></i>Sites List
+                            <i class="ri-map-pin-2-line me-2" style="color:var(--app-primary);"></i>Sites List
                             <?php
                             $site_count = $conn->query("SELECT COUNT(*) AS c FROM sites")->fetch_assoc()['c'];
                             ?>
                         </h4>
-                        <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"
+                        <button type="button" class="btn btn-sm text-white" style="background:var(--app-primary);border-color:var(--app-primary);"
                             data-bs-toggle="modal" data-bs-target="#modal">
                             <i class="ri-add-circle-line me-1"></i>Create Site
                         </button>

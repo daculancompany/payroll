@@ -20,7 +20,7 @@
     max-height: 62vh;
     overflow: auto;
     border-radius: 0 0 12px 12px;
-    background: #fff;
+    background: var(--app-surface, #fff);
     /* Reserve the scrollbar's width whether or not it is showing. These tables
        size their columns automatically, so without this the bar's arrival at
        row N steals ~12px and every column re-flows mid-scroll. */
@@ -63,13 +63,13 @@
 .rpt-table > tbody > tr > td {
     font-size: 12px;
     padding: 7px 10px;
-    color: #1a1a1a;
+    color: var(--app-text, #1a1a1a);
     border-right: 1px solid var(--rpt-cell-border);
     border-bottom: 1px solid var(--rpt-cell-border);
     vertical-align: middle;
 }
 .rpt-table > tbody > tr:nth-child(even) > td { background: var(--rpt-row-alt); }
-.rpt-table > tbody > tr:nth-child(odd) > td { background: #ffffff; }
+.rpt-table > tbody > tr:nth-child(odd) > td { background: var(--app-surface, #ffffff); }
 .rpt-table > tbody > tr:hover > td { background: var(--rpt-row-hover); transition: background-color .08s ease; }
 
 /* Footer totals — soft purple band, pinned to the bottom of the scroll area */
@@ -101,7 +101,7 @@
 
 /* Utility cells */
 .rpt-num { text-align: right; font-variant-numeric: tabular-nums; }
-.rpt-gov { font-family: monospace; font-size: 11px; color: #666; }
+.rpt-gov { font-family: monospace; font-size: 11px; color: var(--app-text-2, #666); }
 
 /* Clickable employee name → employee details */
 .rpt-emp-link { font-weight: 600; color: var(--app-primary); text-decoration: none; }

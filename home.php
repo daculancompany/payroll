@@ -531,71 +531,71 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
 ?>
 <style>
     /* ── Dashboard design tokens ─────────────────────────────── */
-    .dash-stat { height:100%; border-top:3px solid #673bb6; border-radius:8px; background:#fff; padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 4px rgba(57,75,124,.07); transition:box-shadow .2s, transform .15s; }
+    .dash-stat { height:100%; border-top:3px solid var(--app-primary); border-radius:8px; background:var(--app-surface, #fff); padding:14px 16px; display:flex; align-items:center; gap:12px; box-shadow:0 1px 4px rgba(57,75,124,.07); transition:box-shadow .2s, transform .15s; }
     .dash-stat:hover { box-shadow:0 4px 16px rgba(57,75,124,.13); transform:translateY(-1px); }
     .dash-stat .ds-icon { width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:21px; flex-shrink:0; }
-    .dash-stat .ds-val { font-size:22px; font-weight:800; color:#673bb6; line-height:1; }
-    .dash-stat .ds-lbl { font-size:11px; color:#888; text-transform:uppercase; letter-spacing:.4px; margin-top:3px; }
+    .dash-stat .ds-val { font-size:22px; font-weight:800; color:var(--app-primary); line-height:1; }
+    .dash-stat .ds-lbl { font-size:11px; color:var(--app-text-2, #888); text-transform:uppercase; letter-spacing:.4px; margin-top:3px; }
     .dash-stat .ds-sub { font-size:11px; color:#aaa; margin-top:2px; }
     .pay-status-dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:4px; }
-    .snap-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid #f0f0f0; }
+    .snap-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--app-border, #f0f0f0); }
     .snap-row:last-child { border-bottom:none; }
-    .snap-lbl { font-size:11px; color:#888; }
+    .snap-lbl { font-size:11px; color:var(--app-text-2, #888); }
     .snap-val { font-size:14px; font-weight:800; }
     .bday-item { display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid #f5f5f5; }
     .bday-item:last-child { border-bottom:none; }
-    .bday-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#6642aa,#4e3483); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; flex-shrink:0; }
-    .bday-day { margin-left:auto; background:#f0ecf6; color:#4e3483; border-radius:10px; padding:1px 8px; font-size:11px; font-weight:700; white-space:nowrap; }
+    .bday-avatar { width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,var(--app-primary),var(--app-primary-dark)); color:#fff; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; flex-shrink:0; }
+    .bday-day { margin-left:auto; background:var(--app-tint, #f0ecf6); color:var(--app-primary-dark); border-radius:10px; padding:1px 8px; font-size:11px; font-weight:700; white-space:nowrap; }
     /* Action-needed cards */
-    .action-card { display:flex; align-items:center; gap:12px; background:#fff; border:1px solid #eee; border-left:4px solid var(--ac,#e6a817); border-radius:8px; padding:12px 16px; text-decoration:none; color:inherit; box-shadow:0 1px 4px rgba(57,75,124,.07); transition:box-shadow .2s, transform .15s; height:100%; }
+    .action-card { display:flex; align-items:center; gap:12px; background:var(--app-surface, #fff); border:1px solid var(--app-border, #eee); border-left:4px solid var(--ac,#e6a817); border-radius:8px; padding:12px 16px; text-decoration:none; color:inherit; box-shadow:0 1px 4px rgba(57,75,124,.07); transition:box-shadow .2s, transform .15s; height:100%; }
     .action-card:hover { box-shadow:0 4px 16px rgba(57,75,124,.15); transform:translateY(-1px); color:inherit; }
-    .action-card .ac-ic { width:40px; height:40px; border-radius:9px; background:#f4f6f9; background:color-mix(in srgb, var(--ac) 12%, #fff); color:var(--ac); display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+    .action-card .ac-ic { width:40px; height:40px; border-radius:9px; background:var(--app-surface-2, #f4f6f9); background:color-mix(in srgb, var(--ac) 12%, #fff); color:var(--ac); display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
     .action-card .ac-val { font-size:20px; font-weight:800; color:var(--ac); line-height:1; }
     .action-card .ac-lbl { font-size:11.5px; color:#777; margin-top:3px; }
     .action-card .ac-go { margin-left:auto; color:#ccc; font-size:18px; }
     /* Event / pending-leave list rows */
     .ev-row { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid #f5f5f5; }
     .ev-row:last-child { border-bottom:none; }
-    .ev-date { width:42px; flex-shrink:0; text-align:center; background:#f4f6f9; border-radius:8px; padding:3px 0; }
-    .ev-date .d { font-size:14px; font-weight:800; color:#333; line-height:1.1; }
-    .ev-date .m { font-size:9px; font-weight:800; color:#673bb6; text-transform:uppercase; }
+    .ev-date { width:42px; flex-shrink:0; text-align:center; background:var(--app-surface-2, #f4f6f9); border-radius:8px; padding:3px 0; }
+    .ev-date .d { font-size:14px; font-weight:800; color:var(--app-text, #333); line-height:1.1; }
+    .ev-date .m { font-size:9px; font-weight:800; color:var(--app-primary); text-transform:uppercase; }
     /* Payroll pipeline stage tracker */
     .pipeline { display:flex; align-items:center; justify-content:space-between; gap:3px; }
-    .pl-stage { flex:1 1 0; min-width:0; text-align:center; background:#f8f9fb; border:1px solid #eef0f2; border-radius:10px; padding:10px 3px; }
+    .pl-stage { flex:1 1 0; min-width:0; text-align:center; background:var(--app-surface-2, #f8f9fb); border:1px solid var(--app-border, #eef0f2); border-radius:10px; padding:10px 3px; }
     .pl-ic { width:34px; height:34px; border-radius:9px; margin:0 auto 5px; display:flex; align-items:center; justify-content:center; font-size:17px; }
     .pl-n { font-size:18px; font-weight:800; line-height:1; }
-    .pl-t { font-size:9px; color:#888; text-transform:uppercase; letter-spacing:.2px; margin-top:3px; font-weight:700; white-space:nowrap; }
+    .pl-t { font-size:9px; color:var(--app-text-2, #888); text-transform:uppercase; letter-spacing:.2px; margin-top:3px; font-weight:700; white-space:nowrap; }
     .pl-arrow { color:#cfd4da; font-size:15px; flex-shrink:0; }
-    .s-new  .pl-ic { background:#efebf6; color:#673bb6; } .s-new  .pl-n { color:#673bb6; }
+    .s-new  .pl-ic { background:#efebf6; color:var(--app-primary); } .s-new  .pl-n { color:var(--app-primary); }
     .s-calc .pl-ic { background:#eef0fb; color:#4a5bbf; } .s-calc .pl-n { color:#4a5bbf; }
     .s-rev  .pl-ic { background:#fff6e0; color:#c98a00; } .s-rev  .pl-n { color:#c98a00; }
     .s-lock .pl-ic { background:#fbe9f0; color:#c9366f; } .s-lock .pl-n { color:#c9366f; }
     /* Today's Attendance highlight stats + duty in/out chips */
-    .today-att-stat { background:#f8f9fb; border:1px solid #eef0f2; border-radius:10px; padding:10px 12px; border-left:3px solid var(--ac,#673bb6); height:100%; }
-    .today-att-stat .tas-v { font-size:19px; font-weight:800; color:var(--ac,#673bb6); line-height:1; }
-    .today-att-stat .tas-l { font-size:10.5px; color:#888; margin-top:4px; }
+    .today-att-stat { background:var(--app-surface-2, #f8f9fb); border:1px solid var(--app-border, #eef0f2); border-radius:10px; padding:10px 12px; border-left:3px solid var(--ac,var(--app-primary)); height:100%; }
+    .today-att-stat .tas-v { font-size:19px; font-weight:800; color:var(--ac,var(--app-primary)); line-height:1; }
+    .today-att-stat .tas-l { font-size:10.5px; color:var(--app-text-2, #888); margin-top:4px; }
     .tai-chip { display:inline-block; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:700; white-space:nowrap; }
-    .tai-chip.in  { background:#eeeaf5; color:#673bb6; }
+    .tai-chip.in  { background:#eeeaf5; color:var(--app-primary); }
     .tai-chip.out { background:#fce4ec; color:#c62828; }
     /* Section headers + anchor navigation */
     .dash-section { scroll-margin-top:130px; }
     .dash-sec-hd { display:flex; align-items:center; gap:10px; margin:6px 0 10px; }
-    .dash-sec-hd h6 { margin:0; font-size:12px; font-weight:800; color:#8a94a6; text-transform:uppercase; letter-spacing:.6px; white-space:nowrap; }
+    .dash-sec-hd h6 { margin:0; font-size:12px; font-weight:800; color:var(--app-text-2, #8a94a6); text-transform:uppercase; letter-spacing:.6px; white-space:nowrap; }
     .dash-sec-hd .line { flex-grow:1; border-top:1px dashed #e3e7ee; }
     .dash-sec-hd .hint { font-size:11px; color:#aab; white-space:nowrap; }
-    .dash-nav { position:sticky; top:70px; z-index:5; display:flex; flex-wrap:wrap; gap:6px; padding:8px 10px; margin-bottom:14px; background:rgba(255,255,255,.92); backdrop-filter:blur(6px); border:1px solid #eef0f2; border-radius:10px; box-shadow:0 1px 4px rgba(57,75,124,.06); }
-    .dash-nav a { font-size:11.5px; font-weight:700; color:#666; text-decoration:none; padding:5px 11px; border-radius:20px; border:1px solid transparent; transition:all .15s; }
-    .dash-nav a:hover, .dash-nav a.active { background:#f0ecf6; color:#673bb6; border-color:#d7d0e6; }
+    .dash-nav { position:sticky; top:70px; z-index:5; display:flex; flex-wrap:wrap; gap:6px; padding:8px 10px; margin-bottom:14px; background:var(--app-surface, rgba(255,255,255,.92)); backdrop-filter:blur(6px); border:1px solid var(--app-border, #eef0f2); border-radius:10px; box-shadow:0 1px 4px rgba(57,75,124,.06); }
+    .dash-nav a { font-size:11.5px; font-weight:700; color:var(--app-text-2, #666); text-decoration:none; padding:5px 11px; border-radius:20px; border:1px solid transparent; transition:all .15s; }
+    .dash-nav a:hover, .dash-nav a.active { background:var(--app-tint, #f0ecf6); color:var(--app-primary); border-color:var(--app-tint-border, #d7d0e6); }
     .dash-nav a i { margin-right:4px; }
     .dash-nav .spacer { flex-grow:1; }
     .dash-nav .refreshed { font-size:10.5px; color:#aab; align-self:center; white-space:nowrap; }
     /* Mini stat strip inside cards */
     .mini-strip { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-    .mini-stat { flex:1 1 0; min-width:90px; background:#f8f9fb; border:1px solid #eef0f2; border-radius:8px; padding:8px 10px; border-left:3px solid var(--ac,#673bb6); }
-    .mini-stat .mv { font-size:16px; font-weight:800; color:var(--ac,#673bb6); line-height:1; }
-    .mini-stat .ml { font-size:10px; color:#888; margin-top:3px; }
+    .mini-stat { flex:1 1 0; min-width:90px; background:var(--app-surface-2, #f8f9fb); border:1px solid var(--app-border, #eef0f2); border-radius:8px; padding:8px 10px; border-left:3px solid var(--ac,var(--app-primary)); }
+    .mini-stat .mv { font-size:16px; font-weight:800; color:var(--ac,var(--app-primary)); line-height:1; }
+    .mini-stat .ml { font-size:10px; color:var(--app-text-2, #888); margin-top:3px; }
     /* Aging bar for pending leaves */
-    .aging { display:flex; height:10px; border-radius:6px; overflow:hidden; background:#f0f2f5; margin:6px 0 4px; }
+    .aging { display:flex; height:10px; border-radius:6px; overflow:hidden; background:var(--app-surface-2, #f0f2f5); margin:6px 0 4px; }
     .aging span { display:block; height:100%; }
     .aging-legend { display:flex; gap:12px; font-size:10.5px; color:#777; flex-wrap:wrap; }
     .aging-legend i { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; }
@@ -603,8 +603,8 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
     .empty-state { text-align:center; padding:26px 8px; color:#aaa; }
     .empty-state i { font-size:30px; }
     .empty-state div { font-size:12px; margin-top:6px; }
-    .th-p { background:#673bb6; color:#fff; padding:8px 12px; font-size:11px; border:none; }
-    .qa-btn { background:#eef0f8; color:#673bb6; border:1px solid #d0d7ee; font-weight:600; }
+    .th-p { background:var(--app-primary); color:#fff; padding:8px 12px; font-size:11px; border:none; }
+    .qa-btn { background:var(--app-tint, #eef0f8); color:var(--app-primary); border:1px solid var(--app-tint-border, #d0d7ee); font-weight:600; }
     /* Theme CSS paints donut centre text with --vz-body-color, which can resolve to white; pin it. */
     .dash-section .apexcharts-datalabels-group .apexcharts-datalabel-value { fill:#333 !important; }
     .dash-section .apexcharts-datalabels-group .apexcharts-datalabel-label { fill:#999 !important; }
@@ -619,7 +619,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <div class="row">
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
-                        <h4 class="mb-sm-0"><i class="ri-dashboard-line me-2" style="color:#673bb6;"></i>Dashboard</h4>
+                        <h4 class="mb-sm-0"><i class="ri-dashboard-line me-2" style="color:var(--app-primary);"></i>Dashboard</h4>
                         <div class="page-title-right">
                             <ol class="breadcrumb m-0">
                                 <li class="breadcrumb-item"><a href="javascript:void(0);">Pages</a></li>
@@ -648,7 +648,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <div class="row g-3 mb-3">
                 <div class="col-xl-2 col-md-4 col-sm-6">
                     <div class="dash-stat">
-                        <div class="ds-icon" style="background:#f4f1f9;"><i class="ri-group-line" style="color:#673bb6;"></i></div>
+                        <div class="ds-icon" style="background:#f4f1f9;"><i class="ri-group-line" style="color:var(--app-primary);"></i></div>
                         <div>
                             <div class="ds-val" data-stat="employees"><?= $total_employees ?></div>
                             <div class="ds-lbl">Employees</div>
@@ -688,10 +688,10 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                 </div>
                 <?php if ($show_finance): ?>
                 <div class="col-xl-2 col-md-4 col-sm-6">
-                    <div class="dash-stat" style="border-top-color:#6f42c1;">
-                        <div class="ds-icon" style="background:#f2eefb;"><i class="ri-money-dollar-circle-line" style="color:#6f42c1;"></i></div>
+                    <div class="dash-stat" style="border-top-color:var(--app-primary);">
+                        <div class="ds-icon" style="background:#f2eefb;"><i class="ri-money-dollar-circle-line" style="color:var(--app-primary);"></i></div>
                         <div>
-                            <div class="ds-val" style="color:#6f42c1;"><?= $total_payrolls ?></div>
+                            <div class="ds-val" style="color:var(--app-primary);"><?= $total_payrolls ?></div>
                             <div class="ds-lbl">Payrolls</div>
                             <div class="ds-sub"><?= $pay_locked ?> locked · <?= $pay_review ?> in review</div>
                         </div>
@@ -840,10 +840,10 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <div id="sec-today" class="dash-section">
             <div class="row g-3 mb-3">
                 <div class="col-12">
-                    <div class="card" style="border-top:3px solid #673bb6;">
+                    <div class="card" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header d-flex align-items-center py-2 gap-2 flex-wrap">
                             <h6 class="card-title mb-0 flex-grow-1">
-                                <i class="ri-calendar-check-line me-2" style="color:#673bb6;"></i>Today's Attendance
+                                <i class="ri-calendar-check-line me-2" style="color:var(--app-primary);"></i>Today's Attendance
                                 <span class="sub"><?= date('l, M d, Y') ?></span>
                             </h6>
                             <a href="daily-board" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">Full Board <i class="ri-arrow-right-line ms-1"></i></a>
@@ -851,7 +851,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                         <div class="card-body pb-2">
                             <div class="row g-2 mb-3">
                                 <div class="col-6 col-md-4 col-xl">
-                                    <div class="today-att-stat" style="--ac:#673bb6;">
+                                    <div class="today-att-stat" style="--ac:var(--app-primary);">
                                         <div class="tas-v"><?= $today_present_count ?></div>
                                         <div class="tas-l"><i class="ri-checkbox-circle-line me-1"></i>Present</div>
                                     </div>
@@ -906,7 +906,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                                         <?php foreach ($today_rows_shown as $tr): ?>
                                         <tr>
                                             <td style="padding:7px 12px;font-size:12px;font-weight:600;"><?= htmlspecialchars($tr['name']) ?></td>
-                                            <td style="padding:7px 12px;font-size:11px;color:#666;"><?= htmlspecialchars($tr['dept']) ?></td>
+                                            <td style="padding:7px 12px;font-size:11px;color:var(--app-text-2, #666);"><?= htmlspecialchars($tr['dept']) ?></td>
                                             <td style="padding:7px 12px;">
                                                 <?php if ($tr['in']): ?>
                                                     <span class="tai-chip in"><?= date('h:i A', strtotime($tr['in'])) ?></span>
@@ -937,7 +937,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                             </div>
                             <?php if ($today_rows_overflow > 0): ?>
                             <div class="text-center mt-2" style="font-size:11px;color:#aaa;">
-                                +<?= $today_rows_overflow ?> more — <a href="daily-board" style="color:#673bb6;font-weight:700;text-decoration:none;">view Full Board</a>
+                                +<?= $today_rows_overflow ?> more — <a href="daily-board" style="color:var(--app-primary);font-weight:700;text-decoration:none;">view Full Board</a>
                             </div>
                             <?php endif; ?>
                             <?php else: ?>
@@ -951,14 +951,14 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
 
             <!-- ══════════════ ATTENDANCE & TIME ══════════════ -->
             <div id="sec-attendance" class="dash-section">
-            <div class="dash-sec-hd"><h6><i class="ri-time-line me-1" style="color:#673bb6;"></i>Attendance &amp; Time</h6><div class="line"></div><span class="hint">tardiness, overtime and requests</span></div>
+            <div class="dash-sec-hd"><h6><i class="ri-time-line me-1" style="color:var(--app-primary);"></i>Attendance &amp; Time</h6><div class="line"></div><span class="hint">tardiness, overtime and requests</span></div>
 
             <div class="row g-3 mb-3">
                 <div class="col-xl-8">
-                    <div class="card h-100" style="border-top:3px solid #673bb6;">
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header d-flex align-items-center py-2">
                             <h6 class="card-title mb-0 flex-grow-1">
-                                <i class="ri-bar-chart-2-line me-2" style="color:#673bb6;"></i>Daily Attendance — Present vs Late <span class="sub">last 14 days</span>
+                                <i class="ri-bar-chart-2-line me-2" style="color:var(--app-primary);"></i>Daily Attendance — Present vs Late <span class="sub">last 14 days</span>
                             </h6>
                             <a href="attendance-summary" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">Summary <i class="ri-arrow-right-line ms-1"></i></a>
                         </div>
@@ -1079,14 +1079,14 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <?php if ($show_finance): ?>
             <!-- ══════════════ PAYROLL & FINANCE ══════════════ -->
             <div id="sec-payroll" class="dash-section">
-            <div class="dash-sec-hd"><h6><i class="ri-money-dollar-circle-line me-1" style="color:#6f42c1;"></i>Payroll &amp; Finance</h6><div class="line"></div><span class="hint">runs, cost mix, deductions and loans</span></div>
+            <div class="dash-sec-hd"><h6><i class="ri-money-dollar-circle-line me-1" style="color:var(--app-primary);"></i>Payroll &amp; Finance</h6><div class="line"></div><span class="hint">runs, cost mix, deductions and loans</span></div>
 
             <div class="row g-3 mb-3">
                 <div class="col-xl-8">
-                    <div class="card h-100" style="border-top:3px solid #673bb6;">
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header d-flex align-items-center py-2">
                             <h6 class="card-title mb-0 flex-grow-1">
-                                <i class="ri-line-chart-line me-2" style="color:#673bb6;"></i>Net Pay Disbursed &amp; Payroll Runs <span class="sub">last 7 months</span>
+                                <i class="ri-line-chart-line me-2" style="color:var(--app-primary);"></i>Net Pay Disbursed &amp; Payroll Runs <span class="sub">last 7 months</span>
                             </h6>
                             <a href="payroll-list" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">All Payrolls <i class="ri-arrow-right-line ms-1"></i></a>
                         </div>
@@ -1096,9 +1096,9 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                     </div>
                 </div>
                 <div class="col-xl-4">
-                    <div class="card mb-3" style="border-top:3px solid #673bb6;">
+                    <div class="card mb-3" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header py-2">
-                            <h6 class="card-title mb-0"><i class="ri-flow-chart me-2" style="color:#673bb6;"></i>Payroll Pipeline</h6>
+                            <h6 class="card-title mb-0"><i class="ri-flow-chart me-2" style="color:var(--app-primary);"></i>Payroll Pipeline</h6>
                         </div>
                         <div class="card-body py-3">
                             <div class="pipeline">
@@ -1112,13 +1112,13 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                             </div>
                         </div>
                     </div>
-                    <div class="card" style="border-top:3px solid #6642aa;">
+                    <div class="card" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header py-2">
-                            <h6 class="card-title mb-0"><i class="ri-lock-line me-2" style="color:#6642aa;"></i>Latest Payroll</h6>
+                            <h6 class="card-title mb-0"><i class="ri-lock-line me-2" style="color:var(--app-primary);"></i>Latest Payroll</h6>
                         </div>
                         <div class="card-body py-2">
                             <?php if ($snap): ?>
-                            <div style="background:linear-gradient(135deg,#6642aa,#4e3483);border-radius:8px;padding:10px 12px;color:#fff;margin-bottom:8px;">
+                            <div style="background:linear-gradient(135deg,var(--app-primary),var(--app-primary-dark));border-radius:8px;padding:10px 12px;color:#fff;margin-bottom:8px;">
                                 <div class="d-flex align-items-center gap-2">
                                     <div style="font-size:13px;font-weight:800;letter-spacing:.3px;flex-grow:1;"><?= htmlspecialchars($snap['ref_no']) ?></div>
                                     <span style="background:rgba(255,255,255,.2);border-radius:8px;padding:1px 8px;font-size:10px;font-weight:700;"><?= $pay_status_lbl[(int)$snap['status']] ?? '' ?></span>
@@ -1126,10 +1126,10 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                                 <div style="font-size:11px;opacity:.85;margin-top:2px;"><?= htmlspecialchars($snap['employer_name']) ?> · <?= number_format($snap['emp_count']) ?> employees</div>
                                 <div style="font-size:11px;opacity:.75;margin-top:2px;"><?= date('M d', strtotime($snap['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($snap['date_to'])) ?></div>
                             </div>
-                            <div class="snap-row"><span class="snap-lbl">Gross Pay</span><span class="snap-val" style="color:#4e3483;">₱ <?= number_format((float)$snap['total_gross'], 2) ?></span></div>
+                            <div class="snap-row"><span class="snap-lbl">Gross Pay</span><span class="snap-val" style="color:var(--app-primary-dark);">₱ <?= number_format((float)$snap['total_gross'], 2) ?></span></div>
                             <div class="snap-row"><span class="snap-lbl">Total Deductions</span><span class="snap-val" style="color:#dc3545;">₱ <?= number_format((float)$snap['total_gross'] - (float)$snap['total_net'], 2) ?></span></div>
-                            <div class="snap-row"><span class="snap-lbl">Net Pay</span><span class="snap-val" style="color:#673bb6;font-size:16px;">₱ <?= number_format((float)$snap['total_net'], 2) ?></span></div>
-                            <a href="payroll_calculations?id=<?= $snap['id'] ?>" class="btn btn-sm w-100 mt-2" style="background:#f0ecf6;color:#4e3483;font-weight:700;border:1px solid #d7d0e6;"><i class="ri-eye-line me-1"></i>View Payroll</a>
+                            <div class="snap-row"><span class="snap-lbl">Net Pay</span><span class="snap-val" style="color:var(--app-primary);font-size:16px;">₱ <?= number_format((float)$snap['total_net'], 2) ?></span></div>
+                            <a href="payroll_calculations?id=<?= $snap['id'] ?>" class="btn btn-sm w-100 mt-2" style="background:var(--app-tint, #f0ecf6);color:var(--app-primary-dark);font-weight:700;border:1px solid var(--app-tint-border, #d7d0e6);"><i class="ri-eye-line me-1"></i>View Payroll</a>
                             <?php else: ?>
                             <div class="empty-state"><i class="ri-lock-unlock-line"></i><div>No computed payrolls yet</div></div>
                             <?php endif; ?>
@@ -1141,9 +1141,9 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <?php if ($snap): ?>
             <div class="row g-3 mb-3">
                 <div class="col-xl-4">
-                    <div class="card h-100" style="border-top:3px solid #673bb6;">
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header py-2">
-                            <h6 class="card-title mb-0"><i class="ri-pie-chart-line me-2" style="color:#673bb6;"></i>Payroll Cost Mix <span class="sub"><?= htmlspecialchars($snap['ref_no']) ?></span></h6>
+                            <h6 class="card-title mb-0"><i class="ri-pie-chart-line me-2" style="color:var(--app-primary);"></i>Payroll Cost Mix <span class="sub"><?= htmlspecialchars($snap['ref_no']) ?></span></h6>
                         </div>
                         <div class="card-body pb-2">
                             <div id="chart-costmix" style="min-height:250px;"></div>
@@ -1173,7 +1173,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                         <div class="card-body pb-2">
                             <div class="mini-strip">
                                 <div class="mini-stat" style="--ac:#e83e8c;"><div class="mv">₱<?= number_format((float)$loan_data['total'], 0) ?></div><div class="ml">Outstanding balance</div></div>
-                                <div class="mini-stat" style="--ac:#6f42c1;"><div class="mv"><?= $loan_data['borrowers'] ?></div><div class="ml">Borrowers</div></div>
+                                <div class="mini-stat" style="--ac:var(--app-primary);"><div class="mv"><?= $loan_data['borrowers'] ?></div><div class="ml">Borrowers</div></div>
                             </div>
                             <?php if (count($loan_type_labels)): ?>
                             <div id="chart-loans" style="min-height:180px;"></div>
@@ -1189,10 +1189,10 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <?php if (count($deptpay_labels)): ?>
             <div class="row g-3 mb-3">
                 <div class="col-12">
-                    <div class="card" style="border-top:3px solid #673bb6;">
+                    <div class="card" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header d-flex align-items-center py-2 gap-2 flex-wrap">
                             <h6 class="card-title mb-0 flex-grow-1">
-                                <i class="ri-funds-box-line me-2" style="color:#673bb6;"></i>Gross · Deductions · Net by Department
+                                <i class="ri-funds-box-line me-2" style="color:var(--app-primary);"></i>Gross · Deductions · Net by Department
                             </h6>
                             <select id="deptpay-period" class="form-select form-select-sm" style="width:auto;max-width:340px;font-size:11.5px;">
                                 <?php foreach ($locked_payrolls as $lp): ?>
@@ -1210,9 +1210,9 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             </div>
             <div class="row g-3 mb-3">
                 <div class="col-xl-6">
-                    <div class="card h-100" style="border-top:3px solid #6f42c1;">
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header py-2">
-                            <h6 class="card-title mb-0"><i class="ri-user-star-line me-2" style="color:#6f42c1;"></i>Average Net Pay per Employee</h6>
+                            <h6 class="card-title mb-0"><i class="ri-user-star-line me-2" style="color:var(--app-primary);"></i>Average Net Pay per Employee</h6>
                         </div>
                         <div class="card-body pb-2"><div id="chart-deptavg" style="min-height:280px;"></div></div>
                     </div>
@@ -1230,11 +1230,11 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
 
             <div class="row g-3 mb-3">
                 <div class="col-12">
-                    <div class="card" style="border-top:3px solid #673bb6;">
+                    <div class="card" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header d-flex align-items-center py-2">
-                            <h6 class="card-title mb-0 flex-grow-1"><i class="ri-money-dollar-circle-line me-2" style="color:#673bb6;"></i>Recent Payrolls</h6>
+                            <h6 class="card-title mb-0 flex-grow-1"><i class="ri-money-dollar-circle-line me-2" style="color:var(--app-primary);"></i>Recent Payrolls</h6>
                             <div class="d-flex gap-2 align-items-center" style="font-size:11px;">
-                                <span><span class="pay-status-dot" style="background:#673bb6;"></span>New (<?= $pay_new ?>)</span>
+                                <span><span class="pay-status-dot" style="background:var(--app-primary);"></span>New (<?= $pay_new ?>)</span>
                                 <span><span class="pay-status-dot" style="background:#4a5bbf;"></span>Calc. (<?= $pay_calculated ?>)</span>
                                 <span><span class="pay-status-dot" style="background:#e6a817;"></span>Review (<?= $pay_review ?>)</span>
                                 <span><span class="pay-status-dot" style="background:#c9366f;"></span>Locked (<?= $pay_locked ?>)</span>
@@ -1250,7 +1250,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                                     <tbody>
                                         <?php while ($r = $recent_payrolls->fetch_assoc()): ?>
                                         <tr>
-                                            <td style="padding:7px 12px;font-size:12px;"><span style="font-family:monospace;font-weight:700;color:#673bb6;"><?= htmlspecialchars($r['ref_no']) ?></span></td>
+                                            <td style="padding:7px 12px;font-size:12px;"><span style="font-family:monospace;font-weight:700;color:var(--app-primary);"><?= htmlspecialchars($r['ref_no']) ?></span></td>
                                             <td style="padding:7px 12px;font-size:12px;font-weight:600;"><?= htmlspecialchars($r['employer_name']) ?></td>
                                             <td style="padding:7px 12px;font-size:11px;color:#555;"><?= date('M d', strtotime($r['date_from'])) ?> &ndash; <?= date('M d, Y', strtotime($r['date_to'])) ?></td>
                                             <td style="padding:7px 12px;text-align:center;">
@@ -1277,8 +1277,8 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <div class="dash-sec-hd"><h6><i class="ri-calendar-event-line me-1" style="color:#e6a817;"></i>Leave Management</h6><div class="line"></div><span class="hint">requests, approvals and balances</span></div>
             <div class="row g-3 mb-3">
                 <div class="col-xl-2 col-md-4 col-6">
-                    <div class="dash-stat" style="border-top-color:#673bb6;">
-                        <div class="ds-icon" style="background:#f4f1f9;"><i class="ri-mail-add-line" style="color:#673bb6;"></i></div>
+                    <div class="dash-stat" style="border-top-color:var(--app-primary);">
+                        <div class="ds-icon" style="background:#f4f1f9;"><i class="ri-mail-add-line" style="color:var(--app-primary);"></i></div>
                         <div><div class="ds-val" data-stat="leave_new_week"><?= $leave_new_week ?></div><div class="ds-lbl">New This Week</div><div class="ds-sub"><?= $leave_new_today ?> filed today</div></div>
                     </div>
                 </div>
@@ -1307,9 +1307,9 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                     </div>
                 </div>
                 <div class="col-xl-2 col-md-4 col-6">
-                    <div class="dash-stat" style="border-top-color:#6f42c1;">
-                        <div class="ds-icon" style="background:#f2eefb;"><i class="ri-speed-line" style="color:#6f42c1;"></i></div>
-                        <div><div class="ds-val" style="color:#6f42c1;"><?= $leave_turnaround_days === null ? '—' : $leave_turnaround_days . 'd' ?></div><div class="ds-lbl">Avg Turnaround</div><div class="ds-sub"><?= $leave_decided_90d ?> decided · last 90 days</div></div>
+                    <div class="dash-stat" style="border-top-color:var(--app-primary);">
+                        <div class="ds-icon" style="background:#f2eefb;"><i class="ri-speed-line" style="color:var(--app-primary);"></i></div>
+                        <div><div class="ds-val" style="color:var(--app-primary);"><?= $leave_turnaround_days === null ? '—' : $leave_turnaround_days . 'd' ?></div><div class="ds-lbl">Avg Turnaround</div><div class="ds-sub"><?= $leave_decided_90d ?> decided · last 90 days</div></div>
                     </div>
                 </div>
             </div>
@@ -1323,7 +1323,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                         </div>
                         <div class="card-body py-2">
                             <?php $ag_tot = max(1, array_sum($leave_aging)); ?>
-                            <div style="font-size:10.5px;color:#888;font-weight:700;text-transform:uppercase;letter-spacing:.3px;">Aging of <span data-stat="pending_leaves"><?= $pending_leaves ?></span> pending request(s)</div>
+                            <div style="font-size:10.5px;color:var(--app-text-2, #888);font-weight:700;text-transform:uppercase;letter-spacing:.3px;">Aging of <span data-stat="pending_leaves"><?= $pending_leaves ?></span> pending request(s)</div>
                             <div class="aging">
                                 <span style="width:<?= $leave_aging['0-2 days']/$ag_tot*100 ?>%;background:#28a745;"></span>
                                 <span style="width:<?= $leave_aging['3-5 days']/$ag_tot*100 ?>%;background:#e6a817;"></span>
@@ -1350,7 +1350,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                                 </div>
                                 <?php endforeach; ?>
                             <?php else: ?>
-                                <div class="empty-state"><i class="ri-checkbox-circle-line" style="color:#673bb6;"></i><div>No pending leave requests — all caught up!</div></div>
+                                <div class="empty-state"><i class="ri-checkbox-circle-line" style="color:var(--app-primary);"></i><div>No pending leave requests — all caught up!</div></div>
                             <?php endif; ?>
                             </div>
                         </div>
@@ -1390,7 +1390,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                                 <div class="text-center mt-1" style="font-size:11px;color:#aaa;">+<?= $on_leave_today_count - count($on_leave_today) ?> more — <a href="index.php?page=leaves&lstatus=approved" style="color:#0891b2;font-weight:700;text-decoration:none;">view all</a></div>
                                 <?php endif; ?>
                             <?php else: ?>
-                                <div class="empty-state"><i class="ri-team-line" style="color:#673bb6;"></i><div>Nobody is on leave today — full crew!</div></div>
+                                <div class="empty-state"><i class="ri-team-line" style="color:var(--app-primary);"></i><div>Nobody is on leave today — full crew!</div></div>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -1438,31 +1438,31 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
 
             <!-- ══════════════ WORKFORCE ══════════════ -->
             <div id="sec-workforce" class="dash-section">
-            <div class="dash-sec-hd"><h6><i class="ri-team-line me-1" style="color:#6642aa;"></i>Workforce</h6><div class="line"></div><span class="hint">headcount composition · active employees</span></div>
+            <div class="dash-sec-hd"><h6><i class="ri-team-line me-1" style="color:var(--app-primary);"></i>Workforce</h6><div class="line"></div><span class="hint">headcount composition · active employees</span></div>
             <div class="row g-3 mb-3">
                 <div class="col-xl-4">
-                    <div class="card h-100" style="border-top:3px solid #6642aa;">
-                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-building-2-line me-2" style="color:#6642aa;"></i>Employees by Department</h6></div>
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
+                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-building-2-line me-2" style="color:var(--app-primary);"></i>Employees by Department</h6></div>
                         <div class="card-body pb-2"><div id="chart-emp-dept" style="min-height:250px;"></div></div>
                     </div>
                 </div>
                 <div class="col-xl-4">
-                    <div class="card h-100" style="border-top:3px solid #673bb6;">
-                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-briefcase-4-line me-2" style="color:#673bb6;"></i>Top Positions</h6></div>
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
+                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-briefcase-4-line me-2" style="color:var(--app-primary);"></i>Top Positions</h6></div>
                         <div class="card-body pb-2"><div id="chart-emp-pos" style="min-height:250px;"></div></div>
                     </div>
                 </div>
                 <div class="col-xl-4">
-                    <div class="card h-100" style="border-top:3px solid #673bb6;">
-                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-map-pin-line me-2" style="color:#673bb6;"></i>Employees by Area</h6></div>
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
+                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-map-pin-line me-2" style="color:var(--app-primary);"></i>Employees by Area</h6></div>
                         <div class="card-body pb-2"><div id="chart-emp-area" style="min-height:250px;"></div></div>
                     </div>
                 </div>
             </div>
             <div class="row g-3 mb-3">
                 <div class="col-xl-4">
-                    <div class="card h-100" style="border-top:3px solid #673bb6;">
-                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-shield-star-line me-2" style="color:#673bb6;"></i>Employees by Classification</h6></div>
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
+                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-shield-star-line me-2" style="color:var(--app-primary);"></i>Employees by Classification</h6></div>
                         <div class="card-body pb-2"><div id="chart-emp-class" style="min-height:220px;"></div></div>
                     </div>
                 </div>
@@ -1504,9 +1504,9 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             <div class="dash-sec-hd"><h6><i class="ri-history-line me-1" style="color:#0891b2;"></i>Activity &amp; Calendar</h6><div class="line"></div></div>
             <div class="row g-3 mb-3">
                 <div class="col-xl-7">
-                    <div class="card h-100" style="border-top:3px solid #673bb6;">
+                    <div class="card h-100" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header d-flex align-items-center py-2">
-                            <h6 class="card-title mb-0 flex-grow-1"><i class="ri-time-line me-2" style="color:#673bb6;"></i>Recent DTR Uploads</h6>
+                            <h6 class="card-title mb-0 flex-grow-1"><i class="ri-time-line me-2" style="color:var(--app-primary);"></i>Recent DTR Uploads</h6>
                             <a href="dtr" class="btn btn-sm btn-outline-secondary" style="font-size:11px;">View All <i class="ri-arrow-right-line ms-1"></i></a>
                         </div>
                         <div class="card-body p-0">
@@ -1517,7 +1517,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                                         <?php while ($recent_dtr && $r = $recent_dtr->fetch_assoc()): ?>
                                         <tr>
                                             <td style="padding:7px 12px;">
-                                                <span style="background:#673bb6;color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;font-family:monospace;"><?= htmlspecialchars($r['site_code']) ?></span>
+                                                <span style="background:var(--app-primary);color:#fff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;font-family:monospace;"><?= htmlspecialchars($r['site_code']) ?></span>
                                                 <div style="font-size:12px;font-weight:600;margin-top:2px;"><?= htmlspecialchars($r['site_name']) ?></div>
                                             </td>
                                             <td style="padding:7px 12px;font-size:12px;"><?= htmlspecialchars($r['uploader'] ?? '—') ?></td>
@@ -1565,8 +1565,8 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
 
             <div class="row g-3 mb-3">
                 <div class="col-12">
-                    <div class="card" style="border-top:3px solid #673bb6;">
-                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-apps-line me-2" style="color:#673bb6;"></i>Quick Access</h6></div>
+                    <div class="card" style="border-top:3px solid var(--app-primary);">
+                        <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-apps-line me-2" style="color:var(--app-primary);"></i>Quick Access</h6></div>
                         <div class="card-body py-3">
                             <div class="d-flex flex-wrap gap-2">
                                 <?php if ($login_role !== 7): ?><a href="employee" class="btn btn-sm qa-btn"><i class="ri-group-line me-1"></i>Employees</a><?php endif; ?>
@@ -1598,7 +1598,8 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
 <script src="assets/libs/apexcharts/apexcharts.min.js"></script>
 <script>
 (function () {
-    var primary = '#673bb6';
+    // Theme accent: classic purple, or the v2 user's accent colour.
+    var primary = (getComputedStyle(document.documentElement).getPropertyValue('--app-primary') || '').trim() || '#673bb6';
     var GRID  = { borderColor:'#eef0f2', strokeDashArray:0 };
     var peso0 = function(v){ return '₱'+Number(v).toLocaleString('en-PH',{maximumFractionDigits:0}); };
     var peso2 = function(v){ return '₱'+Number(v).toLocaleString('en-PH',{minimumFractionDigits:2}); };
@@ -1742,7 +1743,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
         }).render();
     }
     donut('chart-costmix', <?= json_encode(array_keys($costmix)) ?>, <?= json_encode(array_values($costmix)) ?>,
-          ['#673bb6', '#4a5bbf', '#0891b2', '#e6a817', '#6f42c1'], 'Earnings', peso0);
+          [primary, '#4a5bbf', '#0891b2', '#e6a817', '#6f42c1'], 'Earnings', peso0);
     donut('chart-dedmix', <?= json_encode(array_keys($dedmix)) ?>, <?= json_encode(array_values($dedmix)) ?>,
           ['#c9366f', '#e83e8c', '#e6a817', '#6f42c1', '#8a94a6'], 'Deductions', peso0);
 
@@ -1776,7 +1777,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
             tooltip: { y:{ formatter:function(v){ return v + ' ' + unit.toLowerCase(); } } },
         }).render();
     }
-    hbar('chart-emp-dept',  <?= json_encode($dept_labels) ?>,  <?= json_encode($dept_data) ?>,  '#6642aa', 250, 'Employees');
+    hbar('chart-emp-dept',  <?= json_encode($dept_labels) ?>,  <?= json_encode($dept_data) ?>,  primary, 250, 'Employees');
     hbar('chart-emp-pos',   <?= json_encode($pos_labels) ?>,   <?= json_encode($pos_data) ?>,   primary,   250, 'Employees');
     hbar('chart-emp-area',  <?= json_encode($area_labels) ?>,  <?= json_encode($area_data) ?>,  primary,   250, 'Employees');
     hbar('chart-emp-class', <?= json_encode($class_labels) ?>, <?= json_encode($class_data) ?>, primary,   220, 'Employees');
@@ -1784,7 +1785,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
     if (el('chart-rate-type'))
     new ApexCharts(el('chart-rate-type'), {
         chart: { type:'donut', height:220, toolbar:{show:false}, fontFamily:'inherit' },
-        colors: ['#4a5bbf', '#673bb6', '#0891b2', '#e6a817'],
+        colors: ['#4a5bbf', primary, '#0891b2', '#e6a817'],
         series: <?= json_encode($rate_data) ?>, labels: <?= json_encode($rate_labels) ?>,
         legend: { position:'bottom', fontSize:'11px', markers:{width:8,height:8} },
         dataLabels: { enabled:false },
@@ -1802,7 +1803,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
     if (el('chart-deptstack')) {
         chartStack = new ApexCharts(el('chart-deptstack'), {
             chart: { type:'bar', height:320, stacked:true, toolbar:{show:false}, fontFamily:'inherit' },
-            colors: ['#673bb6', '#c9366f', '#4a5bbf'],
+            colors: [primary, '#c9366f', '#4a5bbf'],
             plotOptions: { bar:{ horizontal:true, borderRadius:3, barHeight:'65%' } },
             series: [
                 { name:'Gross',      data: <?= json_encode($deptpay_gross) ?> },
@@ -1856,7 +1857,7 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
     if (el('chart-leave-type'))
     new ApexCharts(el('chart-leave-type'), {
         chart: { type:'donut', height:220, toolbar:{show:false}, fontFamily:'inherit' },
-        colors: ['#e6a817', '#673bb6', '#4a5bbf', '#c9366f', '#0891b2', '#6f42c1', '#fd7e14', '#28a745'],
+        colors: ['#e6a817', primary, '#4a5bbf', '#c9366f', '#0891b2', '#6f42c1', '#fd7e14', '#28a745'],
         series: <?= json_encode($lvtype_data) ?>,
         labels: <?= json_encode($lvtype_labels) ?>,
         legend: { position:'bottom', fontSize:'11px', markers:{width:8,height:8} },

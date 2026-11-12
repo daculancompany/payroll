@@ -138,7 +138,7 @@ $__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin'
         <form id="form-area" data-parsley-validate novalidate>
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title" id="area-modal-title"><i class="ri-node-tree me-2" style="color:#673bb6;"></i>Add Area</h6>
+                    <h6 class="modal-title" id="area-modal-title"><i class="ri-node-tree me-2" style="color:var(--app-primary);"></i>Add Area</h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -181,7 +181,7 @@ $__assignable = array_intersect_key($__stages, array_flip(['sec', 'sup', 'admin'
         <form id="form-approvers">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h6 class="modal-title"><i class="ri-user-settings-line me-2" style="color:#673bb6;"></i>Approvers — <span id="ap-area-name"></span></h6>
+                    <h6 class="modal-title"><i class="ri-user-settings-line me-2" style="color:var(--app-primary);"></i>Approvers — <span id="ap-area-name"></span></h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -260,7 +260,7 @@ function editArea(a) {
     // without this the picker opens on "— Select department —" for an area that
     // plainly has one, and Parsley passes because the underlying value is fine.
     if (window.CustomSelect) window.CustomSelect.refresh(dept);
-    document.getElementById('area-modal-title').innerHTML = '<i class="ri-node-tree me-2" style="color:#673bb6;"></i>Edit Area';
+    document.getElementById('area-modal-title').innerHTML = '<i class="ri-node-tree me-2" style="color:var(--app-primary);"></i>Edit Area';
     new bootstrap.Modal(document.getElementById('modal-area')).show();
 }
 
@@ -270,7 +270,7 @@ document.getElementById('modal-area').addEventListener('hidden.bs.modal', functi
     // form.reset() fires no change event either, so the picker would otherwise
     // carry the edited area's department into the next Add Area.
     if (window.CustomSelect) window.CustomSelect.refresh(document.getElementById('area-dept'));
-    document.getElementById('area-modal-title').innerHTML = '<i class="ri-node-tree me-2" style="color:#673bb6;"></i>Add Area';
+    document.getElementById('area-modal-title').innerHTML = '<i class="ri-node-tree me-2" style="color:var(--app-primary);"></i>Add Area';
     // Clear the error list too, or the next open still shows the last message.
     if (window.jQuery && jQuery.fn.parsley) jQuery('#form-area').parsley().reset();
 });

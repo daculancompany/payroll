@@ -30,7 +30,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 
 	.emp-currency {
 		font-weight: 600;
-		color: #673bb6;
+		color: var(--app-primary);
 		font-size: 12px;
 		font-family: 'Segoe UI', monospace;
 	}
@@ -51,7 +51,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 
 	.filter-label {
 		font-size: 11px;
-		color: #666;
+		color: var(--app-text-2, #666);
 		font-weight: 600;
 		margin-bottom: 3px;
 	}
@@ -60,7 +60,7 @@ $emp_hide_pay = is_timekeeper($login_role);
 		width: 28px;
 		height: 28px;
 		border-radius: 50%;
-		background: #673bb6;
+		background: var(--app-primary);
 		color: #fff;
 		font-size: 11px;
 		font-weight: 700;

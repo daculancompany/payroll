@@ -660,6 +660,10 @@ if ($action == "get_calendar_events") {
 }
 
 // ── Notifications ──
+if ($action == 'save_ui_settings') {
+	echo json_encode($crud->save_ui_settings());
+	return;
+}
 if ($action == "get_notifications") {
 	echo json_encode($crud->get_notifications());
 }

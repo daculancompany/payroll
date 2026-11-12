@@ -29,7 +29,7 @@ if (in_array($profile_role, [8, 10, 11], true)) {
 ?>
 <style>
     .pf-wrap { max-width: 860px; }
-    .pf-hero { background: linear-gradient(135deg, #673bb6, #4e3483); border-radius: 12px; padding: 22px 24px; color: #fff;
+    .pf-hero { background: linear-gradient(135deg, var(--app-primary), var(--app-primary-dark)); border-radius: 12px; padding: 22px 24px; color: #fff;
                display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
     .pf-avatar { width: 64px; height: 64px; border-radius: 50%; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.55);
                  display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 800; letter-spacing: .5px; flex-shrink: 0; }
@@ -37,16 +37,16 @@ if (in_array($profile_role, [8, 10, 11], true)) {
     .pf-hero-sub  { font-size: 12px; opacity: .85; margin-top: 3px; }
     .pf-chip { display: inline-block; background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.35); border-radius: 20px;
                padding: 2px 10px; font-size: 11px; font-weight: 700; margin: 6px 6px 0 0; }
-    .pf-card { border: 1px solid #e8eaf6; border-radius: 12px; background: #fff; box-shadow: 0 2px 10px rgba(58,40,93,.06); }
+    .pf-card { border: 1px solid #e8eaf6; border-radius: 12px; background: var(--app-surface, #fff); box-shadow: 0 2px 10px rgba(58,40,93,.06); }
     .pf-card-hd { padding: 12px 18px; border-bottom: 1px solid #eef0f7; display: flex; align-items: center; gap: 8px; }
-    .pf-card-hd i { color: #673bb6; font-size: 16px; }
-    .pf-card-hd b { font-size: 12.5px; text-transform: uppercase; letter-spacing: .5px; color: #4e3483; }
+    .pf-card-hd i { color: var(--app-primary); font-size: 16px; }
+    .pf-card-hd b { font-size: 12.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--app-primary-dark); }
     .pf-card-hd small { margin-left: auto; color: #8a8a99; font-size: 11px; }
     .pf-card-bd { padding: 18px; }
-    .pf-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: #673bb6; margin-bottom: 5px; display: block; }
+    .pf-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--app-primary); margin-bottom: 5px; display: block; }
     .pf-help { font-size: 11px; color: #8a8a99; margin-top: 5px; }
     .pf-ro .form-control[readonly] { background: #f6f5fb; color: #6b6b7a; }
-    .pf-input-group .input-group-text { background: #f6f5fb; border-color: #dfe1ec; color: #673bb6; }
+    .pf-input-group .input-group-text { background: #f6f5fb; border-color: #dfe1ec; color: var(--app-primary); }
     .pf-eye { cursor: pointer; }
     .pf-strength { height: 5px; border-radius: 3px; background: #ececf3; margin-top: 8px; overflow: hidden; }
     .pf-strength > span { display: block; height: 100%; width: 0; border-radius: 3px; transition: width .2s, background .2s; }
@@ -54,7 +54,7 @@ if (in_array($profile_role, [8, 10, 11], true)) {
     .pf-rules li i { margin-right: 3px; }
     .pf-rules li.ok { color: #1b8a3e; }
     .pf-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 18px; border-top: 1px solid #eef0f7; background: #fafafe; border-radius: 0 0 12px 12px; }
-    .pf-save { background: #673bb6; border-color: #673bb6; color: #fff; font-weight: 600; padding: 8px 18px; }
+    .pf-save { background: var(--app-primary); border-color: var(--app-primary); color: #fff; font-weight: 600; padding: 8px 18px; }
     .pf-save:hover { background: #56309a; border-color: #56309a; color: #fff; }
     .parsley-errors-list { font-size: 11px; color: #d32f2f; margin: 4px 0 0; padding-left: 0; list-style: none; }
     .form-control.parsley-error { border-color: #e57373; }

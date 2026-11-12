@@ -49,7 +49,7 @@
     gap: 8px;
     width: 100%;
     text-align: left;
-    background: #fff;
+    background: var(--app-surface, #fff);
     border: 1px solid #d9d3e4;
     border-radius: 9px;
     padding: 7px 11px;
@@ -107,7 +107,7 @@
        own month/year selects are enhanced too, and their menus must not open
        behind the calendar they belong to. */
     z-index: 3060;
-    background: #fff;
+    background: var(--app-surface, #fff);
     border: 1px solid #e4e3e9;
     border-radius: 14px;
     padding: 6px;
@@ -232,7 +232,7 @@
 .cs-group[hidden] { display: none !important; }
 
 .cs-opt:hover,
-.cs-opt.cs-active { background: #f4f1fa; }
+.cs-opt.cs-active { background: var(--app-tint, #f4f1fa); }
 
 .cs-opt[disabled] { opacity: .45; cursor: not-allowed; }
 .cs-opt[disabled]:hover { background: transparent; }
@@ -258,7 +258,7 @@
 /* Pay-rate palette */
 .cs-rate-daily    { background: #e6f7ee; color: #0e6b37; }
 .cs-rate-monthly  { background: #e3f2fd; color: #1565c0; }
-.cs-rate-fixed    { background: #f4f1fa; color: #673bb6; }
+.cs-rate-fixed    { background: var(--app-tint, #f4f1fa); color: #673bb6; }
 
 .cs-opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 
@@ -301,7 +301,7 @@
 }
 
 .cs-opt-check { color: #673bb6; font-size: 16px; visibility: hidden; flex-shrink: 0; }
-.cs-opt.sel { background: #f4f1fa; box-shadow: inset 0 0 0 1px #d9ccf0; }
+.cs-opt.sel { background: var(--app-tint, #f4f1fa); box-shadow: inset 0 0 0 1px #d9ccf0; }
 .cs-opt.sel .cs-opt-check { visibility: visible; }
 
 /* Grouped options (<optgroup>) */
@@ -350,7 +350,7 @@ textarea.form-control {
     font-size: 13.5px;
     line-height: 1.35;
     color: #28223b;
-    background-color: #fff;
+    background-color: var(--app-surface, #fff);
     transition: border-color .15s, box-shadow .15s;
 }
 
@@ -427,7 +427,7 @@ textarea.form-control[readonly] {
     border: 1px solid #d9d3e4;
     border-radius: 8px;
     color: #28223b;
-    background-color: #fff;
+    background-color: var(--app-surface, #fff);
     transition: border-color .15s, box-shadow .15s;
 }
 
@@ -485,7 +485,7 @@ textarea.form-control[readonly] {
     padding: 6px 11px;
     border: 1px solid #d9d3e4;
     border-radius: 6px;
-    background: #fff;
+    background: var(--app-surface, #fff);
     font-size: 13px;
     font-weight: 600;
     color: #0c5460;
@@ -532,7 +532,7 @@ body .daterangepicker .ranges li {
     transition: background .12s, color .12s;
 }
 
-body .daterangepicker .ranges li:hover { background: #f4f1fa; }
+body .daterangepicker .ranges li:hover { background: var(--app-tint, #f4f1fa); }
 
 body .daterangepicker .ranges li.active {
     background: #673bb6;
@@ -549,7 +549,7 @@ body .daterangepicker .calendar-table td { font-size: 12.5px; min-width: 32px; h
 body .daterangepicker .calendar-table th { color: #8f8aa0; font-weight: 700; }
 
 body .daterangepicker td.available:hover,
-body .daterangepicker th.available:hover { background: #f4f1fa; color: #673bb6; }
+body .daterangepicker th.available:hover { background: var(--app-tint, #f4f1fa); color: #673bb6; }
 
 body .daterangepicker td.off,
 body .daterangepicker td.off.in-range,
@@ -609,10 +609,10 @@ body .daterangepicker .drp-buttons .applyBtn:hover { background: #5a32a3; border
 
 body .daterangepicker .drp-buttons .btn.btn-default,
 body .daterangepicker .drp-buttons .cancelBtn {
-    background: #fff;
+    background: var(--app-surface, #fff);
     border: 1px solid #d9d3e4;
     color: #767283;
 }
 
 body .daterangepicker .drp-buttons .btn.btn-default:hover,
-body .daterangepicker .drp-buttons .cancelBtn:hover { background: #f4f1fa; color: #673bb6; border-color: #a98fd6; }
+body .daterangepicker .drp-buttons .cancelBtn:hover { background: var(--app-tint, #f4f1fa); color: #673bb6; border-color: #a98fd6; }

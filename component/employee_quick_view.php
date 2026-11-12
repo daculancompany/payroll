@@ -26,7 +26,7 @@ $eqv_full_target = isset($eqv_full_target) ? $eqv_full_target : '';
 <style>
     #eqv-overlay { position: fixed; inset: 0; z-index: 1300; background: rgba(43,35,63,.40); opacity: 0; pointer-events: none; transition: opacity .22s; }
     #eqv-overlay.open { opacity: 1; pointer-events: auto; }
-    #emp-quickview { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1301; width: min(380px, 94vw); display: flex; flex-direction: column; background: #fff; box-shadow: -10px 0 34px rgba(46,35,85,.22); transform: translateX(105%); transition: transform .26s cubic-bezier(.4,0,.2,1); }
+    #emp-quickview { position: fixed; top: 0; right: 0; bottom: 0; z-index: 1301; width: min(380px, 94vw); display: flex; flex-direction: column; background: var(--app-surface, #fff); box-shadow: -10px 0 34px rgba(46,35,85,.22); transform: translateX(105%); transition: transform .26s cubic-bezier(.4,0,.2,1); }
     #emp-quickview.open { transform: translateX(0); }
     #emp-quickview .eqv-head { flex-shrink: 0; background: linear-gradient(135deg, #6f47b5, #5d36a6); color: #fff; padding: 18px 16px; display: flex; align-items: center; gap: 12px; }
     #emp-quickview .eqv-avatar { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.45); color: #fff; font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -41,7 +41,7 @@ $eqv_full_target = isset($eqv_full_target) ? $eqv_full_target : '';
     #emp-quickview .eqv-row { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; font-size: 12.5px; border-bottom: 1px dashed #f0eef6; }
     #emp-quickview .eqv-row:last-child { border-bottom: 0; }
     #emp-quickview .eqv-row i { color: #6f47b5; font-size: 14px; margin-top: 1px; flex-shrink: 0; }
-    #emp-quickview .eqv-lbl { color: #888; width: 100px; flex-shrink: 0; }
+    #emp-quickview .eqv-lbl { color: var(--app-text-2, #888); width: 100px; flex-shrink: 0; }
     #emp-quickview .eqv-val { font-weight: 600; color: #2b2b33; min-width: 0; overflow-wrap: anywhere; }
     #emp-quickview .eqv-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 9.5px; font-weight: 700; padding: 2px 9px; border-radius: 12px; margin-top: 4px; margin-right: 4px; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.45); }
     #emp-quickview .eqv-spin { text-align: center; color: #8f8aa0; padding: 48px 0; font-size: 12.5px; }

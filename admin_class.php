@@ -403,6 +403,78 @@ class Action
         $this->endSession('login.php');
     }
 
+    /**
+     * Save the signed-in admin's appearance settings (v2 UI settings modal,
+     * "Save to account") into users.settings as JSON.
+     *
+     * Only known keys with validated values are stored, so the column can't
+     * become a dumping ground for arbitrary client JSON. The write is always
+     * scoped to the session's own user id. The key `ui` ('v2' | 'classic')
+     * picks which shell index.php sends the user to; it is mirrored into the
+     * session so the redirect check needs no query.
+     */
+    function save_ui_settings()
+    {
+        $uid = (int) ($_SESSION['login_id'] ?? 0);
+        if ($uid <= 0) return ['result' => false, 'message' => 'Not signed in.'];
+
+        $in = json_decode((string) ($_POST['settings'] ?? ''), true);
+        if (!is_array($in)) return ['result' => false, 'message' => 'Invalid settings payload.'];
+
+        $enum = function ($v, array $allowed, $default) {
+            return in_array($v, $allowed, true) ? $v : $default;
+        };
+        $bool = function ($v) { return $v === true || $v === 1 || $v === '1' || $v === 'true'; };
+        $hex  = function ($v) { return is_string($v) && preg_match('/^#[0-9a-fA-F]{6}$/', $v) ? strtolower($v) : ''; };
+        $slug = function ($v) { return is_string($v) && preg_match('/^[a-z0-9-]{0,32}$/', $v) ? $v : ''; };
+
+        // Merge over what is already stored so a partial save (e.g. only the
+        // shell toggle) doesn't wipe the rest.
+        $cur = [];
+        $st = $this->db->prepare('SELECT settings FROM users WHERE id = ?');
+        $st->bind_param('i', $uid);
+        $st->execute();
+        $row = $st->get_result()->fetch_assoc();
+        $st->close();
+        if ($row && $row['settings']) $cur = json_decode($row['settings'], true) ?: [];
+
+        $out = $cur;
+        $rules = [
+            'theme'        => function ($v) use ($enum) { return $enum($v, ['light', 'dark', 'black', 'system'], 'light'); },
+            'colorTheme'   => $slug,
+            'accent'       => $hex,
+            'darkSidebar'  => $bool,
+            'fontFamily'   => function ($v) use ($enum) { return $enum($v, ['default', 'system', 'rounded', 'serif', 'mono'], 'default'); },
+            'density'      => function ($v) { $n = (int) $v; return ($n >= 90 && $n <= 115) ? $n : 100; },
+            'radius'       => function ($v) use ($enum) { return $enum($v, ['sharp', 'default', 'rounded'], 'default'); },
+            'headerStyle'  => function ($v) use ($enum) { return $enum($v, ['auto', 'solid', 'translucent'], 'auto'); },
+            'highContrast' => $bool,
+            'compact'      => $bool,
+            'brandGradient'=> $bool,
+            'reduceMotion' => $bool,
+            'sidebarCollapsed' => $bool,
+            // client ms timestamp: on load, the newer of device/account copy wins
+            'savedAt'      => function ($v) { $n = (int) $v; return $n > 0 ? min($n, (int) (microtime(true) * 1000) + 60000) : 0; },
+            'ui'         => function ($v) use ($enum) { return $enum($v, ['v2', 'classic'], 'classic'); },
+        ];
+        foreach ($rules as $k => $fn) {
+            if (array_key_exists($k, $in)) $out[$k] = $fn($in[$k]);
+        }
+        $out = array_intersect_key($out, $rules);   // drop any stale unknown keys
+
+        $json = json_encode($out, JSON_UNESCAPED_SLASHES);
+        $up = $this->db->prepare('UPDATE users SET settings = ? WHERE id = ?');
+        $up->bind_param('si', $json, $uid);
+        $ok = $up->execute();
+        $up->close();
+
+        if ($ok) {
+            $_SESSION['ui_settings'] = $out;
+            $_SESSION['ui_shell'] = $out['ui'] ?? 'classic';
+        }
+        return ['result' => (bool) $ok, 'message' => $ok ? 'Saved to your account.' : 'Could not save settings.', 'settings' => $out];
+    }
+
 
 
     function calculate_payrollOld()

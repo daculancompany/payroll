@@ -1,277 +1,180 @@
-<?php require_once __DIR__ . '/db_connect.php'; ?>
-<!doctype html>
-<html lang="en" data-layout="vertical" data-topbar="light" data-sidebar="dark" data-sidebar-size="lg" data-sidebar-image="none" data-preloader="disable" data-theme="default" data-theme-colors="default">
-
+<?php
+require_once __DIR__ . '/db_connect.php';
+require_once __DIR__ . '/includes/session_bootstrap.php';
+$brand = getenv('APP_BRAND') ?: 'Payroll';
+// Sign-in photo. Swap in your own (or a licensed) image here or via APP_LOGIN_BG.
+$login_bg = getenv('APP_LOGIN_BG') ?: 'login-bg.jpg';
+// Absolute path: a relative url() inside a CSS variable would resolve
+// against assets3/css/, not this page.
+if (!preg_match('#^(https?:)?/#', $login_bg)) {
+    $login_bg = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/' . $login_bg;
+}
+if (!function_exists('e')) {
+    function e($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
+}
+?><!doctype html>
+<html lang="en" data-bs-theme="light">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Sign in · <?= e($brand) ?></title>
+    <meta name="robots" content="noindex, nofollow">
+    <?php include __DIR__ . '/includes/favicon.php'; ?>
 
-    <meta charset="utf-8" />
-    <title>Payroll System - Login</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta content="Payroll System" name="description" />
-    <meta content="Niel Daculan" name="author" />
-    <!-- App favicon -->
-    <?php include __DIR__ . "/includes/favicon.php"; ?>
-
-    <!-- ── PWA: lets the admin app be installed from the login screen too ── -->
+    <!-- PWA: the admin app can be installed from the sign-in screen too -->
     <link rel="manifest" href="manifest-admin.webmanifest">
-    <meta name="theme-color" content="#d1c6e5">
+    <meta name="theme-color" content="#0f172a">
     <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="COMC Payroll">
+    <meta name="apple-mobile-web-app-title" content="<?= e($brand) ?>">
     <script src="assets2/js/pwa-install.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function () {
-                navigator.serviceWorker.register('firebase-messaging-sw.js')
-                    .catch(function (e) {
-                        console.warn('[PWA] SW registration failed:', e);
-                        if (window.pwaNoteSwError) window.pwaNoteSwError(e.message || e);
-                    });
-            });
-        }
-    </script>
-
-    <!-- Layout config Js -->
-    <script src="assets/js/layout.js"></script>
-    <!-- Bootstrap Css -->
-    <link href="assets/css/bootstrap.min.css" rel="stylesheet" type="text/css" />
-    <!-- Icons Css -->
-    <link href="assets/css/icons.min.css" rel="stylesheet" type="text/css" />
-    <!-- App Css-->
-    <link href="assets/css/app.min.css" rel="stylesheet" type="text/css" />
-    <!-- custom Css-->
-    <link href="assets/css/custom.min.css" rel="stylesheet" type="text/css" />
-    <style>
-        .parsley-errors-list {
-            color: #84edff;
-            margin-top: 0px !important;
-            list-style: none !important;
-            padding: 0 !important;
-        }
-
-        .logo {
-            height: 100px;
-            width: 100px;
-            border-radius: 50%;
-            background: #fff;
-            text-align: center;
-            margin: auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .logo img {
-            height: 56px;
-        }
-
-        /* .auth-one-bg {
-            background-image: url(login-bg.jpg) !important;
-            background-position: center;
-            background-size: cover;
-        } */
-
-        .app-version {
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: .5px;
-            color: #a7a0b7;
-        }
-
-        .auth-one-bg .bg-overlay {
-            background: -webkit-gradient(linear, left top, right top, from(#4e3483), to(#6642aacc));
-            background: linear-gradient(to right, #4e3483e0, #6642aacc);
-            opacity: .9;
-        }
-    </style>
-
-    <!-- Global Material component skin (shared with the employee portal).
-         Mobile-scoped; must be the LAST stylesheet so it wins cascade ties. -->
-    <link href="assets2/css/portal-md.css?v=<?= htmlspecialchars(APP_VERSION) ?>" rel="stylesheet">
-
-</head>
-
-<body>
-
-    <div class="auth-page-wrapper pt-5">
-        <!-- auth page bg -->
-        <div class="auth-one-bg-position auth-one-bg" id="auth-particles">
-            <div class="bg-overlay"></div>
-
-            <div class="shape">
-                <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1440 120">
-                    <path d="M 0,36 C 144,53.6 432,123.2 720,124 C 1008,124.8 1296,56.8 1440,40L1440 140L0 140z"></path>
-                </svg>
-            </div>
-        </div>
-
-        <!-- auth page content -->
-        <div class="auth-page-content">
-            <div class="container">
-                <div class="row">
-                    <div class="col-lg-12">
-                        <div class="text-center mt-sm-5 mb-4 text-white-50">
-                            <div class="logo">
-                                <img src="assets2/images/logo.jpeg" alt="">
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <!-- end row -->
-
-                <div class="row justify-content-center">
-                    <div class="col-md-8 col-lg-6 col-xl-5">
-                        <div class="card mt-4 card-bg-fill">
-
-                            <div class="card-body p-4">
-                                <div class="text-center mt-2">
-                                    <h5 class="text-primary">Welcome Back !</h5>
-                                    <p class="text-muted">Sign in to continue to Payroll System.</p>
-                                    <?php if (app_is_local()): ?>
-                                        <span class="badge bg-danger-subtle text-danger"><i class="ri-shield-keyhole-line me-1"></i>Payroll Workstation &mdash; administrator access only</span>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="p-2 mt-4">
-                                    <form novalidate id="form-login" method="post">
-                                        <div id="message-show"></div>
-                                        <div class="mb-3">
-                                            <label for="username" class="form-label">Email</label>
-                                            <!-- Still posted as `username` — the server matches it against the
-                                                 users table and the employee account email. -->
-                                            <input type="text" class="form-control" name="username" id="username" placeholder="Enter email" autocomplete="username" data-parsley-required-message="Email is required." required>
-                                        </div>
-
-                                        <div class="mb-3">
-                                            <!-- <div class="float-end">
-                                                <a href="auth-pass-reset-basic.html" class="text-muted">Forgot password?</a>
-                                            </div> -->
-                                            <label class="form-label" for="password-input">Password</label>
-                                            <div class="position-relative auth-pass-inputgroup mb-3">
-                                                <input type="password" class="form-control pe-5 password-input"  name="password" placeholder="Enter password" id="password-input" autocomplete="current-password" data-parsley-required-message="Password is required." required>
-                                                <!-- Icon-only control: without aria-label a screen reader announces
-                                                     just "button", and aria-pressed conveys the toggle state. -->
-                                                <button class="btn btn-link position-absolute end-0 top-0 text-decoration-none text-muted password-addon material-shadow-none" type="button" id="password-addon" aria-label="Show password" aria-pressed="false"><i class="ri-eye-fill align-middle" aria-hidden="true"></i></button>
-                                            </div>
-                                        </div>
-
-                                        <div class="form-check">
-                                            <input class="form-check-input" type="checkbox" value="" id="auth-remember-check">
-                                            <label class="form-check-label" for="auth-remember-check">Remember me</label>
-                                        </div>
-
-                                        <div class="mt-4">
-                                            <button class="btn btn-success w-100" type="submit">Sign In</button>
-                                        </div>
-
-                                        <!-- Revealed by assets2/js/pwa-install.js when the app can be
-                                             installed (or on iOS, where it opens the manual steps). -->
-                                        <div class="mt-3" data-pwa-install data-pwa-display="block" style="display:none;">
-                                            <button class="btn btn-outline-light w-100" type="button">
-                                                <i class="ri-download-2-line align-middle me-1"></i>Install App
-                                            </button>
-                                        </div>
-
-                                        <!-- Build number, mobile-app style — bump APP_VERSION in db_connect.php -->
-                                        <div class="text-center mt-3">
-                                            <span class="app-version">v<?= htmlspecialchars(APP_VERSION) ?></span>
-                                        </div>
-                                    </form>
-                                </div>
-                            </div>
-                            <!-- end card body -->
-                        </div>
-                        <!-- end card -->
-
-                        
-
-                    </div>
-                </div>
-                <!-- end row -->
-            </div>
-            <!-- end container -->
-        </div>
-        <!-- end auth page content -->
-
-        <!-- footer -->
-        <footer class="footer">
-            <div class="container">
-                <div class="row">
-                    <div class="col-lg-12">
-                        <div class="text-center">
-                            <p class="mb-0 text-muted">&copy;
-                                <script>
-                                    document.write(new Date().getFullYear())
-                                </script> COMC. Crafted with <i class="mdi mdi-heart text-danger"></i> by Niel M. Daculan
-                            </p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </footer>
-        <!-- end Footer -->
-    </div>
-    <!-- end auth-page-wrapper -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js" integrity="sha256-xNzN2a4ltkB44Mc/Jz3pT4iU1cmeR0FkXs4pru/JxaQ=" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <!-- JAVASCRIPT -->
-    <script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
-    <script src="assets/libs/simplebar/simplebar.min.js"></script>
-    <script src="assets/libs/node-waves/waves.min.js"></script>
-    <script src="assets/libs/feather-icons/feather.min.js"></script>
-    <script src="assets/js/pages/plugins/lord-icon-2.1.0.js"></script>
-    <script src="assets/js/plugins.js"></script>
-
-    <!-- particles js -->
-    <script src="assets/libs/particles.js/particles.js"></script>
-    <!-- particles app js -->
-    <script src="assets/js/pages/particles.app.js"></script>
-    <!-- password-addon init -->
-    <!-- Parsley.js CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/parsley.js/2.9.2/parsley.min.js"></script>
-    <!-- password-addon init -->
-    <script src="assets/js/pages/password-addon.init.js"></script>
-    <script>
-        $(document).ready(function() {
-            $("#form-login").on('submit', async function(e) {
-                e.preventDefault();
-                var form = $(this);
-
-                form.parsley().validate();
-                Swal.fire({
-                    title: ` Authenticating , please wait...`,
-                    allowOutsideClick: false,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    },
+                navigator.serviceWorker.register('firebase-messaging-sw.js').catch(function (e) {
+                    console.warn('[PWA] SW registration failed:', e);
+                    if (window.pwaNoteSwError) window.pwaNoteSwError(e.message || e);
                 });
-                await new Promise((resolve) => setTimeout(resolve, 1000));
-                if (form.parsley().isValid()) {
-                    $.ajax({
-                        url: 'ajax.php?action=login',
-                        method: 'POST',
-                        dataType: "JSON",
-                        data: $(this).serialize(),
-                        error: (xhr, status, error) => {
-                            Swal.close();
-                            $('#message-show').html(`<div class="alert alert-danger">${xhr.responseText}</div>`)
-                        },
-                        success: function(res) {
-                            Swal.close();
-                            if (res?.result) {
-                                location.href = res.redirect || 'index.php?page=home';
-                            } else {
-                                $('#message-show').html(`<div class="alert alert-danger">${res.message}</div>`)
-                            }
-                        }
-                    })
-                }
             });
-        });
+        }
     </script>
-    <!-- Material touch ripple for the component skin (mobile only) -->
-    <script src="assets2/js/portal-md.js?v=<?= htmlspecialchars(APP_VERSION) ?>"></script>
-</body>
 
+    <!-- Same appearance the user picked on this device (theme engine). -->
+    <script>window.__UI_SERVER = {};</script>
+    <script src="<?= av('assets3/js/color-themes.js') ?>"></script>
+    <script src="<?= av('assets3/js/theme-engine.js') ?>"></script>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css">
+    <link rel="stylesheet" href="<?= av('assets3/css/app.css') ?>">
+    <link rel="stylesheet" href="<?= av('assets3/css/auth.css') ?>">
+</head>
+<body class="v2 auth">
+<div class="v2-bg" aria-hidden="true"></div>
+
+<main class="auth-shell">
+    <section class="auth-hero" aria-hidden="true" style="--auth-bg: url('<?= e($login_bg) ?>');">
+        <div class="auth-hero__brand">
+            <span class="v2-brand__mark"><img src="assets/images/favicon-192.png?v=2" alt=""></span>
+            <strong><?= e($brand) ?></strong>
+        </div>
+        <div class="auth-hero__copy">
+            <h1>Payroll, timekeeping and leave in one place.</h1>
+            <p>Run payroll from biometric DTR, approve leave through your area chain, and hand every employee a payslip they can read.</p>
+            <dl class="auth-hero__facts">
+                <div><dt>DTR</dt><dd>Biometric &amp; face-verified</dd></div>
+                <div><dt>Payroll</dt><dd>Locked, auditable payslips</dd></div>
+                <div><dt>Leave</dt><dd>Approvals by area chain</dd></div>
+            </dl>
+        </div>
+        <div class="auth-hero__foot">v<?= e(APP_VERSION) ?></div>
+    </section>
+
+    <section class="auth-panel">
+        <div class="auth-card">
+            <div class="auth-card__mobile-brand">
+                <span class="v2-brand__mark"><img src="assets/images/favicon-192.png?v=2" alt=""></span>
+                <strong><?= e($brand) ?></strong>
+            </div>
+
+            <h2>Welcome back</h2>
+            <p class="auth-sub">Sign in to continue.</p>
+            <?php if (app_is_local()): ?>
+                <div class="auth-badge"><i class="ri-shield-keyhole-line"></i> Payroll workstation · administrator access only</div>
+            <?php endif; ?>
+
+            <form id="form-login" method="post" novalidate>
+                <div id="message-show" role="alert" aria-live="polite"></div>
+
+                <label class="form-label" for="username">Email or employee no.</label>
+                <div class="auth-input">
+                    <i class="ri-user-3-line"></i>
+                    <!-- Posted as `username`: the server matches users and employee accounts. -->
+                    <input type="text" class="form-control" name="username" id="username" placeholder="you@company.com" autocomplete="username" required autofocus>
+                </div>
+
+                <label class="form-label" for="password-input">Password</label>
+                <div class="auth-input">
+                    <i class="ri-lock-2-line"></i>
+                    <input type="password" class="form-control" name="password" id="password-input" placeholder="Your password" autocomplete="current-password" required>
+                    <button type="button" class="auth-input__toggle" id="password-addon" aria-label="Show password" aria-pressed="false"><i class="ri-eye-line" aria-hidden="true"></i></button>
+                </div>
+
+                <button class="btn btn-primary btn-lg w-100 mt-3" type="submit" id="btn-login">
+                    <span class="auth-btn-label">Sign in</span>
+                    <span class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
+                </button>
+
+                <div class="mt-3" data-pwa-install data-pwa-display="block" style="display:none;">
+                    <button class="btn btn-light w-100" type="button"><i class="ri-download-2-line me-1"></i> Install app</button>
+                </div>
+            </form>
+
+            <div class="auth-foot">
+                <button type="button" class="v2-icon-btn" id="auth-mode" aria-label="Toggle light or dark mode">
+                    <i class="ri-moon-clear-line v2-when-light"></i><i class="ri-sun-line v2-when-dark"></i>
+                </button>
+                <span>&copy; <?= date('Y') ?> <?= e($brand) ?> · v<?= e(APP_VERSION) ?></span>
+            </div>
+        </div>
+    </section>
+</main>
+
+<script>
+(function () {
+    var form = document.getElementById('form-login');
+    var msg = document.getElementById('message-show');
+    var btn = document.getElementById('btn-login');
+    var pw = document.getElementById('password-input');
+    var eye = document.getElementById('password-addon');
+
+    function showError(text) {
+        msg.innerHTML = '';
+        var d = document.createElement('div');
+        d.className = 'alert alert-danger d-flex gap-2 align-items-start';
+        d.innerHTML = '<i class="ri-error-warning-line"></i><span></span>';
+        d.lastChild.textContent = text;      // server text is never parsed as HTML
+        msg.appendChild(d);
+    }
+    function busy(on) {
+        btn.disabled = on;
+        btn.querySelector('.spinner-border').classList.toggle('d-none', !on);
+        btn.querySelector('.auth-btn-label').textContent = on ? 'Signing in…' : 'Sign in';
+    }
+
+    eye.addEventListener('click', function () {
+        var show = pw.type === 'password';
+        pw.type = show ? 'text' : 'password';
+        eye.setAttribute('aria-pressed', show);
+        eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+        eye.firstElementChild.className = show ? 'ri-eye-off-line' : 'ri-eye-line';
+    });
+
+    document.getElementById('auth-mode').addEventListener('click', function () {
+        UITheme.set({ theme: UITheme.mode() === 'dark' ? 'light' : 'dark', colorTheme: '' });
+    });
+
+    form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        msg.innerHTML = '';
+        if (!form.username.value.trim()) { showError('Enter your email or employee number.'); form.username.focus(); return; }
+        if (!pw.value) { showError('Enter your password.'); pw.focus(); return; }
+        busy(true);
+        fetch('ajax.php?action=login', { method: 'POST', body: new FormData(form), credentials: 'same-origin' })
+            .then(function (r) { return r.json(); })
+            .then(function (res) {
+                if (res && res.result) { location.href = res.redirect || 'index.php?page=home'; return; }
+                busy(false);
+                showError((res && res.message) || 'Sign-in failed.');
+            })
+            .catch(function () { busy(false); showError('Could not reach the server. Check your connection and try again.'); });
+    });
+})();
+</script>
+</body>
 </html>

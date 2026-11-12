@@ -178,7 +178,7 @@ $__can_assign = function_exists('can_edit') ? can_edit('area') : true;
             <div class="modal-content">
                 <div class="modal-header">
                     <h6 class="modal-title" id="dept-modal-title">
-                        <i class="ri-building-3-line me-2" style="color:#673bb6;"></i>Add Department
+                        <i class="ri-building-3-line me-2" style="color:var(--app-primary);"></i>Add Department
                     </h6>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
@@ -200,7 +200,7 @@ $__can_assign = function_exists('can_edit') ? can_edit('area') : true;
                         <hr class="my-3">
                         <div class="d-flex align-items-center mb-1">
                             <label class="form-label mb-0 flex-grow-1">
-                                <i class="ri-user-settings-line me-1" style="color:#673bb6;"></i>Leave approvers
+                                <i class="ri-user-settings-line me-1" style="color:var(--app-primary);"></i>Leave approvers
                             </label>
                             <span class="text-muted" style="font-size:11px;" id="dept-area-count"></span>
                         </div>
@@ -436,7 +436,7 @@ document.getElementById('dept-areas')?.addEventListener('click', function (e) {
 function editDept(d) {
     document.getElementById('dept-id').value = d.id;
     document.getElementById('dept-name').value = d.name;
-    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:#673bb6;"></i>Edit Department';
+    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:var(--app-primary);"></i>Edit Department';
     document.getElementById('dept-modal-dialog').className = 'modal-dialog modal-lg modal-dialog-scrollable';
     buildAreas(d.id, d.areas || []);
     new bootstrap.Modal(document.getElementById('modal-department')).show();
@@ -445,7 +445,7 @@ function editDept(d) {
 document.getElementById('modal-department').addEventListener('hidden.bs.modal', function () {
     document.getElementById('dept-id').value = '';
     document.getElementById('dept-name').value = '';
-    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:#673bb6;"></i>Add Department';
+    document.getElementById('dept-modal-title').innerHTML = '<i class="ri-building-3-line me-2" style="color:var(--app-primary);"></i>Add Department';
     document.getElementById('dept-modal-dialog').className = 'modal-dialog';
 
     // CustomSelect parents each menu outside the select it belongs to and has no

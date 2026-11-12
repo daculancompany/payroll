@@ -144,7 +144,7 @@ function fillAddEmployeeForm(e) {
 // Toggle the modal's create-vs-edit chrome (title, submit button, portal note).
 function setAddEmployeeMode(isEdit) {
     if (isEdit) {
-        $("#create-title").html('<i class="ri-user-add-line me-2" style="color:#673bb6;"></i>Edit Employee');
+        $("#create-title").html('<i class="ri-user-add-line me-2" style="color:var(--app-primary);"></i>Edit Employee');
         $("#addemployee-submit-label").text("Save Changes");
         $("#portal_password").attr("placeholder", "Leave blank to keep current");
         $("#addemployee-portal-note-text").text(
@@ -734,7 +734,7 @@ function resetDeductionModal() {
     $("#total_amount").val("");
     $('#employee-deduction input[name="type[]"][value="1"]').prop("checked", true);
     dedKindRefresh();
-    $("#deduction-modal-title").html('<i class="ri-subtract-line me-2" style="color:#673bb6;"></i>Add Deduction');
+    $("#deduction-modal-title").html('<i class="ri-subtract-line me-2" style="color:var(--app-primary);"></i>Add Deduction');
     $("#deduction-submit-btn").html('<i class="ri-add-line me-1"></i>Add Deduction');
     $("#deduction-edit-note").remove();
     if (window.jQuery && jQuery.fn.parsley) $(f).parsley().reset();
@@ -756,7 +756,7 @@ $(document).on("click", ".edit_deduction", function () {
     $("#deduction_reference_no").val(row.reference_no || "");
     $("#deduction_description").val(row.description || "");
 
-    $("#deduction-modal-title").html('<i class="ri-pencil-line me-2" style="color:#673bb6;"></i>Edit Deduction');
+    $("#deduction-modal-title").html('<i class="ri-pencil-line me-2" style="color:var(--app-primary);"></i>Edit Deduction');
     $("#deduction-submit-btn").html('<i class="ri-save-line me-1"></i>Save Changes');
 
     // An amortizing row already part-collected: say so, since changing the
@@ -868,7 +868,7 @@ $(document).on("click", "#ded-group-btn", async function () {
         html:
             '<div style="font-size:13px;margin-bottom:10px;">Total balance <b>₱' + dedPeso(total) + "</b></div>" +
             (groups.length ? '<select id="ded-g-target" class="form-select mb-2">' + opts + "</select>" : "") +
-            '<label for="ded-g-amt" style="font-size:12px;color:#673bb6;font-weight:600;display:block;text-align:left;">Deduct how much per payroll?</label>' +
+            '<label for="ded-g-amt" style="font-size:12px;color:var(--app-primary);font-weight:600;display:block;text-align:left;">Deduct how much per payroll?</label>' +
             '<input id="ded-g-amt" type="number" min="1" step="0.01" class="form-control" placeholder="e.g. 500">' +
             '<div id="ded-g-hint" style="font-size:12px;color:#888;margin-top:6px;text-align:left;">Paid one at a time, oldest first. Applies from the next payroll calculation.</div>',
         showCancelButton: true,

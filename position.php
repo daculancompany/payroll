@@ -2,7 +2,7 @@
     .pos-name {
         font-weight: 600;
         font-size: 13px;
-        color: #222;
+        color: var(--app-text, #222);
     }
 
     .pos-index {
@@ -22,7 +22,7 @@
                 <div class="col-12">
                     <div class="page-title-box d-sm-flex align-items-center justify-content-between bg-galaxy-transparent">
                         <h4 class="mb-sm-0">
-                            <i class="ri-briefcase-4-line me-2" style="color:#673bb6;"></i>Position
+                            <i class="ri-briefcase-4-line me-2" style="color:var(--app-primary);"></i>Position
                         </h4>
                         <div class="page-title-right">
                             <ol class="breadcrumb m-0">
@@ -36,10 +36,10 @@
                 <div class="card">
                     <div class="card-header align-items-center d-flex">
                         <h4 class="card-title mb-0 flex-grow-1">
-                            <i class="ri-briefcase-4-line me-2" style="color:#673bb6;"></i>Position List
+                            <i class="ri-briefcase-4-line me-2" style="color:var(--app-primary);"></i>Position List
                             
                         </h4>
-                        <button type="button" class="btn btn-sm text-white" style="background:#673bb6;border-color:#673bb6;"
+                        <button type="button" class="btn btn-sm text-white" style="background:var(--app-primary);border-color:var(--app-primary);"
                             data-bs-toggle="modal" data-bs-target="#modal">
                             <i class="ri-add-circle-line me-1"></i>Create Position
                         </button>

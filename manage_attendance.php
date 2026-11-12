@@ -1,4 +1,6 @@
-<?php include 'db_connect.php' ?>
+<?php
+require_once __DIR__ . '/includes/require_login.php';
+ include 'db_connect.php' ?>
 
 <?php ?>
 

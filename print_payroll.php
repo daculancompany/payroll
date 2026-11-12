@@ -13,9 +13,11 @@ tr,td,th{
     text-align:right;
 }
 </style>
-<?php include('db_connect.php') ?>
 <?php
-		$pay = $conn->query("SELECT * FROM payroll where id = ".$_GET['id'])->fetch_array();
+require_once __DIR__ . '/includes/require_login.php';
+ include('db_connect.php') ?>
+<?php
+		$pay = $conn->query("SELECT * FROM payroll where id = ".(int)$_GET["id"])->fetch_array();
 		$pt = array(1=>"Monhtly",2=>"Semi-Monthly");
 ?>
 <div>

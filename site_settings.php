@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/require_login.php';
+
 include 'db_connect.php';
 $qry = $conn->query("SELECT * from system_settings limit 1");
 if($qry->num_rows > 0){

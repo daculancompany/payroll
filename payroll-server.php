@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/require_login.php';
+
 require_once __DIR__ . '/includes/session_bootstrap.php';
 include 'db_connect.php';
 

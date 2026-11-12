@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/require_login.php';
+
 // 13th Month Pay register — printable sheet with signature column.
 // Routed through pdf-payroll.php?src=13th&id=<year> (id carries the YEAR).
 include 'db_connect.php';

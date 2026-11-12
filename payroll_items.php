@@ -1,4 +1,6 @@
-<?php if ($login_role === 4 || $login_role === 5 || $login_role === 6) {?>
+<?php
+require_once __DIR__ . '/includes/require_login.php';
+ if ($login_role === 4 || $login_role === 5 || $login_role === 6) {?>
     <?php
     echo "<script> location.href='index.php?page=dtr'; </script>";
     exit;
@@ -6,7 +8,7 @@
 <?php } ?>
 <?php include 'db_connect.php'; ?>
 <?php
-$pay = $conn->query("SELECT * FROM payroll where id = " . $_GET['id'])->fetch_array();
+$pay = $conn->query("SELECT * FROM payroll where id = " . (int)$_GET["id"])->fetch_array();
 $pt = array(1 => "Monhtly", 2 => "Semi-Monthly");
 ?>
 <style>
@@ -92,7 +94,7 @@ $pt = array(1 => "Monhtly", 2 => "Semi-Monthly");
 							<tbody>
 								<?php
 								$t_ot = $t_late = $t_allow = $t_contrib = $t_ded = $t_net = 0;
-								$payroll = $conn->query("SELECT p.*,concat(e.lastname,', ',e.firstname,' ',e.middlename) as ename,e.employee_no FROM payroll_items p inner join employee e on e.id = p.employee_id where p.payroll_id=" . $_GET['id'] . " ") or die(mysqli_error());
+								$payroll = $conn->query("SELECT p.*,concat(e.lastname,', ',e.firstname,' ',e.middlename) as ename,e.employee_no FROM payroll_items p inner join employee e on e.id = p.employee_id where p.payroll_id=" . (int)$_GET["id"] . " ") or die(mysqli_error());
 								while ($row = $payroll->fetch_array()) {
 									$t_ot      += $row['time_log_amount'];
 									$t_late    += $row['late'];

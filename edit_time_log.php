@@ -1,10 +1,12 @@
-<?php include ("db_connect.php"); ?>
+<?php
+require_once __DIR__ . '/includes/require_login.php';
+ include ("db_connect.php"); ?>
 <?php
 $date = explode('_',$id);
 $lt_arr = array(1 => " Time-in AM",2=>"Time-out AM",3 => " Time-in PM",4=>"Time-out PM");
 $dt = date("Y-m-d",strtotime($date[1]));
-$emp = $conn->query("SELECT concat(lastname,', ',firstname,' ',middlename) as enamem,employee_no from employee where id =".$date[0])->fetch_array()['ename'];
-$qry = $conn->db->query("SELECT * FROM attendance where employee_id = '".$date[0]."' and date(datetime_log) ='$dt' order by UNIX_TIMESTAMP(datetime_log) asc ");
+$emp = $conn->query("SELECT concat(lastname,', ',firstname,' ',middlename) as enamem,employee_no from employee where id =".(int)$date[0])->fetch_array()['ename'];
+$qry = $conn->db->query("SELECT * FROM attendance where employee_id = ".(int)$date[0]." and date(datetime_log) ='$dt' order by UNIX_TIMESTAMP(datetime_log) asc ");
 while($row=$qry->fetch_assoc()){
 	if($row['log_type'] == 1 || $row['log_type'] == 2){
 		if(isset($att[$row['log_type']]))

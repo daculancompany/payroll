@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/require_login.php';
+
 // Punch Logs — every biometric/manual scan as a PUNCH, flat and chronological,
 // separate from the day rows that interpret it. Included via index.php
 // (?page=punch-logs).

@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/require_login.php';
+
 
 // Check if 'id' parameter is set and is a valid integer
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {

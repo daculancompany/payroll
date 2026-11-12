@@ -5486,12 +5486,12 @@ class Action
                 if (empty($password)) {
                     return ['result' => false, 'message' => 'Password is required for new users.'];
                 }
-                $password = password_hash(mysqli_real_escape_string($this->db, $password), PASSWORD_BCRYPT);
+                $password = password_hash($password, PASSWORD_BCRYPT);
                 $password_sql = ", password = '$password'";
             } else {
                 // Existing user — update password only if provided
                 if (!empty($password)) {
-                    $password = password_hash(mysqli_real_escape_string($this->db, $password), PASSWORD_BCRYPT);
+                    $password = password_hash($password, PASSWORD_BCRYPT);
                     $password_sql = ", password = '$password'";
                 }
             }

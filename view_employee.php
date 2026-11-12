@@ -1,7 +1,9 @@
-<?php include 'db_connect.php' ?>
+<?php
+require_once __DIR__ . '/includes/require_login.php';
+ include 'db_connect.php' ?>
 
 <?php
-$emp = $conn->query("SELECT e.*,d.name as dname,p.name as pname FROM employee e inner join department d on e.department_id = d.id inner join position p on e.position_id = p.id where e.id =".$_GET['id'])->fetch_array();
+$emp = $conn->query("SELECT e.*,d.name as dname,p.name as pname FROM employee e inner join department d on e.department_id = d.id inner join position p on e.position_id = p.id where e.id =".(int)$_GET["id"])->fetch_array();
 	foreach($emp as $k=>$v){
 		$$k=$v;
 	}
@@ -68,7 +70,7 @@ $emp = $conn->query("SELECT e.*,d.name as dname,p.name as pname FROM employee e 
 					<div class="card-body">
 						<ul class="list-group">
 							<?php
-							$deductions = $conn->query("SELECT ea.*,d.deduction as dname FROM employee_deductions ea inner join deductions d on d.id = ea.deduction_id where ea.employee_id=".$_GET['id']." order by ea.type asc,date(ea.effective_date) asc, d.deduction asc ");
+							$deductions = $conn->query("SELECT ea.*,d.deduction as dname FROM employee_deductions ea inner join deductions d on d.id = ea.deduction_id where ea.employee_id=".(int)$_GET["id"]." order by ea.type asc,date(ea.effective_date) asc, d.deduction asc ");
 							$t_arr = array(1=>"Monthly",2=>"Semi-Monthly",3=>"Once");
 							while($row=$deductions->fetch_assoc()):
 							?>

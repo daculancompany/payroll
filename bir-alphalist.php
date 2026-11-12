@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/require_login.php';
+
 // ── BIR Alphalist (annex to Form 1604-C) — included via index.php ────────
 // Alphabetical list of employees for a calendar year with annual gross
 // compensation, non-taxable components (gov't contributions + 13th month up

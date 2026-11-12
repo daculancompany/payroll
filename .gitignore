@@ -19,3 +19,6 @@ backups/*.sql
 # Large local archives — GitHub rejects files over 100 MB
 Archive.zip
 *.zip
+
+# Root-level DB dumps (same PII as backups/)
+/payroll.sql

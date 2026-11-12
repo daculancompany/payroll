@@ -1,7 +1,9 @@
-<?php 
+<?php
+require_once __DIR__ . '/includes/require_login.php';
+ 
 include('db_connect.php');
 if(isset($_GET['id'])){
-$user = $conn->query("SELECT * FROM users where id =".$_GET['id']);
+$user = $conn->query("SELECT * FROM users where id =".(int)$_GET["id"]);
 foreach($user->fetch_array() as $k =>$v){
 	$meta[$k] = $v;
 }
@@ -13,15 +15,15 @@ foreach($user->fetch_array() as $k =>$v){
 		<input type="hidden" name="id" value="<?php echo isset($meta['id']) ? $meta['id']: '' ?>">
 		<div class="form-group">
 			<label for="name">Name</label>
-			<input type="text" name="name" id="name" class="form-control" value="<?php echo isset($meta['name']) ? $meta['name']: '' ?>" required>
+			<input type="text" name="name" id="name" class="form-control" value="<?php echo isset($meta['name']) ? htmlspecialchars($meta['name'], ENT_QUOTES, 'UTF-8') : '' ?>" required>
 		</div>
 		<div class="form-group">
 			<label for="username">Username</label>
-			<input type="text" name="username" id="username" class="form-control" value="<?php echo isset($meta['username']) ? $meta['username']: '' ?>" required>
+			<input type="text" name="username" id="username" class="form-control" value="<?php echo isset($meta['username']) ? htmlspecialchars($meta['username'], ENT_QUOTES, 'UTF-8') : '' ?>" required>
 		</div>
 		<div class="form-group">
 			<label for="password">Password</label>
-			<input type="password" name="password" id="password" class="form-control" value="<?php echo isset($meta['password']) ? $meta['password']: '' ?>" required>
+			<input type="password" name="password" id="password" class="form-control" value="" placeholder="Leave blank to keep current password">
 		</div>
 		<div class="form-group">
 			<label for="type">User Type</label>

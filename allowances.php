@@ -1,4 +1,6 @@
-<?php include 'db_connect.php'; ?>
+<?php
+require_once __DIR__ . '/includes/require_login.php';
+ include 'db_connect.php'; ?>
 <?php /* Layout mirrors deductions.php / contributions.php. This page used to carry
          the pre-reskin template markup with no .main-content wrapper, so it rendered
          underneath the fixed sidebar instead of beside it. */ ?>

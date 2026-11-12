@@ -45,6 +45,20 @@ if (session_status() === PHP_SESSION_NONE) {
     }
 
     session_start();
+
+    /* Idle timeout. A signed-in session left untouched this long gets wiped,
+     * so a payroll tab left open on a shared PC doesn't stay usable forever.
+     * Open tabs keep it alive on their own: the notification poll hits the
+     * server every 30s. Override with SESSION_IDLE_SECONDS in the environment. */
+    if (PHP_SAPI !== 'cli' && (!empty($_SESSION['is_login']) || !empty($_SESSION['emp_is_login']))) {
+        $__idle = (int) (getenv('SESSION_IDLE_SECONDS') ?: 3600);
+        $__last = (int) ($_SESSION['last_activity'] ?? 0);
+        if ($__last > 0 && (time() - $__last) > $__idle) {
+            $_SESSION = [];
+            session_regenerate_id(true);
+        }
+        $_SESSION['last_activity'] = time();
+    }
 }
 
 // Session-fixation defence is already handled at the two login success points

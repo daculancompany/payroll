@@ -118,6 +118,14 @@ RedirectMatch 404 /\.DS_Store
     # request that already went out. env=HTTPS keeps this off the plain-HTTP
     # LAN/XAMPP installs, where advertising HSTS would lock the site out.
     Header always set Strict-Transport-Security "max-age=31536000" env=HTTPS
+    # Camera stays allowed for this origin because face capture / kiosk needs
+    # it; every other powerful API is off.
+    Header always set Permissions-Policy "camera=(self), microphone=(), geolocation=(self), payment=(), usb=()"
+    # A CSP that can be enforced today without breaking the inline scripts the
+    # pages still rely on. It blocks framing by other sites, <object>/<embed>
+    # plugins, and <base href> hijacking. script-src tightening comes later,
+    # once the v2 shell has moved the inline JS into files.
+    Header always set Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
 </IfModule>
 
 # Serve the PWA manifest with the correct MIME type (some Apache builds don't

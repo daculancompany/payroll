@@ -1,4 +1,6 @@
 <?php
+require_once __DIR__ . '/includes/require_login.php';
+
 // Editable by Admin + HR — see LEAVE_CREDIT_EDIT_ROLES in db_connect.php.
 $can_edit_credits = can_edit_leave_credits();
 $can_rollover     = can_run_leave_rollover();   // see LEAVE_ROLLOVER_ROLES in db_connect.php

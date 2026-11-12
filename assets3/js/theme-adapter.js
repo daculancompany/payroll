@@ -23,7 +23,7 @@
     var root = document.documentElement;
     // Printable documents (and their thumbnails): kept light paper.
     var PAPER = '[data-v2-paper]' + (window.V2_PAPER_SEL ? ', ' + window.V2_PAPER_SEL : '');
-    var SCOPE = (window.V2_ADAPT_SCOPE || '#main-content, .modal, .offcanvas, #empQuickView') + ', .swal2-container';   // SweetAlert dialogs (tables in previews)
+    var SCOPE = (window.V2_ADAPT_SCOPE || '#main-content, .modal, .offcanvas') + ', .swal2-container';   // SweetAlert dialogs (tables in previews)
     var SKIP_TAGS = { IMG: 1, VIDEO: 1, CANVAS: 1, SVG: 1, PATH: 1, SCRIPT: 1, STYLE: 1, OPTION: 1, BR: 1, HR: 1, INPUT: 0 };
     var touched = new Set();
     var saved = new WeakMap();          // el → { prop: [value, priority] }

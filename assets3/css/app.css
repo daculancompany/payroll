@@ -948,3 +948,30 @@ html.ui-ct .v2 .apexcharts-pie-series path { stroke: var(--v2-raised); }
 
 /* SweetAlert content tables (e.g. the Recompute preview) */
 .v2 .swal2-html-container table { color: var(--v2-text); }
+
+/* ── Employee quick-view drawer (component/employee_quick_view.php) ────
+   Owned by CSS (data-v2-keep keeps the adapter out). A floating panel, so
+   always the opaque raised surface: nothing behind it shows through. */
+.v2 #eqv-overlay { background: rgba(2, 6, 23, .45); }
+.v2 #emp-quickview {
+    background: var(--v2-raised); color: var(--v2-text);
+    border-left: 1px solid var(--v2-border); box-shadow: var(--v2-shadow-lg);
+}
+.v2 #emp-quickview .eqv-head { background: transparent; color: var(--v2-text); border-bottom: 1px solid var(--v2-border); padding: 18px 16px 16px; }
+.v2 #emp-quickview .eqv-avatar { background: var(--acc-bg); color: var(--acc-fg); border: 0; font-size: 17px; }
+.v2 #emp-quickview .eqv-name { color: var(--v2-text); }
+.v2 #emp-quickview .eqv-no { color: var(--v2-text-3); opacity: 1; }
+.v2 #emp-quickview .eqv-badge { background: var(--quiet-bg); border: 1px solid var(--quiet-bd); color: var(--v2-text-2); }
+.v2 #emp-quickview .eqv-x { background: transparent; color: var(--v2-text-2); width: 32px; height: 32px; border-radius: 9px; }
+.v2 #emp-quickview .eqv-x:hover { background: var(--v2-hover); color: var(--v2-text); }
+.v2 #emp-quickview .eqv-scroll { scrollbar-color: var(--sb-thumb) transparent; }
+.v2 #emp-quickview .eqv-scroll::-webkit-scrollbar-thumb { background: var(--sb-thumb); border: 2px solid transparent; background-clip: content-box; }
+.v2 #emp-quickview .eqv-sec { color: var(--v2-text-3); letter-spacing: .07em; margin-top: 18px; }
+.v2 #emp-quickview .eqv-row { border-bottom: 1px solid var(--v2-border); padding: 7px 0; }
+.v2 #emp-quickview .eqv-row i { color: var(--v2-text-3); }
+.v2 #emp-quickview .eqv-lbl { color: var(--v2-text-3); }
+.v2 #emp-quickview .eqv-val { color: var(--v2-text); }
+.v2 #emp-quickview .eqv-spin { color: var(--v2-text-3); }
+.v2 #emp-quickview .eqv-foot { background: transparent; border-top: 1px solid var(--v2-border); }
+.v2 #emp-quickview .eqv-full { background: var(--acc-bg); color: var(--acc-fg); border-radius: 9px; font-weight: 650; }
+.v2 #emp-quickview .eqv-full:hover { background: var(--acc-bg-hover); color: var(--acc-fg); filter: none; }

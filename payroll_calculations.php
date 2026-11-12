@@ -4025,7 +4025,7 @@ window.PCW_META = <?= json_encode([
 // Employee quick-view drawer (avatar / name clicks on the sheet). "Full
 // details" opens in the same tab (per user preference — no target=_blank).
 include __DIR__ . '/component/employee_quick_view.php';
-if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.pcw-app, .modal, .offcanvas, #empQuickView'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
+if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.pcw-app, .modal, .offcanvas'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
 ?>
 </body>
 </html>

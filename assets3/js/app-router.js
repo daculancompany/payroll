@@ -102,10 +102,18 @@
         phase.intervals.forEach(function (id) { clearInterval(id); });
         phase.listeners = []; phase.jq = []; phase.intervals = [];
 
-        // Modals and popups that live on <body>.
+        // Overlays: a full page load used to clear these for free, an in-place
+        // navigation doesn't. Shell-level ones too (the employee quick-view
+        // drawer's "Full details" link navigates in place, leaving it open).
+        if (window.EmpQuickView && typeof EmpQuickView.close === 'function') {
+            try { EmpQuickView.close(); } catch (e) { /* drawer not on this page */ }
+        }
         if (window.bootstrap) {
-            main.querySelectorAll('.modal.show').forEach(function (m) {
+            document.querySelectorAll('.modal.show').forEach(function (m) {
                 var inst = bootstrap.Modal.getInstance(m); if (inst) inst.hide();
+            });
+            document.querySelectorAll('.offcanvas.show').forEach(function (o) {
+                var inst = bootstrap.Offcanvas.getInstance(o); if (inst) inst.hide();
             });
         }
         document.querySelectorAll('.modal-backdrop, .daterangepicker, .bootstrap-datetimepicker-widget, body > .tooltip, body > .popover, body > .dropdown-menu.bs-select')

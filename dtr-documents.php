@@ -4035,7 +4035,7 @@ loadPage();
 // workbenches include it themselves; index.php does it for the routed pages.
 // Full details opens in the same tab (per user preference — no target=_blank).
 include 'component/employee_quick_view.php';
-if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.ddv-app, .modal, .offcanvas, #empQuickView'; $V2_PAPER_SEL = '.ddv-thumb'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
+if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.ddv-app, .modal, .offcanvas'; $V2_PAPER_SEL = '.ddv-thumb'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
 
 // Shared "Review request" modal — the same form the requests queue decides
 // through, opened here from a record's filing chip (reviewFiling).

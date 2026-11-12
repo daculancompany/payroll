@@ -53,7 +53,7 @@ $eqv_full_target = isset($eqv_full_target) ? $eqv_full_target : '';
 </style>
 
 <div id="eqv-overlay"></div>
-<aside id="emp-quickview" role="dialog" aria-modal="true" aria-label="Employee quick view">
+<aside id="emp-quickview" role="dialog" aria-modal="true" aria-label="Employee quick view" data-v2-keep>
     <div class="eqv-head">
         <div class="eqv-avatar" id="eqv-avatar">–</div>
         <div style="min-width:0;flex:1;">

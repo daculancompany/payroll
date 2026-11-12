@@ -56,15 +56,15 @@ while ($row = $result->fetch_assoc()) {
                . '<div class="dtr-site-name">' . htmlspecialchars($row['site_name']) . '</div>'
                . '<div class="dtr-site-addr">' . htmlspecialchars($row['site_address']) . '</div>';
 
-    $action = '<div class="dtr-action">'
-            . '<button class="btn btn-sm btn-outline-success view-dtr"'
+    $action = '<div class="btn-group btn-group-sm pr-actions" role="group" aria-label="DTR actions">'
+            . '<button type="button" class="btn pr-act pr-act--primary view-dtr"'
             . ' data-id="' . base64_encode($row['id']) . '"'
             . ' data-timekeeper="' . base64_encode($row['timekeeper_name']) . '"'
             . ' data-device="' . base64_encode($row['device_id']) . '"'
             . ' data-site="' . base64_encode($row['site_id']) . '"'
             . ' data-status="' . base64_encode($row['status']) . '"'
-            . ' data-bs-toggle="tooltip" data-bs-placement="top" title="View DTR Details">'
-            . '<i class="ri-eye-line me-1"></i>View</button>'
+            . ' data-bs-toggle="tooltip" data-bs-placement="top" title="Open the DTR batch">'
+            . '<i class="ri-eye-line"></i><span>View</span></button>'
             . '</div>';
 
     $status_badge = '<span class="badge bg-success"><i class="ri-checkbox-circle-line me-1"></i>Approved</span>';

@@ -93,3 +93,36 @@
 .sb-ghost::-webkit-scrollbar-thumb {
     border-color: transparent;
 }
+
+/* ═════════════════════════════════════════════════════════════════════
+   Row action groups (.pr-actions > .btn.pr-act) — payroll + DTR lists.
+   One segmented group per row: the primary action leads (solid), the other
+   segments are quiet with icon + label; destructive actions only turn red
+   on hover. Colours come from tokens, so the classic shell gets its purple
+   and the v2 shell gets the user's accent (assets3/css/app.css overrides the
+   neutral tokens for dark and colour themes).
+   ═════════════════════════════════════════════════════════════════════ */
+.pr-actions {
+    --pr-bg: #ffffff; --pr-fg: #334155; --pr-bd: #d5dae2; --pr-hover: #f1f4f8; --pr-icon: #64748b;
+    display: inline-flex; vertical-align: middle;
+}
+.pr-actions > .pr-act {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 12px; font-size: 12.5px; font-weight: 600; line-height: 1; white-space: nowrap;
+    background: var(--pr-bg); color: var(--pr-fg); border: 1px solid var(--pr-bd); box-shadow: none;
+    transition: background .12s, color .12s, border-color .12s;
+}
+.pr-actions > .pr-act i { font-size: 15px; color: var(--pr-icon); }
+.pr-actions > .pr-act:hover, .pr-actions > .pr-act:focus-visible { background: var(--pr-hover); color: var(--pr-fg); border-color: var(--pr-bd); }
+.pr-actions > .pr-act:hover i { color: var(--pr-fg); }
+.pr-actions > .pr-act--icon { width: 34px; padding: 0; justify-content: center; }
+.pr-actions > .pr-act--primary { background: var(--app-primary); border-color: var(--app-primary); color: #fff; position: relative; z-index: 1; }
+.pr-actions > .pr-act--primary i { color: #fff; }
+.pr-actions > .pr-act--primary:hover, .pr-actions > .pr-act--primary:focus-visible { background: var(--app-primary-dark); border-color: var(--app-primary-dark); color: #fff; }
+.pr-actions > .pr-act--primary:hover i { color: #fff; }
+.pr-actions > .pr-act--ok i { color: #16a34a; }
+.pr-actions > .pr-act--warn { color: #b45309; }
+.pr-actions > .pr-act--warn i { color: #d97706; }
+.pr-actions > .pr-act--danger:hover, .pr-actions > .pr-act--danger:focus-visible { background: #e11d48; border-color: #e11d48; color: #fff; z-index: 1; }
+.pr-actions > .pr-act--danger:hover i { color: #fff; }
+.pr-actions > .pr-act:focus-visible { outline: 2px solid var(--app-primary); outline-offset: 1px; z-index: 2; }

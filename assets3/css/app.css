@@ -825,3 +825,126 @@ html.ui-ct .v2 .dtr-loader { background: color-mix(in srgb, var(--v2-raised) 80%
 /* Paper tint: a whisper of the accent on the sheet, never dark. */
 :root { --v2-paper: color-mix(in srgb, var(--brand-50) 55%, #ffffff); }
 html.ui-paper-white { --v2-paper: #ffffff; }
+
+/* ═════════════════════════════════════════════════════════════════════
+   Buttons (v2). Three kinds, the same in every theme:
+     accent  actions: btn-primary/-success/-info, outline primary/success/
+             info, and labelled buttons in table rows (Edit, View, …).
+             Filled with the accent; text contrast picked per theme.
+     quiet   secondary: Cancel/Close, Clear/Reset, btn-light/-secondary and
+             icon-only row tools. A visible translucent fill + hairline, so
+             they read as buttons on any background without competing.
+     toggle  segmented .btn-group: quiet segments, the active one accent.
+   danger / warning keep their meaning colours (soft fill, solid on hover).
+   The theme adapter leaves .btn alone; this file owns them. Icon-only
+   buttons are marked .v2-btn-icon by theme-adapter.js (CSS can't see text).
+   ═════════════════════════════════════════════════════════════════════ */
+:root {
+    --acc-bg: var(--brand-600); --acc-bg-hover: var(--brand-700); --acc-fg: #ffffff;
+    --quiet-bg: #ffffff; --quiet-bd: var(--v2-border-strong); --quiet-hover: var(--v2-surface-3);
+}
+html[data-bs-theme="dark"], html.ui-ct {
+    --quiet-bg: rgba(255, 255, 255, .07); --quiet-bd: rgba(255, 255, 255, .16); --quiet-hover: rgba(255, 255, 255, .14);
+}
+html.ui-ct[data-bs-theme="light"] { --quiet-bg: rgba(255, 255, 255, .55); --quiet-bd: rgba(15, 23, 42, .12); --quiet-hover: rgba(255, 255, 255, .85); }
+/* Dark colour themes derive a light accent (readable as text on dark), so
+   filled accent buttons take dark text there. */
+html.ui-ct[data-bs-theme="dark"] { --acc-bg: var(--brand-400); --acc-bg-hover: var(--brand-300); --acc-fg: #0b1220; }
+
+.v2 .btn { display: inline-flex; align-items: center; justify-content: center; gap: .4rem; font-weight: 600; --bs-btn-border-radius: 9px; }
+.v2 .btn-sm { --bs-btn-border-radius: 8px; }
+.v2 .btn i { font-size: 1.05em; line-height: 1; }
+.v2 .btn .me-1, .v2 .btn .me-2 { margin-right: 0 !important; }       /* gap spaces icon and label */
+.v2 .btn.v2-btn-icon { padding-left: 0; padding-right: 0; width: 2.3rem; }
+.v2 .btn-sm.v2-btn-icon { width: 2rem; }
+
+/* quiet */
+.v2 .btn-secondary, .v2 .btn-light, .v2 .btn-outline-secondary, .v2 .btn-outline-dark {
+    --bs-btn-bg: var(--quiet-bg); --bs-btn-border-color: var(--quiet-bd); --bs-btn-color: var(--v2-text);
+    --bs-btn-hover-bg: var(--quiet-hover); --bs-btn-hover-border-color: var(--quiet-bd); --bs-btn-hover-color: var(--v2-text);
+    --bs-btn-active-bg: var(--quiet-hover); --bs-btn-active-border-color: var(--quiet-bd); --bs-btn-active-color: var(--v2-text);
+    --bs-btn-disabled-bg: var(--quiet-bg); --bs-btn-disabled-border-color: var(--quiet-bd); --bs-btn-disabled-color: var(--v2-text-3);
+    box-shadow: none;
+}
+
+/* accent */
+.v2 .btn-primary, .v2 .btn-success, .v2 .btn-info,
+.v2 .btn-outline-primary, .v2 .btn-outline-success, .v2 .btn-outline-info,
+.v2 td .btn-outline-secondary:not([data-bs-dismiss]):not(.v2-btn-icon) {
+    --bs-btn-bg: var(--acc-bg); --bs-btn-border-color: var(--acc-bg); --bs-btn-color: var(--acc-fg);
+    --bs-btn-hover-bg: var(--acc-bg-hover); --bs-btn-hover-border-color: var(--acc-bg-hover); --bs-btn-hover-color: var(--acc-fg);
+    --bs-btn-active-bg: var(--acc-bg-hover); --bs-btn-active-border-color: var(--acc-bg-hover); --bs-btn-active-color: var(--acc-fg);
+    --bs-btn-disabled-bg: var(--acc-bg); --bs-btn-disabled-border-color: var(--acc-bg); --bs-btn-disabled-color: var(--acc-fg);
+    box-shadow: none;
+}
+html.ui-brand-gradient .v2 .btn-primary { background-image: none; }
+
+/* danger / warning */
+.v2 .btn-danger { --c: 225, 29, 72; }
+.v2 .btn-dark { --c: 30, 41, 59; }
+.v2 .btn-danger, .v2 .btn-dark {
+    --bs-btn-bg: rgb(var(--c)); --bs-btn-border-color: rgb(var(--c)); --bs-btn-color: #fff;
+    --bs-btn-hover-bg: color-mix(in srgb, rgb(var(--c)) 86%, #000); --bs-btn-hover-border-color: color-mix(in srgb, rgb(var(--c)) 86%, #000); --bs-btn-hover-color: #fff;
+    --bs-btn-active-bg: color-mix(in srgb, rgb(var(--c)) 76%, #000); --bs-btn-active-border-color: color-mix(in srgb, rgb(var(--c)) 76%, #000); --bs-btn-active-color: #fff;
+}
+.v2 .btn-warning {
+    --bs-btn-bg: #f59e0b; --bs-btn-border-color: #f59e0b; --bs-btn-color: #1f1300;
+    --bs-btn-hover-bg: #d97706; --bs-btn-hover-border-color: #d97706; --bs-btn-hover-color: #1f1300;
+    --bs-btn-active-bg: #b45309; --bs-btn-active-border-color: #b45309; --bs-btn-active-color: #fff;
+}
+.v2 .btn-outline-danger  { --c: 225, 29, 72; }
+.v2 .btn-outline-warning { --c: 217, 119, 6; }
+.v2 .btn-outline-danger, .v2 .btn-outline-warning {
+    --bs-btn-bg: rgba(var(--c), .08); --bs-btn-border-color: rgba(var(--c), .3); --bs-btn-color: rgb(var(--c));
+    --bs-btn-hover-bg: rgb(var(--c)); --bs-btn-hover-border-color: rgb(var(--c)); --bs-btn-hover-color: #fff;
+    --bs-btn-active-bg: rgb(var(--c)); --bs-btn-active-border-color: rgb(var(--c)); --bs-btn-active-color: #fff;
+    box-shadow: none;
+}
+html[data-bs-theme="dark"] .v2 .btn-outline-danger, html[data-bs-theme="dark"] .v2 .btn-outline-warning {
+    --bs-btn-bg: rgba(var(--c), .16); --bs-btn-border-color: rgba(var(--c), .4); --bs-btn-color: color-mix(in srgb, rgb(var(--c)) 60%, #fff);
+}
+
+/* toggle groups: quiet segments, active one accent (beats page CSS such as
+   the Daily Board's purple .active) */
+.v2 .btn-group > [class*="btn-outline-"]:not(.pr-act), .v2 .btn-group > .btn-light, .v2 .btn-group > .btn-secondary {
+    --bs-btn-bg: var(--quiet-bg); --bs-btn-border-color: var(--quiet-bd); --bs-btn-color: var(--v2-text);
+    --bs-btn-hover-bg: var(--quiet-hover); --bs-btn-hover-border-color: var(--quiet-bd); --bs-btn-hover-color: var(--v2-text);
+    --bs-btn-active-bg: var(--acc-bg); --bs-btn-active-border-color: var(--acc-bg); --bs-btn-active-color: var(--acc-fg);
+}
+.v2 .btn.active:not(.pr-act), .v2 .btn-check:checked + .btn {
+    background-color: var(--acc-bg) !important; border-color: var(--acc-bg) !important; color: var(--acc-fg) !important; z-index: 1;
+}
+.v2 .btn-group > .btn.active i, .v2 .btn-check:checked + .btn i { color: inherit !important; }
+/* Date-range picker's Apply (pages pin it to the old purple with !important) */
+.v2 .daterangepicker .drp-buttons .btn.applyBtn { background-color: var(--acc-bg) !important; border-color: var(--acc-bg) !important; color: var(--acc-fg) !important; }
+
+/* Row action groups (.pr-actions, styled in assets2/css/theme.css) */
+.v2 .pr-actions { --pr-bg: var(--quiet-bg); --pr-bd: var(--quiet-bd); --pr-hover: var(--quiet-hover); --pr-fg: var(--v2-text); --pr-icon: var(--v2-text-2); }
+.v2 .pr-actions > .pr-act { height: 32px; border-radius: 0; }
+.v2 .pr-actions > .pr-act:first-child { border-top-left-radius: 9px; border-bottom-left-radius: 9px; }
+.v2 .pr-actions > .pr-act:last-child { border-top-right-radius: 9px; border-bottom-right-radius: 9px; }
+.v2 .pr-actions > .pr-act--primary { background: var(--acc-bg); border-color: var(--acc-bg); color: var(--acc-fg); }
+.v2 .pr-actions > .pr-act--primary i { color: var(--acc-fg); }
+.v2 .pr-actions > .pr-act--primary:hover, .v2 .pr-actions > .pr-act--primary:focus-visible { background: var(--acc-bg-hover); border-color: var(--acc-bg-hover); color: var(--acc-fg); }
+.v2 .pr-actions > .pr-act--primary:hover i { color: var(--acc-fg); }
+html[data-bs-theme="dark"] .v2 .pr-actions > .pr-act--ok i { color: #4ade80; }
+html[data-bs-theme="dark"] .v2 .pr-actions > .pr-act--warn,
+html[data-bs-theme="dark"] .v2 .pr-actions > .pr-act--warn i { color: #fbbf24; }
+
+/* Clean cards: no coloured accent stripes on the app's own components. */
+.v2 .card { border-top-width: 1px; }
+
+/* Charts in dark / colour themes: no white outlines around bars and slices,
+   centre labels readable (home.php pins them to #333 for the old template). */
+html[data-bs-theme="dark"] .v2 .apexcharts-bar-series path,
+html.ui-ct .v2 .apexcharts-bar-series path { stroke: transparent; }
+html[data-bs-theme="dark"] .v2 .apexcharts-pie-series path,
+html.ui-ct .v2 .apexcharts-pie-series path { stroke: var(--v2-raised); }
+.v2 .apexcharts-datalabels-group text.apexcharts-datalabel-value,
+.v2 .dash-section .apexcharts-datalabels-group .apexcharts-datalabel-value { fill: var(--v2-text) !important; }
+.v2 .apexcharts-datalabels-group text.apexcharts-datalabel-label,
+.v2 .dash-section .apexcharts-datalabels-group .apexcharts-datalabel-label { fill: var(--v2-text-3) !important; }
+.v2 .apexcharts-legend-text { color: var(--v2-text-2) !important; }
+
+/* SweetAlert content tables (e.g. the Recompute preview) */
+.v2 .swal2-html-container table { color: var(--v2-text); }

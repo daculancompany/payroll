@@ -75,42 +75,40 @@ function getStatusBadge($status)
 // Function to return action buttons
 function getActionButtons($row)
 {
-    $id       = $row['id'];
+    $id       = (int) $row['id'];
     $settings = htmlspecialchars(json_encode(json_decode($row['settings'], true)), ENT_QUOTES);
-    $btn      = '<div class="action-buttons">';
+    // One segmented group per row: the primary action leads (solid), the
+    // rest are quiet icon/label segments. Classes and onclick handlers are the
+    // ones assets2/js/payroll.js binds to, so behaviour is unchanged.
+    $tip = function ($t) { return ' data-bs-toggle="tooltip" data-bs-placement="top" title="' . $t . '"'; };
+    $btn = '<div class="btn-group btn-group-sm pr-actions" role="group" aria-label="Payroll actions">';
 
     if ($row['status'] != 2) {
-        // Primary action
         if ($row['status'] == 0) {
-            $btn .= '<button class="btn btn-sm btn-primary calculate_payroll" data-id="' . $id . '" data-bs-toggle="tooltip" data-bs-placement="top" title="Calculate Payroll">'
-                  . '<i class="ri-calculator-line me-1"></i>Calculate</button>';
+            $btn .= '<button type="button" class="btn pr-act pr-act--primary calculate_payroll" data-id="' . $id . '"' . $tip('Calculate payroll') . '>'
+                  . '<i class="ri-calculator-line"></i><span>Calculate</span></button>';
         } else {
-            $btn .= '<button class="btn btn-sm btn-success view_payroll" data-id="' . $id . '" data-bs-toggle="tooltip" data-bs-placement="top" title="View Payroll Details">'
-                  . '<i class="ri-eye-line me-1"></i>View</button>';
+            $btn .= '<button type="button" class="btn pr-act pr-act--primary view_payroll" data-id="' . $id . '"' . $tip('Open payroll details') . '>'
+                  . '<i class="ri-eye-line"></i><span>View</span></button>';
         }
-        // Recalculate (status 1 only)
         if ($row['status'] == 1) {
-            $btn .= '<button class="btn btn-sm btn-warning text-dark" onclick="recalculate(' . $id . ')" data-bs-toggle="tooltip" data-bs-placement="top" title="Recalculate Payroll">'
-                  . '<i class="ri-refresh-line me-1"></i>Recalculate</button>';
+            $btn .= '<button type="button" class="btn pr-act" onclick="recalculate(' . $id . ')"' . $tip('Recompute pay from the latest DTR and settings') . '>'
+                  . '<i class="ri-refresh-line"></i><span>Recompute</span></button>';
         }
-        // Settings
-        $btn .= '<button class="btn btn-sm btn-outline-secondary add_settings" data-id="' . $id . '" settings=\'' . $settings . '\' data-bs-toggle="tooltip" data-bs-placement="top" title="Payroll Settings">'
+        $btn .= '<button type="button" class="btn pr-act pr-act--icon add_settings" data-id="' . $id . '" settings=\'' . $settings . '\'' . $tip('Payroll settings') . ' aria-label="Payroll settings">'
               . '<i class="ri-settings-3-line"></i></button>';
-        // Delete
-        $btn .= '<button class="btn btn-sm btn-outline-danger remove_payroll" data-id="' . $id . '" data-bs-toggle="tooltip" data-bs-placement="top" title="Delete Payroll">'
+        $btn .= '<button type="button" class="btn pr-act pr-act--icon pr-act--danger remove_payroll" data-id="' . $id . '"' . $tip('Delete payroll') . ' aria-label="Delete payroll">'
               . '<i class="ri-delete-bin-line"></i></button>';
     } else {
-        // Locked: view always, unlock for admin
-        $btn .= '<button class="btn btn-sm btn-success view_payroll" data-id="' . $id . '" data-bs-toggle="tooltip" data-bs-placement="top" title="View Payroll Details">'
-              . '<i class="ri-eye-line me-1"></i>View</button>';
+        $btn .= '<button type="button" class="btn pr-act pr-act--primary view_payroll" data-id="' . $id . '"' . $tip('Open payroll details') . '>'
+              . '<i class="ri-eye-line"></i><span>View</span></button>';
         if ($_SESSION['login_role'] == 1) {
-            $btn .= '<button class="btn btn-sm btn-outline-warning" onclick="islock(' . $id . ',1)" data-bs-toggle="tooltip" data-bs-placement="top" title="Unlock Payroll">'
-                  . '<i class="ri-lock-unlock-line me-1"></i>Unlock</button>';
+            $btn .= '<button type="button" class="btn pr-act pr-act--warn" onclick="islock(' . $id . ',1)"' . $tip('Unlock payroll for editing') . '>'
+                  . '<i class="ri-lock-unlock-line"></i><span>Unlock</span></button>';
         }
     }
 
-    // History — always visible
-    $btn .= '<button class="btn btn-sm btn-outline-secondary" onclick="payroll_history(' . $id . ')" data-bs-toggle="tooltip" data-bs-placement="top" title="View History">'
+    $btn .= '<button type="button" class="btn pr-act pr-act--icon" onclick="payroll_history(' . $id . ')"' . $tip('Version history') . ' aria-label="Version history">'
           . '<i class="ri-history-line"></i></button>';
 
     $btn .= '</div>';

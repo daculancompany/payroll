@@ -23,7 +23,7 @@
     var root = document.documentElement;
     // Printable documents (and their thumbnails): kept light paper.
     var PAPER = '[data-v2-paper]' + (window.V2_PAPER_SEL ? ', ' + window.V2_PAPER_SEL : '');
-    var SCOPE = window.V2_ADAPT_SCOPE || '#main-content, .modal, .offcanvas, #empQuickView';
+    var SCOPE = (window.V2_ADAPT_SCOPE || '#main-content, .modal, .offcanvas, #empQuickView') + ', .swal2-container';   // SweetAlert dialogs (tables in previews)
     var SKIP_TAGS = { IMG: 1, VIDEO: 1, CANVAS: 1, SVG: 1, PATH: 1, SCRIPT: 1, STYLE: 1, OPTION: 1, BR: 1, HR: 1, INPUT: 0 };
     var touched = new Set();
     var saved = new WeakMap();          // el → { prop: [value, priority] }
@@ -116,6 +116,8 @@
             o = {
                 // Inside a printable document: accent swap only, never darkened.
                 paper: !!el.closest(PAPER),
+                // inside a button: app.css owns the look; only legacy purple is swapped
+                btn: !!el.closest('.btn'),
                 // popovers / dropdowns float over content: translucent theme
                 // surfaces would let the page show through, so use the opaque one
                 floating: (cs.position === 'absolute' || cs.position === 'fixed') && (cs.boxShadow !== 'none' || parseInt(cs.zIndex, 10) > 0),
@@ -124,7 +126,8 @@
                 fg: parse(cs.color),
                 borders: SIDES.map(function (side) {
                     return parseFloat(cs['border-' + side + '-width']) > 0 ? parse(cs['border-' + side + '-color']) : null;
-                })
+                }),
+                widths: SIDES.map(function (side) { return parseFloat(cs['border-' + side + '-width']) || 0; })
             };
         }
         orig.set(el, o);
@@ -133,8 +136,28 @@
     }
 
     var LIGHT = { dark: false, themed: false, paper: true };   // deeper accent shades on white paper
+
+    /* Buttons: app.css styles every Bootstrap variant, so the adapter only
+       swaps hardcoded legacy purple (inline styles, page rules) for the
+       accent, using the same tokens as app.css so text contrast is right. */
+    function decideBtn(el, o, m) {
+        var isBtn = el.classList.contains('btn');
+        var purpleFill = (o.bg && o.bg[3] > 0.5 && isBrandPurple(o.bg)) || (o.stops && o.stops.length && o.stops.some(isBrandPurple));
+        if (purpleFill) {
+            if (o.stops && o.stops.length) set(el, 'background-image', 'none');
+            set(el, 'background-color', 'var(--acc-bg)');
+            if (isBtn) set(el, 'color', 'var(--acc-fg)');
+        } else if (o.fg && isBrandPurple(o.fg)) {
+            set(el, 'color', m.dark ? 'var(--brand-300)' : 'var(--brand-600)');
+        }
+        o.borders.forEach(function (bc, i) {
+            if (bc && bc[3] > 0 && isBrandPurple(bc)) set(el, 'border-' + SIDES[i] + '-color', 'var(--acc-bg)');
+        });
+    }
+
     function decide(el, o, m) {
         if (!o || o.skip) return;
+        if (o.btn) { decideBtn(el, o, m); return; }
         if (o.paper) m = LIGHT;   // documents stay light paper (tinted, or white with the setting)
         var bg = o.bg;
         if (bg && bg[3] > 0.5) {
@@ -167,8 +190,20 @@
                 else if (l < 150 && s >= 40) set(el, 'color', lighten(fg, l < 110 ? .5 : .35));
             }
         }
+        // Clean look: a left or top border thicker than the card's other sides
+        // is a status/accent stripe. Level it with the other sides, neutral.
+        // (Bottom is left alone: that's where active-tab underlines live.)
+        var stripe = {};
+        if (!m.paper) [0, 3].forEach(function (i) {
+            var w = o.widths[i], base = Math.min(o.widths[1], o.widths[2]);
+            if (w >= 2 && w - base >= 1.5 && o.borders[i] && o.borders[i][3] > 0) {
+                set(el, 'border-' + SIDES[i] + '-width', base + 'px');
+                if (base > 0) set(el, 'border-' + SIDES[i] + '-color', 'var(--v2-border)');
+                stripe[i] = true;
+            }
+        });
         o.borders.forEach(function (bc, i) {
-            if (!bc || bc[3] === 0) return;
+            if (!bc || bc[3] === 0 || stripe[i]) return;
             var prop = 'border-' + SIDES[i] + '-color';
             if (isBrandPurple(bc)) set(el, prop, m.paper ? 'var(--brand-700)' : 'var(--brand-500)');
             else if (isPurple(bc) && lum(bc) > 180) set(el, prop, 'var(--app-tint-border)');
@@ -177,7 +212,17 @@
         });
     }
 
-    function adapt(el, m) { decide(el, read(el), m); }
+    /* Icon-only buttons get .v2-btn-icon (square). CSS can't tell: an <i>
+       next to a text label is still the only *element* child. Toggled only
+       when the state changes, so the class mutation can't loop. */
+    function markIconBtn(el) {
+        var only = !el.textContent.trim() && !!el.querySelector('i, svg, img');
+        if (only !== el.classList.contains('v2-btn-icon')) el.classList.toggle('v2-btn-icon', only);
+    }
+    function adapt(el, m) {
+        if (el.classList && el.classList.contains('btn')) markIconBtn(el);
+        decide(el, read(el), m);
+    }
 
     /** Theme switch: recompute every known element from its cached colours. */
     function retheme() {
@@ -257,6 +302,7 @@
             mu.addedNodes.forEach(function (node) {
                 if (node.nodeType === 1 && node.closest && node.closest(SCOPE)) collect(node, list);
             });
+            if (mu.type === 'childList' && mu.target.classList && mu.target.classList.contains('btn')) markIconBtn(mu.target);
             if (mu.type === 'attributes' && mu.target.closest && mu.target.closest(SCOPE) && changed.indexOf(mu.target) === -1) changed.push(mu.target);
         });
         if (list.length) process(list);
@@ -319,13 +365,14 @@
        few ancestors are read, so this stays cheap. */
     function hoverAdapt(el, m) {
         if (el.__v2h || el.closest('[data-v2-keep], .apexcharts-canvas, .v2-topbar, .v2-sidebar')) return;
+        var inBtn = !!el.closest('.btn');
         if (el.closest(PAPER)) return;
         var prevT = [el.style.getPropertyValue('transition'), el.style.getPropertyPriority('transition')];
         el.style.setProperty('transition', 'none', 'important');
         var cs = getComputedStyle(el), done = [];
         var bg = parse(cs.backgroundColor);
         if (bg && bg[3] > 0.5) {
-            var nb = bgFor(bg, m);
+            var nb = inBtn ? (isBrandPurple(bg) ? 'var(--acc-bg-hover)' : null) : bgFor(bg, m);
             if (nb) {
                 if (nb.indexOf('--v2-surface') !== -1) nb = 'var(--v2-active)';   // neutral hover wash
                 done.push(['background-color', el.style.getPropertyValue('background-color'), el.style.getPropertyPriority('background-color')]);
@@ -333,7 +380,7 @@
             }
         }
         var fg = parse(cs.color);
-        if (fg && (isBrandPurple(fg) || (m.dark && lum(fg) < 100 && sat(fg) < 40))) {
+        if (fg && (isBrandPurple(fg) || (!inBtn && m.dark && lum(fg) < 100 && sat(fg) < 40))) {
             done.push(['color', el.style.getPropertyValue('color'), el.style.getPropertyPriority('color')]);
             el.style.setProperty('color', isBrandPurple(fg) ? (m.dark ? 'var(--brand-300)' : 'var(--brand-600)') : 'var(--v2-text)', 'important');
         }

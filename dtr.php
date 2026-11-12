@@ -122,31 +122,31 @@ function dtr_status_badge($s) {
                                                 <?php endif; ?>
                                             </td>
                                             <td class="text-center">
-                                                <div class="dtr-action">
-                                                    <a href="<?= $viewUrl ?>" class="btn btn-sm btn-outline-success"
-                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="View DTR Details">
-                                                        <i class="ri-eye-line"></i>
+                                                <div class="btn-group btn-group-sm pr-actions" role="group" aria-label="DTR actions">
+                                                    <a href="<?= $viewUrl ?>" class="btn pr-act pr-act--primary"
+                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Open the DTR batch">
+                                                        <i class="ri-eye-line"></i><span>View</span>
                                                     </a>
                                                     <?php // Employee sign-off is optional (DTR_EMPLOYEE_REVIEW_ENABLED, db_connect.php).
                                                           // Off: skip it and final-approve straight from Pending. ?>
                                                     <?php if ($status === 1 && DTR_EMPLOYEE_REVIEW_ENABLED): ?>
                                                     <button onclick="sendDTRForReview(<?= $row['id'] ?>)" type="button"
-                                                        class="btn btn-sm btn-outline-info"
-                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Send to Employees for Review">
-                                                        <i class="ri-user-received-2-line"></i>
+                                                        class="btn pr-act"
+                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Send to employees for review">
+                                                        <i class="ri-user-received-2-line"></i><span>Send for review</span>
                                                     </button>
                                                     <?php endif; ?>
                                                     <?php if ($status === 3 || ($status === 1 && !DTR_EMPLOYEE_REVIEW_ENABLED)): ?>
                                                     <button onclick="approveDTR(<?= $row['id'] ?>)" type="button"
-                                                        class="btn btn-sm btn-outline-primary"
-                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Final Approve for Payroll">
-                                                        <i class="ri-checkbox-circle-line"></i>
+                                                        class="btn pr-act pr-act--ok"
+                                                        data-bs-toggle="tooltip" data-bs-placement="top" title="Final approve for payroll">
+                                                        <i class="ri-checkbox-circle-line"></i><span>Approve</span>
                                                     </button>
                                                     <?php endif; ?>
                                                     <?php // Biometric batches have no source file to re-import — never deletable. ?>
                                                     <?php if ($status !== 2 && $row['file'] !== 'biometric'): ?>
                                                     <button onclick="deleteDTR(<?= $row['id'] ?>)" type="button"
-                                                        class="btn btn-sm btn-outline-danger"
+                                                        class="btn pr-act pr-act--icon pr-act--danger" aria-label="Delete DTR"
                                                         data-bs-toggle="tooltip" data-bs-placement="top" title="Delete DTR">
                                                         <i class="ri-delete-bin-line"></i>
                                                     </button>

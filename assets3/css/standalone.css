@@ -89,17 +89,15 @@ body.v2 .pcw-search-wrap > i { color: var(--v2-text-3); }
 body.v2 .pcw-search-wrap input { color: var(--v2-text); }
 body.v2 .pcw-list { padding: 2px 6px 8px; }
 body.v2 .pcw-item {
-    margin-bottom: 1px; border: 0; border-left: 3px solid transparent; border-radius: 8px;
+    margin-bottom: 1px; border: 0; border-radius: 8px;
     background: transparent; box-shadow: none; padding: 8px 10px;
 }
 body.v2 .pcw-item:hover { background: var(--v2-hover); }
-body.v2 .pcw-item.active { background: rgba(var(--brand-rgb), .12); box-shadow: none; border-left-color: var(--brand-500); }
+body.v2 .pcw-item.active { background: rgba(var(--brand-rgb), .12); box-shadow: none; }
 body.v2 .pcw-item.rv-ok:not(.active),
 body.v2 .pcw-item.rv-issue:not(.active),
 body.v2 .pcw-item.rv-chk:not(.active) { background: transparent; }
-body.v2 .pcw-item.rv-ok { border-left-color: #22c55e; }
-body.v2 .pcw-item.rv-issue { border-left-color: #f97316; }
-body.v2 .pcw-item.rv-chk { border-left-color: #3b82f6; }
+body.v2 .pcw-item, body.v2 .pcw-item.rv-ok, body.v2 .pcw-item.rv-issue, body.v2 .pcw-item.rv-chk { border-left: 0; }
 body.v2 .pcw-item input[type=checkbox] { accent-color: var(--brand-600); }
 body.v2 .pcw-item-av { border-radius: 9px; }
 body.v2 .pcw-item-name { color: var(--v2-text); font-weight: 650; }
@@ -228,17 +226,15 @@ body.v2 .ddv-search-wrap > i { color: var(--v2-text-3); }
 body.v2 .ddv-search-wrap input { color: var(--v2-text); }
 body.v2 .ddv-list { padding: 2px 6px 8px; }
 body.v2 .ddv-item {
-    margin-bottom: 1px; border: 0; border-left: 3px solid transparent; border-radius: 8px;
+    margin-bottom: 1px; border: 0; border-radius: 8px;
     background: transparent; box-shadow: none; padding: 8px 10px;
 }
 body.v2 .ddv-item:hover { background: var(--v2-hover); }
-body.v2 .ddv-item.active { background: rgba(var(--brand-rgb), .12); box-shadow: none; border-left-color: var(--brand-500); }
+body.v2 .ddv-item.active { background: rgba(var(--brand-rgb), .12); box-shadow: none; }
 body.v2 .ddv-item.rv-ok:not(.active),
 body.v2 .ddv-item.rv-issue:not(.active),
 body.v2 .ddv-item.rv-chk:not(.active) { background: transparent; }
-body.v2 .ddv-item.rv-ok { border-left-color: #22c55e; }
-body.v2 .ddv-item.rv-issue { border-left-color: #f97316; }
-body.v2 .ddv-item.rv-chk { border-left-color: #3b82f6; }
+body.v2 .ddv-item { border-left: 0; }
 body.v2 .ddv-item input[type=checkbox] { accent-color: var(--brand-600); }
 body.v2 .ddv-item-av { border-radius: 9px; }
 body.v2 .ddv-item-name { color: var(--v2-text); font-weight: 650; }

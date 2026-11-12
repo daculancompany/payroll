@@ -67,7 +67,7 @@ $(document).ready(function () {
             { data: "ref_no" },
             { data: "period" },
             { data: "status" },
-            { data: "action", orderable: false },
+            { data: "action", orderable: false, className: "text-center" },
         ],
     }).on("xhr.dt", function (e, settings, json) {
         if (json && json.summary) {
@@ -381,7 +381,7 @@ $("#form-settings").on("submit", function (e) {
             $(".submitbutton").removeAttr("disabled");
             $("#modal-settings").modal("hide");
             if (res?.result) {
-                showToast("Settings saved. Recalculate to apply the changes.", "success");
+                showToast("Settings saved. Recompute to apply the changes.", "success");
                 reloadPayrollTable();
             } else {
                 handleError(res?.message || "");
@@ -514,26 +514,26 @@ async function recalculate(id) {
     }
 
     if (!preview?.result) {
-        Swal.fire({ icon: "error", title: "Cannot recalculate", text: preview?.message || "Something went wrong." });
+        Swal.fire({ icon: "error", title: "Cannot recompute", text: preview?.message || "Something went wrong." });
         return;
     }
 
     const nothing = !preview.rows || !preview.rows.length;
     const result = await Swal.fire({
-        title: "Recalculate " + escHtml(preview.ref_no || "") + "?",
+        title: "Recompute " + escHtml(preview.ref_no || "") + "?",
         html: recalcPreviewHtml(preview),
         icon: nothing ? "info" : "warning",
         width: nothing ? 520 : 720,
         showCancelButton: true,
         confirmButtonColor: "#3085d6",
         cancelButtonColor: "#d33",
-        confirmButtonText: nothing ? "Recalculate anyway" : "Apply these changes",
+        confirmButtonText: nothing ? "Recompute anyway" : "Apply these changes",
         cancelButtonText: "Cancel",
     });
     if (!result.isConfirmed) return;
 
     Swal.fire({
-        title: "Recalculating\u2026",
+        title: "Recomputing\u2026",
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading(),
     });

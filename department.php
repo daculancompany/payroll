@@ -147,7 +147,7 @@ $__can_assign = function_exists('can_edit') ? can_edit('area') : true;
                                                     "name"  => $row["name"],
                                                     "areas" => array_values($areasByDept[$did] ?? []),
                                                 ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP) ?>)'>
-                                                <i class="ri-edit-line"></i>
+                                                <i class="ri-edit-line"></i> Edit
                                             </button>
                                             <!-- <button class="btn btn-sm btn-outline-danger"
                                                 onclick="deleteDept(<?= $row['id'] ?>)">

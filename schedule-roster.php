@@ -458,7 +458,7 @@ if (!function_exists('rest_days_pills')) {
                                                 </span>
                                                 <button type="button" class="btn btn-sm btn-outline-primary roster-edit-btn"
                                                         data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['pref_rest_days'] ?? '') ?>"
-                                                        title="Change shift"><i class="ri-edit-line"></i></button>
+                                                        title="Change shift"><i class="ri-edit-line"></i> Edit</button>
                                             </div>
                                         </td>
                                         <td class="text-center" style="font-size:12px;white-space:nowrap;">
@@ -518,7 +518,7 @@ if (!function_exists('rest_days_pills')) {
                                                 <span class="roster-card-shift-text"><?= $cur_shift_txt !== 'None' ? htmlspecialchars($cur_shift_txt) : '—' ?></span>
                                                 <button type="button" class="btn btn-sm btn-outline-primary roster-edit-btn"
                                                         data-emp="<?= $r['id'] ?>" data-name="<?= $name ?>" data-current="<?= (int)$r['cur_schedule_id'] ?>" data-rest="<?= htmlspecialchars($r['pref_rest_days'] ?? '') ?>"
-                                                        title="Change shift"><i class="ri-edit-line"></i></button>
+                                                        title="Change shift"><i class="ri-edit-line"></i> Edit</button>
                                             </div>
                                             <div class="roster-card-rest mt-1"><?= rest_days_pills($r['cur_rest_days'] ?? '', $RD_LABELS) ?></div>
                                         </div>

@@ -870,7 +870,8 @@ html.ui-ct[data-bs-theme="dark"] { --acc-bg: var(--brand-400); --acc-bg-hover: v
 /* accent */
 .v2 .btn-primary, .v2 .btn-success, .v2 .btn-info,
 .v2 .btn-outline-primary, .v2 .btn-outline-success, .v2 .btn-outline-info,
-.v2 td .btn-outline-secondary:not([data-bs-dismiss]):not(.v2-btn-icon) {
+.v2 td .btn-outline-secondary:not([data-bs-dismiss]):not(.v2-btn-icon),
+.v2 .card-header .btn-outline-secondary:not([data-bs-dismiss]):not(.v2-btn-icon) {
     --bs-btn-bg: var(--acc-bg); --bs-btn-border-color: var(--acc-bg); --bs-btn-color: var(--acc-fg);
     --bs-btn-hover-bg: var(--acc-bg-hover); --bs-btn-hover-border-color: var(--acc-bg-hover); --bs-btn-hover-color: var(--acc-fg);
     --bs-btn-active-bg: var(--acc-bg-hover); --bs-btn-active-border-color: var(--acc-bg-hover); --bs-btn-active-color: var(--acc-fg);
@@ -1060,3 +1061,20 @@ html[data-bs-theme="light"]:not(.ui-ct) .v2-topbar .v2-icon-btn:hover { backgrou
 .v2-topbar .v2-dot-badge { box-shadow: 0 0 0 2px var(--v2-raised); }
 /* Notification count sits on the tile's corner, clear of the bell glyph. */
 .v2-topbar .v2-dot-badge { top: -6px; right: -7px; min-width: 18px; height: 18px; line-height: 18px; font-size: .62rem; padding: 0 5px; }
+
+/* Single call-to-action buttons the pages colour themselves (inline
+   background:var(--app-primary) + .text-white, page-specific classes):
+   same accent look as every other single button, with the right text
+   contrast per theme. */
+.v2 .btn[style*="background:var(--app-primary)"], .v2 .btn[style*="background: var(--app-primary)"] {
+    background-color: var(--acc-bg) !important; border-color: var(--acc-bg) !important; color: var(--acc-fg) !important;
+}
+.v2 .btn[style*="background:var(--app-primary)"]:hover, .v2 .btn[style*="background: var(--app-primary)"]:hover {
+    background-color: var(--acc-bg-hover) !important; border-color: var(--acc-bg-hover) !important;
+}
+.v2 .pd-view-btn, .v2 .att-empty .att-empty-btn {
+    display: inline-flex; align-items: center; gap: .4rem;
+    background: var(--acc-bg); border: 1px solid var(--acc-bg); color: var(--acc-fg);
+    border-radius: 8px; font-weight: 600; text-decoration: none;
+}
+.v2 .pd-view-btn:hover, .v2 .att-empty .att-empty-btn:hover { background: var(--acc-bg-hover); border-color: var(--acc-bg-hover); color: var(--acc-fg); }

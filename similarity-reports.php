@@ -248,7 +248,7 @@ tr.sr-open{background:#fffdf5;}
     <div class="card rpt-card">
         <div class="card-header py-2 d-flex align-items-center justify-content-between">
             <span class="fw-bold" style="color:#4e3483;"><i class="ri-list-check-2 me-1"></i>Scans</span>
-            <button class="btn btn-outline-secondary btn-sm py-0" onclick="srExportCSV('sr-table','similarity-reports.csv')"><i class="ri-download-2-line me-1"></i>CSV</button>
+            <button class="btn btn-outline-success btn-sm" onclick="srExportCSV('sr-table','similarity-reports.csv')"><i class="ri-download-2-line me-1"></i>CSV</button>
         </div>
         <div class="card-body p-0">
             <div class="table-responsive">

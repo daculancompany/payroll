@@ -153,7 +153,7 @@ foreach ($th13_rows as $r) {
                                                 <th class="text-end">&divide; 12</th>
                                                 <th class="text-end" style="width:140px;">Final Amount</th>
                                                 <th style="width:220px;">Remarks</th>
-                                                <?php if (!$th13_finalized): ?><th style="width:60px;" class="text-center">Save</th><?php endif; ?>
+                                                <?php if (!$th13_finalized): ?><th style="width:96px;" class="text-center">Save</th><?php endif; ?>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -194,8 +194,8 @@ foreach ($th13_rows as $r) {
                                                     </td>
                                                     <?php if (!$th13_finalized): ?>
                                                         <td class="text-center">
-                                                            <button class="btn btn-sm btn-outline-success py-0 px-2" onclick="th13SaveRow(<?= (int) $r['id'] ?>, this)" title="Save this row">
-                                                                <i class="ri-save-line"></i>
+                                                            <button type="button" class="btn btn-sm btn-outline-success" onclick="th13SaveRow(<?= (int) $r['id'] ?>, this)" title="Save this row">
+                                                                <i class="ri-save-line"></i> Save
                                                             </button>
                                                         </td>
                                                     <?php endif; ?>
@@ -229,7 +229,8 @@ function th13Generate() {
     Swal.fire({ title: 'Computing…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
     $.post('ajax.php?action=th13_generate', { year: TH13_YEAR }, function (res) {
         if (res?.result) {
-            location.href = 'index.php?page=thirteenth-month&year=' + TH13_YEAR;
+            var url = 'index.php?page=thirteenth-month&year=' + TH13_YEAR;
+            if (window.v2Go) v2Go(url); else location.href = url;   // v2: reload the page in place
         } else {
             Swal.fire({ icon: 'error', title: 'Error', text: res?.message || 'Failed.' });
         }
@@ -242,7 +243,8 @@ function th13SaveRow(id, btn) {
     var remarks = tr.querySelector('.th13-remarks-input').value.trim();
     $.post('ajax.php?action=th13_save_row', { id: id, override_amount: override, remarks: remarks }, function (res) {
         if (res?.result) {
-            location.href = 'index.php?page=thirteenth-month&year=' + TH13_YEAR;
+            var url = 'index.php?page=thirteenth-month&year=' + TH13_YEAR;
+            if (window.v2Go) v2Go(url); else location.href = url;   // v2: reload the page in place
         } else {
             Swal.fire({ icon: 'error', title: 'Error', text: res?.message || 'Failed.' });
         }
@@ -289,7 +291,8 @@ function th13Finalize(to) {
         if (!r.isConfirmed) return;
         $.post('ajax.php?action=th13_set_final', { year: TH13_YEAR, finalize: to }, function (res) {
             if (res?.result) {
-                location.href = 'index.php?page=thirteenth-month&year=' + TH13_YEAR;
+                var url = 'index.php?page=thirteenth-month&year=' + TH13_YEAR;
+            if (window.v2Go) v2Go(url); else location.href = url;   // v2: reload the page in place
             } else {
                 Swal.fire({ icon: 'error', title: 'Error', text: res?.message || 'Failed.' });
             }

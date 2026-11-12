@@ -184,7 +184,8 @@
             if (extra && extra.ui) payload.ui = extra.ui;
             var fd = new FormData();
             fd.append('settings', JSON.stringify(payload));
-            return fetch('ajax.php?action=save_ui_settings', {
+            // The employee portal saves to its own endpoint (window.__UI_SAVE_URL).
+            return fetch(global.__UI_SAVE_URL || 'ajax.php?action=save_ui_settings', {
                 method: 'POST', body: fd, credentials: 'same-origin'
             }).then(function (r) { return r.json(); });
         },

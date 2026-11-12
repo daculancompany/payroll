@@ -421,15 +421,9 @@ class Action
         $in = json_decode((string) ($_POST['settings'] ?? ''), true);
         if (!is_array($in)) return ['result' => false, 'message' => 'Invalid settings payload.'];
 
-        $enum = function ($v, array $allowed, $default) {
-            return in_array($v, $allowed, true) ? $v : $default;
-        };
-        $bool = function ($v) { return $v === true || $v === 1 || $v === '1' || $v === 'true'; };
-        $hex  = function ($v) { return is_string($v) && preg_match('/^#[0-9a-fA-F]{6}$/', $v) ? strtolower($v) : ''; };
-        $slug = function ($v) { return is_string($v) && preg_match('/^[a-z0-9-]{0,32}$/', $v) ? $v : ''; };
-
         // Merge over what is already stored so a partial save (e.g. only the
-        // shell toggle) doesn't wipe the rest.
+        // shell toggle) doesn't wipe the rest. Rules: includes/ui_settings.php.
+        require_once __DIR__ . '/includes/ui_settings.php';
         $cur = [];
         $st = $this->db->prepare('SELECT settings FROM users WHERE id = ?');
         $st->bind_param('i', $uid);
@@ -437,31 +431,7 @@ class Action
         $row = $st->get_result()->fetch_assoc();
         $st->close();
         if ($row && $row['settings']) $cur = json_decode($row['settings'], true) ?: [];
-
-        $out = $cur;
-        $rules = [
-            'theme'        => function ($v) use ($enum) { return $enum($v, ['light', 'dark', 'black', 'system'], 'light'); },
-            'colorTheme'   => $slug,
-            'accent'       => $hex,
-            'darkSidebar'  => $bool,
-            'fontFamily'   => function ($v) use ($enum) { return $enum($v, ['default', 'system', 'rounded', 'serif', 'mono'], 'default'); },
-            'density'      => function ($v) { $n = (int) $v; return ($n >= 90 && $n <= 115) ? $n : 100; },
-            'radius'       => function ($v) use ($enum) { return $enum($v, ['sharp', 'default', 'rounded'], 'default'); },
-            'headerStyle'  => function ($v) use ($enum) { return $enum($v, ['auto', 'solid', 'translucent'], 'auto'); },
-            'highContrast' => $bool,
-            'compact'      => $bool,
-            'brandGradient'=> $bool,
-            'reduceMotion' => $bool,
-            'sidebarCollapsed' => $bool,
-            'paperWhite'   => $bool,
-            // client ms timestamp: on load, the newer of device/account copy wins
-            'savedAt'      => function ($v) { $n = (int) $v; return $n > 0 ? min($n, (int) (microtime(true) * 1000) + 60000) : 0; },
-            'ui'         => function ($v) use ($enum) { return $enum($v, ['v2', 'classic'], 'classic'); },
-        ];
-        foreach ($rules as $k => $fn) {
-            if (array_key_exists($k, $in)) $out[$k] = $fn($in[$k]);
-        }
-        $out = array_intersect_key($out, $rules);   // drop any stale unknown keys
+        $out = ui_settings_merge($cur, $in, true);
 
         $json = json_encode($out, JSON_UNESCAPED_SLASHES);
         $up = $this->db->prepare('UPDATE users SET settings = ? WHERE id = ?');

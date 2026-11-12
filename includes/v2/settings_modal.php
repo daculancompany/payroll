@@ -23,7 +23,13 @@ $__sections = [
             <div class="ps">
                 <aside class="ps-nav">
                     <div class="ps-nav__scroll">
+                        <?php /* Where "Edit profile" goes: the admin profile page, or the
+                                 portal's My Info tab ($V2_PS_PROFILE_JS set by the portal). */ ?>
+                        <?php if (!empty($V2_PS_PROFILE_JS)): ?>
+                        <a href="javascript:void(0)" class="ps-nav__profile" data-bs-dismiss="modal" onclick="<?= e($V2_PS_PROFILE_JS) ?>">
+                        <?php else: ?>
                         <a href="app/profile" class="ps-nav__profile" data-nav data-bs-dismiss="modal">
+                        <?php endif; ?>
                             <span class="v2-avatar v2-avatar--lg"><?= e(v2_initials($user_name)) ?></span>
                             <span class="ps-nav__profile-copy">
                                 <strong><?= e($user_name) ?></strong>
@@ -162,10 +168,12 @@ $__sections = [
 
                         <!-- Interface -->
                         <div class="ps-pane" data-ps-pane="about" hidden>
+                            <?php if (!isset($V2_PS_SHELL) || $V2_PS_SHELL): ?>
                             <div class="ps-row">
                                 <div class="ps-row__copy"><strong>Use the new interface by default</strong><span>When off, signing in opens the classic interface.</span></div>
                                 <div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" role="switch" data-ps-shell></div>
                             </div>
+                            <?php endif; ?>
                             <div class="ps-row">
                                 <div class="ps-row__copy"><strong>Version</strong><span>Build <?= e(defined('APP_VERSION') ? APP_VERSION : '') ?> · Interface v2</span></div>
                             </div>

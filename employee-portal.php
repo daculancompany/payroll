@@ -822,13 +822,36 @@ $initials = strtoupper(substr($emp['firstname'],0,1).substr($emp['lastname'],0,1
 $full_name = strtoupper($emp['lastname'].', '.$emp['firstname']);
 $hr = (int)date('H');
 $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good evening');
+
+// ── v2 portal: brand, theme engine settings, helpers for the shared settings modal
+require_once __DIR__ . '/includes/brand.php';
+$PORTAL_UI = [];
+if (isset($conn) && ($__st = $conn->prepare('SELECT settings FROM employee_portal_accounts WHERE employee_id = ? LIMIT 1'))) {
+    $__eid = (int) ($_SESSION['emp_id'] ?? 0);
+    $__st->bind_param('i', $__eid);
+    if ($__st->execute()) {
+        $__r = $__st->get_result()->fetch_assoc();
+        if ($__r && !empty($__r['settings'])) $PORTAL_UI = json_decode($__r['settings'], true) ?: [];
+    }
+    $__st->close();
+}
+if (!function_exists('e')) {
+    function e($s) { return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8'); }
+}
+if (!function_exists('v2_initials')) {
+    function v2_initials($name) {
+        $parts = preg_split('/\s+/', trim((string) $name));
+        $first = $parts[0] ?? ''; $last = count($parts) > 1 ? end($parts) : '';
+        return strtoupper(mb_substr($first, 0, 1) . mb_substr($last, 0, 1)) ?: 'U';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>My Portal — <?= htmlspecialchars($emp['firstname']) ?></title>
+<title>My Portal — <?= htmlspecialchars($emp['firstname']) ?> · <?= e(APP_BRAND) ?></title>
 <!-- This portal is the internet-facing deployment; keep it out of search results. -->
 <meta name="robots" content="noindex, nofollow">
 
@@ -837,16 +860,22 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : '', ENT_QUOTES, 'UTF-8') ?>">
 <script src="<?= av('assets2/js/csrf.js') ?>"></script>
 
+<!-- v2 theme engine: this employee's theme before first paint; "Save to account"
+     goes to the portal's own endpoint. -->
+<script>window.__UI_SERVER = <?= json_encode((object) $PORTAL_UI, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>; window.__UI_SAVE_URL = 'emp-portal-ajax.php?action=save_ui_settings';</script>
+<script src="<?= av('assets3/js/color-themes.js') ?>"></script>
+<script src="<?= av('assets3/js/theme-engine.js') ?>"></script>
+
 <!-- ── PWA: installable home-screen app (Android + iOS) ── -->
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#6642aa">
+<meta name="theme-color" content="#0f172a">
 <link rel="icon" type="image/png" href="assets2/images/pwa/icon-192.png">
 <!-- iOS: no manifest install prompt — it reads these tags on "Add to Home Screen" -->
 <link rel="apple-touch-icon" href="assets2/images/pwa/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="COMC Portal">
+<meta name="apple-mobile-web-app-title" content="<?= e(APP_BRAND) ?>">
 <!-- Loads early and un-deferred: it must catch beforeinstallprompt, which the
      browser fires once and never replays for a late listener. -->
 <script src="<?= av('assets2/js/pwa-install.js') ?>"></script>
@@ -854,8 +883,14 @@ $greeting = $hr < 12 ? 'Good morning' : ($hr < 18 ? 'Good afternoon' : 'Good eve
 <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
 <link rel="preconnect" href="https://cdn.datatables.net" crossorigin>
-<link href="assets/css/bootstrap.min.css" rel="stylesheet">
-<link href="assets/css/icons.min.css" rel="stylesheet">
+<!-- Template-free: official Bootstrap 5.3 (MIT) + open-source icon fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
 <link href="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.css" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/css/bootstrap-select.min.css" rel="stylesheet">
@@ -2350,13 +2385,17 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
          Must be the LAST stylesheet: it wins cascade ties against the inline
          styles, portal-mobile.css and custom-select.css it re-skins. -->
     <link href="<?= av('assets2/css/portal-md.css') ?>" rel="stylesheet">
+    <!-- v2 design system + the portal's own layout; last, so they win -->
+    <link href="<?= av('assets3/css/app.css') ?>" rel="stylesheet">
+    <link href="<?= av('assets3/css/portal.css') ?>" rel="stylesheet">
 </head>
-<body>
+<body class="v2 portal">
+<div class="v2-bg" aria-hidden="true"></div>
 
 <div class="ptop">
     <div class="ptop-brand">
         <div class="ptop-logo"><img src="assets2/images/logo.jpeg" alt="COMC"></div>
-        <span class="ptop-brand-txt">COMC Employee Portal</span>
+        <span class="ptop-brand-txt"><?= e(APP_BRAND) ?></span>
         <span class="ptop-screen-title" id="ptop-screen-title">Home</span>
     </div>
     <div class="ptop-actions">
@@ -2372,6 +2411,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <button type="button" class="ptop-icbtn ptop-install" data-pwa-install style="display:none;"
                 title="Install app" aria-label="Install app">
             <i class="ri-download-2-line"></i>
+        </button>
+        <button type="button" class="ptop-icbtn" data-v2-mode-toggle title="Light / dark" aria-label="Toggle light or dark mode">
+            <i class="ri-moon-clear-line v2-when-light"></i><i class="ri-sun-line v2-when-dark"></i>
+        </button>
+        <button type="button" class="ptop-icbtn" data-v2-settings title="Appearance" aria-label="Appearance settings">
+            <i class="ri-palette-line"></i>
         </button>
         <a href="?logout=1" class="ptop-logout"><i class="ri-logout-box-line"></i><span class="ptop-logout-txt">Logout</span></a>
     </div>
@@ -3685,7 +3730,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             </button>
             <?php if (!empty($lwop_types_list)): ?>
             <button type="button" onclick="openLwopModal()"
-                style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                style="background:#dc2626;color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
                 <i class="ri-close-circle-line me-1"></i>File LWOP
             </button>
             <?php endif; ?>
@@ -3705,7 +3750,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             <?php endif; ?>
             <?php if (!empty($lwop_types_list)): ?>
             <button type="button" onclick="openLwopModal()"
-                style="background:linear-gradient(135deg,#c62828,#8b0000);color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
+                style="background:#dc2626;color:#fff;font-weight:700;border:none;padding:9px 20px;border-radius:10px;font-size:13px;cursor:pointer;">
                 <i class="ri-close-circle-line me-1"></i>File LWOP
             </button>
             <?php endif; ?>
@@ -4195,14 +4240,14 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         </div>
     </div>
 
-    <div class="portal-foot">COMC &bull; Employee Self-Service Portal<br>For concerns contact your HR / Payroll department.</div>
+    <div class="portal-foot"><?= e(APP_BRAND) ?> &middot; Employee portal<br>For concerns, contact your HR or Payroll office.</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.0/jquery.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/parsley.js/2.9.2/parsley.min.js"></script>
-<script src="assets/libs/moment/min/moment.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.4/moment.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/daterangepicker/daterangepicker.min.js"></script>
-<script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap-select@1.14.0-beta3/dist/js/bootstrap-select.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-datetimepicker/4.17.47/js/bootstrap-datetimepicker.min.js"></script>
 <script src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
@@ -7643,6 +7688,26 @@ jQuery(function ($) {
 
 <!-- Native-app interactions: swipe tab navigation, bottom-sheet drag, notification
      swipe-to-dismiss, per-screen titles. Loads last so it can wrap switchTab & co. -->
+<?php
+// Appearance settings — the same modal as the admin app, pointed at this
+// employee: "Edit profile" opens My Info, no classic/v2 shell switch.
+$user_name = trim($emp['firstname'] . ' ' . $emp['lastname']);
+$V2_PS_PROFILE_JS = "switchTab('info', null)";
+$V2_PS_SHELL = false;
+include __DIR__ . '/includes/v2/settings_modal.php';
+?>
+<script src="<?= av('assets3/js/settings-modal.js') ?>"></script>
+<script>
+// Light / dark quick toggle (top bar)
+document.addEventListener('click', function (e) {
+    if (!e.target.closest('[data-v2-mode-toggle]') || !window.UITheme) return;
+    var s = UITheme.get(), dark = UITheme.mode() === 'dark';
+    UITheme.set({ theme: dark ? 'light' : (s.theme === 'black' ? 'black' : 'dark'), colorTheme: '' });
+});
+window.V2_ADAPT_SCOPE = '.portal-wrap, .modal, .offcanvas, .emp-notif-panel, .more-sheet';
+window.V2_KEEP_SEL = '.tab-strip, .ptop, #v2-settings';
+</script>
+<script src="<?= av('assets3/js/theme-adapter.js') ?>"></script>
 <script src="<?= av('assets2/js/portal-mobile.js') ?>"></script>
 <!-- Material touch ripple for the component skin (assets2/css/portal-md.css) -->
 <script src="<?= av('assets2/js/portal-md.js') ?>"></script>

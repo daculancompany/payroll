@@ -1,0 +1,201 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   Employee portal — v2 design (employee-portal.php, body.v2.portal)
+   Loaded after the portal's own CSS and the mobile layers; uses the v2
+   tokens from app.css, so every theme / colour theme / accent applies.
+
+     desktop ≥992px   app bar on top, side navigation (the tab strip)
+     tablet           app bar, tab strip as a quiet pill bar
+     phone            app bar, bottom tab bar, "More" bottom sheet
+   ═══════════════════════════════════════════════════════════════════════ */
+:root { --pt-side: 252px; --pt-bar: 60px; }
+
+body.v2.portal { font-family: var(--app-font); background: var(--v2-bg); color: var(--v2-text); }
+
+/* ── App bar ────────────────────────────────────────────────────────── */
+body.portal .ptop {
+    position: sticky; top: 0; z-index: 1030; height: var(--pt-bar); padding: 0 20px;
+    background: var(--v2-top-bg); border-bottom: 1px solid var(--v2-border); box-shadow: none;
+    backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px);
+}
+html[data-header="solid"] body.portal .ptop { background: var(--v2-surface); backdrop-filter: none; }
+body.portal .ptop-brand { color: var(--v2-text); font-size: 15px; font-weight: 750; letter-spacing: -.01em; gap: 10px; }
+body.portal .ptop-logo { width: 34px; height: 34px; border-radius: 10px; box-shadow: none; background: var(--brand-600); }
+body.portal .ptop-screen-title { color: var(--v2-text); }
+body.portal .ptop-actions { gap: 6px; }
+body.portal .ptop-icbtn,
+body.portal .ptop-install {
+    width: 38px; height: 38px; border-radius: 10px; font-size: 18px;
+    background: var(--quiet-bg); border: 1px solid var(--quiet-bd); color: var(--v2-text);
+}
+body.portal .ptop-icbtn:hover, body.portal .ptop-install:hover { background: var(--quiet-hover); }
+body.portal .ptop-logout {
+    display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 10px;
+    background: var(--quiet-bg); border: 1px solid var(--quiet-bd); color: var(--v2-text); font-weight: 600;
+}
+body.portal .ptop-logout:hover { background: var(--quiet-hover); color: var(--v2-text); border-color: var(--quiet-bd); }
+body.portal .ptop-logout i { margin: 0; }
+body.portal .ptop-bell .emp-bell-dot { border-color: var(--v2-raised); background: #ef4444; }
+html[data-bs-theme="dark"] body.portal .v2-when-dark, html[data-bs-theme="light"] body.portal .v2-when-dark { }
+
+/* ── Notifications panel ────────────────────────────────────────────── */
+body.portal .emp-notif-panel { background: var(--v2-raised); border: 1px solid var(--v2-border); box-shadow: var(--v2-shadow-lg); color: var(--v2-text); }
+body.portal .emp-notif-head { color: var(--v2-text); border-color: var(--v2-border); }
+body.portal .emp-notif-allread { color: var(--brand-600); }
+html[data-bs-theme="dark"] body.portal .emp-notif-allread { color: var(--brand-300); }
+
+/* ── Content column ─────────────────────────────────────────────────── */
+body.portal .portal-wrap { max-width: 1240px; }
+
+/* ── Navigation: desktop side bar ───────────────────────────────────── */
+@media (min-width: 992px) and (min-height: 501px), (min-width: 992px) and (pointer: fine) {
+    body.portal .portal-wrap { max-width: none; margin: 0; padding: 26px 32px 56px calc(var(--pt-side) + 32px); }
+    body.portal .portal-wrap > .tab-panel { max-width: 1180px; }
+    body.portal .tab-strip {
+        position: fixed; top: var(--pt-bar); left: 0; bottom: 0; z-index: 1020; width: var(--pt-side);
+        flex-direction: column; gap: 2px; margin: 0; padding: 14px 12px 20px; overflow-y: auto;
+        background: var(--v2-side-bg); border: 0; border-right: 1px solid var(--v2-side-divider, var(--v2-border));
+        border-radius: 0; box-shadow: none;
+    }
+    body.portal .tab-btn {
+        flex: 0 0 auto; justify-content: flex-start; gap: 12px; padding: 10px 12px; border-radius: 10px;
+        font-size: 13.5px; font-weight: 550; color: var(--v2-side-text); background: transparent; box-shadow: none;
+    }
+    body.portal .tab-btn i { font-size: 18px; width: 20px; text-align: center; opacity: .85; }
+    body.portal .tab-btn:not(.active):hover { background: var(--v2-side-hover); color: var(--v2-side-text); }
+    body.portal .tab-btn.active { background: var(--v2-side-active-bg); color: var(--v2-side-active-text); font-weight: 650; box-shadow: none; }
+    body.portal .tab-btn.active i { opacity: 1; color: var(--brand-500); }
+    html.ui-dark-sidebar body.portal .tab-btn.active i, html[data-bs-theme="dark"] body.portal .tab-btn.active i { color: var(--brand-300); }
+    body.portal .tab-btn .badge-count, body.portal .tab-btn:not(.active) .badge-count {
+        margin-left: auto; background: #f59e0b !important; color: #1f1300; font-weight: 700; border-radius: 999px; padding: 0 7px;
+    }
+    /* group label above the secondary items */
+    body.portal .tab-btn.tab-secondary:first-of-type { margin-top: 0; }
+}
+
+/* ── Navigation: tablet pill bar ────────────────────────────────────── */
+@media (min-width: 768px) and (max-width: 991.98px) {
+    body.portal .tab-strip { background: var(--v2-surface); border: 1px solid var(--v2-border); box-shadow: none; border-radius: 12px; }
+    body.portal .tab-btn { color: var(--v2-text-2); }
+    body.portal .tab-btn.active { background: var(--acc-bg); color: var(--acc-fg); box-shadow: none; }
+    body.portal .tab-btn:not(.active):hover { background: var(--v2-hover); color: var(--v2-text); }
+    body.portal .tab-btn:not(.active) .badge-count { background: var(--quiet-bg); color: var(--v2-text-2); }
+}
+
+/* ── Navigation: phone bottom bar + More sheet ──────────────────────── */
+@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+    body.portal .ptop { height: 56px; padding: 0 14px; }
+    body.portal .tab-strip {
+        background: var(--v2-raised); border: 0; border-top: 1px solid var(--v2-border);
+        box-shadow: 0 -10px 30px -18px rgba(2, 6, 23, .45);
+    }
+    body.portal .tab-btn { color: var(--v2-text-3); }
+    body.portal .tab-btn.active { color: var(--brand-600); background: transparent; }
+    html[data-bs-theme="dark"] body.portal .tab-btn.active { color: var(--brand-300); }
+    body.portal .tab-btn .badge-count, body.portal .tab-btn:not(.active) .badge-count { background: #ef4444 !important; color: #fff; }
+    body.portal .portal-wrap { background: transparent; }
+}
+body.portal .more-backdrop { background: rgba(2, 6, 23, .45); }
+body.portal .more-sheet { background: var(--v2-raised); color: var(--v2-text); border-top: 1px solid var(--v2-border); }
+body.portal .more-head { color: var(--v2-text); }
+body.portal .more-grip { background: var(--v2-border-strong); }
+body.portal .more-item { background: var(--quiet-bg); border: 1px solid var(--quiet-bd); }
+body.portal .more-item:active, body.portal .more-item:hover { background: var(--quiet-hover); }
+body.portal .more-ic { background: transparent !important; color: var(--brand-600) !important; }
+html[data-bs-theme="dark"] body.portal .more-ic { color: var(--brand-300) !important; }
+body.portal .more-lbl { color: var(--v2-text); }
+
+/* ── Overview: needs your action ────────────────────────────────────── */
+body.portal .needs-action {
+    background: var(--v2-surface); border: 1px solid var(--v2-border); border-left-width: 1px;
+    border-radius: var(--v2-radius); box-shadow: var(--v2-shadow); padding: 14px 16px;
+}
+body.portal .na-head { color: var(--v2-text); font-size: 13.5px; font-weight: 700; }
+body.portal .na-head i { color: #f59e0b; }
+body.portal .na-item { background: var(--quiet-bg); border: 1px solid var(--quiet-bd); border-radius: 10px; }
+body.portal .na-item:hover { background: var(--quiet-hover); }
+body.portal .na-ic { background: transparent !important; font-size: 18px; }
+body.portal .na-txt { color: var(--v2-text); font-weight: 500; }
+body.portal .na-txt b { color: var(--v2-text); font-weight: 700; }
+body.portal .na-go { color: var(--v2-text-3); }
+
+/* ── Overview: employee card (was a purple banner) ──────────────────── */
+body.portal .emp-hdr { background: var(--v2-surface); border: 1px solid var(--v2-border); border-radius: var(--v2-radius); box-shadow: var(--v2-shadow); }
+body.portal .emp-hdr-top { background: transparent; border-bottom: 1px solid var(--v2-border); padding: 18px 20px; }
+body.portal .emp-hdr-top [style*="rgba(255,255,255"] { color: var(--v2-text-3) !important; }
+body.portal .emp-av { background: var(--acc-bg); color: var(--acc-fg); border: 0; box-shadow: none; }
+body.portal .emp-nm { color: var(--v2-text); font-weight: 800; letter-spacing: -.01em; }
+body.portal .emp-sub { color: var(--v2-text-2); }
+body.portal .emp-no-badge { background: var(--quiet-bg); border: 1px solid var(--quiet-bd); color: var(--v2-text-2); font-family: var(--app-font); font-variant-numeric: tabular-nums; }
+body.portal .est { border-color: var(--v2-border); }
+body.portal .est-v { color: var(--v2-text); font-size: 18px; }
+body.portal .est-l { color: var(--v2-text-3); font-weight: 600; }
+
+/* ── Overview: today's attendance ───────────────────────────────────── */
+body.portal .today-att { background: var(--v2-surface); border: 1px solid var(--v2-border); border-top-width: 1px; border-radius: var(--v2-radius); box-shadow: var(--v2-shadow); }
+body.portal .today-att-title { color: var(--v2-text); }
+body.portal .today-att-title i { color: var(--brand-500); }
+body.portal .today-att-date { color: var(--v2-text-3); }
+body.portal .tda-box { background: var(--quiet-bg); border-color: var(--quiet-bd); }
+body.portal .tda-ic { background: transparent !important; }
+body.portal .tda-l { color: var(--v2-text-3); }
+body.portal .tda-v { color: var(--v2-text); }
+body.portal .today-att-empty { background: var(--quiet-bg); border-color: var(--quiet-bd); color: var(--v2-text-2); }
+body.portal .tda-duty { background: rgba(var(--brand-rgb), .12); border-color: rgba(var(--brand-rgb), .3); color: var(--brand-600); }
+
+/* ── Theme-adaptive extras ──────────────────────────────────────────── */
+body.portal #rotate-guard { background: var(--v2-bg); color: var(--v2-text); }
+
+/* Material skin (assets2/css/portal-md.css) reads --md-* tokens: point them
+   at the v2 theme so the bottom-nav pill, fields and buttons follow it. */
+body.v2.portal {
+    --md-primary: var(--brand-600); --md-on-primary: #ffffff;
+    --md-primary-container: rgba(var(--brand-rgb), .16); --md-on-primary-container: var(--brand-700);
+    --md-surface: var(--v2-surface); --md-surface-2: var(--v2-surface-2);
+    --md-field: var(--v2-input-bg); --md-field-focus: var(--v2-input-bg);
+    --md-outline: var(--v2-border-strong); --md-outline-strong: var(--v2-text-3);
+    --md-on-surface: var(--v2-text); --md-on-surface-var: var(--v2-text-2);
+}
+html[data-bs-theme="dark"] body.v2.portal { --md-primary: var(--brand-300); --md-on-primary-container: var(--brand-200); --md-primary-container: rgba(var(--brand-rgb), .24); }
+
+/* ── Overview: quick actions ────────────────────────────────────────── */
+body.portal .qa-btn { background: var(--v2-surface); border: 1px solid var(--v2-border); color: var(--v2-text); box-shadow: var(--v2-shadow); font-weight: 650; }
+body.portal .qa-btn:hover { box-shadow: var(--v2-shadow), 0 12px 26px -14px rgba(2, 6, 23, .35); color: var(--v2-text); }
+body.portal .qa-btn i { background: rgba(var(--brand-rgb), .12); color: var(--brand-600); }
+html[data-bs-theme="dark"] body.portal .qa-btn i { color: var(--brand-300); background: rgba(var(--brand-rgb), .2); }
+body.portal .qa-badge { background: #f59e0b; color: #1f1300; }
+
+/* Phone app bar: the light/dark switch lives in Settings, keep the bar light */
+@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+    body.portal .ptop [data-v2-mode-toggle] { display: none; }
+    body.portal .ptop-icbtn, body.portal .ptop-logout { width: 40px; height: 40px; padding: 0; justify-content: center; }
+}
+
+/* Numbers and references: the app font with tabular figures, not monospace */
+body.portal [style*="monospace"], body.portal .psrow-ref, body.portal .psm-ref, body.portal .info-val.mono {
+    font-family: var(--app-font) !important; font-variant-numeric: tabular-nums; letter-spacing: 0;
+}
+body.portal .portal-foot { color: var(--v2-text-3); }
+
+/* ── Section cards and headers: text headings on a hairline, no colour bars ── */
+body.portal .info-section { background: var(--v2-surface); border: 1px solid var(--v2-border); border-radius: var(--v2-radius); box-shadow: var(--v2-shadow); }
+body.portal .info-sec-title {
+    background: transparent; color: var(--v2-text); border-bottom: 1px solid var(--v2-border);
+    font-size: 12px; font-weight: 700; letter-spacing: .04em; padding: 12px 16px;
+}
+body.portal .info-sec-title i { color: var(--brand-500); }
+body.portal .info-item { border-color: var(--v2-border); }
+body.portal .info-lbl { color: var(--v2-text-3); }
+body.portal .info-val { color: var(--v2-text); }
+body.portal .info-val.accent { color: var(--brand-600); }
+html[data-bs-theme="dark"] body.portal .info-val.accent { color: var(--brand-300); }
+body.portal .info-note { color: var(--v2-text-3); }
+/* data tables in the portal: the v2 table head, not a purple band */
+body.portal .ps-hist-table thead th, body.portal .att-table thead th, body.portal .con-tbl thead th {
+    background: var(--v2-table-head) !important; color: var(--v2-text-2) !important; border-color: var(--v2-border) !important;
+}
+body.portal .ps-period { background: var(--quiet-bg); color: var(--v2-text); border: 1px solid var(--quiet-bd); }
+body.portal .mydtr-btn.primary { background: var(--acc-bg); border-color: var(--acc-bg); color: var(--acc-fg); }
+
+/* The portal's side nav follows the same "Dark sidebar" setting on desktop;
+   on phones the nav is a bottom bar, so the option means nothing there. */
+@media (max-width: 991.98px) { body.portal .ps-row:has([data-ps="darkSidebar"]) { display: none; } }

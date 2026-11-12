@@ -33,6 +33,31 @@ function notify_user($conn, $user_id, $title, $message, $icon, $color, $link)
 
 switch ($action) {
 
+    // ── Appearance settings ("Save to account" in the portal settings modal) ──
+    // Same keys and validation as the admin side (includes/ui_settings.php),
+    // stored on this employee's own portal account only.
+    case 'save_ui_settings': {
+        require_once __DIR__ . '/includes/ui_settings.php';
+        $in = json_decode((string) ($_POST['settings'] ?? ''), true);
+        if (!is_array($in)) { echo json_encode(['result' => false, 'message' => 'Invalid settings payload.']); break; }
+        $cur = [];
+        $st = $conn->prepare('SELECT settings FROM employee_portal_accounts WHERE employee_id = ? LIMIT 1');
+        $st->bind_param('i', $emp_id);
+        $st->execute();
+        $row = $st->get_result()->fetch_assoc();
+        $st->close();
+        if (!$row) { echo json_encode(['result' => false, 'message' => 'No portal account.']); break; }
+        if ($row['settings']) $cur = json_decode($row['settings'], true) ?: [];
+        $out  = ui_settings_merge($cur, $in, false);
+        $json = json_encode($out, JSON_UNESCAPED_SLASHES);
+        $up = $conn->prepare('UPDATE employee_portal_accounts SET settings = ? WHERE employee_id = ?');
+        $up->bind_param('si', $json, $emp_id);
+        $ok = $up->execute();
+        $up->close();
+        echo json_encode(['result' => (bool) $ok, 'message' => $ok ? 'Saved to your account.' : 'Could not save settings.', 'settings' => $out]);
+        break;
+    }
+
     // ── Firebase Cloud Messaging: register this employee browser for push ──
     case 'save_fcm_token': {
         $token = trim($_POST['token'] ?? '');

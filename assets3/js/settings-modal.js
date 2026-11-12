@@ -71,7 +71,8 @@
         ['highContrast', 'compact', 'reduceMotion', 'brandGradient', 'paperWhite'].forEach(function (k) {
             $('[data-ps="' + k + '"]').checked = !!s[k];
         });
-        $('[data-ps-shell]').checked = (window.__UI_SERVER || {}).ui === 'v2';
+        var shell = $('[data-ps-shell]');   // admin only (no classic shell in the portal)
+        if (shell) shell.checked = (window.__UI_SERVER || {}).ui === 'v2';
     }
     T.onChange(function () { if (el.classList.contains('show')) sync(); });
 

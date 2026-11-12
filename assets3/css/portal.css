@@ -84,10 +84,14 @@ body.portal .portal-wrap { max-width: 1240px; }
 /* ── Navigation: phone bottom bar + More sheet ──────────────────────── */
 @media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
     body.portal .ptop { height: 56px; padding: 0 14px; }
+    /* Same material as the app bar on top: one chrome, top and bottom */
     body.portal .tab-strip {
-        background: var(--v2-raised); border: 0; border-top: 1px solid var(--v2-border);
-        box-shadow: 0 -10px 30px -18px rgba(2, 6, 23, .45);
+        background: var(--v2-top-bg); border: 0; border-top: 1px solid var(--v2-border);
+        backdrop-filter: saturate(1.6) blur(16px); -webkit-backdrop-filter: saturate(1.6) blur(16px);
+        box-shadow: none;
     }
+    html[data-header="solid"] body.portal .tab-strip { background: var(--v2-surface); backdrop-filter: none; }
+    html.ui-ct[data-header="solid"] body.portal .tab-strip { background: var(--ct-base); }
     body.portal .tab-btn { color: var(--v2-text-3); }
     body.portal .tab-btn.active { color: var(--brand-600); background: transparent; }
     html[data-bs-theme="dark"] body.portal .tab-btn.active { color: var(--brand-300); }
@@ -199,3 +203,27 @@ body.portal .mydtr-btn.primary { background: var(--acc-bg); border-color: var(--
 /* The portal's side nav follows the same "Dark sidebar" setting on desktop;
    on phones the nav is a bottom bar, so the option means nothing there. */
 @media (max-width: 991.98px) { body.portal .ps-row:has([data-ps="darkSidebar"]) { display: none; } }
+
+/* ── Settings modal as a phone bottom sheet ─────────────────────────────
+   The mobile layer makes every modal an auto-height bottom sheet; the
+   settings layout's height:100% then resolved to "auto", the body grew to
+   its content and was clipped — nothing scrolled. Give the sheet a real
+   height and let only the content pane scroll. */
+@media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
+    body.portal .v2-settings .modal-content {
+        height: calc(100dvh - 32px - env(safe-area-inset-top, 0px)); max-height: none;
+        border-radius: 22px 22px 0 0 !important;
+    }
+    body.portal .v2-settings .ps { flex: 1 1 auto; height: auto; min-height: 0; }
+    body.portal .v2-settings .ps-nav { flex-shrink: 0; padding-top: 14px; }
+    body.portal .v2-settings .ps-nav__search { display: none; }
+    body.portal .v2-settings .ps-main { flex: 1 1 auto; min-height: 0; }
+    body.portal .v2-settings .ps-main__head { flex-shrink: 0; }
+    body.portal .v2-settings .ps-main__body {
+        flex: 1 1 auto; min-height: 0; overflow-y: auto;
+        -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+    }
+    body.portal .v2-settings .ps-main__foot { flex-shrink: 0; padding-bottom: calc(.9rem + env(safe-area-inset-bottom, 0px)); }
+    /* hover tooltips stick after a tap on touch screens */
+    body.portal .v2-settings .ps-swatch[title] { -webkit-touch-callout: none; }
+}

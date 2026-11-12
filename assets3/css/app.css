@@ -1078,3 +1078,5 @@ html[data-bs-theme="light"]:not(.ui-ct) .v2-topbar .v2-icon-btn:hover { backgrou
     border-radius: 8px; font-weight: 600; text-decoration: none;
 }
 .v2 .pd-view-btn:hover, .v2 .att-empty .att-empty-btn:hover { background: var(--acc-bg-hover); border-color: var(--acc-bg-hover); color: var(--acc-fg); }
+/* The search box wrapper shows focus; no second ring on the input inside. */
+.v2 .cs-search input:focus, .v2 .cs-search input:focus-visible { outline: none; box-shadow: none; }

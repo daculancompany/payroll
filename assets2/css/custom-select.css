@@ -616,3 +616,7 @@ body .daterangepicker .drp-buttons .cancelBtn {
 
 body .daterangepicker .drp-buttons .btn.btn-default:hover,
 body .daterangepicker .drp-buttons .cancelBtn:hover { background: var(--app-tint, #f4f1fa); color: #673bb6; border-color: #a98fd6; }
+
+/* Inside a SweetAlert2 dialog (input: 'select'): sit where Swal's own
+   select would, full width of the dialog's input area. */
+.swal2-popup .cs-select { display: block; margin: 1em 1.6em .3em; text-align: left; }

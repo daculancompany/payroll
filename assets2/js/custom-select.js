@@ -150,7 +150,10 @@
         // rule and would render in its place — so leave those alone.
         // NB: an ancestor being display:none does NOT make the child compute to
         // none, so selects inside closed modals / inactive tabs still enhance.
-        if (sel.classList.contains('swal2-select')) return false;
+        // A SweetAlert2 dialog that USES its select (input: 'select') shows it
+        // before our observer runs, so it passes the display check below and
+        // gets the searchable control; the template's hidden copy fails it.
+        if (sel.classList.contains('swal2-select') && sel.style.display === 'none') return false;
         // DataTables' page-size select lives inside a "Show [ ] entries"
         // sentence — wrapping it in this control's block-level trigger breaks
         // that inline flow (the label wraps onto three lines). It's styled to
@@ -352,6 +355,13 @@
         var st = sel._cs;
         if (sel.disabled) return;
         if (openWrap && openWrap !== st.wrap) close();
+        // The menu is taken down when its select leaves the page; a select
+        // that comes back (a DataTables row redrawn later) gets it back here.
+        if (!st.menu.isConnected) {
+            (sel.closest('.modal') || document.body).appendChild(st.menu);
+            if (st.mo) st.mo.observe(sel, { childList: true, subtree: true });
+            rebuild(sel);   // options may have changed while it was away
+        }
 
         st.wrap.classList.add('open');
         st.menu.classList.add('open');
@@ -621,6 +631,20 @@
         // Late arrivals: ajax-rendered modals, DataTables' length menu, etc.
         new MutationObserver(function (muts) {
             muts.forEach(function (m) {
+                // A wrapped select removed with its container (a SweetAlert
+                // closing, a modal body re-rendered): its menu lives on <body>,
+                // so take it down too instead of leaving it behind.
+                Array.prototype.forEach.call(m.removedNodes, function (n) {
+                    if (n.nodeType !== 1 || n.isConnected) return;
+                    var wraps = n.classList && n.classList.contains('cs-select') ? [n] : (n.querySelectorAll ? n.querySelectorAll('.cs-select') : []);
+                    Array.prototype.forEach.call(wraps, function (w) {
+                        var st = w._csSel && w._csSel._cs;
+                        if (!st) return;
+                        if (openWrap === st.wrap) close();
+                        if (st.mo) st.mo.disconnect();
+                        if (st.menu.parentNode) st.menu.parentNode.removeChild(st.menu);
+                    });
+                });
                 Array.prototype.forEach.call(m.addedNodes, function (n) {
                     if (n.nodeType !== 1) return;
                     if (n.classList && (n.classList.contains('cs-menu') || n.classList.contains('cs-select'))) return;

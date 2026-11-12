@@ -62,7 +62,11 @@ if($qry->num_rows > 0){
         reader.readAsDataURL(input.files[0]);
     }
 }
-	$('.text-jqte').jqte();
+	// Runs once jQuery is loaded (this fragment is parsed before the footer
+	// scripts). The jQuery-TE editor plugin is optional: without it the
+	// textarea stays a plain textarea instead of killing the whole script.
+	document.addEventListener('DOMContentLoaded', function () {
+	if ($.fn.jqte) $('.text-jqte').jqte();
 
 	$('#manage-settings').submit(function(e){
 		e.preventDefault()
@@ -89,6 +93,7 @@ if($qry->num_rows > 0){
 		})
 
 	})
+	});
 </script>
 <style>
 	

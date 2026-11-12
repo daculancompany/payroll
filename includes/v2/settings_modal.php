@@ -119,7 +119,7 @@ $__sections = [
                                 </div>
                             </div>
                             <div class="ps-row">
-                                <div class="ps-row__copy"><strong>Keep documents white</strong><span>Payslips and computation sheets stay white like paper instead of following the theme.</span></div>
+                                <div class="ps-row__copy"><strong>Plain white documents</strong><span>Payslips, computation sheets and DTR forms on pure white instead of a light tint of your theme.</span></div>
                                 <div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" role="switch" data-ps="paperWhite"></div>
                             </div>
                             <div class="ps-row">

@@ -148,6 +148,7 @@
     }
 
     function loadExternal(url) {
+        if (window.jQuery && /\/jquery(?:-\d[\d.]*)?(?:\.min)?\.js(?:[?#]|$)/i.test(url)) return Promise.resolve();   // see runScript
         return new Promise(function (resolve) {
             var s = document.createElement('script');
             s.src = url;
@@ -163,9 +164,17 @@
         }
         var url = new URL(item.src, BASE).href;
         if (!sameOrigin(url)) return loadExternal(url);
-        var p = srcCache[url] || fetch(url, { credentials: 'same-origin' }).then(function (r) { return r.text(); });
+        // A second jQuery would replace the one the shell's plugins (DataTables,
+        // bootstrap-select, the select2 shim) are attached to. Some fragments
+        // include their own copy because they used to run before the footer.
+        if (window.jQuery && /\/jquery(?:-\d[\d.]*)?(?:\.min)?\.js(?:[?#]|$)/i.test(url)) return Promise.resolve();
+        var p = srcCache[url] || fetch(url, { credentials: 'same-origin' }).then(function (r) {
+            if (!r.ok) { console.warn('[v2] script ' + url + ' → HTTP ' + r.status + ', skipped'); return null; }
+            return r.text();
+        });
         srcCache[url] = p;
         return p.then(function (code) {
+            if (code == null) return;
             try { inject(code, url); } catch (e) { console.error('[v2] script ' + url, e); }
         });
     }
@@ -200,6 +209,7 @@
             if (window.AppPage && typeof window.AppPage.init === 'function') {
                 try { window.AppPage.init(main); } catch (e) { console.error('[v2] AppPage.init', e); }
             }
+            V2.navs = (V2.navs || 0) + 1;   // completed page mounts (pollable; listeners added by a page are removed on teardown)
             window.dispatchEvent(new CustomEvent('v2:navigated', { detail: { page: V2.page } }));
         });
     }

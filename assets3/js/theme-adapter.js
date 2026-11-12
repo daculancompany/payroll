@@ -21,6 +21,8 @@
     'use strict';
 
     var root = document.documentElement;
+    // Printable documents (and their thumbnails): kept light paper.
+    var PAPER = '[data-v2-paper]' + (window.V2_PAPER_SEL ? ', ' + window.V2_PAPER_SEL : '');
     var SCOPE = window.V2_ADAPT_SCOPE || '#main-content, .modal, .offcanvas, #empQuickView';
     var SKIP_TAGS = { IMG: 1, VIDEO: 1, CANVAS: 1, SVG: 1, PATH: 1, SCRIPT: 1, STYLE: 1, OPTION: 1, BR: 1, HR: 1, INPUT: 0 };
     var touched = new Set();
@@ -90,8 +92,10 @@
         if (isPurple(c) && lum(c) > 195) return 'var(--app-tint)';
         if (!m.themed || lum(c) <= 195) return null;
         if (sat(c) < 14) return lum(c) > 246 ? 'var(--v2-surface)' : 'var(--v2-surface-2)';
+        // Pastel status fills become a faint wash of the same hue: colour stays
+        // in the text and icons, not in glowing pills and boxes.
         var v = vivid(c);
-        return 'rgba(' + v.join(',') + ',' + (m.dark ? .16 : .2) + ')';
+        return 'rgba(' + v.join(',') + ',' + (m.dark ? .07 : .1) + ')';
     }
 
     /* Each element's original colours, read once with no override applied.
@@ -111,7 +115,7 @@
             var bi = cs.backgroundImage;
             o = {
                 // Inside a printable document: accent swap only, never darkened.
-                paper: !!el.closest('[data-v2-paper]'),
+                paper: !!el.closest(PAPER),
                 // popovers / dropdowns float over content: translucent theme
                 // surfaces would let the page show through, so use the opaque one
                 floating: (cs.position === 'absolute' || cs.position === 'fixed') && (cs.boxShadow !== 'none' || parseInt(cs.zIndex, 10) > 0),
@@ -131,7 +135,7 @@
     var LIGHT = { dark: false, themed: false, paper: true };   // deeper accent shades on white paper
     function decide(el, o, m) {
         if (!o || o.skip) return;
-        if (o.paper && root.classList.contains('ui-paper-white')) m = LIGHT;   // white-paper setting
+        if (o.paper) m = LIGHT;   // documents stay light paper (tinted, or white with the setting)
         var bg = o.bg;
         if (bg && bg[3] > 0.5) {
             var nb = bgFor(bg, m);
@@ -169,7 +173,7 @@
             if (isBrandPurple(bc)) set(el, prop, m.paper ? 'var(--brand-700)' : 'var(--brand-500)');
             else if (isPurple(bc) && lum(bc) > 180) set(el, prop, 'var(--app-tint-border)');
             else if (m.themed && lum(bc) > 185 && sat(bc) < 30) set(el, prop, 'var(--v2-border)');
-            else if (m.themed && lum(bc) > 185) set(el, prop, 'rgba(' + vivid(bc).join(',') + ',.35)');
+            else if (m.themed && lum(bc) > 185) set(el, prop, 'var(--v2-border)');   // coloured hairlines go neutral
         });
     }
 
@@ -315,7 +319,7 @@
        few ancestors are read, so this stays cheap. */
     function hoverAdapt(el, m) {
         if (el.__v2h || el.closest('[data-v2-keep], .apexcharts-canvas, .v2-topbar, .v2-sidebar')) return;
-        if (el.closest('[data-v2-paper]') && root.classList.contains('ui-paper-white')) return;
+        if (el.closest(PAPER)) return;
         var prevT = [el.style.getPropertyValue('transition'), el.style.getPropertyPriority('transition')];
         el.style.setProperty('transition', 'none', 'important');
         var cs = getComputedStyle(el), done = [];

@@ -124,7 +124,7 @@ body.v2 .pcw-pg-btn:hover { background: var(--v2-hover); color: var(--v2-text); 
 body.v2 .pcw-zoom-val { height: 30px; border-radius: 8px; border: 1px solid var(--v2-border); background: var(--v2-surface-2); color: var(--v2-text); font-variant-numeric: tabular-nums; }
 body.v2 .pcw-paper-scroll { padding: 32px 28px 64px; }
 body.v2 .pcw-paper {
-    background: var(--v2-raised); color: var(--v2-text); border: 0; border-radius: 3px;
+    background: var(--v2-paper); color: #0f172a; border: 0; border-radius: 3px;
     box-shadow: 0 1px 2px rgba(15, 23, 42, .08), 0 12px 32px -8px rgba(15, 23, 42, .22);
 }
 html[data-bs-theme="dark"] body.v2 .pcw-paper { box-shadow: 0 0 0 1px rgba(255, 255, 255, .04), 0 20px 50px -10px rgba(0, 0, 0, .8); }
@@ -143,7 +143,6 @@ body.v2 *::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); ba
 /* Boot overlay: same surface as the page underneath, no template dot grid. */
 body.v2 #pcw-boot { background: var(--v2-bg); background-image: none; }
 html.ui-ct body.v2 #pcw-boot { background: var(--ct-gradient) fixed; }
-html.ui-paper-white body.v2 .pcw-paper { background: #ffffff; color: #0f172a; }
 
 /* Right pane tabs (Summary / Insights / Review) */
 body.v2 .pcw-rtabs { background: transparent; border-bottom: 1px solid var(--v2-border); padding: 6px 8px 0; }
@@ -264,7 +263,7 @@ body.v2 .ddv-pg-btn:hover { background: var(--v2-hover); color: var(--v2-text); 
 body.v2 .ddv-zoom-val { height: 30px; border-radius: 8px; border: 1px solid var(--v2-border); background: var(--v2-surface-2); color: var(--v2-text); font-variant-numeric: tabular-nums; }
 body.v2 .ddv-paper-scroll { padding: 32px 28px 64px; }
 body.v2 .ddv-paper {
-    background: var(--v2-raised); color: var(--v2-text); border: 0; border-radius: 3px;
+    background: var(--v2-paper); color: #0f172a; border: 0; border-radius: 3px;
     box-shadow: 0 1px 2px rgba(15, 23, 42, .08), 0 12px 32px -8px rgba(15, 23, 42, .22);
 }
 html[data-bs-theme="dark"] body.v2 .ddv-paper { box-shadow: 0 0 0 1px rgba(255, 255, 255, .04), 0 20px 50px -10px rgba(0, 0, 0, .8); }
@@ -277,7 +276,7 @@ body.v2 .ddv-filter-pop, body.v2 .ddv-chat-pop { background: var(--v2-raised); b
 body.v2 .ddv-bulk { background: var(--v2-surface-2); border-top: 1px solid var(--v2-border); color: var(--v2-text); }
 body.v2 .ddv-loader { background: color-mix(in srgb, var(--v2-surface) 88%, transparent); color: var(--v2-text-2); }
 body.v2 .ddv-ring { border-color: var(--v2-border-strong); border-top-color: var(--brand-500); }
-html.ui-paper-white body.v2 .ddv-paper { background: #ffffff; color: #0f172a; }
+body.v2 .ddv-paper { background: var(--v2-paper); color: #0f172a; }
 body.v2 .ddv-wrap { padding: 0; gap: 0; }
 body.v2 .ddv-right > .ddv-panel { flex: 1; }
 @media (max-width: 1150px) {

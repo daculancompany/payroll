@@ -19,9 +19,7 @@
     <?php // department.js was written against the old markup (#form-add, #data-table,
           // #modal, #name). department.php now ships its own inline handler, so the
           // file matched nothing — it only leaked the globals `id` and `btnText`. ?>
-    <?php if ($page == 'branch') { ?>
-        <script src="assets2/js/branch.js"></script>
-    <?php } ?>
+    <?php // branch.js no longer exists (it was requested and 404'd on every visit) ?>
     <?php if ($page == 'position') { ?>
         <script src="assets2/js/position.js"></script>
     <?php } ?>

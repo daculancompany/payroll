@@ -3337,7 +3337,7 @@ function openPayrollHistory(id) {
             </div>
             <div class="modal-body" style="background:#525659;padding:0;overflow:hidden;position:relative;">
                 <iframe id="pdf-preview-frame" title="PDF preview" style="width:100%;height:80vh;border:0;display:block;background:#525659;"
-                        onload="pdfLoadingDone();"></iframe>
+                        onload="if (window.pdfLoadingDone) pdfLoadingDone();"></iframe>
                 <div id="pdf-preview-loading" role="status" aria-live="polite"
                      style="display:none;position:absolute;inset:0;background:rgba(82,86,89,.92);color:#fff;align-items:center;justify-content:center;flex-direction:column;gap:10px;">
                     <div class="spinner-border" style="width:2.5rem;height:2.5rem;" aria-hidden="true"></div>

@@ -124,7 +124,7 @@ require_once __DIR__ . '/includes/require_login.php';
         <footer>Footer</footer>
     </div>
 </body>
-<script type="text/javascript" src="asse/js/freeze-table.js"></script>
+<script type="text/javascript" src="assets2/js/freeze-table/freeze-table.js"></script>
 <script>
     (function($) {
         $(function() {

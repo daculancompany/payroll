@@ -15,7 +15,9 @@ require __DIR__ . '/includes/v2/bootstrap.php';
 
 $APP_V2   = true;
 $V2_BASE  = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'])), '/') . '/';
-$V2_BRAND = getenv('APP_BRAND') ?: 'Payroll';
+require_once __DIR__ . '/includes/brand.php';
+$V2_BRAND   = APP_BRAND;
+$V2_TAGLINE = APP_TAGLINE;
 $V2_MENU  = require __DIR__ . '/includes/v2/menu.php';
 $isPartial = !empty($_SERVER['HTTP_X_APP_NAV']);
 

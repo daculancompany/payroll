@@ -17,7 +17,7 @@ foreach (['leaves' => 'leave_requests', 'attendance-requests' => 'attendance_req
             <span class="v2-brand__mark"><img src="assets/images/favicon-192.png?v=2" alt=""></span>
             <span class="v2-brand__text">
                 <strong><?= e($V2_BRAND) ?></strong>
-                <small>Workforce &amp; Payroll</small>
+                <small><?= e($V2_TAGLINE) ?></small>
             </span>
         </a>
         <button type="button" class="v2-icon-btn v2-sidebar__collapse d-none d-lg-inline-flex" data-v2-collapse title="Collapse sidebar" aria-label="Collapse sidebar">

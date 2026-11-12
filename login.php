@@ -1,7 +1,9 @@
 <?php
 require_once __DIR__ . '/db_connect.php';
 require_once __DIR__ . '/includes/session_bootstrap.php';
-$brand = getenv('APP_BRAND') ?: 'Payroll';
+require_once __DIR__ . '/includes/brand.php';
+$brand   = APP_BRAND;
+$tagline = APP_TAGLINE;
 // Sign-in photo. Swap in your own (or a licensed) image here or via APP_LOGIN_BG.
 $login_bg = getenv('APP_LOGIN_BG') ?: 'login-bg.jpg';
 // Absolute path: a relative url() inside a CSS variable would resolve
@@ -59,31 +61,49 @@ if (!function_exists('e')) {
 
 <main class="auth-shell">
     <section class="auth-hero" aria-hidden="true" style="--auth-bg: url('<?= e($login_bg) ?>');">
-        <div class="auth-hero__brand">
-            <span class="v2-brand__mark"><img src="assets/images/favicon-192.png?v=2" alt=""></span>
-            <strong><?= e($brand) ?></strong>
+        <div class="auth-hero__top">
+            <div class="auth-hero__brand">
+                <span class="v2-brand__mark"><img src="assets/images/favicon-192.png?v=2" alt=""></span>
+                <strong><?= e($brand) ?></strong>
+            </div>
+            <span class="auth-hero__ver">v<?= e(APP_VERSION) ?></span>
         </div>
+
         <div class="auth-hero__copy">
-            <h1>Payroll, timekeeping and leave in one place.</h1>
-            <p>Run payroll from biometric DTR, approve leave through your area chain, and hand every employee a payslip they can read.</p>
-            <dl class="auth-hero__facts">
-                <div><dt>DTR</dt><dd>Biometric &amp; face-verified</dd></div>
-                <div><dt>Payroll</dt><dd>Locked, auditable payslips</dd></div>
-                <div><dt>Leave</dt><dd>Approvals by area chain</dd></div>
-            </dl>
+            <div class="auth-hero__eyebrow">Timekeeping · Leave · Payroll</div>
+            <h1><?= e($tagline) ?></h1>
+            <p>Biometric DTR, leave approvals and payroll for every kawani, in one system your HR team and employees can both trust.</p>
+            <div class="auth-hero__cards">
+                <div class="auth-hero__card">
+                    <i class="ri-fingerprint-line"></i>
+                    <strong>Daily time records</strong>
+                    <span>From biometric and face-verified scans, checked before payroll.</span>
+                </div>
+                <div class="auth-hero__card">
+                    <i class="ri-calendar-check-line"></i>
+                    <strong>Leave and requests</strong>
+                    <span>Filed by employees, approved through each area's chain.</span>
+                </div>
+                <div class="auth-hero__card">
+                    <i class="ri-file-list-3-line"></i>
+                    <strong>Payroll and payslips</strong>
+                    <span>Computed from the DTR, locked when final, readable by everyone.</span>
+                </div>
+            </div>
         </div>
-        <div class="auth-hero__foot">v<?= e(APP_VERSION) ?></div>
+
+        <div class="auth-hero__foot">&copy; <?= date('Y') ?> <?= e($brand) ?></div>
     </section>
 
     <section class="auth-panel">
         <div class="auth-card">
             <div class="auth-card__mobile-brand">
                 <span class="v2-brand__mark"><img src="assets/images/favicon-192.png?v=2" alt=""></span>
-                <strong><?= e($brand) ?></strong>
+                <span class="auth-card__brand-copy"><strong><?= e($brand) ?></strong><small><?= e($tagline) ?></small></span>
             </div>
 
-            <h2>Welcome back</h2>
-            <p class="auth-sub">Sign in to continue.</p>
+            <h2>Sign in</h2>
+            <p class="auth-sub">Welcome back to <?= e($brand) ?>. Use your email or employee number.</p>
             <?php if (app_is_local()): ?>
                 <div class="auth-badge"><i class="ri-shield-keyhole-line"></i> Payroll workstation · administrator access only</div>
             <?php endif; ?>

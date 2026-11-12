@@ -264,3 +264,17 @@ html.ui-ct body.portal { --pt-chrome: color-mix(in srgb, var(--ct-base) 92%, #00
 html.ui-ct[data-bs-theme="light"] body.portal { --pt-chrome: color-mix(in srgb, var(--ct-base) 94%, #fff); }
 html.ui-ct body.portal .ptop,
 html.ui-ct body.portal .tab-strip { background: var(--pt-chrome) !important; backdrop-filter: none; -webkit-backdrop-filter: none; }
+
+/* ── Review My DTR: white sheet, fitted, with zoom ─────────────────────── */
+body.portal .drev-f48-card { background: #ffffff !important; border: 1px solid rgba(15, 23, 42, .1); border-radius: 14px; padding: 10px 12px 14px; color-scheme: light; }
+body.portal .drev-f48-wrap { overflow: auto; -webkit-overflow-scrolling: touch; }
+body.portal .drev-f48-zoom { margin: 0 auto; }
+body.portal .f48-zoombar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 8px; }
+body.portal .f48-zoombar button {
+    display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 32px; min-width: 32px; padding: 0 9px;
+    border: 1px solid #d3d9e3; background: #ffffff; color: #1e293b; border-radius: 9px; font-size: 12.5px; font-weight: 600;
+}
+body.portal .f48-zoombar button i { font-size: 15px; }
+body.portal .f48-zoombar button:active { background: #eef1f6; }
+body.portal .f48-zoomval { min-width: 44px; text-align: center; font-size: 12.5px; font-weight: 700; color: #1e293b; font-variant-numeric: tabular-nums; }
+body.portal .f48-fitbtn { margin-left: 2px; }

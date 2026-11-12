@@ -1800,6 +1800,7 @@ body{
 .drev-f48-wrap{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
     overscroll-behavior-x:contain;}
 .drev-f48-wrap .dtrf48{min-width:340px;}
+.drev-f48-zoom{width:620px;}
 /* Floating message button — sticks to the bottom of the DTR sheet's scroll
    area. height + equal negative margin means it adds no scroll length. */
 .drev-fab-wrap{position:sticky;bottom:8px;z-index:6;display:flex;justify-content:flex-end;
@@ -5466,6 +5467,50 @@ function empRenderNotif(data) {
             + '<div class="emp-notif-time">' + timeAgo(n.created_at) + '</div></div></div>';
     }).join('');
 }
+// ── DTR sheet zoom (Review My DTR) ───────────────────────────────────────
+// The Form 48 has fixed column widths, so on a phone it used to run off the
+// side. It now opens fitted to the card (every column visible, small) with
+// zoom buttons; CSS zoom keeps the layout height right, so the card grows
+// and shrinks with it and wider zooms scroll sideways.
+var F48_ZOOM = { scale: 1, fit: true };
+function f48ZoomBar() {
+    return '<div class="f48-zoombar" role="toolbar" aria-label="Zoom">'
+        + '<button type="button" onclick="f48Zoom(-0.15)" aria-label="Zoom out"><i class="ri-zoom-out-line"></i></button>'
+        + '<span class="f48-zoomval" id="f48-zoomval">100%</span>'
+        + '<button type="button" onclick="f48Zoom(0.15)" aria-label="Zoom in"><i class="ri-zoom-in-line"></i></button>'
+        + '<button type="button" class="f48-fitbtn" onclick="f48Fit()"><i class="ri-fullscreen-exit-line"></i> Fit</button>'
+        + '</div>';
+}
+function f48Apply() {
+    var z = document.querySelector('#dtr-review-body .drev-f48-zoom');
+    if (!z) return;
+    z.style.zoom = F48_ZOOM.scale;
+    var v = document.getElementById('f48-zoomval');
+    if (v) v.textContent = Math.round(F48_ZOOM.scale * 100) + '%';
+}
+function f48Fit() {
+    var wrap = document.querySelector('#dtr-review-body .drev-f48-wrap');
+    var z = wrap && wrap.querySelector('.drev-f48-zoom');
+    var sheet = z && z.querySelector('.dtrf48');
+    if (!sheet) return;
+    // Lay the sheet out at its natural paper width (620px, wider on a big
+    // screen), then scale that to the card: every column always fits.
+    var avail = wrap.clientWidth;
+    if (!avail) { setTimeout(f48Fit, 120); return; }   // modal still opening
+    var design = Math.max(620, avail);
+    z.style.width = design + 'px';
+    F48_ZOOM.scale = Math.min(1, Math.max(0.35, avail / design));
+    F48_ZOOM.fit = true;
+    f48Apply();
+}
+function f48Zoom(step) {
+    F48_ZOOM.scale = Math.min(2, Math.max(0.35, Math.round((F48_ZOOM.scale + step) * 100) / 100));
+    F48_ZOOM.fit = false;
+    f48Apply();
+}
+window.addEventListener('resize', function () { if (F48_ZOOM.fit) f48Fit(); });
+document.addEventListener('shown.bs.modal', function (e) { if (e.target && e.target.id === 'modal-dtr-review') f48Fit(); });
+
 function escapeHtml(s) { return (s || '').replace(/[&<>"]/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 function timeAgo(ts) {
     if (!ts) return '';
@@ -5727,7 +5772,8 @@ function renderDtrReview(res) {
     // scrolls sideways inside its own wrapper — contained by the card's content
     // box instead of spilling over the card's padding and border.
     document.getElementById('dtr-review-body').innerHTML =
-        statusStrip + reviewedNote + '<div class="drev-f48-card"><div class="drev-f48-wrap">' + form48 + '</div></div>' + fab;
+        statusStrip + reviewedNote + '<div class="drev-f48-card">' + f48ZoomBar() + '<div class="drev-f48-wrap"><div class="drev-f48-zoom">' + form48 + '</div></div></div>' + fab;
+    f48Fit();   // the whole sheet on screen first; zoom in from there
 
     // Fill the message screen now (not on open) so sendDtrReply can always find
     // its thread list — a hidden Bootstrap modal keeps its DOM in place.
@@ -7705,7 +7751,7 @@ document.addEventListener('click', function (e) {
     UITheme.set({ theme: dark ? 'light' : (s.theme === 'black' ? 'black' : 'dark'), colorTheme: '' });
 });
 window.V2_ADAPT_SCOPE = '.portal-wrap, .modal, .offcanvas, .emp-notif-panel, .more-sheet';
-window.V2_KEEP_SEL = '.tab-strip, .ptop, #v2-settings';
+window.V2_KEEP_SEL = '.tab-strip, .ptop, #v2-settings, .drev-f48-card';   // the DTR sheet card stays white paper
 </script>
 <script src="<?= av('assets3/js/theme-adapter.js') ?>"></script>
 <script src="<?= av('assets2/js/portal-mobile.js') ?>"></script>

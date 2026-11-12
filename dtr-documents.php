@@ -1012,13 +1012,13 @@ body.view-table .ddv-drawer-btn { display:none !important; }
 
     <!-- App-wide custom <select> control (also loaded globally from includes/header.php
          for pages routed through index.php; this page renders standalone). -->
-    <link rel="stylesheet" href="assets2/css/custom-select.css">
-    <script defer src="assets2/js/custom-select.js"></script>
+    <link rel="stylesheet" href="<?= av('assets2/css/custom-select.css') ?>">
+    <script defer src="<?= av('assets2/js/custom-select.js') ?>"></script>
 
     <!-- App-wide tooltip — one hover style for the whole app; also upgrades any
          plain title= on this page (assets2/js/app-tooltip.js). -->
-    <link rel="stylesheet" href="assets2/css/app-tooltip.css">
-    <script defer src="assets2/js/app-tooltip.js"></script>
+    <link rel="stylesheet" href="<?= av('assets2/css/app-tooltip.css') ?>">
+    <script defer src="<?= av('assets2/js/app-tooltip.js') ?>"></script>
     <?php /* v2 shell users: same theme + design system as app.php */ if ($V2_STANDALONE) include __DIR__ . '/includes/v2/standalone_head.php'; ?>
 </head>
 <body<?= $V2_STANDALONE ? ' class="v2"' : '' ?>>

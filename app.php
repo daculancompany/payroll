@@ -170,5 +170,6 @@ include __DIR__ . '/includes/app_scripts.php';
 <script src="<?= av('assets3/js/settings-modal.js') ?>"></script>
 <script src="<?= av('assets3/js/app-shell.js') ?>"></script>
 <script src="<?= av('assets3/js/app-router.js') ?>"></script>
+<script src="<?= av('assets3/js/theme-adapter.js') ?>"></script>
 </body>
 </html>

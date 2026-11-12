@@ -782,3 +782,11 @@ html.ui-brand-gradient .v2-topbar { box-shadow: inset 0 -2px 0 rgba(var(--brand-
 .v2 #fcm-enable-banner button + button { color: var(--v2-text-3) !important; }
 body.v2-drawer-open #fcm-enable-banner { display: none !important; }
 .v2 .fcm-toast { background: var(--v2-raised) !important; color: var(--v2-text) !important; border-color: var(--v2-border) !important; }
+
+/* Sidebar: one thin native scrollbar, visible on hover only. */
+.v2-nav { scrollbar-width: thin; scrollbar-color: transparent transparent; overscroll-behavior: contain; }
+.v2-nav:hover { scrollbar-color: rgba(148, 163, 184, .35) transparent; }
+.v2-nav::-webkit-scrollbar { width: 6px; }
+.v2-nav::-webkit-scrollbar-track { background: transparent; }
+.v2-nav::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; }
+.v2-nav:hover::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .35); }

@@ -25,7 +25,7 @@ foreach (['leaves' => 'leave_requests', 'attendance-requests' => 'attendance_req
         </button>
     </div>
 
-    <nav class="v2-nav" data-simplebar>
+    <nav class="v2-nav">
         <?php foreach ($V2_MENU as $group):
             $items = array_filter($group['items'], function ($it) use ($login_role) { return page_allowed($it[0], $login_role); });
             if (!$items) continue; ?>

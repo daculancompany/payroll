@@ -94,6 +94,21 @@ body.portal .portal-wrap { max-width: 1240px; }
     html.ui-ct[data-header="solid"] body.portal .tab-strip { background: var(--ct-base); }
     body.portal .tab-btn { color: var(--v2-text-3); }
     body.portal .tab-btn.active { color: var(--brand-600); background: transparent; }
+    /* Hover / press: the old portal CSS painted a lavender block with purple
+       text here. Same pill as the active item instead, just lighter. */
+    body.portal .tab-btn:not(.active):hover,
+    body.portal .tab-btn:not(.active):focus-visible { background: transparent; color: var(--v2-text); }
+    body.portal .tab-btn:not(.active):hover::before,
+    body.portal .tab-btn:not(.active):focus-visible::before {
+        content: ''; position: absolute; top: 4px; left: 50%; transform: translateX(-50%);
+        width: 58px; height: 30px; border-radius: 15px; z-index: -1;
+        background: var(--quiet-hover);
+    }
+    /* Touch screens keep :hover after a tap; don't leave a pill behind */
+    @media (hover: none) {
+        body.portal .tab-btn:not(.active):hover { color: var(--v2-text-3); }
+        body.portal .tab-btn:not(.active):hover::before { content: none; }
+    }
     html[data-bs-theme="dark"] body.portal .tab-btn.active { color: var(--brand-300); }
     body.portal .tab-btn .badge-count, body.portal .tab-btn:not(.active) .badge-count { background: #ef4444 !important; color: #fff; }
     body.portal .portal-wrap { background: transparent; }

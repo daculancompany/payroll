@@ -453,6 +453,7 @@ class Action
             'brandGradient'=> $bool,
             'reduceMotion' => $bool,
             'sidebarCollapsed' => $bool,
+            'paperWhite'   => $bool,
             // client ms timestamp: on load, the newer of device/account copy wins
             'savedAt'      => function ($v) { $n = (int) $v; return $n > 0 ? min($n, (int) (microtime(true) * 1000) + 60000) : 0; },
             'ui'         => function ($v) use ($enum) { return $enum($v, ['v2', 'classic'], 'classic'); },

@@ -112,6 +112,9 @@
             o = {
                 // Inside a printable document: accent swap only, never darkened.
                 paper: !!el.closest('[data-v2-paper]'),
+                // popovers / dropdowns float over content: translucent theme
+                // surfaces would let the page show through, so use the opaque one
+                floating: (cs.position === 'absolute' || cs.position === 'fixed') && (cs.boxShadow !== 'none' || parseInt(cs.zIndex, 10) > 0),
                 bg: parse(cs.backgroundColor),
                 stops: bi && bi.indexOf('gradient') !== -1 ? (bi.match(/rgba?\([^)]+\)/g) || []).map(parse).filter(Boolean) : null,
                 fg: parse(cs.color),
@@ -128,10 +131,11 @@
     var LIGHT = { dark: false, themed: false, paper: true };   // deeper accent shades on white paper
     function decide(el, o, m) {
         if (!o || o.skip) return;
-        if (o.paper) m = LIGHT;
+        if (o.paper && root.classList.contains('ui-paper-white')) m = LIGHT;   // white-paper setting
         var bg = o.bg;
         if (bg && bg[3] > 0.5) {
             var nb = bgFor(bg, m);
+            if (o.floating && m.themed && nb && nb.indexOf('--v2-surface') !== -1) nb = 'var(--v2-raised)';
             if (nb) set(el, 'background-color', nb);
         }
         var stops = o.stops;
@@ -244,17 +248,42 @@
 
     // JS-rendered components (cards, rows, modals filled over ajax).
     new MutationObserver(function (muts) {
-        var list = [];
+        var list = [], changed = [];
         muts.forEach(function (mu) {
             mu.addedNodes.forEach(function (node) {
                 if (node.nodeType === 1 && node.closest && node.closest(SCOPE)) collect(node, list);
             });
-            // Class change (e.g. a toggle gaining .active): re-read once its
-            // colour transition has settled, never mid-animation.
-            if (mu.type === 'attributes' && mu.target.closest && mu.target.closest(SCOPE)) later(mu.target);
+            if (mu.type === 'attributes' && mu.target.closest && mu.target.closest(SCOPE) && changed.indexOf(mu.target) === -1) changed.push(mu.target);
         });
         if (list.length) process(list);
+        if (changed.length) reclass(changed);
     }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+
+    /* Class change (a toggle gaining .active, a popover opening): re-adapt
+       right away, inside the observer callback, so it never paints in the old
+       colours. Transitions are switched off on the changed elements while
+       reading, so computed values are final rather than mid-animation.
+       Descendants not adapted yet (they were display:none until now) are
+       picked up too. */
+    function reclass(els) {
+        var m = mode(), list = [];
+        els.forEach(function (el) {
+            el.style.setProperty('transition', 'none', 'important');
+            var rec = saved.get(el);
+            if (rec) {
+                for (var p in rec) { if (rec[p][0]) el.style.setProperty(p, rec[p][0], rec[p][1]); else el.style.removeProperty(p); }
+                saved.delete(el); touched.delete(el);
+            }
+            orig.delete(el);
+            list.push(el);
+            var kids = el.querySelectorAll('*');
+            for (var i = 0; i < kids.length; i++) if (!orig.has(kids[i])) list.push(kids[i]);
+        });
+        batch = [];
+        for (var i = 0; i < list.length && i < SYNC_BUDGET; i++) if (list[i].isConnected) adapt(list[i], m);
+        flush();
+        requestAnimationFrame(function () { els.forEach(function (el) { el.style.removeProperty('transition'); }); });
+    }
 
     function readapt(el) {
         var rec = saved.get(el);
@@ -277,6 +306,50 @@
         // re-adapt them through the MutationObserver.
         if (touched.has(e.target)) return;
         if (/color|background/.test(e.propertyName) && e.target.closest && e.target.closest(SCOPE)) later(e.target);
+    }, true);
+
+    /* Hover states: page CSS has its own light :hover colours, which a
+       one-off read at rest never sees. On pointer-enter, read the element's
+       hover colours (transition off, so they're final) and override them for
+       the theme; put things back on leave. Only the hovered element and a
+       few ancestors are read, so this stays cheap. */
+    function hoverAdapt(el, m) {
+        if (el.__v2h || el.closest('[data-v2-keep], .apexcharts-canvas, .v2-topbar, .v2-sidebar')) return;
+        if (el.closest('[data-v2-paper]') && root.classList.contains('ui-paper-white')) return;
+        var prevT = [el.style.getPropertyValue('transition'), el.style.getPropertyPriority('transition')];
+        el.style.setProperty('transition', 'none', 'important');
+        var cs = getComputedStyle(el), done = [];
+        var bg = parse(cs.backgroundColor);
+        if (bg && bg[3] > 0.5) {
+            var nb = bgFor(bg, m);
+            if (nb) {
+                if (nb.indexOf('--v2-surface') !== -1) nb = 'var(--v2-active)';   // neutral hover wash
+                done.push(['background-color', el.style.getPropertyValue('background-color'), el.style.getPropertyPriority('background-color')]);
+                el.style.setProperty('background-color', nb, 'important');
+            }
+        }
+        var fg = parse(cs.color);
+        if (fg && (isBrandPurple(fg) || (m.dark && lum(fg) < 100 && sat(fg) < 40))) {
+            done.push(['color', el.style.getPropertyValue('color'), el.style.getPropertyPriority('color')]);
+            el.style.setProperty('color', isBrandPurple(fg) ? (m.dark ? 'var(--brand-300)' : 'var(--brand-600)') : 'var(--v2-text)', 'important');
+        }
+        function putBackTransition() {
+            if (prevT[0]) el.style.setProperty('transition', prevT[0], prevT[1]); else el.style.removeProperty('transition');
+        }
+        if (!done.length) { putBackTransition(); return; }
+        el.__v2h = true;
+        el.addEventListener('mouseleave', function off() {
+            el.removeEventListener('mouseleave', off);
+            done.forEach(function (d) { if (d[1]) el.style.setProperty(d[0], d[1], d[2]); else el.style.removeProperty(d[0]); });
+            putBackTransition();
+            el.__v2h = false;
+        });
+    }
+    document.addEventListener('mouseover', function (e) {
+        var m = mode();
+        if (!m.themed || !e.target.closest) return;
+        var el = e.target, n = 0;
+        while (el && el.nodeType === 1 && n++ < 4 && el.closest(SCOPE)) { hoverAdapt(el, m); el = el.parentElement; }
     }, true);
 
     window.V2ThemeAdapter = { refresh: full };

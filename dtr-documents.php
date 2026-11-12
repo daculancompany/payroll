@@ -188,8 +188,11 @@ $showReview = in_array($batchStatus, [2, 3], true) && ($reviewOn || $reviewRows)
          review/note actions on ajax.php, which now require the token. -->
     <meta name="csrf-token" content="<?= htmlspecialchars(function_exists('csrf_token') ? csrf_token() : '', ENT_QUOTES, 'UTF-8') ?>">
     <script src="assets2/js/csrf.js"></script>
+    <?php $V2_STANDALONE = !empty($_SESSION['in_v2']); ?>
+    <?php if (!$V2_STANDALONE) { ?>
     <link href="assets/css/bootstrap.min.css" rel="stylesheet">
     <link href="assets/css/icons.min.css" rel="stylesheet">
+    <?php } ?>
     <!-- Shared report-table skin (.rpt-card / .rpt-scroll / .rpt-table), the same
          one payroll-register and the other report pages use, so the Table view
          reads as part of the app rather than a one-off grid. This page renders
@@ -203,7 +206,7 @@ $showReview = in_array($batchStatus, [2, 3], true) && ($reviewOn || $reviewRows)
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- Real Bootstrap modals (Edit record / Change schedule) need the bundle's
          JS component, not just the CSS this page already loaded. -->
-    <script src="assets/libs/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script src="<?= $V2_STANDALONE ? 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js' : 'assets/libs/bootstrap/js/bootstrap.bundle.min.js' ?>"></script>
 <style>
 :root {
     --brand:#6642aa; --brand-dark:#4e3483; --line:#e1dfdd; --sb-thumb:#cfc4e6; --sb-track:transparent;
@@ -1013,8 +1016,9 @@ body.view-table .ddv-drawer-btn { display:none !important; }
          plain title= on this page (assets2/js/app-tooltip.js). -->
     <link rel="stylesheet" href="assets2/css/app-tooltip.css">
     <script defer src="assets2/js/app-tooltip.js"></script>
+    <?php /* v2 shell users: same theme + design system as app.php */ if ($V2_STANDALONE) include __DIR__ . '/includes/v2/standalone_head.php'; ?>
 </head>
-<body>
+<body<?= $V2_STANDALONE ? ' class="v2"' : '' ?>>
 <div class="ddv-app"
      id="ddv-root"
      data-id="<?= $id ?>"
@@ -1330,7 +1334,7 @@ body.view-table .ddv-drawer-btn { display:none !important; }
             </div>
             <div class="ddv-paper-scroll">
                 <div class="ddv-paper-holder">
-                    <div class="ddv-paper" id="ddv-paper">
+                    <div class="ddv-paper" id="ddv-paper" data-v2-paper>
                         <div class="ddv-doc-empty">Select an employee to view their Daily Time Record.</div>
                     </div>
                 </div>
@@ -4031,6 +4035,7 @@ loadPage();
 // workbenches include it themselves; index.php does it for the routed pages.
 // Full details opens in the same tab (per user preference — no target=_blank).
 include 'component/employee_quick_view.php';
+if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.ddv-app, .modal, .offcanvas, #empQuickView'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
 
 // Shared "Review request" modal — the same form the requests queue decides
 // through, opened here from a record's filing chip (reviewFiling).

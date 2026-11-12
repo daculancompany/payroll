@@ -1072,7 +1072,7 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
                         </div>
                     </div>
                     <!-- Loading overlay (shown on first paint + on every panel refresh) -->
-                    <div class="dtr-loader show" id="dtr-loader">
+                    <div class="dtr-loader show" id="dtr-loader" data-v2-keep>
                         <div class="dtr-loader-ring"></div>
                         <div class="dtr-loader-text" id="dtr-loader-text">Loading DTR<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
                         <div class="dtr-loader-bar"></div>

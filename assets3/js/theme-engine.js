@@ -39,6 +39,7 @@
         brandGradient: false,
         reduceMotion: false,
         sidebarCollapsed: false,
+        paperWhite: false,
         savedAt: 0
     };
     var DEFAULT_ACCENT = '#0f9d8a';   // v2 brand teal
@@ -125,6 +126,7 @@
         toggle('ui-brand-gradient', !!state.brandGradient);
         toggle('ui-reduce-motion', !!state.reduceMotion);
         toggle('ui-sidebar-collapsed', !!state.sidebarCollapsed);
+        toggle('ui-paper-white', !!state.paperWhite);
 
         if (ct) {
             root.style.setProperty('--ct-gradient', ct.css);

@@ -796,10 +796,11 @@ html.v2-pending #main-content { visibility: hidden; animation: v2-reveal 0s line
 @keyframes v2-reveal { to { visibility: visible; } }
 html.v2-adapting *, html.v2-adapting *::before, html.v2-adapting *::after { transition: none !important; }
 
-/* Printable documents (payslips, computation sheets, DTR forms) stay white
-   paper in every theme: mark the container data-v2-paper (+ data-bs-theme="light").
+/* Printable documents (payslips, computation sheets, DTR forms): mark the
+   container data-v2-paper. They follow the theme by default; with the
+   "Keep documents white" setting (html.ui-paper-white) they stay white paper.
    The theme adapter skips it, and the tokens inside are reset to light values. */
-[data-v2-paper] {
+html.ui-paper-white [data-v2-paper] {
     color-scheme: light;
     --v2-surface: #ffffff; --v2-surface-2: #f7f8fb; --v2-surface-3: #eef1f6; --v2-raised: #ffffff;
     --v2-border: #e4e8ef; --v2-border-strong: #d3d9e3;
@@ -809,4 +810,13 @@ html.v2-adapting *, html.v2-adapting *::before, html.v2-adapting *::after { tran
     --app-surface: #ffffff; --app-surface-2: #f7f8fb; --app-text: #0f172a; --app-text-2: #475569; --app-border: #e4e8ef;
     color: #0f172a;
 }
-html[data-bs-theme="dark"] [data-v2-paper], html.ui-ct [data-v2-paper] { box-shadow: 0 10px 40px -10px rgba(0, 0, 0, .55); }
+html.ui-paper-white[data-bs-theme="dark"] [data-v2-paper], html.ui-paper-white.ui-ct [data-v2-paper] { box-shadow: 0 10px 40px -10px rgba(0, 0, 0, .55); }
+
+/* ── Page loaders follow the theme (styled here, not by the adapter: the
+   bar is a ::after pseudo-element and loaders show before the adapter runs) */
+.v2 .dtr-loader { background: color-mix(in srgb, var(--v2-surface) 88%, transparent); }
+html.ui-ct .v2 .dtr-loader { background: color-mix(in srgb, var(--v2-raised) 80%, transparent); }
+.v2 .dtr-loader-ring, .v2 .pcw-boot-ring { border-color: var(--v2-border-strong); border-top-color: var(--brand-500); }
+.v2 .dtr-loader-text, .v2 .pcw-boot-txt { color: var(--v2-text-2); font-family: var(--app-font); font-weight: 600; }
+.v2 .dtr-loader-bar { background: var(--v2-surface-3); }
+.v2 .dtr-loader-bar::after { background: var(--brand-500); }

@@ -68,7 +68,7 @@
             var key = seg.dataset.psSeg;
             $$('button', seg).forEach(function (b) { b.classList.toggle('is-active', b.dataset.v === s[key]); });
         });
-        ['highContrast', 'compact', 'reduceMotion', 'brandGradient'].forEach(function (k) {
+        ['highContrast', 'compact', 'reduceMotion', 'brandGradient', 'paperWhite'].forEach(function (k) {
             $('[data-ps="' + k + '"]').checked = !!s[k];
         });
         $('[data-ps-shell]').checked = (window.__UI_SERVER || {}).ui === 'v2';
@@ -96,7 +96,7 @@
     el.addEventListener('change', function (e) {
         var k = e.target.dataset.ps;
         if (k === 'system') T.set({ theme: e.target.checked ? 'system' : (T.mode() === 'dark' ? 'dark' : 'light'), colorTheme: '' });
-        else if (k === 'darkSidebar' || k === 'highContrast' || k === 'compact' || k === 'reduceMotion' || k === 'brandGradient') {
+        else if (k === 'darkSidebar' || k === 'highContrast' || k === 'compact' || k === 'reduceMotion' || k === 'brandGradient' || k === 'paperWhite') {
             var p = {}; p[k] = e.target.checked; T.set(p);
         }
         else if (k === 'fontFamily') T.set({ fontFamily: e.target.value });

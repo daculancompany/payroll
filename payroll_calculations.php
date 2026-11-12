@@ -837,7 +837,7 @@ $refund_names = [];   // refund id => display name
                             </div>
                         </div>
                         <div class="pcw-paper-scroll">
-                            <div class="pcw-paper" id="pcw-paper" data-v2-paper data-bs-theme="light">
+                            <div class="pcw-paper" id="pcw-paper" data-v2-paper>
                                 <div class="pcw-doc-empty">Select an employee to view their pay computation sheet.</div>
                             </div>
                         </div>

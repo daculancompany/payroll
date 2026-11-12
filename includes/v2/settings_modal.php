@@ -6,7 +6,7 @@ $__sections = [
     'Appearance' => [
         ['theme',   'Theme',          'ri-paint-brush-line', 'light dark black sync device color colour gradient sidebar preview'],
         ['accent',  'Accent Color',   'ri-flashlight-line',  'accent brand primary button link highlight'],
-        ['display', 'Text & Display', 'ri-text',             'font size density corners radius header'],
+        ['display', 'Text & Display', 'ri-text',             'font size density corners radius header document paper white payslip'],
     ],
     'Accessibility' => [
         ['access',  'Accessibility',  'ri-eye-line',         'contrast compact spacing motion animation brand gradient'],
@@ -117,6 +117,10 @@ $__sections = [
                                 <div class="ps-seg" data-ps-seg="radius">
                                     <button type="button" data-v="sharp">Sharp</button><button type="button" data-v="default">Default</button><button type="button" data-v="rounded">Rounded</button>
                                 </div>
+                            </div>
+                            <div class="ps-row">
+                                <div class="ps-row__copy"><strong>Keep documents white</strong><span>Payslips and computation sheets stay white like paper instead of following the theme.</span></div>
+                                <div class="form-check form-switch m-0"><input class="form-check-input" type="checkbox" role="switch" data-ps="paperWhite"></div>
                             </div>
                             <div class="ps-row">
                                 <div class="ps-row__copy"><strong>Header style</strong></div>

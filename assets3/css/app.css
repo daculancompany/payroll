@@ -1024,3 +1024,39 @@ html.ui-ct[data-bs-theme="dark"] { --v2-table-head: color-mix(in srgb, var(--ct-
 html.ui-ct[data-bs-theme="light"] { --v2-table-head: color-mix(in srgb, var(--ct-base) 94%, #0f172a); }
 html.ui-ct { --rpt-foot-bg: var(--v2-table-head); --rpt-head-bg: var(--v2-table-head); }
 .v2 .table tfoot th, .v2 .table tfoot td { background: var(--v2-table-head); }
+
+/* ── Sidebar chrome: header and footer read as fixed bars ──────────────
+   A hairline divider and a slightly deeper fill separate the brand bar and
+   the footer from the scrolling menu; group titles get enough contrast to
+   read on every theme. */
+:root {
+    --v2-side-divider: var(--v2-border);
+    --v2-side-chrome: #f8fafc;
+    --v2-side-title: #64748b;
+}
+html.ui-dark-sidebar { --v2-side-divider: rgba(255, 255, 255, .08); --v2-side-chrome: rgba(0, 0, 0, .18); --v2-side-title: #94a3b8; }
+html[data-bs-theme="dark"] { --v2-side-divider: rgba(255, 255, 255, .08); --v2-side-chrome: rgba(0, 0, 0, .2); --v2-side-title: #8b98ad; }
+html[data-theme="black"] { --v2-side-chrome: #050505; }
+html.ui-ct[data-bs-theme="dark"] { --v2-side-divider: rgba(255, 255, 255, .12); --v2-side-chrome: rgba(0, 0, 0, .16); --v2-side-title: rgba(255, 255, 255, .66); }
+html.ui-ct[data-bs-theme="light"] { --v2-side-divider: rgba(15, 23, 42, .1); --v2-side-chrome: rgba(255, 255, 255, .35); --v2-side-title: rgba(15, 23, 42, .58); }
+
+.v2-brand { background: var(--v2-side-chrome); border-bottom: 1px solid var(--v2-side-divider); }
+.v2-sidebar__foot, html.ui-dark-sidebar .v2-sidebar__foot { background: var(--v2-side-chrome); border-top: 1px solid var(--v2-side-divider); padding-top: .55rem; }
+.v2-nav { padding-top: .35rem; }
+.v2-nav__title { color: var(--v2-side-title); font-size: .7rem; letter-spacing: .09em; }
+.v2-brand__text small { color: var(--v2-side-title); }
+.v2-sidebar .v2-icon-btn { color: var(--v2-side-text); opacity: .8; }
+.v2-sidebar .v2-icon-btn:hover { opacity: 1; }
+@media (min-width: 992px) {
+    html.ui-sidebar-collapsed .v2-brand { padding-bottom: .6rem; }
+}
+
+/* Topbar icon buttons: full-strength glyphs on a quiet tile, so the theme
+   toggle / notifications / settings read as buttons on any background. */
+.v2-topbar .v2-icon-btn { color: var(--v2-text); background: var(--quiet-bg); border: 1px solid var(--quiet-bd); }
+.v2-topbar .v2-icon-btn:hover { background: var(--quiet-hover); color: var(--v2-text); }
+html[data-bs-theme="light"]:not(.ui-ct) .v2-topbar .v2-icon-btn { background: transparent; border-color: transparent; color: var(--v2-text-2); }
+html[data-bs-theme="light"]:not(.ui-ct) .v2-topbar .v2-icon-btn:hover { background: var(--v2-hover); color: var(--v2-text); }
+.v2-topbar .v2-dot-badge { box-shadow: 0 0 0 2px var(--v2-raised); }
+/* Notification count sits on the tile's corner, clear of the bell glyph. */
+.v2-topbar .v2-dot-badge { top: -6px; right: -7px; min-width: 18px; height: 18px; line-height: 18px; font-size: .62rem; padding: 0 5px; }

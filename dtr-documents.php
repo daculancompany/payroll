@@ -634,6 +634,9 @@ body {
 .ddv-note.watch    { background:#fff8e6; border-color:#f2e0a6; } .ddv-note.watch .lv    { color:#c98a00; }
 .ddv-note.critical { background:#fdecec; border-color:#f3c9c9; } .ddv-note.critical .lv { color:#c62828; }
 .ddv-note .lv { font-size:14px; flex-shrink:0; line-height:1.2; }
+.lv-dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:middle; }
+.lv-dot.lv-info { background:#3b82f6; } .lv-dot.lv-good { background:#16a34a; } .lv-dot.lv-watch { background:#f59e0b; } .lv-dot.lv-critical { background:#e11d48; }
+.ddv-why-row .when { color:#8a7a3f; font-weight:600; }
 .ddv-note-empty { font-size:10px; color:#a9a6b4; padding:2px 2px 6px; }
 .ddv-note-add { display:flex; flex-direction:column; gap:6px; margin-top:2px; }
 .ddv-lvpick { display:flex; gap:4px; }
@@ -2319,13 +2322,13 @@ function flagExplainHTML(e) {
     let rows = keys.map(f => {
         const m = FLAG_META[f];
         return `<div class="ddv-why-row"><i class="${m.icon}"></i><div>
-            <b>${m.lbl}</b> — ${byFlag[f].length} day(s): ${byFlag[f].map(fmt).join(', ')}
+            <b>${m.lbl}</b> <span class="when">${byFlag[f].length === 1 ? '1 day' : byFlag[f].length + ' days'} · ${byFlag[f].map(fmt).join(', ')}</span>
             <span class="why">${m.why}</span></div></div>`;
     }).join('');
     if (e.low_att) rows += `<div class="ddv-why-row"><i class="ri-calendar-close-line"></i><div>
-        <b>Low attendance</b> — logged ${Object.keys(e.days).length} day(s), below the batch minimum of ${MIN_DAYS}.
-        <span class="why">Excluded from clean bulk-approval — check whether days are missing scans or the employee was simply absent.</span></div></div>`;
-    return `<div class="ddv-why"><div class="ddv-why-hd"><i class="ri-error-warning-line"></i> Why flagged</div>${rows}</div>`;
+        <b>Low attendance</b> <span class="when">${Object.keys(e.days).length} of ${MIN_DAYS} required days</span>
+        <span class="why">Not included in Approve All. Check for missing scans or absences.</span></div></div>`;
+    return `<div class="ddv-why"><div class="ddv-why-hd">Needs review</div>${rows}</div>`;
 }
 
 function renderSummary(e) {
@@ -2363,18 +2366,18 @@ function renderSummary(e) {
 
 // ── Internal admin notes (admin-only, per employee) ──────────────────────────
 const NOTE_LV = {
-    info:     { icon: '🔵', lbl: 'Info' },
-    good:     { icon: '🟢', lbl: 'Good' },
-    watch:    { icon: '🟠', lbl: 'Watch' },
-    critical: { icon: '🔴', lbl: 'Critical' },
+    info:     { icon: '<span class="lv-dot lv-info"></span>',     lbl: 'Info' },
+    good:     { icon: '<span class="lv-dot lv-good"></span>',     lbl: 'Good' },
+    watch:    { icon: '<span class="lv-dot lv-watch"></span>',    lbl: 'Watch' },
+    critical: { icon: '<span class="lv-dot lv-critical"></span>', lbl: 'Critical' },
 };
 // Recommended quick-notes per level (admin picks then tweaks).
 const NOTE_TEMPLATES = [
-    'Attendance improved this period',
-    'Frequent no time-out — remind employee',
-    'Repeated tardiness — monitor',
-    'Pending incident report to resolve',
-    'Verified with supervisor',
+    'Attendance improved',
+    'Often forgets to time out',
+    'Often late, keep an eye on it',
+    'Incident report still pending',
+    'Checked with supervisor',
 ];
 let noteLevel = 'info';
 
@@ -2389,7 +2392,7 @@ function notesHTML(e) {
                 ${CAN_EDIT && n.id ? `<button class="nx" title="Delete note" data-note-id="${n.id}" onclick="deleteNote(this)"><i class="ri-close-line"></i></button>` : ''}
             </div>`;
         }).join('')
-        : '<div class="ddv-note-empty">No notes yet.</div>';
+        : '<div class="ddv-note-empty">No notes for this employee yet.</div>';
 
     const adder = CAN_EDIT ? `
         <div class="ddv-note-add">
@@ -2407,7 +2410,7 @@ function notesHTML(e) {
         </div>` : '';
 
     return `<div class="ddv-notes">
-        <div class="ddv-notes-hd"><i class="ri-sticky-note-line"></i> Internal Notes <span class="lock"><i class="ri-lock-2-line"></i> admin only</span></div>
+        <div class="ddv-notes-hd"><i class="ri-sticky-note-line"></i> Notes <span class="lock"><i class="ri-lock-2-line"></i> Admins only</span></div>
         ${list}${adder}
     </div>`;
 }
@@ -2463,21 +2466,21 @@ function deleteNote(arg) {
 // box (Summary tab) tell the same story from the same table.
 const FLAG_META = {
     no_out:     { cls: 'block', icon: 'ri-logout-box-r-line', lbl: 'No time-out',
-                  why: 'Only one scan on this day — there is no time-out, so hours cannot be computed. Add the missing punch (edit, or have the employee file an incident report) or decide it manually. Bulk approval skips it.' },
+                  why: 'Only one scan, so hours can\'t be computed. Add the missing time-out, or have the employee file an incident report. Not included in Approve All.' },
     zero_hours: { cls: 'block', icon: 'ri-time-line',          lbl: 'Zero hours',
-                  why: 'The scans compute to zero worked hours — usually punches entirely outside the scheduled shift window. Check the logs against the shift before approving.' },
+                  why: 'The scans add up to 0 hours, usually because they fall outside the shift. Compare the logs with the shift before approving.' },
     high_ot:    { cls: 'block', icon: 'ri-sun-line',           lbl: 'High OT',
-                  why: `Overtime above the ${OT_HOURS}-hr threshold — confirm it was actually rendered and authorized (an approved OT request) before approving.` },
+                  why: `More than ${OT_HOURS} hours of overtime. Approve only if there is an approved OT request.` },
     manual:     { cls: 'info',  icon: 'ri-edit-line',          lbl: 'Manual log',
-                  why: 'Has manually-entered punches (not from the biometric device). Informational only — it does not block bulk approval.' },
+                  why: 'Some punches were entered by hand, not from the device. For your information only.' },
     // Same moon glyph as the duty roster grid and the Form 48 "Day off" marker
     // — one icon for "rest day" everywhere in the app.
     rest_worked: { cls: 'info', icon: 'ri-moon-line',          lbl: 'Day off worked',
-                  why: 'This date is marked as the employee\'s rest day, but hours were recorded here — pays base pay + 30% rest-day premium instead of a regular working day (see Change schedule to correct it if this was not intended). The record cannot be approved until an approved Rest Day Work request is on file for this date (or pay_settings.rest_day_auto_authorize is turned on). Approving that request authorizes the duty; it never changes the hours — the scans keep deciding them.' },
+                  why: 'Hours were logged on a day off, so it pays the rest-day rate (+30%). It needs an approved Rest Day Work request before it can be approved. If the day off itself is wrong, use Change schedule.' },
     // Authorized in advance, rendered short. Informational: payroll pays the
     // rendered figure (capped at the approved hours), so nothing is blocked.
     ot_short:   { cls: 'info', icon: 'ri-timer-flash-line',   lbl: 'OT under-rendered',
-                  why: 'An approved OT / rest-day request covers this date for more hours than the scans show. Payroll pays the rendered figure, capped at the approved hours — nothing extra is paid. Cancel the filing if the rest will not be rendered, so the authorization does not linger.' },
+                  why: 'The approved request covers more hours than were worked. Payroll pays only the hours worked. Cancel the request if the rest won\'t be worked.' },
 };
 
 // A rest_worked record with ANY hours on it and no approved rest-day (or
@@ -4035,7 +4038,7 @@ loadPage();
 // workbenches include it themselves; index.php does it for the routed pages.
 // Full details opens in the same tab (per user preference — no target=_blank).
 include 'component/employee_quick_view.php';
-if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.ddv-app, .modal, .offcanvas'; $V2_PAPER_SEL = '.ddv-thumb'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
+if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.ddv-app, .modal, .offcanvas'; $V2_PAPER_SEL = '.ddv-thumb'; $V2_KEEP_SEL = '.ddv-why, .ddv-notes, .ddv-chip, .ddv-sum-tile, .ddv-pl, .ddv-tbl-view, .ddv-tbl-bar'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
 
 // Shared "Review request" modal — the same form the requests queue decides
 // through, opened here from a record's filing chip (reviewFiling).

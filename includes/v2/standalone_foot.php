@@ -3,5 +3,6 @@
  * components to the active theme. $V2_ADAPT_SCOPE (CSS selector) limits it. */
 ?>
     <script>window.V2_ADAPT_SCOPE = <?= json_encode($V2_ADAPT_SCOPE ?? 'body > *:not(script)') ?>;
-    window.V2_PAPER_SEL = <?= json_encode($V2_PAPER_SEL ?? '') ?>;</script>
+    window.V2_PAPER_SEL = <?= json_encode($V2_PAPER_SEL ?? '') ?>;
+    window.V2_KEEP_SEL = <?= json_encode($V2_KEEP_SEL ?? '') ?>;</script>
     <script src="<?= av('assets3/js/theme-adapter.js') ?>"></script>

@@ -975,3 +975,52 @@ html.ui-ct .v2 .apexcharts-pie-series path { stroke: var(--v2-raised); }
 .v2 #emp-quickview .eqv-foot { background: transparent; border-top: 1px solid var(--v2-border); }
 .v2 #emp-quickview .eqv-full { background: var(--acc-bg); color: var(--acc-fg); border-radius: 9px; font-weight: 650; }
 .v2 #emp-quickview .eqv-full:hover { background: var(--acc-bg-hover); color: var(--acc-fg); filter: none; }
+
+/* ── Custom select (assets2/js/custom-select.js) ───────────────────────
+   Owned by CSS (kept out of the adapter). The menu is parented to <body>
+   and floats over the page, so it uses the opaque raised surface. */
+.v2 .cs-trigger { background: var(--v2-input-bg); border-color: var(--v2-border-strong); color: var(--v2-text); }
+.v2 .cs-trigger:hover:not(:disabled) { border-color: var(--brand-400); }
+.v2 .cs-trigger:focus-visible, .v2 .cs-select.open .cs-trigger { border-color: var(--brand-500); box-shadow: 0 0 0 3px rgba(var(--brand-rgb), .16); }
+.v2 .cs-trigger:disabled, .v2 .cs-select.cs-disabled .cs-trigger { background: var(--v2-surface-3); color: var(--v2-text-3); border-color: var(--v2-border); }
+.v2 .cs-ic { color: var(--v2-text-2); }
+.v2 .cs-value { color: var(--v2-text); }
+.v2 .cs-value.cs-empty, .v2 .cs-caret { color: var(--v2-text-3); }
+.v2 .cs-select.open .cs-caret { color: var(--brand-500); }
+
+.v2 .cs-menu { background: var(--v2-raised); border: 1px solid var(--v2-border); box-shadow: var(--v2-shadow-lg); color: var(--v2-text); }
+.v2 .cs-title { color: var(--v2-text-2); }
+.v2 .cs-title i { color: var(--v2-text-2); }
+.v2 .cs-close, .v2 .cs-clear-all { background: var(--quiet-bg); border-color: var(--quiet-bd); color: var(--v2-text-2); }
+.v2 .cs-close:hover { background: var(--quiet-hover); border-color: var(--quiet-bd); color: var(--v2-text); }
+.v2 .cs-clear-all:hover { background: rgba(225, 29, 72, .12); border-color: rgba(225, 29, 72, .35); color: #e11d48; }
+.v2 .cs-search { background: var(--v2-input-bg); border-color: var(--v2-border-strong); }
+.v2 .cs-search:focus-within { border-color: var(--brand-500); box-shadow: 0 0 0 3px rgba(var(--brand-rgb), .16); }
+.v2 .cs-search i { color: var(--v2-text-3); }
+.v2 .cs-search input { color: var(--v2-text); }
+.v2 .cs-search input::placeholder { color: var(--v2-text-3); }
+.v2 .cs-opt { color: var(--v2-text); }
+.v2 .cs-opt:hover, .v2 .cs-opt.cs-active { background: var(--v2-hover); }
+.v2 .cs-opt.sel { background: rgba(var(--brand-rgb), .14); box-shadow: inset 0 0 0 1px rgba(var(--brand-rgb), .35); }
+.v2 .cs-opt-check { color: var(--brand-500); }
+.v2 .cs-opt-name { color: var(--v2-text); }
+.v2 .cs-opt-time { color: var(--v2-text-2); }
+.v2 .cs-group, .v2 .cs-none { color: var(--v2-text-3); }
+/* option icons: same quiet tile, colour only in the glyph */
+.v2 .cs-tod, .v2 .cs-rate-daily, .v2 .cs-rate-monthly, .v2 .cs-rate-fixed { background: var(--quiet-bg); }
+.v2 .cs-tod { color: var(--v2-text-2); }
+.v2 .cs-tod-morning { color: #d97706; } .v2 .cs-tod-afternoon { color: #ea580c; } .v2 .cs-tod-night { color: #6366f1; }
+.v2 .cs-rate-daily { color: #16a34a; } .v2 .cs-rate-monthly { color: #2563eb; } .v2 .cs-rate-fixed { color: var(--brand-500); }
+html[data-bs-theme="dark"] .v2 .cs-tod-morning { color: #fbbf24; }
+html[data-bs-theme="dark"] .v2 .cs-tod-afternoon { color: #fb923c; }
+html[data-bs-theme="dark"] .v2 .cs-tod-night { color: #a5b4fc; }
+html[data-bs-theme="dark"] .v2 .cs-rate-daily { color: #4ade80; }
+html[data-bs-theme="dark"] .v2 .cs-rate-monthly { color: #93c5fd; }
+html[data-bs-theme="dark"] .v2 .cs-rate-fixed { color: var(--brand-300); }
+
+/* Sticky table header / totals rows must be opaque, or scrolled rows show
+   through them (colour-theme surfaces are translucent). */
+html.ui-ct[data-bs-theme="dark"] { --v2-table-head: color-mix(in srgb, var(--ct-base) 86%, #ffffff); }
+html.ui-ct[data-bs-theme="light"] { --v2-table-head: color-mix(in srgb, var(--ct-base) 94%, #0f172a); }
+html.ui-ct { --rpt-foot-bg: var(--v2-table-head); --rpt-head-bg: var(--v2-table-head); }
+.v2 .table tfoot th, .v2 .table tfoot td { background: var(--v2-table-head); }

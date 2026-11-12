@@ -23,6 +23,8 @@
     var root = document.documentElement;
     // Printable documents (and their thumbnails): kept light paper.
     var PAPER = '[data-v2-paper]' + (window.V2_PAPER_SEL ? ', ' + window.V2_PAPER_SEL : '');
+    // Elements styled entirely by CSS: the adapter leaves them alone.
+    var KEEP = '[data-v2-keep], .apexcharts-canvas, .v2-topbar, .v2-sidebar, .cs-select, .cs-menu' + (window.V2_KEEP_SEL ? ', ' + window.V2_KEEP_SEL : '');
     var SCOPE = (window.V2_ADAPT_SCOPE || '#main-content, .modal, .offcanvas') + ', .swal2-container';   // SweetAlert dialogs (tables in previews)
     var SKIP_TAGS = { IMG: 1, VIDEO: 1, CANVAS: 1, SVG: 1, PATH: 1, SCRIPT: 1, STYLE: 1, OPTION: 1, BR: 1, HR: 1, INPUT: 0 };
     var touched = new Set();
@@ -108,7 +110,7 @@
     function read(el) {
         var o = orig.get(el);
         if (o) return o;
-        if (SKIP_TAGS[el.tagName] || el.closest('[data-v2-keep], .apexcharts-canvas, .v2-topbar, .v2-sidebar')) o = { skip: true };
+        if (SKIP_TAGS[el.tagName] || el.closest(KEEP)) o = { skip: true };
         else {
             var cs = getComputedStyle(el);
             if (cs.display === 'none') return null;          // read again once shown
@@ -364,7 +366,7 @@
        the theme; put things back on leave. Only the hovered element and a
        few ancestors are read, so this stays cheap. */
     function hoverAdapt(el, m) {
-        if (el.__v2h || el.closest('[data-v2-keep], .apexcharts-canvas, .v2-topbar, .v2-sidebar')) return;
+        if (el.__v2h || el.closest(KEEP)) return;
         var inBtn = !!el.closest('.btn');
         if (el.closest(PAPER)) return;
         var prevT = [el.style.getPropertyValue('transition'), el.style.getPropertyPriority('transition')];

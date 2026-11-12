@@ -1623,23 +1623,29 @@ body.view-table .ddv-drawer-btn { display:none !important; }
                     <!-- Set when the editor is opened for a day with no record yet
                          (addDayPunches): Save then creates the row with the punches. -->
                     <input type="hidden" id="pe-new-date">
-                    <div class="pe-hint">
-                        <i class="ri-information-line me-1"></i>
-                        The scans themselves &mdash; hours, OT, undertime and late are recalculated from
-                        them against this day's shift. A punch may fall on the <b>next day</b>
-                        (a night shift's clock-out belongs to the day the shift started).
-                        <span class="pe-tag bio">bio</span> rows are device scans and are
-                        <b>locked</b> &mdash; they cannot be retimed or removed. Only
-                        <span class="pe-tag manual">manual</span> entries you add can be edited or
-                        deleted, and they are recorded under your name.
-                        To re-file a device scan on another day, add it from <i>that</i> day's editor
-                        &mdash; it moves across instead of being destroyed.
-                        On a <b>night shift</b>, adding a time-in here also pulls that shift's
-                        clock-out scans from the next morning automatically, so the day closes
-                        with the right hours.
+                    <!-- 'add' while creating a day (Save needs an employee + day), 'edit' otherwise -->
+                    <input type="hidden" id="pe-mode" value="edit">
+                    <!-- Add mode: who and which day, in this same modal (no wizard steps) -->
+                    <div id="pe-add-block" class="pe-add-block" hidden>
+                        <div id="pe-emp-wrap" class="mb-2">
+                            <label class="form-label" for="pe-emp">Employee</label>
+                            <select id="pe-emp" class="form-select" data-cs-search="true"></select>
+                            <div class="form-text" id="pe-emp-hint">Employees with no logs in this cutoff.</div>
+                        </div>
+                        <div id="pe-day-wrap" class="mb-2">
+                            <label class="form-label" for="pe-day">Day</label>
+                            <select id="pe-day" class="form-select"></select>
+                        </div>
+                        <label class="form-label mb-1 mt-1">Punches</label>
                     </div>
+                    <ul class="pe-hint">
+                        <li>Hours, OT, undertime and late are computed from these punches and the day's shift.</li>
+                        <li><span class="pe-tag bio">bio</span> rows are device scans and can't be changed. <span class="pe-tag manual">manual</span> rows are yours and are saved under your name.</li>
+                        <li>A night shift's time-out can fall on the next day; its morning scans are pulled in automatically.</li>
+                        <li>To move a device scan to another day, add it from that day's editor.</li>
+                    </ul>
                     <div id="pe-rows"></div>
-                    <button type="button" class="btn btn-sm btn-outline-primary mt-1" onclick="peAddRow('')">
+                    <button type="button" id="pe-add-punch" class="btn btn-sm btn-outline-primary mt-1" onclick="peAddRow('')">
                         <i class="ri-add-line me-1"></i>Add punch
                     </button>
                 </div>
@@ -2740,15 +2746,7 @@ function pickDayToAdd() {
         Swal.fire({ icon: 'info', title: 'Nothing to add', text: 'Every day in this period already has a record — use Edit punches on the day instead.' });
         return;
     }
-    const opts = {};
-    missing.forEach(iso => { opts[iso] = fmtDayLong(iso); });
-    Swal.fire({
-        title: 'Add attendance',
-        text: `${e.lastname}, ${e.firstname} — pick the day to add.`,
-        input: 'select', inputOptions: opts, inputPlaceholder: 'Select a day…',
-        inputValidator: v => v ? undefined : 'Pick a day.',
-        showCancelButton: true, confirmButtonColor: '#6642aa', confirmButtonText: 'Next',
-    }).then(r => { if (r.isConfirmed && r.value) addDayPunches(r.value); });
+    peOpenAdd({ title: `Add attendance — ${e.lastname}, ${e.firstname}`, emps: null, days: missing });
 }
 
 // ── Local mutation helpers ───────────────────────────────────────────────────
@@ -3334,6 +3332,65 @@ function peAddRow(dt, bio) {
     wrap.appendChild(row);
 }
 
+// Add mode for the punch editor: employee (optional) and day are picked in
+// the modal itself. Changing the day moves the manual rows' date part along
+// with it, so times already typed are kept.
+function peOpenAdd(o) {
+    peNewEmp = null;
+    $id('pe-mode').value = 'add';
+    $id('pe-rec-id').value = '';
+    $id('pe-new-date').value = '';
+    peDate = '';
+    $id('pe-title-lbl').textContent = o.title || 'Add attendance';
+    $id('pe-date-lbl').textContent = '';
+    $id('pe-add-block').hidden = false;
+    const es = $id('pe-emp'), ds = $id('pe-day');
+    $id('pe-emp-wrap').hidden = !o.emps;
+    if (o.emps) {
+        es.innerHTML = '<option value="">Select employee…</option>' +
+            o.emps.map(x => `<option value="${x.id}">${esc(x.name)}${x.no ? ' · ' + esc(x.no) : ''}</option>`).join('');
+        es.value = o.emps.length === 1 ? String(o.emps[0].id) : '';
+        es.onchange = () => { peNewEmp = o.emps.find(x => String(x.id) === es.value) || null; };
+        es.onchange();
+        $id('pe-emp-hint').textContent = 'Employees with no logs in this cutoff' + (st.q ? ` matching "${st.q}"` : '') + '.';
+    }
+    ds.innerHTML = '<option value="">Select a day…</option>' +
+        o.days.map(iso => `<option value="${iso}">${fmtDayLong(iso)}</option>`).join('');
+    ds.value = o.day || '';
+    ds.onchange = () => peSetAddDay(ds.value);
+    peSetAddDay(ds.value);
+    [es, ds].forEach(sel => sel.dispatchEvent(new Event('change')));   // repaint the custom selects
+    bootstrap.Modal.getOrCreateInstance($id('modal-edit-punches')).show();
+    setTimeout(() => (o.emps && !es.value ? $id('pe-emp-wrap') : (ds.value ? $id('pe-rows') : $id('pe-day-wrap')))
+        .querySelector('.cs-trigger, .pe-dt, select')?.focus(), 300);
+}
+function peSetAddDay(day) {
+    const rows = $id('pe-rows');
+    $id('pe-new-date').value = day || '';
+    $id('pe-date-lbl').textContent = day ? '· ' + fmtDayLong(day) : '';
+    $id('pe-add-punch').disabled = !day;
+    if (!day) {
+        peDate = '';
+        rows.innerHTML = '<div class="pe-empty"><i class="ri-calendar-line me-1"></i>Pick the day, then type the time-in and time-out.</div>';
+        return;
+    }
+    const manual = [...rows.querySelectorAll('.pe-dt:not([readonly])')];
+    if (!manual.length) {
+        rows.innerHTML = '';
+        peDate = day;
+        peAddRow('', false);                 // time-in
+        peAddRow(day + 'T17:00', false);     // time-out
+    } else {
+        manual.forEach(i => { if (i.value) i.value = day + i.value.slice(10); });
+        peDate = day;
+    }
+}
+function peCloseAdd() {
+    $id('pe-mode').value = 'edit';
+    $id('pe-add-block').hidden = true;
+    $id('pe-add-punch').disabled = false;
+}
+
 function peRenderEmpty() {
     $id('pe-rows').innerHTML = '<div class="pe-empty"><i class="ri-information-line me-1"></i>No punches — saving now leaves the day blank.</div>';
 }
@@ -3342,6 +3399,7 @@ function editPunches(recId) {
     peNewEmp = null;
     const hit = findRec(recId);
     if (!hit) return;
+    peCloseAdd();
     peDate = hit.date;
     $id('pe-rec-id').value = recId;
     $id('pe-new-date').value = '';
@@ -3381,39 +3439,9 @@ async function addNewEmpAttendance() {
                        : 'Every active employee already has attendance in this cutoff.' });
         return;
     }
-    const empOpts = {};
-    list.forEach(x => { empOpts[x.id] = x.name + (x.no ? ' · ' + x.no : ''); });
-    const r1 = await Swal.fire({
-        title: 'Add attendance',
-        text: 'Employee with no logs in this cutoff' + (st.q ? ` (matching "${st.q}")` : '') + ':',
-        input: 'select', inputOptions: empOpts, inputPlaceholder: 'Select employee…',
-        inputValue: list.length === 1 ? String(list[0].id) : '',
-        inputValidator: v => v ? undefined : 'Pick an employee.',
-        showCancelButton: true, confirmButtonColor: '#6642aa', confirmButtonText: 'Next',
-    });
-    if (!r1.isConfirmed || !r1.value) return;
-    const emp = list.find(x => String(x.id) === String(r1.value));
-    const dayOpts = {};
-    eachDay(iso => { dayOpts[iso] = fmtDayLong(iso); });
-    const r2 = await Swal.fire({
-        title: 'Add attendance',
-        text: `${emp.name} — pick the day to add.`,
-        input: 'select', inputOptions: dayOpts, inputPlaceholder: 'Select a day…',
-        inputValidator: v => v ? undefined : 'Pick a day.',
-        showCancelButton: true, confirmButtonColor: '#6642aa', confirmButtonText: 'Next',
-    });
-    if (!r2.isConfirmed || !r2.value) return;
-    peNewEmp = emp;
-    peDate = r2.value;
-    $id('pe-rec-id').value = '';
-    $id('pe-new-date').value = r2.value;
-    $id('pe-title-lbl').textContent = 'Add attendance — ' + emp.name;
-    $id('pe-date-lbl').textContent = '· ' + fmtDayLong(r2.value);
-    $id('pe-rows').innerHTML = '';
-    peAddRow('', false);
-    peAddRow(r2.value + 'T17:00', false);   // time-in + time-out to fill in
-    bootstrap.Modal.getOrCreateInstance($id('modal-edit-punches')).show();
-    setTimeout(() => $id('pe-rows').querySelector('.pe-dt')?.focus(), 250);
+    const days = [];
+    eachDay(iso => days.push(iso));
+    peOpenAdd({ title: 'Add attendance', emps: list, days: days });
 }
 
 // The same editor in "new day" mode: no record yet — the row is created on
@@ -3423,6 +3451,8 @@ function addDayPunches(date) {
     const e = st.emps[st.sel];
     if (!e || !date || !CAN_ADD_DAY) return;
     if (e.days[date]) { editPunches((e.days[date].recs || [])[0]?.id); return; }   // stale sheet — it exists after all
+    peCloseAdd();
+    $id('pe-mode').value = 'add';
     peDate = date;
     $id('pe-rec-id').value = '';
     $id('pe-new-date').value = date;
@@ -3438,6 +3468,10 @@ document.getElementById('form-edit-punches').addEventListener('submit', async fu
     e.preventDefault();
     const recId   = parseInt($id('pe-rec-id').value, 10);
     const newDate = $id('pe-new-date').value;
+    if ($id('pe-mode').value === 'add') {
+        if (!$id('pe-add-block').hidden && !$id('pe-emp-wrap').hidden && !peNewEmp) { Swal.fire({ icon: 'warning', title: 'Pick an employee', text: 'Choose who this attendance is for.' }); return; }
+        if (!newDate) { Swal.fire({ icon: 'warning', title: 'Pick a day', text: 'Choose the day to add.' }); return; }
+    }
     const punches = [...document.querySelectorAll('#pe-rows .pe-dt')]
         .map(i => i.value).filter(Boolean).map(dt => ({ dt: dt }));
     if (newDate && !punches.length) {

@@ -386,3 +386,9 @@ body.v2 .ddv-tbl-empty { color: var(--v2-text-3); }
 body.v2 .ddv-viewseg { background: var(--quiet-bg); border-color: var(--quiet-bd); }
 body.v2 .ddv-viewseg button { color: var(--v2-text-2); }
 body.v2 .ddv-viewseg button.on { background: var(--acc-bg); border-color: var(--acc-bg); color: var(--acc-fg); box-shadow: none; }
+
+/* Punch editor (DTR documents): short hint list, add-mode pickers */
+.pe-hint { padding-left: 1.6rem; }
+.pe-hint li + li { margin-top: 3px; }
+body.v2 .pe-hint { background: var(--quiet-bg); border-color: var(--quiet-bd); color: var(--v2-text-2); font-size: 12px; border-radius: 10px; padding: 9px 12px 9px 1.9rem; }
+body.v2 .pe-add-block .form-label { color: var(--v2-text-2); font-weight: 600; }

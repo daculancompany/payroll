@@ -790,3 +790,8 @@ body.v2-drawer-open #fcm-enable-banner { display: none !important; }
 .v2-nav::-webkit-scrollbar-track { background: transparent; }
 .v2-nav::-webkit-scrollbar-thumb { background: transparent; border-radius: 6px; }
 .v2-nav:hover::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, .35); }
+
+/* Theme adapter gates (assets3/js/theme-adapter.js) */
+html.v2-pending #main-content { visibility: hidden; animation: v2-reveal 0s linear 1.5s forwards; }
+@keyframes v2-reveal { to { visibility: visible; } }
+html.v2-adapting *, html.v2-adapting *::before, html.v2-adapting *::after { transition: none !important; }

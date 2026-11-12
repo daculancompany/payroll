@@ -148,6 +148,9 @@ include __DIR__ . '/includes/v2/head.php';
         <main id="main-content" class="v2-content" data-page="<?= e($page) ?>" tabindex="-1">
             <?= $fragment ?>
         </main>
+        <!-- Right after the content, before the heavy vendor scripts: adapts
+             page colours to the theme before the first paint. -->
+        <script src="<?= av('assets3/js/theme-adapter.js') ?>"></script>
     </div>
 </div>
 
@@ -170,6 +173,5 @@ include __DIR__ . '/includes/app_scripts.php';
 <script src="<?= av('assets3/js/settings-modal.js') ?>"></script>
 <script src="<?= av('assets3/js/app-shell.js') ?>"></script>
 <script src="<?= av('assets3/js/app-router.js') ?>"></script>
-<script src="<?= av('assets3/js/theme-adapter.js') ?>"></script>
 </body>
 </html>

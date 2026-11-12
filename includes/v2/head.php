@@ -27,6 +27,10 @@
     <script>window.__UI_SERVER = <?= json_encode((object) $V2_SETTINGS, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
     <script src="<?= av('assets3/js/color-themes.js') ?>"></script>
     <script src="<?= av('assets3/js/theme-engine.js') ?>"></script>
+    <!-- Page content stays hidden until theme-adapter.js has recoloured it
+         (a few ms), so it never flashes in the old colours. app.css reveals
+         it after 1.5s regardless, in case a script fails. -->
+    <script>document.documentElement.classList.add('v2-pending');</script>
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

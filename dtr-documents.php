@@ -678,6 +678,18 @@ body {
 .ddv-log-chip { display:inline-flex; align-items:center; gap:3px; padding:1px 6px; border-radius:3px; font-size:9.5px; font-weight:600; }
 .ddv-log-chip.bio    { background:#eeeaf5; color:var(--brand); border:1px solid #c0b5d5; }
 .ddv-log-chip.manual { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
+/* One colour per way of punching, so the method is readable at a glance and
+   not only on hover. Translucent fills: the theme adapter leaves anything at
+   alpha <= .5 alone, so these read on a light and a dark theme alike. */
+.ddv-log-chip.face     { background:rgba(16,185,129,.16); color:#0f9d58; border:1px solid rgba(16,185,129,.4); }
+.ddv-log-chip.finger   { background:rgba(99,102,241,.16); color:#6366f1; border:1px solid rgba(99,102,241,.4); }
+.ddv-log-chip.pin      { background:rgba(59,130,246,.16); color:#2563eb; border:1px solid rgba(59,130,246,.4); }
+.ddv-log-chip.incident { background:rgba(239,68,68,.16);  color:#dc2626; border:1px solid rgba(239,68,68,.4); }
+/* A punch whose photo can be opened says so: the camera mark and the cursor. */
+.ddv-log-chip.has-shot { cursor:zoom-in; }
+.ddv-log-chip.has-shot:hover { filter:brightness(1.12); }
+.ddv-log-chip.has-shot:focus-visible { outline:2px solid currentColor; outline-offset:1px; }
+.ddv-log-cam { margin-left:2px; opacity:.72; font-size:9px !important; }
 .ddv-log-chip i { font-size:10px; }
 .ddv-rec-stats { display:flex; gap:8px; margin-top:5px; font-size:9.5px; color:#827d91; font-weight:600; }
 .ddv-rec-stats b { color:var(--brand); font-size:10.5px; }
@@ -2345,7 +2357,7 @@ function renderSummary(e) {
     const pct = periodDays ? Math.round(daysPresent / periodDays * 100) : 0;
     box.innerHTML = `
         <a href="index.php?page=employee-details&id=${e.id}" data-emp-quickview="${e.id}" class="ddv-sum-emp"
-           data-tip="Quick view\n${esc(e.lastname)}, ${esc(e.firstname)} — identity, shift, pay glance. Full details opens in a new tab.">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-id-card-line"></i></a>
+           data-tip="Quick view\n${esc(e.lastname)}, ${esc(e.firstname)} — identity, shift, pay glance. Full details opens in a new tab.">${esc(e.lastname)}, ${esc(e.firstname)} ${esc(e.middlename || '')} <i class="ri-passport-line"></i></a>
         <div class="ddv-sum-sub">${esc(e.no)}${e.position ? ' · ' + esc(e.position) : ''}${e.department ? ' · ' + esc(e.department) : ''}</div>
         <div class="ddv-sum-grid">
             <div class="ddv-sum-tile"><div class="v">${Number(e.totals.wh).toFixed(2)}</div><div class="l">Hours</div></div>
@@ -2633,7 +2645,25 @@ function renderRecords(e) {
                         : r.status === 2 ? '<span class="ddv-rec-badge b-disa">Disapproved</span>'
                         : '<span class="ddv-rec-badge b-pend">Pending</span>';
             const logs = (r.logs && r.logs.length)
-                ? r.logs.map(l => `<span class="ddv-log-chip ${l.bio ? 'bio' : 'manual'}"><i class="${l.bio ? 'ri-fingerprint-line' : 'ri-edit-line'}"></i>${esc(l.t)}</span>`).join('')
+                /* `m`/`mi`/`mt` come from punch_source_chip() server-side, so a face
+                   scan reads FACE here exactly as it does on Attendance. The bio/manual
+                   pair is the fallback for a payload built before that was sent.
+                   A punch with a photo (`ph`) opens it in the shared viewer; the tip
+                   says so, and one without a photo stays inert rather than pretending
+                   to be a button. */
+                ? r.logs.map(l => {
+                    const cls  = l.m || (l.bio ? 'bio' : 'manual');
+                    const icon = l.mi || (l.bio ? 'ri-fingerprint-line' : 'ri-edit-line');
+                    const tip  = l.ph ? `${l.mt || 'Scanned'} — click to see the photo` : (l.mt || '');
+                    /* Data attributes + one delegated handler, NOT an inline
+                       onclick: esc() turns an apostrophe into &#39;, which the
+                       HTML parser hands back to JS as a real quote — a name like
+                       O'Brien would end the string and break the chip. */
+                    const shot = l.ph
+                        ? ` role="button" tabindex="0" data-shot="${esc(l.ph)}" data-cap="${esc(l.cap || '')}"`
+                        : '';
+                    return `<span class="ddv-log-chip ${cls}${l.ph ? ' has-shot' : ''}"${tip ? ` data-tip="${esc(tip)}"` : ''}${shot}><i class="${icon}"></i>${esc(l.t)}${l.ph ? '<i class="ri-camera-line ddv-log-cam"></i>' : ''}</span>`;
+                  }).join('')
                 : '<span style="font-size:9.5px;color:#aaa;">No logs</span>';
             const dLbl = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             const flags = (r.flags || []).map(f => {
@@ -2726,6 +2756,29 @@ function renderRecords(e) {
         : '';
     box.innerHTML = addBar + (html || '<div style="font-size:11.5px;color:#948ea5;padding:8px;">No records.</div>');
 }
+
+/* Open a punch's photo. Delegated off document and bound once, so it keeps
+   working as the Records list is rebuilt on every employee / filter change.
+   Enter and Space match the click, since the chip is a role="button". */
+(function () {
+    function openShot(el) {
+        var src = el.getAttribute('data-shot');
+        if (src && typeof kioskPhotoView === 'function') {
+            kioskPhotoView(src, el.getAttribute('data-cap') || '');
+        }
+    }
+    document.addEventListener('click', function (e) {
+        var chip = e.target.closest && e.target.closest('.ddv-log-chip[data-shot]');
+        if (chip) openShot(chip);
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var chip = e.target.closest && e.target.closest('.ddv-log-chip[data-shot]');
+        if (!chip) return;
+        e.preventDefault();
+        openShot(chip);
+    });
+})();
 
 // Period dates this employee has no DTR_details row for.
 function missingDays(e) {
@@ -4077,6 +4130,11 @@ if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.ddv-app, .modal, .offcanvas'; $V2_PAPE
 // Shared "Review request" modal — the same form the requests queue decides
 // through, opened here from a record's filing chip (reviewFiling).
 include __DIR__ . '/includes/attendance_request_review.php';
+
+// Click a punch chip with a photo to see the face the kiosk recorded — the
+// same viewer Attendance, Punch Logs and the portal use.
+require_once __DIR__ . '/component/photo_viewer.php';
+echo render_photo_viewer();
 ?>
 
 </body>

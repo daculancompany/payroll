@@ -14,7 +14,7 @@
                     <!-- Date Range -->
                     <div class="mb-3">
                         <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
-                            <i class="ri-calendar-range-line me-1"></i>Date Range <span class="text-danger">*</span>
+                            <i class="ri-calendar-2-line me-1"></i>Date Range <span class="text-danger">*</span>
                         </label>
                         <div class="row g-2">
                             <div class="col-6">

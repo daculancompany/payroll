@@ -123,6 +123,13 @@ require_once __DIR__ . '/component/finger_hands.php';
                 <div class="col-lg-6 mb-3">
                     <?= render_finger_hands($conn, $emp_id, ['source' => 'device']) ?>
                 </div>
+                <!-- The mobile kiosk enrolls fingerprints AND faces, in its own
+                     tables. A timekeeper who enrolls on the tablet has to be
+                     able to see what is already registered there. Read-only:
+                     un-enrolling stays with the Administrator. -->
+                <div class="col-lg-6 mb-3">
+                    <?= render_finger_hands($conn, $emp_id, ['who' => $tk_fullname]) ?>
+                </div>
             </div>
 
         </div>

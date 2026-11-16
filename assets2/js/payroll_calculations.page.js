@@ -1540,22 +1540,35 @@
                     lh += '<div class="table-responsive"><table class="table table-sm table-bordered align-middle mb-0 al-table">'
                         + '<thead class="table-dark"><tr>'
                         + '<th class="text-center" style="width:36px;">#</th>'
+                        + '<th class="text-center" style="width:58px;"><i class="ri-camera-line me-1"></i>Photo</th>'
                         + '<th><i class="ri-time-line me-1"></i>Time</th>'
                         + '<th class="text-center" style="width:80px;">Direction</th>'
-                        + '<th class="text-center" style="width:80px;">Source</th>'
+                        + '<th class="text-center" style="width:100px;">Source</th>'
+                        + '<th class="text-center" style="width:80px;"><i class="ri-map-pin-line me-1"></i>Location</th>'
                         + '</tr></thead><tbody>';
                     lgs.forEach(function (l, li) {
                         var dir = li === 0 ? '<span class="att-log-dir att-log-in">IN</span>'
                             : (li === lgs.length - 1 ? '<span class="att-log-dir att-log-out">OUT</span>'
                                 : '<span class="text-muted small">&mdash;</span>');
-                        var src = l.bio
+                        // Built server-side (punch_source_html) so this modal and
+                        // Attendance cannot disagree about the same punch; the old
+                        // Bio/Manual badge is the fallback for a payroll whose rows
+                        // predate the chips.
+                        var src = l.src || (l.bio
                             ? '<span class="badge att-log-bio"><i class="ri-fingerprint-line me-1"></i>Bio</span>'
-                            : '<span class="badge att-log-manual"><i class="ri-edit-line me-1"></i>Manual</span>';
+                            : '<span class="badge att-log-manual"><i class="ri-edit-line me-1"></i>Manual</span>');
+                        // A photo exists only for a face punch; a fingerprint, PIN
+                        // or hand-entered punch shows the struck-through camera.
+                        var shot = l.photo
+                            || '<span class="pl-noshot pl-noshot-sm" data-tip="No photo for this punch"><i class="ri-camera-off-line"></i></span>';
+                        var geo = l.geo || '<span class="text-muted">&mdash;</span>';
                         lh += '<tr>'
                             + '<td class="text-center text-muted">' + (li + 1) + '</td>'
+                            + '<td class="text-center">' + shot + '</td>'
                             + '<td class="fw-semibold">' + esc(l.t) + '</td>'
                             + '<td class="text-center">' + dir + '</td>'
                             + '<td class="text-center">' + src + '</td>'
+                            + '<td class="text-center">' + geo + '</td>'
                             + '</tr>';
                     });
                     lh += '</tbody></table></div>';

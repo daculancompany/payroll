@@ -124,3 +124,61 @@
     font-size: 12px;
 }
 .rpt-filter-bar .val { font-weight: 700; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Punch-source chip — how an attendance punch was made.
+
+   Markup comes from punch_source_html() in includes/kiosk_admin.php, so one
+   punch reads the same on Punch Logs, Attendance and the portal. Two sizes:
+   the default carries icon + label; .pl-src-ico is the icon alone, for the
+   narrow Time Logs column, with the wording in the tooltip.
+
+   Colours are stated as tokens with the original light-theme value as a
+   fallback — the v2 dark and colour themes override the tokens in
+   assets3/css/app.css instead of restating these rules.
+   ═══════════════════════════════════════════════════════════════════════ */
+.pl-src {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 9.5px;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 9px;
+    text-transform: uppercase;
+    letter-spacing: .3px;
+    line-height: 1.5;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+.pl-src i { font-size: 11px; line-height: 1; }
+/* Icon-only: a circle, so a row of them reads as a column of marks rather
+   than as ragged pills. */
+.pl-src-ico { padding: 0; width: 18px; height: 18px; border-radius: 50%; justify-content: center; gap: 0; }
+.pl-src-ico i { font-size: 11.5px; }
+
+.pl-src.bio      { background: var(--src-bio-bg, #eef4ff);    color: var(--src-bio-fg, #3b5bbf); }
+.pl-src.face     { background: var(--src-face-bg, #eafaf0);   color: var(--src-face-fg, #0f9d58); }
+.pl-src.finger   { background: var(--src-finger-bg, #eef4ff); color: var(--src-finger-fg, #3b5bbf); }
+.pl-src.manual   { background: var(--src-manual-bg, #fff6e0); color: var(--src-manual-fg, #c98a00); }
+.pl-src.pin      { background: var(--src-pin-bg, #f3ecff);    color: var(--src-pin-fg, #6a3fc0); }
+.pl-src.kiosk    { background: var(--src-face-bg, #eafaf0);   color: var(--src-face-fg, #0f9d58); }
+.pl-src.incident { background: var(--src-inc-bg, #fdecec);    color: var(--src-inc-fg, #c0392b); }
+
+/* Location chip — states defined in punch_location_html(). */
+.pl-src.geo      { background: var(--src-geo-bg, #eef4ff);  color: var(--src-geo-fg, #3b5bbf); }
+.pl-src.geo-out  { background: var(--src-out-bg, #fff6e0);  color: var(--src-out-fg, #c98a00); }
+.pl-src.geo-fake { background: var(--src-inc-bg, #fdecec);  color: var(--src-inc-fg, #c0392b); }
+
+/* Punch photo thumbnail + "no photo" placeholder. Shared by Punch Logs, the
+   Attendance time-log modal and PIN Attendance; .*-sm is the modal size. */
+.pl-shot {
+    width: 44px; height: 44px; border-radius: 8px; object-fit: cover;
+    border: 1px solid var(--v2-border, #e4e1ec); cursor: zoom-in; display: block;
+}
+.pl-noshot {
+    width: 44px; height: 44px; border-radius: 8px;
+    border: 1px dashed var(--v2-border-strong, #d5d0e2); color: var(--v2-text-3, #b9b4c6);
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.pl-shot-sm, .pl-noshot-sm { width: 34px; height: 34px; border-radius: 7px; margin: 0 auto; font-size: 13px; }

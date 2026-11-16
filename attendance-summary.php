@@ -149,7 +149,7 @@ $has_filter = ($f_site !== 0 || $f_from !== $as_this_month_first || $f_to !== $a
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Date Range</label>
                         <div id="as-daterange" class="att-range-picker">
                             <i class="ri-calendar-2-line"></i>
                             <span id="as-range-label"><?= htmlspecialchars($as_range_label) ?></span>

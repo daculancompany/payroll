@@ -129,6 +129,14 @@ foreach ($payrollReviewRows as $eid => $prv) {
 // Approved DTR_details entries behind each employee's "No. of Days" figure,
 // grouped by employee + site so the view popover mirrors calculate_payroll()'s source data.
 $dtrLogsByEmpSite = [];
+// How each of those punches was made (face / finger / PIN / manual), the photo
+// the kiosk took and where it was made — the same source as Attendance and
+// Punch Logs, so the Daily Time Record modal cannot tell a different story
+// about the same punch. Keyed employee_id|'Y-m-d H:i:s'.
+$pcwPunchMeta = [];
+// Required unconditionally: pcw_dtr_sheet() calls punch_source_html() even
+// when this payroll has no sites and the block below never runs.
+require_once __DIR__ . '/includes/kiosk_admin.php';
 if ($commaSeparatedSites !== '') {
     $df_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_from'])));
     $dt_esc = $conn->real_escape_string(date('Y-m-d', strtotime($payroll['date_to'])));
@@ -144,6 +152,7 @@ if ($commaSeparatedSites !== '') {
     if ($dtr_logs_q) while ($dlr = $dtr_logs_q->fetch_assoc()) {
         $dtrLogsByEmpSite[$dlr['employee_id']][$dlr['site_id']][] = $dlr;
     }
+    $pcwPunchMeta = kiosk_punch_meta($conn, $df_esc, $dt_esc);
 }
 
 // ── Stale-schedule check ── rows this payroll consumed (same scope as the
@@ -277,7 +286,7 @@ if ($commaSeparatedSites !== '') {
 // Builds the Form 48 payload (days map + totals) for one employee+site from
 // the approved DTR_details rows, mirroring dtr-employee-server.php's cells so
 // window.DTRForm48.render() draws the same Daily Time Record sheet.
-function pcw_dtr_sheet($days) {
+function pcw_dtr_sheet($days, array $punch_meta = [], string $who = '') {
     $map = [];
     $tot = ['wh' => 0, 'ot' => 0, 'ut' => 0, 'late' => 0];
     foreach ($days as $d) {
@@ -285,7 +294,14 @@ function pcw_dtr_sheet($days) {
         $logs = json_decode($d['logs'], true) ?: [];
         $punches = [];
         foreach ($logs as $lg) {
-            $punches[] = ['ts' => strtotime($lg['dateTime']), 'bio' => (($lg['type'] ?? '') === 'bio')];
+            $ts = strtotime($lg['dateTime']);
+            $punches[] = [
+                'ts'   => $ts,
+                'bio'  => (($lg['type'] ?? '') === 'bio'),
+                'type' => $lg['type'] ?? 'bio',
+                // The kiosk record for this exact moment, when there is one.
+                'meta' => kiosk_punch_meta_for($punch_meta, $d['employee_id'], date('Y-m-d H:i:s', $ts)),
+            ];
         }
         usort($punches, function ($a, $b) { return $a['ts'] <=> $b['ts']; });
         $times = array_column($punches, 'ts');
@@ -312,9 +328,23 @@ function pcw_dtr_sheet($days) {
         $cell['sched_id'] = isset($d['schedule_id']) && $d['schedule_id'] !== null ? (int)$d['schedule_id'] : null;
         $cell['note']     = trim((string)($d['notes'] ?? ''));
         // Raw punch list for the modal's Attendance Logs section (Form 48
-        // render ignores this extra key).
-        $cell['logs'] = array_map(function ($p) {
-            return ['t' => date('g:i A', $p['ts']), 'bio' => $p['bio']];
+        // render ignores this extra key). `src`, `photo` and `geo` are the
+        // same server-built chips Attendance and Punch Logs show, so one
+        // punch cannot read as FACE on one screen and plain BIO on another.
+        $cell['logs'] = array_map(function ($p) use ($who) {
+            $meta = $p['meta'];
+            $cap  = trim($who . ' · ' . date('M j, g:i A', $p['ts']), ' ·');
+            return [
+                't'     => date('g:i A', $p['ts']),
+                'bio'   => $p['bio'],
+                'src'   => punch_source_html($p['type'], $meta, true),
+                'geo'   => punch_location_html($meta),
+                'photo' => !empty($meta['photo'])
+                    ? '<img class="pl-shot pl-shot-sm" src="' . htmlspecialchars($meta['photo'], ENT_QUOTES) . '"'
+                      . ' alt="" loading="lazy" onclick="kioskPhotoView(this.src, '
+                      . htmlspecialchars(json_encode($cap), ENT_QUOTES) . ')">'
+                    : '',
+            ];
         }, $punches);
         $map[$iso] = $cell;
         $tot['wh'] += $cell['wh'];
@@ -562,6 +592,11 @@ $refund_names = [];   // refund id => display name
     <script defer src="<?= $V2_STANDALONE ? 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js' : 'assets/libs/bootstrap/js/bootstrap.bundle.min.js' ?>"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <link href="<?= av('assets2/css/payroll_calculations.css') ?>" rel="stylesheet">
+    <?php /* The punch chips (.pl-src / .pl-shot / .geo) shown in the Daily Time
+             Record modal's Logs tab. Both shells load this globally from
+             includes/header.php; this page has its own <head>, so it has to
+             ask for it, or the chips render as bare text. */ ?>
+    <link href="<?= av('assets2/css/reports.css') ?>" rel="stylesheet">
 
 <!-- ── Version History Offcanvas ──────────────────────── -->
 
@@ -1837,7 +1872,7 @@ $refund_names = [];   // refund id => display name
                                                         'net' => (float)$net,
                                                         'prev_net' => $prevPayroll ? ($prevNetByEmpSite[$row['employee_id'] . '-' . $row['site_id']] ?? $prevNetByEmp[$row['employee_id']] ?? null) : null,
                                                         'dtr_days' => count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
-                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwDayMarks[(int)$row['employee_id']] ?? new stdClass()],
+                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? [], $pcwPunchMeta, $row['lastname'] . ', ' . $row['firstname']) + ['marks' => $pcwDayMarks[(int)$row['employee_id']] ?? new stdClass()],
                                                         'notes' => $pcwNotesByEmp[(int)$row['employee_id']] ?? [],
                                                         'msgs' => $pcwMsgsByEmp[(int)$row['employee_id']] ?? [],
                                                         'rv' => $rv, 'rv_c' => (string)($row['review_comment'] ?? ''),
@@ -2643,7 +2678,7 @@ $refund_names = [];   // refund id => display name
                                                         'net' => (float)$net,
                                                         'prev_net' => $prevPayroll ? ($prevNetByEmpSite[$row['employee_id'] . '-' . $row['site_id']] ?? $prevNetByEmp[$row['employee_id']] ?? null) : null,
                                                         'dtr_days' => count($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []),
-                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? []) + ['marks' => $pcwDayMarks[(int)$row['employee_id']] ?? new stdClass()],
+                                                        'dtr' => pcw_dtr_sheet($dtrLogsByEmpSite[$row['employee_id']][$row['site_id']] ?? [], $pcwPunchMeta, $row['lastname'] . ', ' . $row['firstname']) + ['marks' => $pcwDayMarks[(int)$row['employee_id']] ?? new stdClass()],
                                                         'notes' => $pcwNotesByEmp[(int)$row['employee_id']] ?? [],
                                                         'msgs' => $pcwMsgsByEmp[(int)$row['employee_id']] ?? [],
                                                         'rv' => $rv, 'rv_c' => (string)($row['review_comment'] ?? ''),
@@ -2902,7 +2937,7 @@ $refund_names = [];   // refund id => display name
                         <div class="al-meta-value" id="al-employee"></div>
                     </div>
                     <div class="text-end">
-                        <div class="al-meta-label"><i class="ri-calendar-range-line me-1"></i>Payroll Period</div>
+                        <div class="al-meta-label"><i class="ri-calendar-2-line me-1"></i>Payroll Period</div>
                         <div class="al-meta-value"><?= date('M j, Y', strtotime($payroll['date_from'])) ?> &ndash; <?= date('M j, Y', strtotime($payroll['date_to'])) ?></div>
                     </div>
                 </div>
@@ -3026,7 +3061,7 @@ function renderRemittance() {
                 return '&#8369; ' + (Number(n) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             };
             var h = '<div class="d-flex justify-content-between flex-wrap gap-2 mb-3">'
-                + '<div><div class="al-meta-label"><i class="ri-calendar-range-line me-1"></i>Payroll Period</div>'
+                + '<div><div class="al-meta-label"><i class="ri-calendar-2-line me-1"></i>Payroll Period</div>'
                 + '<div class="al-meta-value" style="color:#107c41;"><?= date('M j, Y', strtotime($payroll['date_from'])) ?> &ndash; <?= date('M j, Y', strtotime($payroll['date_to'])) ?></div></div>'
                 + '<div class="text-end"><div class="al-meta-label"><i class="ri-group-line me-1"></i>Employees</div>'
                 + '<div class="al-meta-value" style="color:#107c41;">' + (res.employees || 0).toLocaleString('en-US') + '</div></div>'
@@ -4025,6 +4060,10 @@ window.PCW_META = <?= json_encode([
 // Employee quick-view drawer (avatar / name clicks on the sheet). "Full
 // details" opens in the same tab (per user preference — no target=_blank).
 include __DIR__ . '/component/employee_quick_view.php';
+// Click-to-enlarge for the punch photos in the Daily Time Record modal's Logs
+// tab — the same viewer Attendance, Punch Logs and the portal use.
+require_once __DIR__ . '/component/photo_viewer.php';
+echo render_photo_viewer();
 if ($V2_STANDALONE) { $V2_ADAPT_SCOPE = '.pcw-app, .modal, .offcanvas'; include __DIR__ . '/includes/v2/standalone_foot.php'; }
 ?>
 </body>

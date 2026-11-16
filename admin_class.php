@@ -3640,6 +3640,12 @@ class Action
             $emp[$k] = $v === '' ? null : $v;
         }
 
+        // Their photo (or kiosk face), so the drawer shows the person rather
+        // than two letters. Null when nothing is enrolled — the drawer then
+        // falls back to initials, as it always did.
+        require_once __DIR__ . '/hr_class.php';
+        $emp['photo'] = employee_avatar($this->db, $id);
+
         // Compensation is a glance for roles that may see pay elsewhere; the
         // same roles employee-view-server.php used to blank it for.
         $role = (int) ($_SESSION['login_role'] ?? 0);
@@ -9596,8 +9602,11 @@ class Action
             $stmt5->execute();
             $detail = $stmt5->get_result()->fetch_assoc();
 
-            // Manual (admin-authorized) punches are flagged in the log for audit.
-            $entry_type = ($_POST['entry_type'] ?? '') === 'manual' ? 'manual' : 'bio';
+            // Manual (admin-authorized) punches are flagged in the log for audit,
+            // and so are kiosk PIN punches (kiosk_api_class.php) — those are
+            // reviewed on the PIN Attendance page, and rejecting one removes
+            // exactly this {dateTime, type:'pin'} entry again.
+            $entry_type = in_array($_POST['entry_type'] ?? '', ['manual', 'pin'], true) ? $_POST['entry_type'] : 'bio';
             $log_entry  = ['dateTime' => $scan_time, 'type' => $entry_type];
             if ($entry_type === 'manual' && !empty($_POST['authorized_by'])) {
                 $log_entry['authorized_by'] = substr(trim($_POST['authorized_by']), 0, 80);

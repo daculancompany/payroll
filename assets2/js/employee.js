@@ -479,6 +479,38 @@ $(function () {
     });
 });
 
+/**
+ * "Allow punching from their own phone" on the Create / Edit Employee form.
+ *
+ * save_employee() does not know this column, so the switch is applied right
+ * after the save through set_mobile_punch — the same endpoint the Employee
+ * Details page uses, and the only one that also signs out live devices when
+ * the answer turns to no. Nothing is posted when the switch did not move, so
+ * an ordinary edit never touches anybody's signed-in phones.
+ *
+ * Returns '' when there was nothing to do or it worked, else the reason, which
+ * the caller shows beside "saved" — the employee WAS saved either way, and
+ * saying so is better than a silent half-success.
+ */
+async function mpunchApplyAfterSave(empId) {
+    var cb = document.getElementById("mpunch_enabled");
+    if (!cb || !empId) return "";
+    var want = cb.checked ? 1 : 0;
+    if (String(want) === String(cb.dataset.original || "0")) return "";
+    try {
+        var res = await fetch("ajax.php?action=set_mobile_punch", {
+            method: "POST",
+            body: new URLSearchParams({ employee_id: String(empId), enabled: String(want) }),
+        });
+        var j = await res.json();
+        if (!j || !j.result) return j && j.message ? j.message : "Phone punching could not be changed.";
+        cb.dataset.original = String(want);
+        return "";
+    } catch (err) {
+        return "Phone punching could not be changed — the server did not answer.";
+    }
+}
+
 $("#form-add").on("submit", async function (e) {
     e.preventDefault();
     var form = $(this);
@@ -503,7 +535,7 @@ $("#form-add").on("submit", async function (e) {
                 handleError(error || "");
                 $(".submitbutton").removeAttr("disabled");
             },
-            success: function (res) {
+            success: async function (res) {
                 res = (typeof res === 'string') ? res.trim() : res;
                 // Server-side validation / error response
                 if (typeof res === 'string' && res.indexOf('error:') === 0) {
@@ -516,20 +548,25 @@ $("#form-add").on("submit", async function (e) {
                     Swal.fire({ icon: 'error', title: 'Error', text: 'Something went wrong. Please try again.' });
                     return;
                 }
+                // On create the response IS the new id; on update it is the word
+                // "updated" and the id is the one the form was opened with.
+                var empId = (res == "updated") ? form.find("input[name='id']").val() : res;
+                var mpErr = await mpunchApplyAfterSave(empId);
+                var savedText = "Employee successfully saved!" + (mpErr ? " " + mpErr : "");
                 if (res == "updated") {
                     Swal.fire({
-                        icon: "success",
-                        title: "Success!",
-                        text: "Employee successfully saved!",
+                        icon: mpErr ? "warning" : "success",
+                        title: mpErr ? "Saved, with one thing left" : "Success!",
+                        text: savedText,
                     }).then((result) => {
                         window.location.reload();
                     });
                     return;
                 }
                 Swal.fire({
-                    icon: "success",
-                    title: "Success!",
-                    text: "Employee successfully saved!",
+                    icon: mpErr ? "warning" : "success",
+                    title: mpErr ? "Saved, with one thing left" : "Success!",
+                    text: savedText,
                     showCancelButton: true,
                     confirmButtonText: "View",
                     cancelButtonText: "Close",

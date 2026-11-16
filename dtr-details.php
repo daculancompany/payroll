@@ -477,6 +477,12 @@ if (!empty($dtr['date_from']) && !empty($dtr['date_to'])) {
 .dtr-fs .dtr-fs-exit { display:inline-flex; }
 .dtr-log-chip.bio    { background:#eeeaf5; color:#6642aa; border:1px solid #c0b5d5; }
 .dtr-log-chip.manual { background:#fff8e1; color:#c98a00; border:1px solid #ffe082; }
+/* One colour per way of punching. Translucent fills so the same rules read on
+   a light and a dark theme (the adapter leaves alpha <= .5 alone). */
+.dtr-log-chip.face     { background:rgba(16,185,129,.16); color:#0f9d58; border:1px solid rgba(16,185,129,.4); }
+.dtr-log-chip.finger   { background:rgba(99,102,241,.16); color:#6366f1; border:1px solid rgba(99,102,241,.4); }
+.dtr-log-chip.pin      { background:rgba(59,130,246,.16); color:#2563eb; border:1px solid rgba(59,130,246,.4); }
+.dtr-log-chip.incident { background:rgba(239,68,68,.16);  color:#dc2626; border:1px solid rgba(239,68,68,.4); }
 
 /* ── Date group banner — soft mint band (was a solid purple fill) ── */
 #table-1 tbody tr.date-separator td {

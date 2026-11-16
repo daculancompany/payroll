@@ -25,6 +25,19 @@ if (function_exists('page_allowed') && page_allowed('attendance-requests') && is
         if ($__q) $__ar_pending = (int) ($__q->fetch_assoc()['c'] ?? 0);
     } catch (Throwable $e) { $__ar_pending = 0; }
 }
+// PIN punches waiting for review. Not department-scoped: the page is
+// Administrator-only (ADMIN_ONLY_PAGES), so there is no ward to scope to.
+$__pin_pending = 0;
+if (function_exists('page_allowed') && page_allowed('pin-attendance') && isset($conn)) {
+    try {
+        $__q = $conn->query("SELECT COUNT(*) c FROM kiosk_punches WHERE entry_type = 'pin' AND approval = 'pending'");
+        if ($__q) $__pin_pending = (int) ($__q->fetch_assoc()['c'] ?? 0);
+    } catch (Throwable $e) { $__pin_pending = 0; }
+}
+$__pin_pill = $__pin_pending > 0
+    ? '<span class="badge rounded-pill bg-warning text-dark ms-auto sb-count" title="' . $__pin_pending . ' PIN punch' . ($__pin_pending === 1 ? '' : 'es') . ' awaiting review">' . ($__pin_pending > 99 ? '99+' : $__pin_pending) . '</span>'
+    : '';
+
 $__ar_pill = $__ar_pending > 0
     ? '<span class="badge rounded-pill bg-warning text-dark ms-auto sb-count" title="' . $__ar_pending . ' pending request' . ($__ar_pending === 1 ? '' : 's') . '">' . ($__ar_pending > 99 ? '99+' : $__ar_pending) . '</span>'
     : '';
@@ -125,7 +138,7 @@ $__ar_pill = $__ar_pending > 0
                     <!-- Full-viewport page of its own, so it is linked directly
                          rather than through index.php's ?page= router. -->
                     <a href="duty-roster.php" class="nav-link menu-link">
-                        <i class="ri-calendar-schedule-line"></i> <span>Duty Roster</span>
+                        <i class="ri-calendar-todo-line"></i> <span>Duty Roster</span>
                     </a>
                 </li>
                 <?php endif; ?>
@@ -174,12 +187,32 @@ $__ar_pill = $__ar_pending > 0
                     </a>
                 </li>
 
+                <!-- ===== HR ===== (Admin + HR; page_allowed decides) -->
+                <?php
+                $hr_nav = array_filter([
+                    'hr-overview'      => ['HR Overview',       'ri-user-heart-line'],
+                    'hr-announcements' => ['Announcements',     'ri-megaphone-line'],
+                    'hr-requests'      => ['Document Requests', 'ri-file-paper-2-line'],
+                    'hr-offboarding'   => ['Offboarding',       'ri-logout-box-r-line'],
+                ], 'page_allowed', ARRAY_FILTER_USE_KEY);
+                ?>
+                <?php if ($hr_nav): ?>
+                <li class="menu-title"><span>HR</span></li>
+                <?php foreach ($hr_nav as $hr_slug => $hr_item): ?>
+                <li class="nav-item">
+                    <a href="<?= $hr_slug ?>" class="nav-link menu-link <?= $page === $hr_slug ? 'active' : '' ?>">
+                        <i class="<?= $hr_item[1] ?>"></i> <span><?= $hr_item[0] ?></span>
+                    </a>
+                </li>
+                <?php endforeach; ?>
+                <?php endif; ?>
+
                 <!-- ===== SCHEDULING & TIME =====
                      Every link below asks page_allowed() — the same function
                      index.php routes through — so a visible menu item and an
                      openable URL are guaranteed to be the same set. -->
                 <?php
-                $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests','punch-logs','similarity-reports'];
+                $att_pages  = ['attendance','dtr','dtr-details','biometric-dtr','attendance-requests','punch-logs','similarity-reports','pin-attendance','kiosk-devices'];
                 $att_shown  = array_filter($att_pages, 'page_allowed');
                 $sched_shown = array_filter(['work-schedules','schedule-roster','duty-roster'], 'page_allowed');
                 ?>
@@ -206,7 +239,7 @@ $__ar_pill = $__ar_pending > 0
                     <!-- Full-viewport page of its own (like dtr-documents.php), so it is
                          linked directly rather than through index.php's ?page= router. -->
                     <a href="duty-roster.php" class="nav-link menu-link">
-                        <i class="ri-calendar-schedule-line"></i> <span>Duty Roster</span>
+                        <i class="ri-calendar-todo-line"></i> <span>Duty Roster</span>
                     </a>
                 </li>
                 <?php endif; ?>
@@ -243,6 +276,23 @@ $__ar_pill = $__ar_pending > 0
                                 <!-- The raw scans behind the DTR — one row per punch, not per day. -->
                                 <a href="punch-logs" class="nav-link <?= $page === 'punch-logs' ? 'active' : '' ?>">
                                     <i class="ri-scan-line me-1"></i>Punch Logs
+                                </a>
+                            </li>
+                            <?php endif; ?>
+                            <?php if (page_allowed('pin-attendance')): ?>
+                            <li class="nav-item">
+                                <!-- Kiosk punches made with an employee PIN instead of a face, awaiting review. -->
+                                <a href="pin-attendance" class="nav-link <?= $page === 'pin-attendance' ? 'active' : '' ?>">
+                                    <i class="ri-lock-password-line me-1"></i>PIN Attendance
+                                    <?= $__pin_pill ?>
+                                </a>
+                            </li>
+                            <?php endif; ?>
+                            <?php if (page_allowed('kiosk-devices')): ?>
+                            <li class="nav-item">
+                                <!-- The tablets running the kiosk app: alive, queue depth, block a lost one. -->
+                                <a href="kiosk-devices" class="nav-link <?= $page === 'kiosk-devices' ? 'active' : '' ?>">
+                                    <i class="ri-tablet-line me-1"></i>Kiosk Devices
                                 </a>
                             </li>
                             <?php endif; ?>

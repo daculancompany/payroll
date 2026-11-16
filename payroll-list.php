@@ -102,7 +102,7 @@
 								<thead class="table-dark">
 									<tr>
 										<th><i class="ri-hashtag me-1"></i>Payroll ID</th>
-										<th><i class="ri-calendar-range-line me-1"></i>Period</th>
+										<th><i class="ri-calendar-2-line me-1"></i>Period</th>
 										<th><i class="ri-pulse-line me-1"></i>Status</th>
 										<th class="text-center"><i class="ri-settings-3-line me-1"></i>Action</th>
 									</tr>

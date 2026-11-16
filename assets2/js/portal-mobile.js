@@ -24,7 +24,7 @@
         mydtr: 'My DTR',             'att-requests': 'Requests',
         compare: 'Compare',          loans: 'Loans',
         contrib: 'Contributions',    info: 'My Info',
-        help: 'Help & FAQ'
+        hr: 'HR',                    help: 'Help & FAQ'
     };
     /* Screens that live in the bottom nav, in visual order — swipe moves between these */
     var PRIMARY_TABS = ['overview', 'payslips', 'attendance', 'leave'];

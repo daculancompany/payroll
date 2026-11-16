@@ -10,6 +10,15 @@ foreach (['leaves' => 'leave_requests', 'attendance-requests' => 'attendance_req
         if ($__q) $__counts[$__slug] = (int) ($__q->fetch_assoc()['c'] ?? 0);
     } catch (Throwable $e) { /* never break the sidebar over a badge */ }
 }
+// PIN punches awaiting review — same pill, but its own condition (and no
+// department scope: the page is Administrator-only).
+$__counts['pin-attendance'] = 0;
+if (page_allowed('pin-attendance') && isset($conn)) {
+    try {
+        $__q = $conn->query("SELECT COUNT(*) c FROM kiosk_punches WHERE entry_type = 'pin' AND approval = 'pending'");
+        if ($__q) $__counts['pin-attendance'] = (int) ($__q->fetch_assoc()['c'] ?? 0);
+    } catch (Throwable $e) { /* never break the sidebar over a badge */ }
+}
 ?>
 <aside class="v2-sidebar" id="v2-sidebar" aria-label="Main navigation">
     <div class="v2-brand">

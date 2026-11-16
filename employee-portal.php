@@ -695,6 +695,10 @@ if ($today_att) {
 $logs_from = date('Y-m-01', strtotime($_GET['lmonth'] ?? 'now'));
 $logs_to   = date('Y-m-t',  strtotime($logs_from));
 $my_punches = dtr_punch_feed($conn, ['employee_id' => $emp_id, 'from' => $logs_from, 'to' => $logs_to]);
+// Photo taken at each scan, plus whether a PIN punch is still being
+// reviewed — shared with the admin Punch Logs screen.
+require_once __DIR__ . '/includes/kiosk_admin.php';
+$my_shots = kiosk_punch_meta($conn, $logs_from, $logs_to, $emp_id);
 // Grouped by the day the scan HAPPENED on — that is the day the employee
 // remembers. Which shift day it counts toward is shown per punch instead.
 $my_punch_days = [];
@@ -1046,6 +1050,9 @@ body{
 .mylog-p .t{font-size:14px;font-weight:800;color:#3a285d;min-width:78px;}
 .mylog-p .src{font-size:9.5px;font-weight:800;padding:2px 8px;border-radius:9px;text-transform:uppercase;letter-spacing:.3px;background:#eef4ff;color:#3b5bbf;}
 .mylog-p .src.manual{background:#fff6e0;color:#c98a00;}
+.mylog-p .src.pin{background:#f3ecff;color:#6a3fc0;}
+.mylog-shot{width:34px;height:34px;border-radius:8px;object-fit:cover;border:1px solid #e7e3ef;cursor:zoom-in;flex-shrink:0;}
+.mylog-rev{font-size:9px;font-weight:800;padding:2px 6px;border-radius:9px;background:#fff6e0;color:#b07800;text-transform:uppercase;letter-spacing:.3px;}
 .mylog-p .seq{font-size:10.5px;color:#b3aec2;font-weight:700;}
 .mylog-p .carry{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:9px;display:inline-flex;align-items:center;gap:4px;}
 .mylog-p .carry.noc{background:#efe9fb;color:#5b3ea8;}
@@ -2440,7 +2447,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 
     <!-- Tabs. On mobile only the .tab-primary items + a "More" button show in the
          bottom nav; .tab-secondary items live in the More sheet. Desktop shows all. -->
-    <?php $more_badge = $dtr_review_pending_count + $att_req_pending_count + $payroll_review_pending_count; ?>
+    <?php
+    // HR tab data (announcements, memos, documents, requests…): loaded here so
+    // the tab strip, More sheet and Needs Your Action can count it first.
+    require __DIR__ . '/component/portal_hr_data.php';
+    $more_badge = $dtr_review_pending_count + $att_req_pending_count + $payroll_review_pending_count + $phm_badge;
+    ?>
     <div class="tab-strip">
         <button class="tab-btn tab-primary active" onclick="switchTab('overview',this)">
             <i class="ri-home-5-line"></i><span class="tab-label">Overview</span>
@@ -2484,6 +2496,12 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <button class="tab-btn tab-secondary" onclick="switchTab('info',this)">
             <i class="ri-profile-line"></i><span class="tab-label">My Info</span>
         </button>
+        <?php if ($phm_has): ?>
+        <button class="tab-btn tab-secondary" id="tabbtn-hr" onclick="switchTab('hr',this)">
+            <i class="ri-user-heart-line"></i><span class="tab-label">HR</span>
+            <?php if ($phm_badge): ?><span class="badge-count" style="background:#e6a817;"><?= $phm_badge ?></span><?php endif; ?>
+        </button>
+        <?php endif; ?>
         <?php /* Help tab hidden for now — restore by uncommenting.
         <button class="tab-btn tab-secondary" onclick="switchTab('help',this)">
             <i class="ri-question-line"></i><span class="tab-label">Help</span>
@@ -2537,6 +2555,13 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 <span class="more-ic" style="background:#f0ecf6;color:#6642aa;"><i class="ri-profile-line"></i></span>
                 <span class="more-lbl">My Info</span>
             </button>
+            <?php if ($phm_has): ?>
+            <button type="button" class="more-item" id="moreitem-hr" onclick="goMore('hr')">
+                <span class="more-ic" style="background:#eef4ff;color:#2563eb;"><i class="ri-user-heart-line"></i></span>
+                <span class="more-lbl">HR</span>
+                <?php if ($phm_badge): ?><span class="more-dot"><?= $phm_badge ?></span><?php endif; ?>
+            </button>
+            <?php endif; ?>
             <?php /* Help hidden for now — restore by uncommenting.
             <button type="button" class="more-item" onclick="goMore('help')">
                 <span class="more-ic" style="background:#eafaf0;color:#0f9d58;"><i class="ri-question-line"></i></span>
@@ -2550,7 +2575,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
     <div class="tab-panel active" id="tab-overview">
 
         <!-- Needs Your Action -->
-        <?php $needs_total = $payroll_review_pending_count + $dtr_review_pending_count + $leave_pending_count + $att_req_pending_count + $dtr_flag_total + count($sched_changes); ?>
+        <?php $needs_total = $payroll_review_pending_count + $dtr_review_pending_count + $leave_pending_count + $att_req_pending_count + $dtr_flag_total + count($sched_changes) + $phm_badge; ?>
         <?php if ($needs_total): ?>
         <div class="needs-action">
             <div class="na-head"><i class="ri-alarm-warning-line"></i> Needs Your Action</div>
@@ -2593,9 +2618,23 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <i class="ri-arrow-right-s-line na-go"></i>
                 </button>
                 <?php endif; ?>
+                <?php if ($phm_unack): ?>
+                <button type="button" class="na-item" data-na-key="memo" onclick="switchTab('hr',null)">
+                    <span class="na-ic req"><i class="ri-file-text-line"></i></span>
+                    <span class="na-txt"><b><?= $phm_unack ?></b> memo<?= $phm_unack == 1 ? '' : 's' ?> from HR to acknowledge</span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
+                <?php if ($phm_unread): ?>
+                <button type="button" class="na-item" data-na-key="ann" onclick="switchTab('hr',null)">
+                    <span class="na-ic pay"><i class="ri-megaphone-line"></i></span>
+                    <span class="na-txt"><b><?= $phm_unread ?></b> new announcement<?= $phm_unread == 1 ? '' : 's' ?></span>
+                    <i class="ri-arrow-right-s-line na-go"></i>
+                </button>
+                <?php endif; ?>
                 <?php if ($sched_changes): ?>
                 <button type="button" class="na-item" data-na-key="sched" onclick="switchTab('attendance',null)">
-                    <span class="na-ic leave"><i class="ri-calendar-schedule-line"></i></span>
+                    <span class="na-ic leave"><i class="ri-calendar-todo-line"></i></span>
                     <span class="na-txt"><?= htmlspecialchars($sched_changes[0]['txt']) ?></span>
                     <i class="ri-arrow-right-s-line na-go"></i>
                 </button>
@@ -2607,7 +2646,19 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <!-- Employee header -->
         <div class="emp-hdr" id="emp-hdr">
             <div class="emp-hdr-top">
-                <div class="emp-av"><?= $initials ?></div>
+                <?php
+                // Their own photo, else the face the kiosk recognises them by.
+                // Initials otherwise.
+                require_once __DIR__ . '/hr_class.php';
+                $my_face = employee_avatar($conn, $emp_id);
+                ?>
+                <?php if ($my_face): ?>
+                    <img src="<?= $my_face ?>" alt="" class="emp-av" style="object-fit:cover;"
+                         onerror="this.replaceWith(Object.assign(document.createElement('div'), {className:'emp-av', textContent:this.dataset.init}))"
+                         data-init="<?= $initials ?>">
+                <?php else: ?>
+                    <div class="emp-av"><?= $initials ?></div>
+                <?php endif; ?>
                 <div style="flex:1;min-width:0;">
                     <div style="font-size:10px;color:rgba(255,255,255,.7);font-weight:600;text-transform:uppercase;letter-spacing:.5px;"><?= $greeting ?>, <?= htmlspecialchars(ucfirst(strtolower($emp['firstname']))) ?>! &middot; <?= date('D, M d, Y') ?></div>
                     <div class="emp-nm"><?= htmlspecialchars($full_name) ?></div>
@@ -2810,7 +2861,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 ?>
                 <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
                     <div style="font-size:10px;color:#57339d;font-weight:700;text-transform:uppercase;letter-spacing:.4px;">
-                        <i class="ri-calendar-schedule-line me-1"></i>My Duty Schedule
+                        <i class="ri-calendar-todo-line me-1"></i>My Duty Schedule
                     </div>
                     <div style="font-size:10.5px;color:#908c9c;font-weight:600;"><?= htmlspecialchars($dutyLbl) ?></div>
                 </div>
@@ -2876,7 +2927,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
 
             <?php if (count($sched_upcoming)): ?>
             <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #e8e7eb;">
-                <div style="font-size:10px;color:#ad6800;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;"><i class="ri-calendar-schedule-line me-1"></i>Upcoming Changes</div>
+                <div style="font-size:10px;color:#ad6800;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;"><i class="ri-calendar-todo-line me-1"></i>Upcoming Changes</div>
                 <?php foreach ($sched_upcoming as $up): ?>
                 <div style="display:flex;align-items:center;gap:10px;padding:6px 0;">
                     <div style="font-size:11px;font-weight:700;color:#ad6800;background:#fff7e6;border:1px solid #ffe7ba;border-radius:8px;padding:3px 9px;white-space:nowrap;">
@@ -2896,9 +2947,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <div class="sec"><i class="ri-fingerprint-line"></i>My Fingerprints</div>
         <?php require_once __DIR__ . '/component/finger_hands.php'; ?>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:14px;">
-            <?php /* Mobile Kiosk card (incl. face registration) — hidden for now.
-            <?= render_finger_hands($conn, $emp_id, ['title' => 'Enrolled Fingerprints (Mobile Kiosk)']) ?>
-            */ ?>
+            <?= render_finger_hands($conn, $emp_id, ['title' => 'Enrolled Fingerprints (Mobile Kiosk)', 'who' => $emp['firstname'] . ' ' . $emp['lastname']]) ?>
             <?= render_finger_hands($conn, $emp_id, ['source' => 'device', 'title' => 'Enrolled Fingerprints (Scanner Device)']) ?>
         </div>
 
@@ -3353,7 +3402,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
         <div class="dtrf-card">
             <?php foreach ($sched_changes as $sc): ?>
             <div class="dtrf-row sched">
-                <div class="dtrf-ic sched"><i class="ri-calendar-schedule-line"></i></div>
+                <div class="dtrf-ic sched"><i class="ri-calendar-todo-line"></i></div>
                 <div class="dtrf-main">
                     <div class="dtrf-date"><?= htmlspecialchars($sc['txt']) ?></div>
                     <div class="dtrf-sub"><?= htmlspecialchars($sc['sub']) ?></div>
@@ -3876,10 +3925,19 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <?php foreach ($items as $p):
                         $off = (int) $p['day_offset'];
                         $noc = (int) $p['sched_graveyard'] === 1;
+                        $km  = kiosk_punch_meta_for($my_shots, $emp_id, $p['punched_at']);
+                        $lbl = $p['source'] === 'bio' ? 'Scanned' : ($p['source'] === 'pin' ? 'PIN' : 'Manual');
                     ?>
                     <div class="mylog-p">
+                        <?php if (!empty($km['photo'])): ?>
+                            <img class="mylog-shot" src="<?= htmlspecialchars($km['photo']) ?>" alt="" loading="lazy"
+                                 onclick="kioskPhotoView(this.src, <?= htmlspecialchars(json_encode(date('M j, g:i A', $p['ts'])), ENT_QUOTES) ?>)">
+                        <?php endif; ?>
                         <span class="t"><?= date('g:i A', $p['ts']) ?></span>
-                        <span class="src <?= htmlspecialchars($p['source']) ?>"><?= $p['source'] === 'bio' ? 'Scanned' : 'Manual' ?></span>
+                        <span class="src <?= htmlspecialchars($p['source']) ?>"><?= $lbl ?></span>
+                        <?php if (($km['approval'] ?? '') === 'pending'): ?>
+                            <span class="mylog-rev" title="An administrator is checking the photo taken at this punch">In review</span>
+                        <?php endif; ?>
                         <span class="seq"><?= $p['seq'] ?> of <?= $p['of'] ?></span>
                         <?php if ($off != 0): ?>
                             <span class="carry <?= $noc ? 'noc' : 'odd' ?>">
@@ -3892,6 +3950,11 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                 </div>
             </div>
         <?php endforeach; endif; ?>
+        <?php
+        // Tap a scan photo to see it full size (component/photo_viewer.php).
+        require_once __DIR__ . '/component/photo_viewer.php';
+        echo render_photo_viewer();
+        ?>
     </div>
 
     <!-- ── Tab: Holidays & Activities ── -->
@@ -4087,7 +4150,39 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="info-lbl">Last Sign-in</div>
                     <div class="info-val"><?= ($portal_acct && !empty($portal_acct['last_login'])) ? date('M d, Y g:i A', strtotime($portal_acct['last_login'])) : '—' ?></div>
                 </div>
+                <?php
+                // Their kiosk PIN, for when the tablet cannot recognise their
+                // face. Hidden until they ask for it, so a glance over the
+                // shoulder (or a screenshot) does not give it away. Read-only
+                // here — only HR/Admin can change it.
+                $my_pin = (string) ($emp['kiosk_pin'] ?? '');
+                ?>
+                <div class="info-item">
+                    <div class="info-lbl">Kiosk PIN</div>
+                    <div class="info-val mono">
+                        <?php if ($my_pin === ''): ?>
+                            <span style="color:#98a2ad;">Not set — ask HR</span>
+                        <?php else: ?>
+                            <span id="my-pin" data-pin="<?= htmlspecialchars($my_pin) ?>">••••••</span>
+                            <a href="#" id="my-pin-eye" style="font-size:12px;margin-left:6px;" onclick="togglePin(event)">Show</a>
+                        <?php endif; ?>
+                    </div>
+                </div>
             </div>
+            <?php if ($my_pin !== ''): ?>
+            <div style="padding:0 16px 10px;font-size:11.5px;color:#98a2ad;">
+                <i class="ri-information-line me-1"></i>Type this on the kiosk when your face is not recognised. The kiosk takes a photo and an administrator reviews the punch. Keep it to yourself.
+            </div>
+            <script>
+                function togglePin(ev) {
+                    ev.preventDefault();
+                    var v = document.getElementById('my-pin'), a = document.getElementById('my-pin-eye');
+                    var shown = a.textContent === 'Hide';
+                    v.textContent = shown ? '••••••' : v.getAttribute('data-pin');
+                    a.textContent = shown ? 'Show' : 'Hide';
+                }
+            </script>
+            <?php endif; ?>
             <div style="padding:0 16px 14px;">
                 <?php if ($portal_must_change): ?>
                 <div class="pw-warn" id="pw-warn">
@@ -4130,12 +4225,28 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
             </div>
         </div>
 
+        <?php
+        // The 201 file: the employee's own contact and emergency details,
+        // which they maintain, plus HR's employment record, read-only.
+        // It belongs in this tab — someone looking for their own address
+        // comes to "My Information", not to a second tab holding the other
+        // half of the same answer. (component/portal_hr.php)
+        require __DIR__ . '/component/portal_hr.php';
+        ?>
+
         <div style="text-align:center;font-size:11px;color:#bbb;margin-top:6px;">
-            <i class="ri-information-line"></i> To update any of these details, please contact your HR / Payroll department.
+            <i class="ri-information-line"></i> Anything above that you cannot edit is kept by HR — ask them to correct it.
         </div>
     </div>
 
     <!-- ── Tab: Help ── -->
+    <?php if ($phm_has): ?>
+    <!-- ── Tab: HR (component/portal_hr_modules.php) ── -->
+    <div class="tab-panel" id="tab-hr">
+        <?php require __DIR__ . '/component/portal_hr_modules.php'; ?>
+    </div>
+    <?php endif; ?>
+
     <div class="tab-panel" id="tab-help">
 
         <!-- Welcome banner -->
@@ -4628,7 +4739,8 @@ var PENDING = {
     dtr:     <?= (int) $dtr_review_pending_count ?>,
     att:     <?= (int) $att_req_pending_count ?>,
     payroll: <?= (int) $payroll_review_pending_count ?>,
-    leave:   <?= (int) $leave_pending_count ?>
+    leave:   <?= (int) $leave_pending_count ?>,
+    hr:      <?= (int) ($phm_badge ?? 0) ?>   // HR tab: unread announcements + memos to acknowledge
 };
 var NA_OPTS = {
     pay:   { icon:'ri-file-list-3-line',    icClass:'pay',   tabId:'payslips',     singular:'payslip to review',              plural:'payslips to review' },
@@ -4693,7 +4805,7 @@ function setNeedsAction(key, count) {
         + '<span class="na-txt"><b>' + count + '</b> ' + (count === 1 ? opts.singular : opts.plural) + '</span>'
         + '<i class="ri-arrow-right-s-line na-go"></i>';
 }
-function refreshMoreBadge() { setBadge('tabbtn-more', PENDING.dtr + PENDING.att + PENDING.payroll); }
+function refreshMoreBadge() { setBadge('tabbtn-more', PENDING.dtr + PENDING.att + PENDING.payroll + PENDING.hr); }
 // Only the "needs review" count shows here — no running total of payslips.
 function refreshPayslipsBadge() { setBadge('tabbtn-payslips', PENDING.payroll, '#e6a817'); }
 function updatePayslipRow(payrollId, decision) {

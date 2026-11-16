@@ -11,6 +11,11 @@ logs/*
 
 # Employee face enrollment images — user data, never commit
 uploads/faces/
+# Kiosk punch photos (biometric_kiosk_selfies / kiosk_punches) — same
+uploads/attendance/
+
+# HR uploads (profile photos, 201 documents) — employee personal data
+storage/hr/
 
 # DB backup dumps — contain employee TIN/SSS/PhilHealth/bank/salary PII, kept
 # locally as a rollback safety net only, never tracked in git.

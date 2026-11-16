@@ -93,7 +93,7 @@ $payroll_sections_html = function (array $sections, string $idPrefix, bool $useD
 
                         <div class="col-md-12">
                             <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;">
-                                <i class="ri-calendar-range-line me-1"></i>Payroll Period <span class="text-danger">*</span>
+                                <i class="ri-calendar-2-line me-1"></i>Payroll Period <span class="text-danger">*</span>
                             </label>
                             <div id="payroll-daterange" style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:1px solid #ced4da;border-radius:6px;background:#fff;cursor:pointer;font-weight:600;color:#0c5460;">
                                 <i class="ri-calendar-2-line" style="color:#673bb6;"></i>

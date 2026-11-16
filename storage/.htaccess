@@ -1,0 +1,4 @@
+# HR uploads: never served directly — hr-file.php streams them after a
+# permission check. These are photographs and papers about identifiable
+# staff; a guessable URL under the web root would bypass every check.
+Require all denied

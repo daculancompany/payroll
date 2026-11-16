@@ -212,6 +212,8 @@ if (!defined('ADMIN_ONLY_PAGES')) {
         'biometric-dtr',
         'punch-logs',             // raw scans behind the DTR — same sensitivity
         'similarity-reports',     // scanner look-alike fingerprint reports
+        'pin-attendance',         // kiosk PIN punches awaiting review — they are DTR punches
+        'kiosk-devices',          // the tablets themselves: block a lost one, watch the queue
     ]);
 }
 
@@ -229,6 +231,9 @@ if (!defined('HR_ALLOWED_PAGES')) {
     define('HR_ALLOWED_PAGES', [
         'home', 'daily-board',
         'employee', 'employee-details',          // people records
+        'employee-201',                         // the 201 file — HR OWNS this one
+        'hr-overview', 'hr-announcements',      // HR modules (includes/hr/*)
+        'hr-requests', 'hr-offboarding',
         'department', 'position',
         'attendance',                            // READ-ONLY (see HR_READONLY_PAGES)
         'attendance-requests',                   // HR decides the final stage
@@ -294,6 +299,20 @@ if (!defined('PAGE_ROLE_RESTRICTIONS')) {
         // Areas decide who approves whose leave and who owns which roster, so
         // the screen that edits them stays with the admin and HR.
         'area'                => [1, 9],
+        // The 201 file: personal data, HR records. Nobody else needs it.
+        'employee-201'        => [1, 9],
+        // The HR module screens: same people as the 201 file.
+        'hr-overview'         => [1, 9],
+        'hr-announcements'    => [1, 9],
+        'hr-requests'         => [1, 9],
+        'hr-offboarding'      => [1, 9],
+        // The system's own identity — its name, contact details and cover
+        // image, shown on every printed report. Admin only. It was open to
+        // every role, which went unnoticed because the page could not
+        // actually save (it posted to the payroll settings handler and the
+        // system_settings table did not exist). Now that it saves, a
+        // timekeeper could have renamed the whole system.
+        'site_settings'       => [1],
     ]);
 }
 
@@ -395,6 +414,39 @@ if (!defined('ACTION_PAGE_MAP')) {
         'decide_dtr_details' => 'dtr', 'delete_dtr' => 'dtr', 'delete_dtr_logs' => 'dtr',
         'delete_dtr_note' => 'dtr', 'delete_dtr_record' => 'dtr', 'edit_dtr_time' => 'dtr',
         'review_similarity_report' => 'similarity-reports', 'delete_similarity_report' => 'similarity-reports',
+        // UareUApp kiosk: PIN punch review + employee kiosk PINs (includes/kiosk_admin.php)
+        'approve_pin_punch' => 'pin-attendance', 'reject_pin_punch' => 'pin-attendance',
+        // The kiosk PIN is part of the HR record, so it carries that page's
+        // permission (Admin + HR) rather than the payroll screen's.
+        // The system's own name/contact/cover image.
+        'save_site_settings' => 'site_settings',
+        'set_kiosk_pin' => 'employee-201', 'clear_kiosk_pin' => 'employee-201',
+        // Phone punching, switched on per employee (Admin + HR, same as the PIN).
+        'set_mobile_punch' => 'employee-201',
+        'delete_employee_face' => 'employee-details',
+        // HR Management modules (hr_class.php, dispatched by hr-ajax.php)
+        'save_profile' => 'employee-201', 'save_dependent' => 'employee-201',
+        'delete_dependent' => 'employee-201', 'save_photo' => 'employee-201',
+        'delete_photo' => 'employee-201',
+        // HR modules (hr-ajax.php → includes/hr/*): all Admin + HR, like the 201.
+        // Named hr_* on purpose — 'save_profile' above is ALSO the own-account
+        // action further down this list, and in a PHP array literal the later
+        // key wins, so a reused name silently changes which screen gates it.
+        'hr_doc_upload' => 'employee-201', 'hr_doc_update' => 'employee-201',
+        'hr_doc_verify' => 'employee-201', 'hr_doc_delete' => 'employee-201',
+        'hr_movement_save' => 'employee-201', 'hr_movement_delete' => 'employee-201',
+        'hr_memo_save' => 'employee-201', 'hr_memo_close' => 'employee-201', 'hr_memo_delete' => 'employee-201',
+        'hr_announcement_save' => 'employee-201', 'hr_announcement_delete' => 'employee-201',
+        'hr_training_save' => 'employee-201', 'hr_training_delete' => 'employee-201',
+        'hr_asset_save' => 'employee-201', 'hr_asset_return' => 'employee-201', 'hr_asset_delete' => 'employee-201',
+        'hr_request_release' => 'employee-201', 'hr_request_decline' => 'employee-201',
+        'hr_clearance_start' => 'employee-201', 'hr_clearance_item' => 'employee-201',
+        'hr_clearance_final_pay' => 'employee-201', 'hr_clearance_complete' => 'employee-201',
+        'hr_clearance_cancel' => 'employee-201',
+        'rename_kiosk_device' => 'kiosk-devices', 'block_kiosk_device' => 'kiosk-devices',
+        'forget_kiosk_device' => 'kiosk-devices',
+        // Site attendance area (geofence) — set from the Kiosk Devices page.
+        'save_site_area' => 'kiosk-devices',
         'finalize_dtr' => 'dtr', 'finalize_dtr_bulk' => 'dtr', 'message_dtr_record' => 'dtr',
         'recompute_dtr' => 'dtr', 'save_dtr_note' => 'dtr', 'update_dtr_logs' => 'dtr',
         'save_dtr_punches' => 'dtr', 'dtr_add_day' => 'dtr',
@@ -3523,6 +3575,21 @@ $servername = getenv('DB_HOST') ?: ($__dbc['host'] ?? "localhost");
 $username   = getenv('DB_USER') ?: ($__dbc['user'] ?? "root");
 $password   = getenv('DB_PASS') !== false ? getenv('DB_PASS') : ($__dbc['pass'] ?? "");
 $dbname     = getenv('DB_NAME') ?: ($__dbc['name'] ?? "payroll_live_db");
+
+// Mapbox token for the attendance-area map (Kiosk Devices). Same rule as the
+// DB credentials: environment → db_config.php, never a literal in git.
+// Only a PUBLIC "pk." token is accepted — a secret "sk." token would be sent to
+// the browser and could then manage the Mapbox account, so it is dropped here
+// and the page falls back to typed coordinates.
+if (!defined('MAPBOX_TOKEN')) {
+    $__mbx = trim((string) (getenv('MAPBOX_TOKEN') ?: ($__dbc['mapbox_token'] ?? '')));
+    if ($__mbx !== '' && strncmp($__mbx, 'pk.', 3) !== 0) {
+        error_log('MAPBOX_TOKEN ignored: only a public pk. token may be used in the browser.');
+        $__mbx = '';
+    }
+    define('MAPBOX_TOKEN', $__mbx);
+    unset($__mbx);
+}
 unset($__dbc);
 
 

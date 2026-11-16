@@ -2,6 +2,8 @@
 require_once __DIR__ . '/includes/require_login.php';
 
 include 'db_connect.php';
+// punch_source_html() / kiosk_punch_meta(): how each punch was made.
+require_once __DIR__ . '/includes/kiosk_admin.php';
 
 $draw        = intval($_POST['draw'] ?? 1);
 $start       = intval($_POST['start'] ?? 0);
@@ -86,6 +88,11 @@ $data_sql = "SELECT a.*, e.employee_no, e.lastname, e.firstname, e.middlename,
 $result = $conn->query($data_sql);
 $data   = [];
 
+// Kiosk facts for every punch on screen, fetched once for the whole page
+// rather than per row. Empty when the kiosk tables are not there yet, in
+// which case every punch simply falls back to what its log entry says.
+$punch_meta = kiosk_punch_meta($conn, $fromRaw, $toRaw);
+
 while ($row = $result->fetch_assoc()) {
     $mi = $row['middlename'] ? ' ' . strtoupper(substr($row['middlename'], 0, 1)) . '.' : '';
 
@@ -100,13 +107,42 @@ while ($row = $result->fetch_assoc()) {
         $first = $logs[0];
         $last  = count($logs) > 1 ? $logs[count($logs) - 1] : null;
 
-        $logHtml .= '<div class="d-flex align-items-center mb-1">'
+        // How each punch was made (face / fingerprint / PIN / manual), as the
+        // same chip Punch Logs uses — icon only here, where the column is
+        // narrow, with the wording in the tooltip. Also carried into the
+        // modal below so the full list says it too.
+        $srcChip = function ($log) use ($row, $punch_meta) {
+            $meta = kiosk_punch_meta_for($punch_meta, $row['employee_id'],
+                date('Y-m-d H:i:s', strtotime($log->dateTime)));
+            // Source first, then where it was made — the pin only appears
+            // when the kiosk actually sent coordinates.
+            return punch_source_html($log->type ?? 'bio', $meta) . punch_location_html($meta);
+        };
+        $empLabel = $row['lastname'] . ', ' . $row['firstname'] . $mi;
+        foreach ($logs as $lg) {
+            $lg->srcHtml = $srcChip($lg);          // icon only — the table cell
+            $meta = kiosk_punch_meta_for($punch_meta, $row['employee_id'],
+                date('Y-m-d H:i:s', strtotime($lg->dateTime)));
+            $lg->srcFull = punch_source_html($lg->type ?? 'bio', $meta, true); // with label — the modal
+            $lg->geoHtml = punch_location_html($meta);
+            // The photo the kiosk took at the moment of the punch. Click to
+            // enlarge through the shared viewer (component/photo_viewer.php).
+            $lg->photoHtml = !empty($meta['photo'])
+                ? '<img class="pl-shot pl-shot-sm" src="' . htmlspecialchars($meta['photo'], ENT_QUOTES) . '"'
+                  . ' alt="" loading="lazy" onclick="kioskPhotoView(this.src, '
+                  . htmlspecialchars(json_encode($empLabel . ' · ' . date('M j, g:i A', strtotime($lg->dateTime))), ENT_QUOTES) . ')">'
+                : '<span class="pl-noshot pl-noshot-sm" data-tip="No photo for this punch"><i class="ri-camera-off-line"></i></span>';
+        }
+
+        $logHtml .= '<div class="d-flex align-items-center gap-1 mb-1">'
                   . '<span class="att-log-dir att-log-in">IN</span>'
-                  . '<small class="ms-1 fw-semibold">' . date('g:i A', strtotime($first->dateTime)) . '</small>'
+                  . '<small class="fw-semibold">' . date('g:i A', strtotime($first->dateTime)) . '</small>'
+                  . $first->srcHtml
                   . '</div>'
-                  . '<div class="d-flex align-items-center mb-1">'
+                  . '<div class="d-flex align-items-center gap-1 mb-1">'
                   . '<span class="att-log-dir att-log-out">OUT</span>'
-                  . '<small class="ms-1 fw-semibold">' . ($last ? date('g:i A', strtotime($last->dateTime)) : '&mdash;') . '</small>'
+                  . '<small class="fw-semibold">' . ($last ? date('g:i A', strtotime($last->dateTime)) : '&mdash;') . '</small>'
+                  . ($last ? $last->srcHtml : '')
                   . '</div>'
                   . '<button type="button" class="btn btn-sm btn-success view_time_logs mt-1"'
                   . ' data-logs="' . htmlspecialchars(json_encode($logs), ENT_QUOTES) . '"'

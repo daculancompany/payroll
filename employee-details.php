@@ -117,6 +117,21 @@ $__day_off_set = array_filter(array_map('intval', $cur_rest_days === '' ? [] : e
 $day_off_label = empty($__day_off_set) ? 'None' : implode(', ', array_map(fn($d) => $__day_names[$d], $__day_off_set));
 
 $initials = strtoupper(substr($firstname, 0, 1)) . strtoupper(substr($lastname, 0, 1));
+$e201_init = $initials;   // the 201 panes render the same fallback avatar
+
+// Dependant count for the tab badge. Guarded: a deployment that has not run
+// the HR migration yet must still open this page.
+$hr_photo_set = false;
+if ($conn->query("SHOW TABLES LIKE 'employee_profile'")->num_rows) {
+    $__pp = $conn->query("SELECT photo FROM employee_profile WHERE employee_id = " . (int) $emp_id);
+    $hr_photo_set = $__pp && !empty(($__pp->fetch_assoc() ?: [])['photo']);
+}
+
+$e201_dep_count = 0;
+if ($conn->query("SHOW TABLES LIKE 'employee_dependents'")->num_rows) {
+    $__dc = $conn->query("SELECT COUNT(*) c FROM employee_dependents WHERE employee_id = " . (int) $emp_id);
+    if ($__dc) $e201_dep_count = (int) ($__dc->fetch_assoc()['c'] ?? 0);
+}
 $fullname  = esc($lastname . ', ' . $firstname . ($middlename ? ' ' . substr($middlename, 0, 1) . '.' : ''));
 
 $age = null;
@@ -199,20 +214,69 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
     .cn-item .form-control { font-size:13px; font-weight:600; border-color:var(--emp-brand-border); }
     .barcode-wrap { background:var(--app-surface, #fff); border:1px solid var(--app-tint-border, #d0d7ee); border-radius:4px; padding:8px 12px; display:inline-block; }
 
-    /* ---- Custom segmented tab bar ---- */
-    .emp-tabs-nav { display:flex; gap:4px; flex-wrap:nowrap; background:var(--app-surface, #fff); border:1px solid var(--app-tint-border, #d0d7ee); border-radius:10px; padding:6px; margin-bottom:14px; overflow-x:auto; scrollbar-width:thin; box-shadow:0 2px 8px rgba(20,30,60,.04); }
-    .emp-tabs-nav::-webkit-scrollbar { height:4px; }
-    .emp-tabs-nav::-webkit-scrollbar-track { background:transparent; }
-    .emp-tabs-nav::-webkit-scrollbar-thumb { background:var(--sb-thumb); border-radius:4px; border:0; }
+    /* ---- Segmented tab bar ----
+       ONE row, always: no wrapping to a second line and no sideways scrollbar
+       on desktop. Eleven labelled tabs do not fit a narrow window, so when
+       they would overflow the bar switches itself to `.is-compact` — the
+       inactive tabs keep only their icon (with a tooltip), the one you are on
+       keeps its name. See empTabsFit() further down; it measures rather than
+       guesses, so a wide window keeps every label.
+
+       Tints are translucent neutrals rather than fixed light greys so the same
+       rules read correctly on a light and a dark theme. */
+    .emp-tabs-nav { display:flex; gap:3px; flex-wrap:nowrap; overflow:hidden; background:var(--app-surface, #fff); border:1px solid var(--app-tint-border, #d0d7ee); border-radius:12px; padding:5px; margin-bottom:14px; box-shadow:0 1px 3px rgba(20,30,60,.05); }
     .emp-tabs-nav .nav-item { flex-shrink:0; }
-    .emp-tabs-nav .nav-link { display:flex; align-items:center; gap:7px; padding:8px 14px; border-radius:7px; font-size:12.5px; font-weight:600; color:#5a6474; white-space:nowrap; border:1px solid transparent; transition:all .18s ease; }
-    .emp-tabs-nav .nav-link i { font-size:15px; line-height:1; }
-    .emp-tabs-nav .nav-link:hover { background:#efecf5; color:var(--emp-brand); transform:translateY(-1px); }
-    .emp-tabs-nav .nav-link.active { background:linear-gradient(145deg, var(--emp-brand) 0%, var(--emp-brand-dark) 100%); color:#fff; box-shadow:0 3px 10px rgba(103,59,182,.3); }
-    .tab-count { font-size:10px; font-weight:700; line-height:1; padding:3px 7px; border-radius:20px; background:#e8ecf5; color:#5a6474; transition:all .18s ease; }
-    .emp-tabs-nav .nav-link:hover .tab-count { background:#dfdaeb; color:var(--emp-brand); }
-    .emp-tabs-nav .nav-link.active .tab-count { background:rgba(255,255,255,.25); color:#fff; }
-    .tab-count.tab-count-alert { background:#ffe4c4; color:#b45309; }
+    .emp-tabs-nav .nav-link { display:flex; align-items:center; gap:7px; padding:7px 12px; border-radius:8px; font-size:12.5px; font-weight:600; color:var(--app-text-2, #6b7280); white-space:nowrap; border:1px solid transparent; transition:background .15s ease, color .15s ease, box-shadow .15s ease; }
+    .emp-tabs-nav .nav-link i { font-size:15px; line-height:1; opacity:.72; }
+    .emp-tabs-nav .nav-link:hover { background:rgba(125,135,160,.15); color:var(--emp-brand); }
+    .emp-tabs-nav .nav-link:hover i { opacity:1; }
+    .emp-tabs-nav .nav-link.active { background:var(--emp-brand); color:#fff; font-weight:700; box-shadow:0 2px 6px rgba(0,0,0,.22); }
+    .emp-tabs-nav .nav-link.active i { opacity:1; }
+    .emp-tabs-nav .nav-link:focus-visible { outline:2px solid var(--emp-brand); outline-offset:1px; }
+
+    /* A big monitor misses the full-label fit by only a few dozen pixels, so
+       there is a tighter step before any name is given up. */
+    .emp-tabs-nav.is-snug .nav-link { padding:7px 10px; gap:6px; font-size:12px; }
+    .emp-tabs-nav.is-snug .nav-link i { font-size:14px; }
+    .emp-tabs-nav.is-snug .tab-count { padding:3px 5px; }
+
+    /* Narrow window: icon-only for every tab but the current one. The count
+       badges stay — a number is the thing worth seeing at a glance, and it is
+       narrow. Only the word in "3 pending" goes.
+
+       The tabs then share out the room they saved (flex-grow) instead of
+       huddling at the left end of a half-empty bar, which reads as a proper
+       segmented control. Grow but never shrink: shrinking would let the bar
+       squash itself to fit and the overflow test below would stop being true. */
+    .emp-tabs-nav.is-compact .nav-item,
+    .emp-tabs-nav.is-icons .nav-item { flex:1 0 auto; }
+    .emp-tabs-nav.is-compact .nav-link,
+    .emp-tabs-nav.is-icons .nav-link { justify-content:center; }
+    /* Where the icon IS the label, it carries full weight. */
+    .emp-tabs-nav.is-compact .nav-link i,
+    .emp-tabs-nav.is-icons .nav-link i { opacity:1; font-size:16px; }
+    .emp-tabs-nav.is-compact .nav-link { padding:7px 10px; gap:5px; }
+    /* !important is needed, not decorative: the labels carry Bootstrap's
+       .d-sm-inline, which is itself !important and would otherwise win. */
+    .emp-tabs-nav.is-compact .nav-link:not(.active) > span:not(.tab-count) { display:none !important; }
+    .emp-tabs-nav.is-compact .tc-word { display:none !important; }
+    /* Narrower still: icons only, the current tab marked by its fill alone. */
+    .emp-tabs-nav.is-icons .nav-link { padding:7px 9px; gap:4px; }
+    .emp-tabs-nav.is-icons .nav-link > span:not(.tab-count) { display:none !important; }
+
+    .tab-count { font-size:10px; font-weight:700; line-height:1; padding:3px 6px; border-radius:20px; background:rgba(125,135,160,.22); color:inherit; }
+    .emp-tabs-nav .nav-link.active .tab-count { background:rgba(255,255,255,.26); color:#fff; }
+    .tab-count.tab-count-alert { background:rgba(245,158,11,.22); color:#b45309; }
+    .emp-tabs-nav .nav-link.active .tab-count-alert { background:rgba(255,255,255,.26); color:#fff; }
+
+    @media (max-width: 767.98px) {
+        /* Phone: the labels are already hidden by .d-none, so the bar is a
+           single icon strip — short enough to scroll if it ever needs to. */
+        .emp-tabs-nav { overflow-x:auto; scrollbar-width:thin; }
+        .emp-tabs-nav::-webkit-scrollbar { height:4px; }
+        .emp-tabs-nav::-webkit-scrollbar-track { background:transparent; }
+        .emp-tabs-nav::-webkit-scrollbar-thumb { background:var(--sb-thumb); border-radius:4px; border:0; }
+    }
 
     /* ---- Summary stat cards ---- */
     .emp-stat-cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:10px; margin:6px 0 14px; }
@@ -314,6 +378,9 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                             </div>
                         </div>
                         <div class="flex-shrink-0 d-flex gap-2">
+                            <?php /* No "201 File" button here: it only jumped to the 201 File tab
+                                      a few pixels below, so the row of actions carried a control
+                                      that was not an action. The tab is the way in. */ ?>
                             <?php if (in_array($login_role, $allowed_values)): ?>
                                 <?php if (in_array($login_role, $allowed_values_2)): ?>
                                     <button type="button" class="btn btn-sm btn-info" onclick="edit_details()">
@@ -346,7 +413,36 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                         <div class="col-lg-3">
                             <div class="emp-sidebar emp-sidebar-sticky">
                                 <div class="emp-sidebar-head">
-                                    <div class="emp-side-avatar"><?= $initials ?></div>
+                                    <?php
+                                    // The photo HR uploaded, else the face registered on the kiosk — either
+                                    // is a real picture of this person and beats two letters. Initials
+                                    // stay the fallback for anyone with neither.
+                                    require_once __DIR__ . '/hr_class.php';
+                                    $ed_face = employee_avatar($conn, $emp_id);
+                                    ?>
+                                    <?php if ($ed_face): ?>
+                                        <img src="<?= $ed_face ?>" alt="" class="emp-side-avatar" style="object-fit:cover;padding:0;"
+                                             onerror="this.replaceWith(Object.assign(document.createElement('div'), {className:'emp-side-avatar', textContent:this.dataset.init}))"
+                                             data-init="<?= $initials ?>">
+                                    <?php else: ?>
+                                        <div class="emp-side-avatar"><?= $initials ?></div>
+                                    <?php endif; ?>
+                                    <?php if (page_allowed('employee-201') && can_edit('employee-201')): ?>
+                                        <!-- Setting the picture belongs next to the picture. The
+                                             handlers live in component/employee_201_tabs.php, which
+                                             this page renders further down. -->
+                                        <div class="d-flex gap-1 justify-content-center flex-wrap mb-2" style="margin-top:-4px;">
+                                            <label class="btn btn-sm btn-light border py-0 mb-0" style="font-size:11px;">
+                                                <i class="ri-camera-line me-1"></i><?= $ed_face ? 'Change' : 'Add photo' ?>
+                                                <input type="file" id="e201-photo" accept="image/jpeg,image/png,image/webp" hidden>
+                                            </label>
+                                            <?php if (!empty($hr_photo_set)): ?>
+                                            <button type="button" class="btn btn-sm btn-light border py-0 text-danger" style="font-size:11px;" onclick="e201DeletePhoto()">
+                                                <i class="ri-delete-bin-line"></i>
+                                            </button>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
                                     <div class="emp-side-name"><?= $fullname ?></div>
                                     <div class="emp-side-role">
                                         <i class="ri-briefcase-4-line me-1"></i><?= esc(ucwords($pname)) ?>
@@ -446,12 +542,14 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                             </li>
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-cn" role="tab">
-                                    <i class="ri-id-card-line"></i><span class="d-none d-sm-inline">Gov&rsquo;t IDs</span>
+                                    <i class="ri-passport-line"></i><span class="d-none d-sm-inline">Gov&rsquo;t IDs</span>
                                 </a>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <?php /* Not ri-subtract-line: on its own, with the label hidden on a
+                                        narrow bar, a bare dash reads as a divider rather than a tab. */ ?>
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-deductions" role="tab">
-                                    <i class="ri-subtract-line"></i><span class="d-none d-sm-inline">Deductions</span>
+                                    <i class="ri-indeterminate-circle-line"></i><span class="d-none d-sm-inline">Deductions</span>
                                     <?php if ($deduct_agg['cnt'] > 0): ?><span class="tab-count"><?= $deduct_agg['cnt'] ?></span><?php endif; ?>
                                 </a>
                             </li>
@@ -474,9 +572,71 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                             <li class="nav-item" role="presentation">
                                 <a class="nav-link" data-bs-toggle="tab" href="#arrow-leave" role="tab">
                                     <i class="ri-calendar-event-line"></i><span class="d-none d-sm-inline">Leave</span>
-                                    <?php if ($leave_agg['pending'] > 0): ?><span class="tab-count tab-count-alert"><?= $leave_agg['pending'] ?> pending</span><?php endif; ?>
+                                    <?php /* The word is in its own span so the compact bar can drop it
+                                            and keep the number, which is the part that matters. */ ?>
+                                    <?php if ($leave_agg['pending'] > 0): ?><span class="tab-count tab-count-alert"><?= $leave_agg['pending'] ?><span class="tc-word"> pending</span></span><?php endif; ?>
                                 </a>
                             </li>
+                            <?php if (page_allowed('employee-201')): ?>
+                            <!-- The HR half of the same person. Its own permission:
+                                 these tabs are editable for HR, the pay tabs are not. -->
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-201" role="tab">
+                                    <i class="ri-folder-user-line"></i><span class="d-none d-sm-inline">201 File</span>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-201deps" role="tab">
+                                    <i class="ri-parent-line"></i><span class="d-none d-sm-inline">Dependants</span>
+                                    <?php if ($e201_dep_count > 0): ?><span class="tab-count"><?= $e201_dep_count ?></span><?php endif; ?>
+                                </a>
+                            </li>
+                            <?php
+                            // The rest of the HR record (component/employee_hr_tabs.php).
+                            // Counts come from one cheap query each so the strip can
+                            // show what needs attention without loading the panes.
+                            $ehr_counts = ['docs' => 0, 'verify' => 0, 'memo_open' => 0, 'assets_out' => 0];
+                            $ehr_t = $conn->query("SHOW TABLES LIKE 'hr_documents'");
+                            if ($ehr_t && $ehr_t->num_rows) {
+                                $eid = (int) $emp_id;
+                                $q = $conn->query("SELECT
+                                    (SELECT COUNT(*) FROM hr_documents WHERE employee_id = $eid) AS docs,
+                                    (SELECT COUNT(*) FROM hr_documents WHERE employee_id = $eid AND source = 'employee' AND verified_at IS NULL) AS verify,
+                                    (SELECT COUNT(*) FROM hr_memos WHERE employee_id = $eid AND status = 'open' AND requires_ack = 1 AND acknowledged_at IS NULL) AS memo_open,
+                                    (SELECT COUNT(*) FROM hr_assets WHERE employee_id = $eid AND returned_date IS NULL) AS assets_out");
+                                if ($q) $ehr_counts = array_map('intval', $q->fetch_assoc());
+                            }
+                            ?>
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-hrdocs" role="tab">
+                                    <i class="ri-folder-shield-2-line"></i><span class="d-none d-sm-inline">Documents</span>
+                                    <?php if ($ehr_counts['verify'] > 0): ?><span class="tab-count tab-count-alert"><?= $ehr_counts['verify'] ?><span class="tc-word"> to verify</span></span>
+                                    <?php elseif ($ehr_counts['docs'] > 0): ?><span class="tab-count"><?= $ehr_counts['docs'] ?></span><?php endif; ?>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-hrhistory" role="tab">
+                                    <i class="ri-git-commit-line"></i><span class="d-none d-sm-inline">History</span>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-hrmemos" role="tab">
+                                    <i class="ri-file-text-line"></i><span class="d-none d-sm-inline">Memos</span>
+                                    <?php if ($ehr_counts['memo_open'] > 0): ?><span class="tab-count tab-count-alert"><?= $ehr_counts['memo_open'] ?><span class="tc-word"> unacknowledged</span></span><?php endif; ?>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-hrtrain" role="tab">
+                                    <i class="ri-graduation-cap-line"></i><span class="d-none d-sm-inline">Trainings</span>
+                                </a>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <a class="nav-link" data-bs-toggle="tab" href="#arrow-hrassets" role="tab">
+                                    <i class="ri-archive-drawer-line"></i><span class="d-none d-sm-inline">Property</span>
+                                    <?php if ($ehr_counts['assets_out'] > 0): ?><span class="tab-count"><?= $ehr_counts['assets_out'] ?></span><?php endif; ?>
+                                </a>
+                            </li>
+                            <?php endif; ?>
                         </ul>
 
                         <div class="tab-content text-muted">
@@ -510,6 +670,141 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                                 <?= !empty($portal_username) ? '<a href="mailto:' . esc($portal_username) . '">' . esc($portal_username) . '</a>' : '<span class="text-muted">Not set</span>' ?>
                                             </div>
                                         </div>
+                                        <?php
+                                        // 6-digit PIN for the UareUApp kiosk, used when face recognition
+                                        // fails (PIN punches are reviewed on PIN Attendance). Only roles
+                                        // that may edit this record see the digits or change them — a PIN
+                                        // is a credential, not a profile field.
+                                        $kpin     = (string) ($emp['kiosk_pin'] ?? '');
+                                        // Admin + HR — the same answer the endpoint gives.
+                                        $kpin_can = can_edit('employee-201');
+                                        ?>
+                                        <div class="detail-item">
+                                            <div class="detail-label">Kiosk PIN</div>
+                                            <div class="detail-value">
+                                                <?php if ($kpin === ''): ?>
+                                                    <span class="text-muted">Not set</span>
+                                                <?php elseif ($kpin_can): ?>
+                                                    <span id="kpin-val" data-pin="<?= esc($kpin) ?>" style="font-family:monospace;letter-spacing:2px;">••••••</span>
+                                                    <a href="#" id="kpin-eye" class="ms-1" style="font-size:12px;" onclick="kpinToggle(event)">Show</a>
+                                                <?php else: ?>
+                                                    <span>Set</span>
+                                                <?php endif; ?>
+                                                <?php if ($kpin_can): ?>
+                                                <div class="d-flex gap-1 flex-wrap mt-1">
+                                                    <button type="button" class="btn btn-outline-primary btn-sm py-0" onclick="kpinGenerate(<?= $kpin !== '' ? 'true' : 'false' ?>)"><i class="ri-shuffle-line me-1"></i>Generate</button>
+                                                    <button type="button" class="btn btn-outline-secondary btn-sm py-0" onclick="kpinSet()"><i class="ri-edit-line me-1"></i>Set</button>
+                                                    <?php if ($kpin !== ''): ?>
+                                                    <button type="button" class="btn btn-outline-danger btn-sm py-0" onclick="kpinClear()"><i class="ri-delete-bin-line me-1"></i>Clear</button>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                        <?php
+                                        // Punching from the employee's OWN phone (kiosk Phase D).
+                                        // Off for everyone until switched on here: a phone punch has
+                                        // no timekeeper watching it, so it is a per-person decision.
+                                        $mp_col = $conn->query("SHOW COLUMNS FROM employee LIKE 'mobile_punch_enabled'");
+                                        $mp_col = $mp_col && $mp_col->num_rows > 0;
+                                        $mp_on  = $mp_col && (int) ($emp['mobile_punch_enabled'] ?? 0) === 1;
+                                        if ($mp_col):
+                                        ?>
+                                        <div class="detail-item">
+                                            <div class="detail-label">Punch from own phone</div>
+                                            <div class="detail-value">
+                                                <?php if ($mp_on): ?>
+                                                    <span class="badge rounded-pill bg-success"><i class="ri-smartphone-line me-1"></i>Allowed</span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">Not allowed</span>
+                                                <?php endif; ?>
+                                                <?php if ($kpin_can): ?>
+                                                <div class="d-flex gap-1 flex-wrap mt-1">
+                                                    <button type="button" class="btn btn-sm py-0 <?= $mp_on ? 'btn-outline-danger' : 'btn-outline-primary' ?>"
+                                                            onclick="mpunchSet(<?= $mp_on ? 0 : 1 ?>)">
+                                                        <i class="ri-smartphone-line me-1"></i><?= $mp_on ? 'Turn off' : 'Allow' ?>
+                                                    </button>
+                                                </div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                        <?php endif; ?>
+
+                                        <?php if ($kpin_can && $mp_col): ?>
+                                        <script>
+                                            async function mpunchSet(on) {
+                                                var c = await Swal.fire({
+                                                    icon: on ? 'question' : 'warning',
+                                                    title: on ? 'Allow punching from their own phone?'
+                                                              : 'Stop punching from their own phone?',
+                                                    html: on
+                                                        ? 'They sign in to the app with their <b>employee portal</b> username and password and punch for themselves.<br>' +
+                                                          '<small class="text-muted">The punch is measured against the site\'s attendance area and recorded as a phone punch, so it can always be told apart from a kiosk one.</small>'
+                                                        : 'Any phone they are already signed in on is signed out at once.',
+                                                    showCancelButton: true,
+                                                    confirmButtonText: on ? 'Allow' : 'Turn off',
+                                                    confirmButtonColor: on ? '#0f9d8a' : '#e15b64',
+                                                    reverseButtons: true,
+                                                });
+                                                if (!c.isConfirmed) return;
+                                                var res = await fetch('ajax.php?action=set_mobile_punch', {
+                                                    method: 'POST',
+                                                    body: new URLSearchParams({ employee_id: '<?= (int) $emp['id'] ?>', enabled: on ? 1 : 0 }),
+                                                });
+                                                var j = await res.json().catch(function () { return { result: false, message: 'The server sent an unreadable answer.' }; });
+                                                if (!j.result) { Swal.fire({ icon: 'error', title: 'Phone punching', text: j.message }); return; }
+                                                Swal.fire({ icon: 'success', title: 'Saved', text: j.message, timer: 2200, showConfirmButton: false })
+                                                    .then(function () { location.reload(); });
+                                            }
+                                        </script>
+                                        <?php endif; ?>
+
+                                        <?php if ($kpin_can): ?>
+                                        <script>
+                                            function kpinToggle(ev) {
+                                                ev.preventDefault();
+                                                var v = document.getElementById('kpin-val'), a = document.getElementById('kpin-eye');
+                                                var shown = a.textContent === 'Hide';
+                                                v.textContent = shown ? '••••••' : v.getAttribute('data-pin');
+                                                a.textContent = shown ? 'Show' : 'Hide';
+                                            }
+                                            async function kpinPost(action, extra) {
+                                                var body = new URLSearchParams(Object.assign({ employee_id: <?= (int) $emp_id ?> }, extra || {}));
+                                                var res = await fetch('ajax.php?action=' + action, { method: 'POST', body: body });
+                                                return res.json().catch(function () { return { result: false, message: 'The server sent an unreadable answer.' }; });
+                                            }
+                                            function kpinDone(j) {
+                                                if (!j.result) { Swal.fire({ icon: 'error', title: 'Kiosk PIN', text: j.message || 'Could not save.' }); return; }
+                                                var html = j.pin
+                                                    ? '<div style="font-family:monospace;font-size:30px;letter-spacing:6px;font-weight:800;margin:6px 0 10px;">' + j.pin + '</div>'
+                                                      + '<div style="font-size:13px;">Give this PIN to the employee. ' + (j.message || '') + '</div>'
+                                                    : (j.message || 'Saved.');
+                                                Swal.fire({ icon: 'success', title: j.pin ? 'Kiosk PIN set' : 'Kiosk PIN', html: html }).then(function () { location.reload(); });
+                                            }
+                                            async function kpinGenerate(hasPin) {
+                                                if (hasPin) {
+                                                    var c = await Swal.fire({ icon: 'question', title: 'Replace the kiosk PIN?', text: 'The current PIN stops working on the kiosk after its next employee sync.', showCancelButton: true, confirmButtonText: 'Generate new PIN' });
+                                                    if (!c.isConfirmed) return;
+                                                }
+                                                kpinDone(await kpinPost('set_kiosk_pin', { generate: 1 }));
+                                            }
+                                            async function kpinSet() {
+                                                var r = await Swal.fire({
+                                                    title: 'Set kiosk PIN', input: 'text', inputLabel: 'Exactly 6 digits',
+                                                    inputAttributes: { maxlength: 6, inputmode: 'numeric', autocomplete: 'off' },
+                                                    showCancelButton: true, confirmButtonText: 'Save',
+                                                    inputValidator: function (v) { return /^\d{6}$/.test(v || '') ? null : 'Enter exactly 6 digits.'; }
+                                                });
+                                                if (!r.isConfirmed) return;
+                                                kpinDone(await kpinPost('set_kiosk_pin', { pin: r.value }));
+                                            }
+                                            async function kpinClear() {
+                                                var c = await Swal.fire({ icon: 'warning', title: 'Remove the kiosk PIN?', text: 'The employee can no longer punch with a PIN.', showCancelButton: true, confirmButtonText: 'Remove' });
+                                                if (!c.isConfirmed) return;
+                                                kpinDone(await kpinPost('clear_kiosk_pin'));
+                                            }
+                                        </script>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="detail-row">
                                         <div class="detail-item">
@@ -1137,19 +1432,19 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                             <div class="tab-pane" id="arrow-cn" role="tabpanel">
                                 <div class="cn-grid mt-2">
                                     <div class="cn-item">
-                                        <label><i class="ri-id-card-line me-1"></i>SSS No.</label>
+                                        <label><i class="ri-passport-line me-1"></i>SSS No.</label>
                                         <input type="text" class="form-control sss_no" data-id="sss_no" value="<?= esc($sss_no) ?>" name="sss_no" placeholder="Enter SSS No." />
                                     </div>
                                     <div class="cn-item">
-                                        <label><i class="ri-id-card-line me-1"></i>HDMF No.</label>
+                                        <label><i class="ri-passport-line me-1"></i>HDMF No.</label>
                                         <input type="text" class="form-control sss_no" data-id="hdmf_no" value="<?= esc($hdmf_no) ?>" name="hdmf_no" placeholder="Enter HDMF No." />
                                     </div>
                                     <div class="cn-item">
-                                        <label><i class="ri-id-card-line me-1"></i>PhilHealth No.</label>
+                                        <label><i class="ri-passport-line me-1"></i>PhilHealth No.</label>
                                         <input type="text" class="form-control sss_no" id="ph_no" data-id="ph_no" value="<?= esc($ph_no) ?>" placeholder="Enter PhilHealth No." />
                                     </div>
                                     <div class="cn-item">
-                                        <label><i class="ri-id-card-line me-1"></i>TIN No.</label>
+                                        <label><i class="ri-passport-line me-1"></i>TIN No.</label>
                                         <input type="text" class="form-control sss_no" data-id="tin_no" value="<?= esc($tin_no) ?>" placeholder="Enter TIN No." />
                                     </div>
                                 </div>
@@ -1848,11 +2143,9 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                      store their templates in separate tables. -->
                                 <?php require_once __DIR__ . '/component/finger_hands.php'; ?>
                                 <div class="row mt-4">
-                                    <?php /* Mobile Kiosk card (incl. face registration) — hidden for now.
                                     <div class="col-md-6 mb-3">
-                                        <?= render_finger_hands($conn, $emp_id, ['can_delete' => $ed_can_delete]) ?>
+                                        <?= render_finger_hands($conn, $emp_id, ['can_delete' => $ed_can_delete, 'who' => $lastname . ', ' . $firstname]) ?>
                                     </div>
-                                    */ ?>
                                     <div class="col-md-6 mb-3">
                                         <?= render_finger_hands($conn, $emp_id, ['source' => 'device', 'can_delete' => $ed_can_delete]) ?>
                                     </div>
@@ -2098,6 +2391,9 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                     </table>
                                 </div>
                             </div>
+
+                            <?php if (page_allowed('employee-201')) require __DIR__ . '/component/employee_201_tabs.php'; ?>
+                            <?php if (page_allowed('employee-201')) require __DIR__ . '/component/employee_hr_tabs.php'; ?>
 
                         </div><!-- end tab-content -->
                         </div><!-- end col-lg-9 -->
@@ -2568,6 +2864,54 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                 start();
             }
         })();
+    </script>
+    <!-- Tab bar: keep all eleven tabs on one line, whatever the window width -->
+    <script>
+    (function () {
+        var nav = document.getElementById('emp-tabs');
+        if (!nav) return;
+
+        // Every tab gets a tooltip from its own label, so an icon on its own is
+        // never a guess. The global tooltip engine (assets2/js/app-tooltip.js)
+        // picks up data-tip by delegation — nothing to initialise here.
+        nav.querySelectorAll('.nav-link').forEach(function (a) {
+            var s = a.querySelector('span');
+            if (s && !a.getAttribute('data-tip')) a.setAttribute('data-tip', s.textContent.trim());
+        });
+
+        /**
+         * Fit the bar to the width it actually has, giving up as little as
+         * possible at each step and stopping at the first one that fits:
+         *   1. every label, at full size — the best case;
+         *   2. .is-snug      — same labels, tighter type and padding;
+         *   3. .is-compact   — inactive tabs drop to their icon (with the
+         *                      tooltip), the current tab keeps its name so you
+         *                      can still see where you are;
+         *   4. .is-icons     — even that is too wide: everything is an icon.
+         * Measured, never guessed, so a wide window keeps its labels.
+         */
+        var STAGES = ['is-snug', 'is-compact', 'is-icons'];
+
+        function empTabsFit() {
+            nav.classList.remove.apply(nav.classList, STAGES);
+            // Below the tablet breakpoint the labels are already hidden by
+            // Bootstrap's .d-none .d-sm-inline, and the strip may scroll.
+            if (window.matchMedia('(max-width: 767.98px)').matches) return;
+            for (var i = 0; i < STAGES.length; i++) {
+                if (nav.scrollWidth <= nav.clientWidth + 1) return;
+                nav.classList.add(STAGES[i]);
+            }
+        }
+
+        empTabsFit();
+        window.addEventListener('resize', empTabsFit);
+        // Switching tabs moves which label is on show, so the measurement is
+        // worth taking again.
+        document.addEventListener('shown.bs.tab', empTabsFit);
+        // Fonts and icon webfonts land after first paint and change the widths.
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(empTabsFit);
+        window.addEventListener('load', empTabsFit);
+    })();
     </script>
     <!-- Recurring allowances: add / end / delete -->
     <script>

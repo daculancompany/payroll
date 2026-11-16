@@ -60,7 +60,7 @@ function dtr_status_badge($s) {
                             <table id="data-table" class="table table-hover table-bordered dt-responsive nowrap align-middle">
                                 <thead class="table-dark">
                                     <tr>
-                                        <th><i class="ri-calendar-range-line me-1"></i>Period</th>
+                                        <th><i class="ri-calendar-2-line me-1"></i>Period</th>
                                         <th><i class="ri-map-pin-2-line me-1"></i>Site</th>
                                         <th><i class="ri-file-list-3-line me-1"></i>Attendance Summary</th>
                                         <th class="text-center"><i class="ri-flag-line me-1"></i>Status</th>

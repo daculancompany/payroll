@@ -244,8 +244,8 @@ if ($sel_id) {
                 </div>
                 <div class="modal-body">
                     <div class="mb-1">
-                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Payroll Period</label>
-                        <select name="id" class="form-control" data-cs-icon="ri-calendar-range-line" data-cs-search="true">
+                        <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Payroll Period</label>
+                        <select name="id" class="form-control" data-cs-icon="ri-calendar-2-line" data-cs-search="true">
                             <option value="">— Select payroll period —</option>
                             <?php foreach ($payrolls as $p): ?>
                                 <option value="<?= (int) $p['id'] ?>" <?= (int) $p['id'] === $sel_id ? 'selected' : '' ?>>

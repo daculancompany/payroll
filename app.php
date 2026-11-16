@@ -43,7 +43,7 @@ function v2_title($slug, $menu)
     foreach ($menu as $g) foreach ($g['items'] as $it) {
         if ($it[0] === $slug || in_array($slug, $it[4] ?? [], true)) return $it[1];
     }
-    $map = ['employee-details' => 'Employee', 'dtr-details' => 'DTR Details', 'payroll_items' => 'Payroll Items', 'profile' => 'My Profile'];
+    $map = ['employee-details' => 'Employee', 'employee-201' => '201 File', 'dtr-details' => 'DTR Details', 'payroll_items' => 'Payroll Items', 'profile' => 'My Profile'];
     return $map[$slug] ?? ucwords(str_replace(['-', '_'], ' ', $slug));
 }
 $page_title = v2_title($page, $V2_MENU);

@@ -19,6 +19,17 @@ function render_dtr_employee_card($empId, array $empGroup, array $empTotals, $lo
     $cardId      = 'emp-card-' . $empId;
     $empName     = $info['lastname'] . ', ' . $info['firstname'];
 
+    // How this employee's punches were made, for the per-entry chips below.
+    // Scoped to this employee and to the days the card actually shows, so it
+    // is one small lookup per card rather than a scan of the whole period.
+    global $conn;
+    require_once __DIR__ . '/../includes/kiosk_admin.php';
+    $dtrCardDays = array_keys($empGroup['dates']);
+    sort($dtrCardDays);
+    $dtrCardMeta = ($conn && $dtrCardDays)
+        ? kiosk_punch_meta($conn, $dtrCardDays[0], end($dtrCardDays), (int) $empId)
+        : [];
+
     // Per-employee approval summary (DTR_details.status: 0=pending, 1=approved, 2=disapproved)
     $empAppr = $empPend = $empDisa = 0;
     foreach ($empGroup['dates'] as $dEntries) {
@@ -100,9 +111,14 @@ function render_dtr_employee_card($empId, array $empGroup, array $empTotals, $lo
                 $logCount = count($logs2);
                 $pl = '';
                 foreach ($logs2 as $li => $lg) {
-                    $iB   = $lg->type === 'bio';
                     $lbl3 = ($li === 0) ? 'IN' : (($li === count($logs2) - 1) ? 'OUT' : '#' . ($li + 1));
-                    $pl  .= '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;"><span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">' . $lbl3 . '</span><span class="dtr-log-chip ' . ($iB ? 'bio' : 'manual') . '"><i class="' . ($iB ? 'ri-fingerprint-line' : 'ri-edit-line') . '"></i>' . date("g:i A", strtotime($lg->dateTime)) . '</span></div>';
+                    // The actual method (face / finger / PIN / manual), not just
+                    // "scanned or typed" — same chip vocabulary as Attendance.
+                    $ch3 = punch_source_chip(
+                        $lg->type ?? 'bio',
+                        kiosk_punch_meta_for($dtrCardMeta, $empId, date('Y-m-d H:i:s', strtotime($lg->dateTime)))
+                    );
+                    $pl  .= '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;"><span style="font-size:10px;font-weight:700;color:#888;min-width:26px;">' . $lbl3 . '</span><span class="dtr-log-chip ' . $ch3['class'] . '" title="' . htmlspecialchars($ch3['tip'], ENT_QUOTES) . '"><i class="' . $ch3['icon'] . '"></i>' . date("g:i A", strtotime($lg->dateTime)) . '</span></div>';
                 }
                 if (!$pl) $pl = '<span style="color:#aaa;font-size:11px;">No logs</span>';
                 $pc = htmlspecialchars('<div style="min-width:150px;">' . $pl . '</div>');

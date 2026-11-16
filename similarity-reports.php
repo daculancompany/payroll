@@ -161,7 +161,7 @@ tr.sr-open{background:#fffdf5;}
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="similarity-reports">
                 <div class="col-md-3">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Date Range</label>
                     <div id="sr-daterange" class="att-range-picker">
                         <i class="ri-calendar-2-line"></i>
                         <span id="sr-range-label"><?= htmlspecialchars($sr_range_label) ?></span>

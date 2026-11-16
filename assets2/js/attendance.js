@@ -177,6 +177,9 @@ if ($('#attendance-table').length) {
             if (json && json.stats) {
                 attUpdateStats(json.stats);
             }
+            // No tooltip wiring needed for the rows this draw created:
+            // assets2/js/app-tooltip.js is delegated off the document and
+            // picks up data-tip / title on first hover.
         },
     });
 
@@ -246,20 +249,28 @@ $(document).on('click', '.view_time_logs', function () {
         } else if (i === logs.length - 1) {
             dir = '<span class="att-log-dir att-log-out">OUT</span>';
         }
-        var src = log.type === 'bio'
-            ? '<span class="badge att-log-bio">Bio</span>'
-            : '<span class="badge att-log-manual">Manual</span>';
+        // Built server-side (punch_source_html) so the chip in this modal and
+        // the one in the table row can never disagree about the same punch.
+        var src = log.srcFull || log.srcHtml
+            || '<span class="pl-src bio"><i class="ri-scan-line"></i><span>BIO</span></span>';
         var d = new Date(String(log.dateTime).replace(' ', 'T'));
         var timeStr = isNaN(d) ? log.dateTime : d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        // Photo and coordinates exist only for a kiosk punch; a punch from
+        // the desktop reader shows the placeholder and a dash.
+        var shot = log.photoHtml
+            || '<span class="pl-noshot pl-noshot-sm"><i class="ri-camera-off-line"></i></span>';
+        var geo = log.geoHtml || '<span class="text-muted">&mdash;</span>';
         return '<tr>'
              + '<td class="text-center text-muted">' + (i + 1) + '</td>'
+             + '<td class="text-center">' + shot + '</td>'
              + '<td class="fw-semibold">' + timeStr + '</td>'
              + '<td class="text-center">' + dir + '</td>'
              + '<td class="text-center">' + src + '</td>'
+             + '<td class="text-center">' + geo + '</td>'
              + '</tr>';
     }).join('');
 
-    $('#tl-table tbody').html(rows || '<tr><td colspan="4" class="text-center text-muted">No logs</td></tr>');
+    $('#tl-table tbody').html(rows || '<tr><td colspan="6" class="text-center text-muted">No logs</td></tr>');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-time-logs')).show();
 });
 

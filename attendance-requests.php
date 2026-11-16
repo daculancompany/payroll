@@ -120,7 +120,11 @@ $reasonLabels = [
                                 <i class="ri-shield-user-line me-1"></i><?= htmlspecialchars(implode(' → ', array_map(fn($s) => $s['label'], $att_stage_defs))) ?>
                             </span>
                         </div>
-                        <div class="card-header border-bottom-dashed pt-3 pb-0">
+                        <!-- No border-bottom-dashed here. The card header already
+                             draws a solid hairline, and the dashed one (a leftover
+                             Velzon utility used nowhere else in the app) painted a
+                             second, broken line across the card under the tabs. -->
+                        <div class="card-header pt-3 pb-0">
                             <ul class="nav nav-tabs-custom card-header-tabs border-bottom-0" id="att-req-tabs" role="tablist">
                                 <?php $mine_first = $in_chain && $counts['awaiting'] > 0; ?>
                                 <?php if ($in_chain): ?>

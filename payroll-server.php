@@ -62,7 +62,7 @@ function getStatusBadge($status)
         case 0:
             return '<span class="badge rounded-pill bg-primary"><i class="ri-file-add-line me-1"></i>New</span>';
         case 1:
-            return '<span class="badge rounded-pill bg-success"><i class="ri-check-circle-line me-1"></i>Calculated</span>';
+            return '<span class="badge rounded-pill bg-success"><i class="ri-checkbox-circle-line me-1"></i>Calculated</span>';
         case 3:
             return '<span class="badge rounded-pill bg-warning text-dark"><i class="ri-eye-line me-1"></i>Ready for Review</span>';
         case 2:

@@ -167,6 +167,22 @@
                             if ($__pq && ($__pr = $__pq->fetch_assoc())) $__portal_user = $__pr['username'];
                         }
                     }
+
+                    /* Punching from the employee's own phone belongs with the portal
+                       login, because that is exactly what it switches on: the same
+                       username and password, used in the app. It is NOT saved by
+                       save_employee() — the form hands it to set_mobile_punch after
+                       the save, which is the one endpoint that also signs out live
+                       devices when the answer turns to no. The column is optional
+                       until 2026_11_kiosk_employee_api.sql has been run, so the field
+                       simply does not appear before then. */
+                    $__mp_col = $conn->query("SHOW COLUMNS FROM employee LIKE 'mobile_punch_enabled'");
+                    $__mp_col = $__mp_col && $__mp_col->num_rows > 0;
+                    $__mp_on  = 0;
+                    if ($__mp_col && $__portal_eid > 0) {
+                        $__mq = $conn->query("SELECT mobile_punch_enabled FROM employee WHERE id = $__portal_eid LIMIT 1");
+                        if ($__mq && ($__mr = $__mq->fetch_assoc())) $__mp_on = (int) $__mr['mobile_punch_enabled'] === 1 ? 1 : 0;
+                    }
                     ?>
                     <?php if ($__is_admin): ?>
                         <div class="mb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#673bb6;border-bottom:2px solid #eef0f8;padding-bottom:4px;margin-bottom:12px;">
@@ -207,6 +223,24 @@
                                         Blank password &rarr; the default password, which the employee is asked to change.<?php endif; ?></span>
                                 </div>
                             </div>
+                            <?php if ($__mp_col): ?>
+                            <div class="col-12">
+                                <div class="form-check form-switch" style="padding-left:2.4em;">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                           id="mpunch_enabled" name="mobile_punch_enabled" value="1"
+                                           data-original="<?= $__mp_on ?>" <?= $__mp_on ? 'checked' : '' ?>
+                                           style="margin-left:-2.4em;">
+                                    <label class="form-check-label fw-semibold" for="mpunch_enabled" style="font-size:12.5px;">
+                                        <i class="ri-smartphone-line me-1" style="color:#673bb6;"></i>Allow punching from their own phone
+                                    </label>
+                                    <div style="font-size:11px;color:#888;margin-top:2px;">
+                                        They sign in to the attendance app with the login above and punch for themselves.
+                                        The punch is measured against the site&rsquo;s attendance area and recorded as a phone
+                                        punch. Turning this off signs out every phone they are already signed in on.
+                                    </div>
+                                </div>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     <?php endif; ?>
 

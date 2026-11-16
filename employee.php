@@ -28,6 +28,24 @@ $emp_hide_pay = is_timekeeper($login_role);
 		color: #555;
 	}
 
+	/* Department: same look as .emp-position, but clamped. The table is
+	   `nowrap`, so a long name set the column width for every row; the full
+	   text stays available as the title tooltip. */
+	.emp-dept {
+		font-size: 11px;
+		color: #555;
+		display: inline-block;
+		max-width: 180px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		vertical-align: middle;
+	}
+
+	@media (max-width: 1400px) {
+		.emp-dept { max-width: 130px; }
+	}
+
 	.emp-currency {
 		font-weight: 600;
 		color: var(--app-primary);

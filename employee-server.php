@@ -144,7 +144,12 @@ while ($row = mysqli_fetch_array($query)) {
         . '<div class="emp-id"><i class="ri-hashtag" style="font-size:10px;opacity:.6;"></i>' . htmlspecialchars($row['employee_no']) . '</div></div>'
         . '</div>';
     $subdata[] = '<span class="emp-position">' . htmlspecialchars($row['position'] ?? '—') . '</span>';
-    $subdata[] = '<span class="emp-position">' . htmlspecialchars($row['department'] ?? '—') . '</span>';
+    // Department names run long ("ADMINISTRATION/FINANCE/HR/BILLING/PHILHEALTH/
+    // RECORDS"), and the table is nowrap — one of those stretched the column
+    // across half the screen. Clamped in CSS with the full name on hover.
+    $__dept = $row['department'] ?? '—';
+    $subdata[] = '<span class="emp-dept" title="' . htmlspecialchars($__dept, ENT_QUOTES) . '">'
+               . htmlspecialchars($__dept) . '</span>';
     // Pay figures never leave the server for a timekeeper.
     $money = function ($v) use ($tk_hide_pay) {
         return $tk_hide_pay
@@ -164,6 +169,9 @@ while ($row = mysqli_fetch_array($query)) {
     $subdata[] = '<div class="emp-actions">'
         . '<a href="index.php?page=employee-details&id=' . $row['id'] . '" class="btn btn-sm btn-outline-success" data-bs-toggle="tooltip" data-bs-placement="top" title="View Employee Details">'
         . '<i class="ri-eye-line me-1"></i>View</a>'
+        // No separate 201 button here: View opens the employee's page, and the
+        // 201 file is a tab on it. A second button to the same page only
+        // crowded the row.
         . ($can_edit_emp
             ? ' <button type="button" class="btn btn-sm btn-info" data-bs-toggle="tooltip" data-bs-placement="top" title="Quick Edit" onclick="quick_edit_employee(' . (int) $row['id'] . ')">'
                 . '<i class="ri-edit-line me-1"></i>Edit</button>'

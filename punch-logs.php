@@ -41,10 +41,16 @@ $punches = dtr_punch_feed($conn, [
     'with_names'  => true,
 ]);
 
+// Photo taken at the punch, PIN review state and distance from the site —
+// everything the kiosk knows on top of the bare timestamp in the logs.
+require_once __DIR__ . '/includes/kiosk_admin.php';
+$pl_meta = kiosk_punch_meta($conn, date('Y-m-d', strtotime($f_from)), date('Y-m-d', strtotime($f_to)), $f_emp);
+
 $stat = ['total' => count($punches), 'cross' => 0, 'manual' => 0, 'emps' => []];
 foreach ($punches as $p) {
     if ($p['day_offset'] != 0)   $stat['cross']++;
-    if ($p['source'] !== 'bio')  $stat['manual']++;
+    // Kiosk PIN punches are not manual entries — they are reviewed on PIN Attendance.
+    if ($p['source'] !== 'bio' && $p['source'] !== 'pin')  $stat['manual']++;
     $stat['emps'][$p['employee_id']] = true;
 }
 $stat['emps'] = count($stat['emps']);
@@ -79,9 +85,14 @@ $batchLbl = [0 => 'Collecting', 1 => 'Pending', 2 => 'Approved', 3 => 'For revie
 .pl-table td{vertical-align:middle;}
 .pl-time{font-weight:700;color:#3a285d;white-space:nowrap;}
 .pl-date{font-size:11px;color:#999;}
-.pl-src{font-size:9.5px;font-weight:800;padding:2px 7px;border-radius:9px;text-transform:uppercase;letter-spacing:.3px;}
-.pl-src.bio{background:#eef4ff;color:#3b5bbf;} .pl-src.manual{background:#fff6e0;color:#c98a00;}
-.pl-src.kiosk{background:#eafaf0;color:#0f9d58;}
+/* .pl-src (the source chip) now lives in assets2/css/reports.css, built by
+   punch_source_html() so this page and Attendance show the same chip. */
+/* .pl-shot / .pl-noshot moved to assets2/css/reports.css — the Attendance
+   time-log modal shows the same thumbnails. */
+.pl-rev{display:inline-block;font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:8px;margin-top:3px;text-transform:uppercase;letter-spacing:.3px;}
+.pl-rev.pending{background:rgba(230,168,23,.18);color:#b07800;} .pl-rev.rejected{background:rgba(198,40,40,.13);color:#c62828;}
+.pl-geo-row{display:flex;align-items:center;gap:5px;margin-top:3px;}
+.pl-far{display:inline-block;font-size:9.5px;font-weight:800;padding:1px 6px;border-radius:8px;margin-top:3px;background:rgba(198,40,40,.12);color:#c62828;}
 .pl-seq{font-size:10px;color:#aaa;font-weight:700;}
 .pl-off{display:inline-block;font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#fdecea;color:#c62828;margin-left:6px;}
 .pl-off.ok{background:#efe9fb;color:#5b3ea8;}
@@ -121,7 +132,7 @@ tr.pl-cross{background:#fffdf5;}
             <form method="get" class="row g-2 align-items-end">
                 <input type="hidden" name="page" value="punch-logs">
                 <div class="col-md-4">
-                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
+                    <label class="form-label fw-semibold" style="font-size:11px;text-transform:uppercase;color:#673bb6;"><i class="ri-calendar-2-line me-1"></i>Date Range</label>
                     <div id="pl-daterange" class="att-range-picker">
                         <i class="ri-calendar-2-line"></i>
                         <span id="pl-range-label"><?= htmlspecialchars($pl_range_label) ?></span>
@@ -167,28 +178,43 @@ tr.pl-cross{background:#fffdf5;}
                 <table class="table table-sm mb-0 rpt-table pl-table" id="pl-table">
                     <thead>
                         <tr>
-                            <th>#</th><th>Punch</th><th>Source</th><th>Employee</th>
+                            <th>#</th><th>Photo</th><th>Punch</th><th>Source</th><th>Employee</th>
                             <th>Scan</th><th>Assigned to</th><th>Shift on that day</th><th>DTR batch</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if (!$punches): ?>
-                            <tr><td colspan="8" class="text-center text-muted py-4">No punches in this range.</td></tr>
+                            <tr><td colspan="9" class="text-center text-muted py-4">No punches in this range.</td></tr>
                         <?php else: $i = 1; foreach ($punches as $p):
                             $off  = (int) $p['day_offset'];
                             $noc  = (int) $p['sched_graveyard'] === 1;
                             $url  = $batchUrl[$p['ddtr_id']] ?? null;
                             $bst  = (int) $p['batch_status'];
+                            $km   = kiosk_punch_meta_for($pl_meta, $p['employee_id'], $p['punched_at']);
                         ?>
                             <tr class="<?= $off != 0 ? 'pl-cross' : '' ?>">
                                 <td><?= $i++ ?></td>
+                                <td>
+                                    <?php if (!empty($km['photo'])): ?>
+                                        <img class="pl-shot" src="<?= htmlspecialchars($km['photo']) ?>" alt="" loading="lazy"
+                                             onclick="kioskPhotoView(this.src, <?= htmlspecialchars(json_encode($p['employee'] . ' · ' . date('M j, g:i A', $p['ts'])), ENT_QUOTES) ?>)">
+                                    <?php else: ?>
+                                        <span class="pl-noshot" title="No photo for this punch"><i class="ri-camera-off-line"></i></span>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
                                     <div class="pl-time"><?= date('g:i A', $p['ts']) ?></div>
                                     <div class="pl-date"><?= date('D, M j, Y', $p['ts']) ?></div>
                                 </td>
                                 <td>
-                                    <span class="pl-src <?= htmlspecialchars($p['source']) ?>"><?= htmlspecialchars($p['source']) ?></span>
+                                    <?= punch_source_html($p['source'], $km, true) ?>
                                     <?php if ($p['authorized_by']): ?><div class="pl-date">by <?= htmlspecialchars($p['authorized_by']) ?></div><?php endif; ?>
+                                    <?php if (!empty($km['approval']) && $km['approval'] !== 'approved'): ?>
+                                        <div><span class="pl-rev <?= htmlspecialchars($km['approval']) ?>"><?= $km['approval'] === 'pending' ? 'Awaiting review' : 'Rejected' ?></span></div>
+                                    <?php endif; ?>
+                                    <?php if (($geo = punch_location_html($km)) !== ''): ?>
+                                        <div class="pl-geo-row"><?= $geo ?><?php if (!empty($km['outside'])): ?><span class="pl-far"><?= $km['distance_m'] !== null ? (int) $km['distance_m'] . ' m out' : 'Outside area' ?></span><?php endif; ?></div>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <a href="index.php?page=employee-details&id=<?= (int)$p['employee_id'] ?>" data-emp-quickview="<?= (int)$p['employee_id'] ?>" class="rpt-emp-link"><?= htmlspecialchars($p['employee']) ?></a>
@@ -278,3 +304,8 @@ tr.pl-cross{background:#fffdf5;}
         a.href = URL.createObjectURL(blob); a.download = filename; a.click();
     }
 </script>
+
+<?php
+// Click-to-enlarge for the punch thumbnails (component/photo_viewer.php).
+require_once __DIR__ . '/component/photo_viewer.php';
+echo render_photo_viewer();

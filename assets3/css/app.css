@@ -148,6 +148,24 @@ html[data-bs-theme="dark"] {
     --bs-link-hover-color: var(--brand-200);
     --sb-thumb: rgba(148, 163, 184, .25);
     --sb-thumb-hover: rgba(148, 163, 184, .45);
+
+    /* Status chips on dark: the light pastels (#d4edda on #155724 and the
+       rest) turn into a pale block with near-black text, which on a dark row
+       reads as a smudge. Dark glass + a bright foreground instead, so the
+       figure is what carries the colour. Covers the attendance figures
+       (--att-*) and the punch-source chips (--src-*, assets2/css/reports.css). */
+    --att-ok-bg: rgba(34, 197, 94, .16);   --att-ok-fg: #4ade80;
+    --att-ot-bg: rgba(245, 158, 11, .16);  --att-ot-fg: #fbbf24;
+    --att-ut-bg: rgba(56, 189, 248, .16);  --att-ut-fg: #7dd3fc;
+    --att-late-bg: rgba(244, 63, 94, .16); --att-late-fg: #fda4af;
+    --src-bio-bg: rgba(147, 197, 253, .16);    --src-bio-fg: #93c5fd;
+    --src-face-bg: rgba(74, 222, 128, .16);    --src-face-fg: #4ade80;
+    --src-finger-bg: rgba(147, 197, 253, .16); --src-finger-fg: #93c5fd;
+    --src-manual-bg: rgba(251, 191, 36, .16);  --src-manual-fg: #fbbf24;
+    --src-pin-bg: rgba(167, 139, 250, .18);    --src-pin-fg: #c4b5fd;
+    --src-inc-bg: rgba(244, 63, 94, .16);      --src-inc-fg: #fda4af;
+    --src-geo-bg: rgba(148, 163, 184, .18);    --src-geo-fg: #cbd5e1;
+    --src-out-bg: rgba(251, 191, 36, .16);     --src-out-fg: #fbbf24;
 }
 
 html[data-theme="black"] {
@@ -365,6 +383,15 @@ html[data-bs-theme="dark"] .v2-when-light, html[data-bs-theme="light"] .v2-when-
 .v2-palette__input { display: flex; align-items: center; gap: .7rem; padding: 0 1rem; border-bottom: 1px solid var(--v2-border); }
 .v2-palette__input i { font-size: 1.2rem; color: var(--v2-text-3); }
 .v2-palette__input input { flex: 1; height: 56px; border: 0; background: none; outline: none; color: var(--v2-text); font-size: 1rem; }
+/* The input is a borderless box stretching the whole row, so the global
+   `.v2 :focus-visible` ring (2px, offset 2px) drew a rectangle straight
+   through the magnifier and the Esc key on either side of it. The ROW shows
+   the focus instead — same signal, inside the palette's own rounded edge.
+   High-contrast mode (html.ui-hc) keeps its stronger outline: that rule is
+   !important, and a user who asked for it wants it everywhere. */
+.v2-palette__input { transition: border-color .12s ease, box-shadow .12s ease; }
+.v2-palette__input:focus-within { border-bottom-color: var(--brand-500); box-shadow: inset 0 -2px 0 0 var(--brand-500); }
+.v2 .v2-palette__input input:focus-visible { outline: none; }
 .v2-palette__list { max-height: 50vh; overflow-y: auto; padding: .4rem; }
 .v2-palette__item { display: flex; align-items: center; gap: .75rem; padding: .6rem .75rem; border-radius: 9px; color: var(--v2-text); }
 .v2-palette__item i { font-size: 1.1rem; color: var(--v2-text-3); }
@@ -629,6 +656,46 @@ html[data-bs-theme="dark"] .v2 .nav-tabs .nav-link.active { color: var(--brand-3
 .v2 .daterangepicker td.in-range { background: rgba(var(--brand-rgb), .12); color: var(--v2-text); }
 .v2 .daterangepicker td.available:hover, .v2 .daterangepicker th.available:hover { background: var(--v2-hover); }
 .v2 .daterangepicker .ranges li.active { background: var(--brand-600); }
+/* The preset rail, the calendar chrome and the footer are painted for a white
+   panel by assets2/css/custom-select.css (`body .daterangepicker …`), so on a
+   dark theme the unselected presets were dark-on-dark — only the active row
+   could be read. Every selector below matches that file's but with `.v2`, so
+   it wins on specificity without !important. */
+.v2 .daterangepicker .ranges li { color: var(--v2-text); }
+.v2 .daterangepicker .ranges li:hover { background: var(--v2-hover); color: var(--v2-text); }
+.v2 .daterangepicker .calendar-table th { color: var(--v2-text-2); }
+.v2 .daterangepicker .calendar-table td { color: var(--v2-text); }
+.v2 .daterangepicker td.off,
+.v2 .daterangepicker td.off.in-range,
+.v2 .daterangepicker td.off.start-date,
+.v2 .daterangepicker td.off.end-date { background: transparent; color: var(--v2-text-3); }
+.v2 .daterangepicker td.available:hover,
+.v2 .daterangepicker th.available:hover { color: var(--v2-text); }
+.v2 .daterangepicker td.start-date,
+.v2 .daterangepicker td.end-date,
+.v2 .daterangepicker td.active,
+.v2 .daterangepicker td.active:hover { color: #fff; }
+.v2 .daterangepicker td.start-date,
+.v2 .daterangepicker td.end-date { background: var(--brand-700, var(--brand-600)); }
+.v2 .daterangepicker th.prev .daterangepicker-prev-icon,
+.v2 .daterangepicker th.next .daterangepicker-next-icon { border-color: var(--v2-text-2); }
+/* The pointer triangle is drawn in the panel's own colour — a white one left
+   a bright notch above a dark panel. */
+.v2 .daterangepicker:after { border-bottom-color: var(--v2-raised); }
+.v2 .daterangepicker.drop-up:after { border-top-color: var(--v2-raised); }
+.v2 .daterangepicker:before { border-bottom-color: var(--v2-border); }
+.v2 .daterangepicker.drop-up:before { border-top-color: var(--v2-border); }
+.v2 .daterangepicker .drp-buttons { background: var(--v2-surface-2); border-top-color: var(--v2-border); }
+.v2 .daterangepicker .drp-selected { color: var(--v2-text-2); }
+.v2 .daterangepicker .drp-buttons .btn.btn-default,
+.v2 .daterangepicker .drp-buttons .cancelBtn { background: var(--v2-surface-3); border-color: var(--v2-border-strong); color: var(--v2-text); }
+.v2 .daterangepicker .drp-buttons .btn.btn-default:hover,
+.v2 .daterangepicker .drp-buttons .cancelBtn:hover { background: var(--v2-hover); color: var(--v2-text); border-color: var(--brand-400); }
+/* Month/year pickers inside the calendar head, and the range input boxes. */
+.v2 .daterangepicker select.monthselect,
+.v2 .daterangepicker select.yearselect,
+.v2 .daterangepicker .drp-calendar .input-mini,
+.v2 .daterangepicker .drp-calendar .input-mini.active { background: var(--v2-input-bg); color: var(--v2-text); border-color: var(--v2-border-strong); }
 
 /* ── 6. Settings modal ──────────────────────────────────────────────── */
 .v2-settings .modal-dialog { max-width: min(1040px, calc(100vw - 2rem)); }

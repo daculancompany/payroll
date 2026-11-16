@@ -490,6 +490,17 @@ if ($action === 'docs') {
         $rs->execute();
         $res = $rs->get_result();
 
+        // How each punch in this batch was actually made. Without it the
+        // Records tab had only a bio/manual boolean, so a face scan and a
+        // fingerprint both drew a fingerprint icon — it said "scanned", never
+        // which scanner. Same source as Attendance and Punch Logs.
+        require_once __DIR__ . '/includes/kiosk_admin.php';
+        $dtrPunchMeta = kiosk_punch_meta(
+            $conn,
+            (string) ($batch['date_from'] ?? date('Y-m-d')),
+            (string) ($batch['date_to']   ?? date('Y-m-d'))
+        );
+
         $byEmp = [];
         while ($row = $res->fetch_assoc()) {
             $eid = (int)$row['employee_id'];
@@ -574,10 +585,29 @@ if ($action === 'docs') {
                     $E['_logs'][$date][] = $ts;
                     $isBio = (($lg->type ?? '') === 'bio');
                     if (!$isBio) $hasManual = true;
+                    // The real method, not just "was it scanned": face, finger,
+                    // PIN, manual or plain bio when nothing says which.
+                    $chip = punch_source_chip(
+                        $lg->type ?? 'bio',
+                        kiosk_punch_meta_for($dtrPunchMeta, $eid, date('Y-m-d H:i:s', $ts))
+                    );
                     // `dt` carries the full stamp, not just the clock time: the
                     // punch editor has to round-trip a night shift's next-day
                     // clock-out, and "7:03 AM" alone cannot say which day it is.
-                    $recLogs[] = ['t' => date('g:i A', $ts), 'dt' => date('Y-m-d\TH:i', $ts), 'bio' => $isBio];
+                    $pMeta = kiosk_punch_meta_for($dtrPunchMeta, $eid, date('Y-m-d H:i:s', $ts));
+                    $recLogs[] = [
+                        't'   => date('g:i A', $ts),
+                        'dt'  => date('Y-m-d\TH:i', $ts),
+                        'bio' => $isBio,
+                        'm'   => $chip['class'],   // face | finger | pin | manual | incident | bio
+                        'mi'  => $chip['icon'],
+                        'mt'  => $chip['tip'],
+                        // The photo the kiosk took at this punch, if any. Its
+                        // presence is what makes the chip clickable; a finger,
+                        // PIN or hand-entered punch has none and stays inert.
+                        'ph'  => $pMeta['photo'] ?? null,
+                        'cap' => trim($row['lastname'] . ', ' . $row['firstname']) . ' · ' . date('M j, g:i A', $ts),
+                    ];
                 }
                 $D['logs']++;
             }

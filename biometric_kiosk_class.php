@@ -28,7 +28,7 @@
 class BiometricKiosk
 {
     /** @var mysqli */
-    private $db;
+    protected $db;
 
     /** Network that produced a face embedding. */
     const FACE_MODEL_DEFAULT = 'facenet';
@@ -581,7 +581,7 @@ class BiometricKiosk
      * Write the image under uploads/attendance/YYYY/MM/ and record the path.
      * Returns the stored relative path, or null when it could not be saved.
      */
-    private function store_selfie($employee_id, $scan_time, $binary)
+    protected function store_selfie($employee_id, $scan_time, $binary)
     {
         $ts = strtotime($scan_time) ?: time();
 
@@ -631,7 +631,7 @@ class BiometricKiosk
      * Decode a base64 image, tolerating a `data:image/jpeg;base64,` prefix.
      * Returns null when the payload is not actually an image.
      */
-    private function decode_image($payload)
+    protected function decode_image($payload)
     {
         $clean  = preg_replace('/^data:image\/[a-zA-Z0-9.+-]+;base64,/', '', trim($payload));
         $binary = base64_decode($clean, true);
@@ -725,7 +725,7 @@ class BiometricKiosk
     }
 
     /** Absolute URL for a stored relative path. */
-    private function public_url($rel_path)
+    protected function public_url($rel_path)
     {
         if (!$rel_path) {
             return null;
@@ -747,7 +747,7 @@ class BiometricKiosk
      * to 0.0, which would silently become a real coordinate and quietly
      * distort every comparison against it.
      */
-    private function normalize_embedding($raw)
+    protected function normalize_embedding($raw)
     {
         if (is_string($raw)) {
             $raw = json_decode($raw, true);
@@ -776,7 +776,7 @@ class BiometricKiosk
     }
 
     /** Active-employee guard, shared by every write path. */
-    private function employee_exists($employee_id)
+    protected function employee_exists($employee_id)
     {
         $stmt = $this->db->prepare("SELECT id FROM employee WHERE id = ? AND status = 1 LIMIT 1");
         $stmt->bind_param('i', $employee_id);

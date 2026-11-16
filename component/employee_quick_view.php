@@ -94,13 +94,27 @@ $eqv_full_target = isset($eqv_full_target) ? $eqv_full_target : '';
                '<span class="eqv-val">' + esc(value) + '</span></div>';
     }
 
+    /** Avatar = the kiosk face photo when enrolled, else the initials. */
+    function setAvatar(photo, initials) {
+        var el = document.getElementById('eqv-avatar');
+        if (photo) {
+            el.textContent = '';
+            el.style.backgroundImage = 'url("' + photo + '")';
+            el.style.backgroundSize = 'cover';
+            el.style.backgroundPosition = 'center';
+        } else {
+            el.style.backgroundImage = '';
+            el.textContent = initials;
+        }
+    }
+
     function render(data) {
         var e = data.employee, sh = data.shift, pay = data.pay;
         var name = e.lastname + ', ' + e.firstname +
             (e.middlename ? ' ' + e.middlename.charAt(0) + '.' : '') +
             (e.ext ? ' ' + e.ext : '');
-        document.getElementById('eqv-avatar').textContent =
-            (e.firstname.charAt(0) + e.lastname.charAt(0)).toUpperCase();
+        // Their enrolled kiosk face when there is one, initials otherwise.
+        setAvatar(e.photo, (e.firstname.charAt(0) + e.lastname.charAt(0)).toUpperCase());
         document.getElementById('eqv-name').textContent = name;
         document.getElementById('eqv-no').textContent =
             e.employee_no + (e.employee_code ? ' · ' + e.employee_code : '');
@@ -150,7 +164,7 @@ $eqv_full_target = isset($eqv_full_target) ? $eqv_full_target : '';
         lastFocus = document.activeElement;
         document.getElementById('eqv-full-link').href = 'index.php?page=employee-details&id=' + id;
         // Reset to the loading state so a slow fetch never shows the previous employee.
-        document.getElementById('eqv-avatar').textContent = '–';
+        setAvatar(null, '–');
         document.getElementById('eqv-name').textContent = 'Loading…';
         document.getElementById('eqv-no').textContent = '';
         document.getElementById('eqv-badges').innerHTML = '';

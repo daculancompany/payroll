@@ -435,6 +435,15 @@ if ($action == "save_settings") {
 		echo json_encode($save);
 }
 
+// Site Settings (site_settings.php) — the SYSTEM's own name, contact and
+// cover image. A separate action on purpose: "save_settings" above belongs to
+// the payroll settings modal (assets2/js/payroll.js), and the two pages had
+// been posting to the same name, so Site Settings silently ran the payroll
+// handler and saved nothing.
+if ($action == "save_site_settings") {
+	echo json_encode($crud->save_settings());
+}
+
 if ($action == "delete_dtr_logs") {
 	$save = $crud->delete_dtr_logs();
 		echo json_encode($save);
@@ -858,6 +867,25 @@ if ($action == 'delete_dtr_record') {
 }
 if ($action == 'review_similarity_report') {
     echo json_encode($crud->review_similarity_report());
+}
+// ── UareUApp kiosk: employee PINs + PIN punch review (includes/kiosk_admin.php) ──
+if (in_array($action, ['set_kiosk_pin', 'clear_kiosk_pin', 'approve_pin_punch', 'reject_pin_punch', 'delete_employee_face',
+    'rename_kiosk_device', 'block_kiosk_device', 'forget_kiosk_device', 'save_site_area', 'set_mobile_punch'], true)) {
+    require_once __DIR__ . '/includes/kiosk_admin.php';
+    $kiosk_admin = new KioskAdmin($GLOBALS['conn']);
+    $kiosk_map   = [
+        'set_kiosk_pin'     => 'set_pin',
+        'clear_kiosk_pin'   => 'clear_pin',
+        'approve_pin_punch' => 'approve_pin_punch',
+        'reject_pin_punch'  => 'reject_pin_punch',
+        'delete_employee_face' => 'delete_employee_face',
+        'rename_kiosk_device' => 'rename_kiosk_device',
+        'block_kiosk_device'  => 'block_kiosk_device',
+        'forget_kiosk_device' => 'forget_kiosk_device',
+        'save_site_area'      => 'save_site_area',
+        'set_mobile_punch'    => 'set_mobile_punch',
+    ];
+    echo json_encode($kiosk_admin->{$kiosk_map[$action]}());
 }
 if ($action == 'delete_similarity_report') {
     echo json_encode($crud->delete_similarity_report());

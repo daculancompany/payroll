@@ -29,15 +29,16 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
     .att-date-main { font-weight:700; color:#673bb6; font-size:13px; }
     .att-emp-id { font-family:monospace; color:#673bb6; font-size:11px; }
     .att-pill { padding:3px 9px; border-radius:5px; font-size:12px; font-weight:600; display:inline-block; }
-    .att-pill-work { background:#d4edda; color:#155724; }
-    .att-pill-ot   { background:#fff3cd; color:#856404; }
-    .att-pill-ut   { background:#d1ecf1; color:#0c5460; }
-    .att-pill-late { background:#f8d7da; color:#721c24; }
-    .att-log-bio   { background:#673bb6; color:#fff; font-size:10px; }
-    .att-log-manual{ background:#dc3545; color:#fff; font-size:10px; }
+    /* Figures and IN/OUT markers. Stated as tokens with the original light
+       value as the fallback, so the v2 dark and colour themes can restate
+       them in assets3/css/app.css instead of fighting these rules. */
+    .att-pill-work { background:var(--att-ok-bg,#d4edda);   color:var(--att-ok-fg,#155724); }
+    .att-pill-ot   { background:var(--att-ot-bg,#fff3cd);   color:var(--att-ot-fg,#856404); }
+    .att-pill-ut   { background:var(--att-ut-bg,#d1ecf1);   color:var(--att-ut-fg,#0c5460); }
+    .att-pill-late { background:var(--att-late-bg,#f8d7da); color:var(--att-late-fg,#721c24); }
     .att-log-dir { font-size:10px; font-weight:700; padding:1px 0; border-radius:3px; min-width:34px; text-align:center; display:inline-block; }
-    .att-log-in  { background:#d4edda; color:#155724; }
-    .att-log-out { background:#f8d7da; color:#721c24; }
+    .att-log-in  { background:var(--att-ok-bg,#d4edda);   color:var(--att-ok-fg,#155724); }
+    .att-log-out { background:var(--att-late-bg,#f8d7da); color:var(--att-late-fg,#721c24); }
     #modal-time-logs .tl-meta-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.3px; }
     #modal-time-logs .tl-meta-value { font-size:13px; font-weight:700; color:#673bb6; }
   
@@ -78,7 +79,7 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
                         <form id="form-filter" class="att-filter-panel" novalidate>
                             <div class="row g-2 align-items-end">
                                 <div class="col-12 col-md-4 col-lg-3">
-                                    <label class="att-flabel"><i class="ri-calendar-range-line me-1"></i>Date Range</label>
+                                    <label class="att-flabel"><i class="ri-calendar-2-line me-1"></i>Date Range</label>
                                     <div id="att-daterange" class="att-range-picker">
                                         <i class="ri-calendar-2-line"></i>
                                         <span id="att-range-label"><?= htmlspecialchars($init_range_label) ?></span>
@@ -193,9 +194,13 @@ $init_range_label  = ($init_from === $today && $init_to === $today)
                         <thead class="table-dark">
                             <tr>
                                 <th class="text-center" style="width:40px;">#</th>
+                                <th class="text-center" style="width:62px;"><i class="ri-camera-line me-1"></i>Photo</th>
                                 <th><i class="ri-time-line me-1"></i>Time</th>
                                 <th class="text-center" style="width:80px;">Direction</th>
-                                <th class="text-center" style="width:80px;">Source</th>
+                                <th class="text-center" style="width:110px;">Source</th>
+                                <!-- Only a kiosk punch carries coordinates; a desktop-reader
+                                     punch shows a dash here. -->
+                                <th class="text-center" style="width:90px;"><i class="ri-map-pin-line me-1"></i>Location</th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -220,3 +225,9 @@ var attFilter = {
     site_label:   '',
 };
 </script>
+
+<?php
+// Click-to-enlarge for the punch photos in the Time Log Details modal
+// (component/photo_viewer.php — the same viewer Punch Logs and the portal use).
+require_once __DIR__ . '/component/photo_viewer.php';
+echo render_photo_viewer();

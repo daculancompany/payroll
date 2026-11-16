@@ -605,6 +605,14 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
     .empty-state div { font-size:12px; margin-top:6px; }
     .th-p { background:var(--app-primary); color:#fff; padding:8px 12px; font-size:11px; border:none; }
     .qa-btn { background:var(--app-tint, #eef0f8); color:var(--app-primary); border:1px solid var(--app-tint-border, #d0d7ee); font-weight:600; }
+    .qa-btn:hover { background:var(--app-primary); color:#fff; border-color:var(--app-primary); }
+    /* In a dark theme both of those resolve dark — --app-tint is a 10% wash of
+       the brand over a dark card, and --app-primary is the mid brand shade —
+       so the chips came out brand-on-brand and were barely readable. Same
+       answer the sidebar uses for this: lift the text to the light brand
+       shade and let the wash stay as the fill. */
+    html[data-bs-theme="dark"] .qa-btn { color:var(--brand-300, #c9b6ef); border-color:rgba(var(--brand-rgb), .4); }
+    html[data-bs-theme="dark"] .qa-btn:hover { background:var(--brand-500); color:#fff; border-color:var(--brand-500); }
     /* Theme CSS paints donut centre text with --vz-body-color, which can resolve to white; pin it. */
     .dash-section .apexcharts-datalabels-group .apexcharts-datalabel-value { fill:#333 !important; }
     .dash-section .apexcharts-datalabels-group .apexcharts-datalabel-label { fill:#999 !important; }
@@ -730,6 +738,8 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                 </div>
                 <?php endif; ?>
             </div>
+
+            <?php if (page_allowed('hr-overview')): require __DIR__ . '/component/hr_reminders_card.php'; endif; ?>
 
             <!-- ── Action needed — pending approvals ── -->
             <?php
@@ -1568,22 +1578,56 @@ if ($aar) while ($r = $aar->fetch_assoc()) { $area_labels[] = $r['nm']; $area_da
                     <div class="card" style="border-top:3px solid var(--app-primary);">
                         <div class="card-header py-2"><h6 class="card-title mb-0"><i class="ri-apps-line me-2" style="color:var(--app-primary);"></i>Quick Access</h6></div>
                         <div class="card-body py-3">
+                            <?php
+                            /*
+                             * Driven by page_allowed(), not by role numbers.
+                             *
+                             * The old list hard-coded roles ($login_role !== 7,
+                             * not in [4,7], …) and had drifted from the real
+                             * permissions: HR was shown Branches and Users,
+                             * neither of which HR may open, so two of their
+                             * eleven shortcuts led to the landing page. Asking
+                             * the same function the router asks means a chip
+                             * can never appear for someone who cannot use it,
+                             * and a page added later only has to be listed.
+                             *
+                             * [slug to check, label, icon, href if not the slug]
+                             */
+                            $qa_links = [
+                                ['employee',          'Employees',      'ri-group-line'],
+                                ['payroll',           'Payroll',        'ri-money-dollar-circle-line', 'payroll-list'],
+                                ['dtr',               'DTR',            'ri-time-line'],
+                                ['attendance',        'Attendance',     'ri-calendar-check-line'],
+                                ['daily-board',       'Daily Board',    'ri-dashboard-2-line'],
+                                ['punch-logs',        'Punch Logs',     'ri-scan-line'],
+                                ['pin-attendance',    'PIN Attendance', 'ri-lock-password-line'],
+                                ['kiosk-devices',     'Kiosk Devices',  'ri-tablet-line'],
+                                ['attendance-requests', 'Requests',     'ri-inbox-archive-line'],
+                                ['schedule-roster',   'Shift Roster',   'ri-calendar-todo-line'],
+                                ['duty-roster',       'Duty Roster',    'ri-table-line', 'duty-roster.php'],
+                                ['leave-dashboard',   'Leave Dashboard','ri-pie-chart-2-line'],
+                                ['leaves',            'Leave Requests', 'ri-calendar-event-line', 'index.php?page=leaves'],
+                                ['leave_balances',    'Leave Credits',  'ri-coins-line', 'index.php?page=leave_balances'],
+                                ['calendar',          'Calendar',       'ri-calendar-2-line', 'index.php?page=calendar'],
+                                ['department',        'Departments',    'ri-building-3-line'],
+                                ['area',              'Areas',          'ri-map-pin-line'],
+                                ['branch',            'Branches',       'ri-building-2-line'],
+                                ['reports',           'Reports',        'ri-file-chart-line'],
+                                ['users',             'Users',          'ri-shield-user-line'],
+                            ];
+                            ?>
                             <div class="d-flex flex-wrap gap-2">
-                                <?php if ($login_role !== 7): ?><a href="employee" class="btn btn-sm qa-btn"><i class="ri-group-line me-1"></i>Employees</a><?php endif; ?>
-                                <?php if ($show_finance): ?><a href="payroll-list" class="btn btn-sm qa-btn"><i class="ri-money-dollar-circle-line me-1"></i>Payroll</a><?php endif; ?>
-                                <a href="dtr" class="btn btn-sm qa-btn"><i class="ri-time-line me-1"></i>DTR</a>
-                                <a href="attendance" class="btn btn-sm qa-btn"><i class="ri-calendar-check-line me-1"></i>Attendance</a>
-                                <a href="daily-board" class="btn btn-sm qa-btn"><i class="ri-dashboard-2-line me-1"></i>Daily Board</a>
-                                <?php if ($show_leave): ?>
-                                <a href="index.php?page=leaves" class="btn btn-sm qa-btn"><i class="ri-calendar-event-line me-1"></i>Leave Requests</a>
-                                <a href="index.php?page=leave_balances" class="btn btn-sm qa-btn"><i class="ri-coins-line me-1"></i>Leave Balances</a>
-                                <a href="index.php?page=calendar" class="btn btn-sm qa-btn"><i class="ri-calendar-2-line me-1"></i>Calendar</a>
-                                <?php endif; ?>
-                                <?php if ($login_role !== 7): ?>
-                                <a href="branch" class="btn btn-sm qa-btn"><i class="ri-building-2-line me-1"></i>Branches</a>
-                                <a href="department" class="btn btn-sm qa-btn"><i class="ri-building-3-line me-1"></i>Departments</a>
-                                <?php endif; ?>
-                                <?php if (!in_array($login_role, [4, 7], true)): ?><a href="users" class="btn btn-sm qa-btn"><i class="ri-shield-user-line me-1"></i>Users</a><?php endif; ?>
+                                <?php foreach ($qa_links as $qa):
+                                    [$qa_slug, $qa_label, $qa_icon] = $qa;
+                                    if (!page_allowed($qa_slug)) continue;
+                                    // Payroll figures stay behind the same flag the
+                                    // rest of this dashboard uses, not just the page gate.
+                                    if ($qa_slug === 'payroll' && !$show_finance) continue;
+                                ?>
+                                    <a href="<?= htmlspecialchars($qa[3] ?? $qa_slug) ?>" class="btn btn-sm qa-btn">
+                                        <i class="<?= htmlspecialchars($qa_icon) ?> me-1"></i><?= htmlspecialchars($qa_label) ?>
+                                    </a>
+                                <?php endforeach; ?>
                             </div>
                         </div>
                     </div>

@@ -30,12 +30,25 @@ return [
         ['area',        'Areas',       'ri-map-pin-line'],
         ['position',    'Positions',   'ri-briefcase-line'],
     ]],
+    ['title' => 'HR', 'items' => [
+        ['hr-overview',      'HR Overview',       'ri-user-heart-line'],
+        ['hr-announcements', 'Announcements',     'ri-megaphone-line'],
+        ['hr-requests',      'Document Requests', 'ri-file-paper-2-line'],
+        ['hr-offboarding',   'Offboarding',       'ri-logout-box-r-line'],
+    ]],
     ['title' => 'Time & Attendance', 'items' => [
         ['attendance',          'Attendance',        'ri-fingerprint-line'],
         ['punch-logs',          'Punch Logs',        'ri-time-line'],
+        ['pin-attendance',      'PIN Attendance',    'ri-lock-password-line'],
+        ['kiosk-devices',       'Kiosk Devices',     'ri-tablet-line'],
         ['attendance-requests', 'Requests',          'ri-inbox-archive-line'],
         ['work-schedules',      'Work Schedules',    'ri-calendar-2-line'],
-        ['schedule-roster',     'Schedule Roster',   'ri-calendar-schedule-line'],
+        // ri-calendar-schedule-line only exists from Remix Icon 4.x; the v2
+        // shell loads 3.5.0 (includes/v2/head.php), so it rendered as a blank
+        // gap. ri-calendar-todo-line is in both that and the local font the
+        // classic shell uses — which is also what the classic navbar already
+        // shows for this page.
+        ['schedule-roster',     'Schedule Roster',   'ri-calendar-todo-line'],
         ['duty-roster',         'Duty Roster',       'ri-table-line', 'duty-roster.php'],
         ['similarity-reports',  'Face Similarity',   'ri-user-search-line'],
     ]],

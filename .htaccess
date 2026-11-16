@@ -147,6 +147,19 @@ RewriteCond %{REQUEST_FILENAME} -f [OR]
 RewriteCond %{REQUEST_FILENAME} -d
 RewriteRule ^ - [L]
 
+# ── UareUApp kiosk API → kiosk-api.php ───────────────────────────────────
+# /payroll/kiosk/login, /payroll/kiosk/templates/store, …  and the same under
+# /payroll/api/kiosk/… (zweldo serves both, so the app works with either base
+# URL). The query string is kept: GET probes pass their filters there.
+RewriteRule ^(?:api/)?kiosk/([A-Za-z0-9/_-]+?)/?$ kiosk-api.php?route=$1 [L,QSA]
+
+# ── UareUApp EMPLOYEE mode → the same front controller ───────────────────
+# /payroll/api/auth/employee/login, …/attendance, …/attendance/history.
+# Prefixed `emp/` so one route table holds both halves and neither can be
+# reached by the other's path. Placed BEFORE the rule above would ever see
+# it — these paths do not contain "kiosk/" at all, so the two cannot collide.
+RewriteRule ^api/auth/employee/([A-Za-z0-9/_-]+?)/?$ kiosk-api.php?route=emp/$1 [L,QSA]
+
 # ── v2 shell clean URLs → app.php ────────────────────────────────────────
 # /payroll/app                         → app.php (role landing page)
 # /payroll/app/employee                → app.php?page=employee

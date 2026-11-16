@@ -199,7 +199,20 @@ body.portal .qa-badge { background: #f59e0b; color: #1f1300; }
 /* Phone app bar: the light/dark switch lives in Settings, keep the bar light */
 @media (max-width: 767.98px), (pointer: coarse) and (max-height: 500px) {
     body.portal .ptop [data-v2-mode-toggle] { display: none; }
-    body.portal .ptop-icbtn, body.portal .ptop-logout { width: 40px; height: 40px; padding: 0; justify-content: center; }
+    /* Up to five buttons (refresh, bell, install, appearance, logout) plus the
+       logo and title must fit a 360–390px phone. At 40px with 6px gaps they
+       did not, and the title ran into the buttons; 38px / 4px leaves the title
+       ~120px, and a longer title ellipsizes instead of colliding. */
+    body.portal .ptop { gap: 8px; }
+    body.portal .ptop-brand { flex: 1 1 auto; min-width: 0; gap: 8px; }
+    body.portal .ptop-logo { flex-shrink: 0; }
+    body.portal .ptop-screen-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    body.portal .ptop-actions { flex-shrink: 0; gap: 4px; }
+    body.portal .ptop-icbtn, body.portal .ptop-logout { width: 38px; height: 38px; min-width: 38px; min-height: 38px; padding: 0; justify-content: center; }
+}
+/* Small phones (360px class): the screen title matters more than the logo. */
+@media (max-width: 370px) {
+    body.portal .ptop-logo { display: none; }
 }
 
 /* Numbers and references: the app font with tabular figures, not monospace */

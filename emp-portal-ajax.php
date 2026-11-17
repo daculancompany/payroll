@@ -785,6 +785,19 @@ switch ($action) {
             break;
         }
 
+        // A rostered day off is not a leave day — dropped before anything is
+        // counted, so it uses no credit (see leave_off_day_dates()).
+        $lv_off_days = leave_off_day_dates($conn, (int) $emp_id, $days);
+        if ($lv_off_days) {
+            $days = array_values(array_filter($days, function ($d1) use ($lv_off_days) {
+                return !in_array(date('Y-m-d', strtotime($d1)), $lv_off_days, true);
+            }));
+            if (!$days) {
+                echo json_encode(['result' => false, 'message' => 'The date(s) you picked are all your days off on the duty roster — no leave is needed for them.']);
+                break;
+            }
+        }
+
         sort($days);
         $d_from = $days[0];
         $d_to   = end($days);
@@ -923,6 +936,7 @@ switch ($action) {
             // will cap worked + leave at one day (see leave_attendance_note).
             'message' => "Leave request submitted! Your {$firstLabel} will review it shortly."
                 . ($lv_skipped ? ' (' . implode(', ', $lv_skipped) . ' skipped — none assigned to your department.)' : '')
+                . leave_off_day_note($lv_off_days)
                 . leave_attendance_note($conn, (int) $emp_id, $days),
             'leave_pending_count' => $leave_pending_count,
             'request' => [

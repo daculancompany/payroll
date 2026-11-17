@@ -6429,6 +6429,24 @@ class Action
                         = (float) $cc['credits'];
                 }
 
+                // Leave dates that are a rostered DAY OFF spend no credit. They are
+                // never paid (isLeaveRestDay below), so letting them through this
+                // walk only used up the balance ahead of real working days — five
+                // weekend dates inside a sick leave could push a later working day
+                // past the credits and turn it into an absence. New filings drop
+                // these dates up front (leave_off_day_dates()); this covers the
+                // requests already on file and rosters published after filing.
+                // Explicit published OFF rows only, read for the whole leave year
+                // into their own map: $this->dutyRestMap is per cutoff, and
+                // isLeaveRestDay() reads "is this employee rostered" from it.
+                $lvOffDays = [];
+                $ofq = $this->db->query("SELECT employee_id, work_date FROM employee_day_schedule
+                                         WHERE status = 1 AND is_rest_day = 1
+                                           AND work_date BETWEEN '$yr_from-01-01' AND '$yr_to-12-31'");
+                if ($ofq) while ($of = $ofq->fetch_assoc()) {
+                    $lvOffDays[(int) $of['employee_id']][date('Y-m-d', strtotime($of['work_date']))] = true;
+                }
+
                 // Walk the year chronologically, spending credits; only the covered
                 // portion of each day is paid, and only days inside THIS payroll
                 // period are written to the map this run.
@@ -6436,6 +6454,7 @@ class Action
                     usort($rows, function ($a, $b) { return strcmp($a['ymd'], $b['ymd']); });
                     $left = $lvCredits[$key] ?? 0.0;
                     foreach ($rows as $r) {
+                        if (isset($lvOffDays[(int) $r['eid']][$r['ymd']])) continue;   // day off — no credit
                         if ($left <= 0) break;                    // credits spent — rest is unpaid
                         $paidFrac = min($r['frac'], $left);       // may pay a half of a whole day
                         $left    -= $paidFrac;
@@ -12478,6 +12497,16 @@ class Action
         $days = $this->collectLeaveDates($_POST['dates'] ?? '', $date_from, $date_to);
         if (count($days) === 0) return ['result' => false, 'message' => 'Please select at least one leave date.'];
 
+        // A rostered day off is not a leave day — dropped before anything is
+        // counted, so it uses no credit (see leave_off_day_dates()).
+        $off_days = leave_off_day_dates($this->db, $employee_id, $days);
+        if ($off_days) {
+            $days = array_values(array_diff($days, $off_days));
+            if (count($days) === 0) {
+                return ['result' => false, 'message' => 'The selected date(s) are all days off on the duty roster — no leave is needed for them.'];
+            }
+        }
+
         // Reject any day that falls on a leave-blocking holiday.
         $blocked = $this->getBlockedDates();
         $hit = array_intersect($days, array_keys($blocked));
@@ -12572,7 +12601,7 @@ class Action
             // leave taken mid-shift), so the filer is told rather than stopped.
             $msg = $id === 0 ? 'Leave request filed. Sent to HR for review.' : 'Leave request updated.';
             if ($skipped) $msg .= ' Skipped: ' . implode(', ', $skipped) . ' (none assigned to this department).';
-            return ['result' => true, 'message' => $msg . leave_attendance_note($this->db, $employee_id, $days)];
+            return ['result' => true, 'message' => $msg . leave_off_day_note($off_days) . leave_attendance_note($this->db, $employee_id, $days)];
         }
         return ['result' => false, 'message' => $stmt->error];
     }

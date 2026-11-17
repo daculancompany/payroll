@@ -3156,6 +3156,48 @@ if (!function_exists('leave_dates_with_attendance')) {
     }
 }
 
+// ── Leave on a rostered day off (GLOBAL) ────────────────────────────────
+// Which of $days the duty roster marks as this employee's DAY OFF.
+//
+// A day off is not a leave day: payroll never pays leave on one, so counting
+// it only spends a credit for nothing. A sick leave filed Nov 1-8 across two
+// weekends off used 7 credits for 3 working days. Both filing paths drop
+// these dates before the request is saved, and the payroll credit walk skips
+// them for requests filed before the roster was published.
+//
+// Only an EXPLICIT published roster OFF counts. The weekly rest_days CSV is
+// deliberately not consulted — it is auto-assigned '0,6' and means nothing
+// for rotating staff, whose Saturday is often a working day they really are
+// taking leave on. A date the roster has not painted stays a leave day.
+if (!function_exists('leave_off_day_dates')) {
+    function leave_off_day_dates(mysqli $db, int $employee_id, array $days): array
+    {
+        if ($employee_id <= 0 || !$days) return [];
+        $esc = [];
+        foreach ($days as $d) {
+            $t = strtotime((string) $d);
+            if ($t) $esc[] = "'" . $db->real_escape_string(date('Y-m-d', $t)) . "'";
+        }
+        if (!$esc) return [];
+        $in  = implode(',', array_unique($esc));
+        $res = $db->query("SELECT DISTINCT work_date FROM employee_day_schedule
+                           WHERE employee_id = $employee_id AND status = 1 AND is_rest_day = 1
+                             AND work_date IN ($in) ORDER BY work_date");
+        $hit = [];
+        if ($res) while ($r = $res->fetch_row()) $hit[] = date('Y-m-d', strtotime($r[0]));
+        return $hit;
+    }
+
+    /** Human-readable "not counted: day off on …" note, or '' when none were dropped. */
+    function leave_off_day_note(array $off_days): string
+    {
+        if (!$off_days) return '';
+        $nice = array_map(function ($d) { return date('M j', strtotime($d)); }, array_slice($off_days, 0, 6));
+        return ' Not counted (day off on the duty roster, no credit used): ' . implode(', ', $nice)
+            . (count($off_days) > 6 ? '…' : '') . '.';
+    }
+}
+
 // ── Leave approval workflow (GLOBAL) ────────────────────────────────────
 // The ORDERED chain a leave request must pass through. Edit THIS ONE array to
 // reorder, add, or remove approval stages — the leaves page, employee portal,

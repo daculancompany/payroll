@@ -1460,6 +1460,27 @@ class Action
         }
     }
 
+    /**
+     * The employee's usual shift length in a cutoff, from the per-row tally
+     * calculate_payroll() keeps: the most frequent length among scheduled
+     * days, the longer one on a tie. Rest-day rows decide only when there is
+     * nothing else. Null when no row was read (caller falls back to 8).
+     */
+    private function usualDayHours(array $tally)
+    {
+        $counts = !empty($tally['work']) ? $tally['work'] : ($tally['rest'] ?? []);
+        $best = null;
+        $bestN = 0;
+        foreach ($counts as $hours => $n) {
+            $hours = (float) $hours;
+            if ($n > $bestN || ($n === $bestN && $hours > (float) $best)) {
+                $best = $hours;
+                $bestN = $n;
+            }
+        }
+        return $best;
+    }
+
     // $employee_id is optional only so older callers keep working; pass it
     // whenever you have it, or a rostered employee gets the weekly answer.
     private function isRestDay($periods, $ymd, $employee_id = null)
@@ -6536,7 +6557,6 @@ class Action
                     // A shift longer than 8 h is priced as an 8-h day; the rest
                     // of it is automatic OT ($auto_ot below).
                     $day_hours = regular_day_hours($day_hours);
-                    $emp_day_hours[$employee_id] = $day_hours;
 
                     // Rest-day duty: if this DTR day is one of the employee's rest days
                     // (effective on that date), the worked fraction counts toward the
@@ -6547,6 +6567,18 @@ class Action
                     $was_rest = isset($row['schedule_id']) && $row['schedule_id'] !== null
                         ? ((int) ($row['is_rest_day'] ?? 0) === 1)
                         : $this->isRestDay($restMap[$employee_id] ?? [], $ymd);
+
+                    // Shift lengths seen this cutoff, counted per employee. The item's
+                    // day_hours — what late and undertime minutes are priced on — is
+                    // the employee's USUAL shift (see usualDayHours()), not whichever
+                    // row happened to be read last: with a Saturday 8-12 as the last
+                    // DTR day, a whole cutoff of late minutes was priced on a 4-hour
+                    // day, twice the rate. Rest-day rows have no shift of their own,
+                    // so they are kept apart and only used when nothing else exists.
+                    $dh_key = (string) (float) $day_hours;
+                    $dh_set = $was_rest ? 'rest' : 'work';
+                    $emp_day_hours[$employee_id][$dh_set][$dh_key] =
+                        ($emp_day_hours[$employee_id][$dh_set][$dh_key] ?? 0) + 1;
 
                     // Rest day: the employee files the WHOLE rendered time (work +
                     // past-shift OT) as one Overtime request, and every APPROVED hour
@@ -6621,6 +6653,9 @@ class Action
                             // worked = not paid" needs no separate rule.
                             "legal_duty" => 0,
                             "special_duty" => 0,
+                            // Day credit `present` carried for those same holiday
+                            // dates — what leaves Basic Days on the daily basis.
+                            "holiday_credit" => 0,
                         ];
                         $ipresent++;
                     }
@@ -6628,16 +6663,6 @@ class Action
                     // $was_rest is resolved above, before the day credit.
                     if ($was_rest) {
                         $grouped_data[$employee_id]["rest_duty"] += $frac_worked;
-                    }
-
-                    // Holiday duty: this DTR date falls on a declared holiday, so the
-                    // fraction worked earns the premium. Same shape as rest-day duty
-                    // above — fractional here, rounded to whole days at insert.
-                    $hol_type = (int) ($holidayDates[$ymd] ?? 0);
-                    if ($hol_type === 1) {
-                        $grouped_data[$employee_id]["legal_duty"] += $frac_worked;
-                    } elseif ($hol_type === 3) {
-                        $grouped_data[$employee_id]["special_duty"] += $frac_worked;
                     }
 
                     // ── Undertime: leaving BEFORE the shift ends ────────────────
@@ -6692,6 +6717,28 @@ class Action
                     $days = $was_rest
                         ? $frac_worked
                         : min(1, $frac_worked + ($late_hours + $ut_hours) / $day_hours);
+
+                    // Holiday duty: this DTR date falls on a declared holiday. Paid
+                    // in days of 8 HOURS — the day credit above scaled by the length
+                    // of the shift — so a holiday worked on an 8-12 shift is half a
+                    // day, not one. ($day_hours is already capped at 8.) Measured
+                    // against the shift itself and rounded to whole days, as this
+                    // used to be, four hours of holiday duty paid a full day.
+                    //
+                    // holiday_credit keeps what `present` carries for the same date,
+                    // which is a WHOLE day for that 4-hour shift: on the daily basis
+                    // all of it leaves Basic Days at insert, and only the hours go
+                    // to the holiday line.
+                    //
+                    // One holiday date is at most one holiday day: a rest day's
+                    // approved hours past the shift stay in `present` (and in the
+                    // rest-day premium), exactly as they did before.
+                    $hol_type = (int) ($holidayDates[$ymd] ?? 0);
+                    if ($hol_type === 1 || $hol_type === 3) {
+                        $hol_credit = min(1, $days);
+                        $grouped_data[$employee_id][$hol_type === 1 ? "legal_duty" : "special_duty"] += $hol_credit * $day_hours / 8;
+                        $grouped_data[$employee_id]["holiday_credit"] += $hol_credit;
+                    }
 
                     $per_day = $row['salary'];
                     $basic_pay = $row['basic_pay'];
@@ -7124,11 +7171,13 @@ class Action
                     // DECIMAL — migrations/2026_09_sunday_duty_decimal.sql) so the 30%
                     // premium lands on every hour. Admin can still adjust it afterward.
                     $rest_duty = round((float) ($data['rest_duty'] ?? 0), 3);
-                    // Holiday duty days worked, auto-counted from the holiday calendar
-                    // above. Same int columns and same rounding as rest-day duty; the
+                    // Holiday duty in DAYS of 8 h, auto-counted from the holiday calendar
+                    // above. Kept fractional like rest-day duty (both columns are
+                    // DECIMAL — migrations/2026_11_holiday_days_decimal.sql); the
                     // admin can still override either afterwards.
-                    $legal_duty   = (int) round($data['legal_duty'] ?? 0);
-                    $special_duty = (int) round($data['special_duty'] ?? 0);
+                    $legal_duty   = round((float) ($data['legal_duty'] ?? 0), 3);
+                    $special_duty = round((float) ($data['special_duty'] ?? 0), 3);
+                    $holiday_credit = (float) ($data['holiday_credit'] ?? 0);
                     // Night differential accumulated per day above: total 10PM–6AM hours
                     // and their peso premium, each day priced at that day's own hourly
                     // rate x the shift's nsd_rate. Frozen here like everything else.
@@ -7141,7 +7190,7 @@ class Action
                     // same reason: payslips, prints and net recalculation divide by THIS
                     // value, so re-opening an old payroll after a shift change can't move
                     // its hourly rate or its days-present figures.
-                    $day_hours = day_hours_or_default($emp_day_hours[$employee_id] ?? null);
+                    $day_hours = day_hours_or_default($this->usualDayHours($emp_day_hours[$employee_id] ?? []));
                     // Absences are only meaningful for MONTHLY-rate employees (their pay is
                     // salary − absences). Expected working days = period days that are NOT the
                     // employee's rest days; absent = expected − days present (floored, whole days).
@@ -7238,11 +7287,13 @@ class Action
 
                     // Holidays out of Basic Days (daily rate). Clients read a worked
                     // holiday as its own line at the full rate — special 130%, legal
-                    // 200% — with basic days counting regular days only. So the same
-                    // whole-day counts the holiday lines pay are taken out of
-                    // `present` here, and the item is flagged so payroll_earnings()
-                    // pays those lines at the full rate instead of the premium.
-                    // Gross is unchanged; only where the day is counted moves.
+                    // 200% — with basic days counting regular days only. So the day
+                    // credit of every holiday date is taken out of `present` here,
+                    // and the item is flagged so payroll_earnings() pays the holiday
+                    // lines at the full rate instead of the premium. On an 8-hour
+                    // shift the credit and the holiday days are the same number, so
+                    // only where the day is counted moves; on a shorter shift the
+                    // whole credit leaves and the holiday line pays the hours.
                     //
                     // Done AFTER the monthly absence block above, which needs the
                     // full day count, and only on the daily basis: a monthly salary
@@ -7250,7 +7301,7 @@ class Action
                     // holiday_separate = 0 and read exactly as issued.
                     $holiday_separate = 0;
                     if ($rate_type === 'daily') {
-                        $present = max(0, (float) $present - $legal_duty - $special_duty);
+                        $present = max(0, (float) $present - $holiday_credit);
                         $holiday_separate = 1;
                     }
 

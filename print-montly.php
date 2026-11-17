@@ -498,7 +498,7 @@ $payroll_type = $payroll['type'];
                                         <?= number_format($total_amount, 2) ?>
                                     </td>
                                     <td class="text-center">
-                                        <?= $row['legal_holiday'] ?>
+                                        <?= (float) $row['legal_holiday'] ?>
                                     </td>
                                     <td class="text-right">
                                         <?= number_format($legal_holiday_amount, 2) ?>
@@ -510,7 +510,7 @@ $payroll_type = $payroll['type'];
                                         <?= number_format($sunday_duty_amount, 2) ?>
                                     </td>
                                     <td class="text-center">
-                                        <?= $row['special_holiday'] ?>
+                                        <?= (float) $row['special_holiday'] ?>
                                     </td>
                                     <td class="text-right">
                                         <?= number_format($special_holiday_amount, 2) ?>

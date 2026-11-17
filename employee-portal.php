@@ -3156,13 +3156,13 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="ps-row"><span class="ps-lbl">Overtime (<?= n2($latest['ot']) ?> hrs)</span><span class="ps-val earn">₱<?= n2($ot_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($lgl_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Legal Holiday (<?= $latest['legal_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($lgl_amt) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl">Legal Holiday (<?= (float) $latest['legal_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($lgl_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($sun_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Rest Day Premium (<?= (float) $latest['sunday_duty'] ?> × 30%)</span><span class="ps-val earn">₱<?= n2($sun_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($spc_amt > 0): ?>
-                    <div class="ps-row"><span class="ps-lbl">Special Holiday (<?= $latest['special_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($spc_amt) ?></span></div>
+                    <div class="ps-row"><span class="ps-lbl">Special Holiday (<?= (float) $latest['special_holiday'] ?>)</span><span class="ps-val earn">₱<?= n2($spc_amt) ?></span></div>
                     <?php endif; ?>
                     <?php if ($late_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Late (<?= number_format($latest['late']) ?> min)</span><span class="ps-val ded">−₱<?= n2($late_amt) ?></span></div>

@@ -1574,13 +1574,13 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['legal_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="legal_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= (float) $row['legal_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="legal_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'legal_holiday')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= $row['legal_holiday'] ?></b>
+                                                            <b><?= (float) $row['legal_holiday'] ?></b>
                                                         <?php } ?>
                                                     </td>
                                                     <td class="text-right" style="min-width: 90px;">
@@ -1604,13 +1604,13 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['special_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="special_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
+                                                                <input type="text" value="<?= (float) $row['special_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="special_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Hours Worked" aria-label="Hours Worked" aria-describedby="basic-addon2">
                                                                 <!-- <div class="input-group-append">
                                                                     <button onclick="updateData(this, <?= $row['id'] ?>,'special_holiday')" data-toggle="tooltip" title="Save Changes" class="btn btn-success" type="button"><i class="ri-save-fill"></i></button>
                                                                 </div> -->
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= $row['special_holiday'] ?></b>
+                                                            <b><?= (float) $row['special_holiday'] ?></b>
                                                         <?php } ?>
                                                     </td>
                                                     <td class="text-right" style="min-width: 90px;">
@@ -1924,11 +1924,11 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-center"><?= payroll_days_label($t_absent_days) ?></th>
                                                 <th class="text-right"><?= number_format($t_absent_amt, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_total_amount, 2) ?></th>
-                                                <th class="text-center"><?= number_format($t_legal_d, 0) ?></th>
+                                                <th class="text-center"><?= (float) round($t_legal_d, 3) ?></th>
                                                 <th class="text-right"><?= number_format($t_legal_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_sun_d, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_sun_amt, 2) ?></th>
-                                                <th class="text-center"><?= number_format($t_spc_d, 0) ?></th>
+                                                <th class="text-center"><?= (float) round($t_spc_d, 3) ?></th>
                                                 <th class="text-right"><?= number_format($t_spc_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_ot_hrs, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ot_rate, 2) ?></th>
@@ -2443,10 +2443,10 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['legal_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="legal_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Legal Holiday Days">
+                                                                <input type="text" value="<?= (float) $row['legal_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="legal_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Legal Holiday Days">
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= $row['legal_holiday'] ?></b>
+                                                            <b><?= (float) $row['legal_holiday'] ?></b>
                                                         <?php } ?>
                                                     </td>
                                                     <td class="text-right" style="min-width: 90px;">
@@ -2467,10 +2467,10 @@ $refund_names = [];   // refund id => display name
                                                     <td style="min-width: 90px;" class="text-center">
                                                         <?php if ($rowShowInputs) { ?>
                                                             <div class="input-group mb-3">
-                                                                <input type="text" value="<?= $row['special_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="special_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Special Holiday Days">
+                                                                <input type="text" value="<?= (float) $row['special_holiday'] ?>" data-id="<?= $row['id'] ?>" data-type="special_holiday" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Special Holiday Days">
                                                             </div>
                                                         <?php } else { ?>
-                                                            <b><?= $row['special_holiday'] ?></b>
+                                                            <b><?= (float) $row['special_holiday'] ?></b>
                                                         <?php } ?>
                                                     </td>
                                                     <td class="text-right" style="min-width: 90px;">
@@ -2741,11 +2741,11 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-center"><?= number_format($t_ut_min, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ut_amt, 2) ?></th>
-                                                <th class="text-center"><?= number_format($t_legal_d, 0) ?></th>
+                                                <th class="text-center"><?= (float) round($t_legal_d, 3) ?></th>
                                                 <th class="text-right"><?= number_format($t_legal_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_sun_d, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_sun_amt, 2) ?></th>
-                                                <th class="text-center"><?= number_format($t_spc_d, 0) ?></th>
+                                                <th class="text-center"><?= (float) round($t_spc_d, 3) ?></th>
                                                 <th class="text-right"><?= number_format($t_spc_amt, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_backpay, 2) ?></th>
                                                 <th class="text-right" id="tfoot-gross"><?= number_format($t_gross, 2) ?></th>

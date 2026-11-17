@@ -744,7 +744,7 @@ $owed_count = count($loans) + count($bal_deds);
 // ── Latest payslip computed values ─────────────────────────────
 $pm = $late_amt = $ut_amt = $all_tot = $abs_amt = $ot_amt = 0;
 $lgl_amt = $sun_amt = $spc_amt = $sub_tot = $gross = $tot_ded = 0;
-$adj_row = $rfd_row = 0; $basic_row = 0; $basic_lbl = 'Basic Pay';
+$adj_row = $rfd_row = 0; $basic_row = 0; $basic_lbl = 'Basic Pay'; $hol_moved = 0;
 $pleave_row = $pleave_amt = 0;
 if ($latest) {
     $pm       = payroll_per_minute($latest);
@@ -762,6 +762,9 @@ if ($latest) {
     $spc_amt  = $latest['special_holiday'] * $latest['per_day'] * $hr_l['special'];
     $_pp      = pp_pay_x($latest);
     $sub_tot  = $_pp['sub'];
+    // Monthly with holidays paid in full on their own line: what those days
+    // took off the half-month share, so Basic − Absent − this = Sub-Total.
+    $hol_moved = (float) ($_pp['parts']['holiday_basic'] ?? 0);
     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
     $gross    = $_pp['gross'];
     // What this cutoff earned, NOT payroll_items.basic_pay — that column holds the
@@ -3151,6 +3154,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <?php if ($abs_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Absent (<?= n2($latest['absent']) ?> day<?= $latest['absent']>1?'s':'' ?>)</span><span class="ps-val ded">−₱<?= n2($abs_amt) ?></span></div>
                     <?php endif; ?>
+                    <?php if ($hol_moved > 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Holiday day(s) — paid under Holiday</span><span class="ps-val ded">−₱<?= n2($hol_moved) ?></span></div>
+                    <?php endif; ?>
                     <div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span><span class="ps-val earn" style="font-weight:800;">₱<?= n2($sub_tot) ?></span></div>
                     <?php if ($ot_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Overtime (<?= n2($latest['ot']) ?> hrs)</span><span class="ps-val earn">₱<?= n2($ot_amt) ?></span></div>
@@ -3317,6 +3323,8 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         'refunds'    => n2($rfd2),
                         'allow_days' => nd($ps['allowance_days']), 'allow_rate' => n2($ps['allowance_amount']), 'allow_amt' => n2($at2),
                         'absent_amt' => n2($ab2),
+                        // Monthly, holidays paid in full: taken off the half-month share.
+                        'hol_moved'  => n2((float) ($_pp2['parts']['holiday_basic'] ?? 0)),
                         'subtotal'   => n2($sub2),
                         'ot_hrs'     => nd($ps['ot']), 'ot_rate' => n2($ps['ot_rate']), 'ot_amt' => n2($ot2),
                         'lgl_days'   => nd($ps['legal_holiday']),   'lgl_amt' => n2($lgl2),
@@ -6139,6 +6147,7 @@ function buildPayrollReviewBreakdown(d) {
         + (pos(d.pleave_amt) ? eRow('Paid Leave (' + d.pleave_days + ' day(s) × ₱' + d.per_day + ')', d.pleave_amt) : '')
         + (pos(d.allow_amt) ? eRow('Allowance (' + d.allow_days + 'd × ₱' + d.allow_rate + ')', d.allow_amt) : '')
         + (pos(d.absent_amt) ? eRow('Absent', d.absent_amt, true) : '')
+        + (pos(d.hol_moved) ? eRow('Holiday day(s) — paid under Holiday', d.hol_moved, true) : '')
         + '<div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span>'
         + '<span class="ps-val earn" style="font-weight:800;">₱' + d.subtotal + '</span></div>'
         + (pos(d.ot_amt) ? eRow('Overtime (' + d.ot_hrs + ' hrs × ₱' + d.ot_rate + ')', d.ot_amt) : '')

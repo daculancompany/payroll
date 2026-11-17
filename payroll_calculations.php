@@ -1866,6 +1866,9 @@ $refund_names = [];   // refund id => display name
                                                         'rest' => (float)$sunday_duty, 'rest_amt' => (float)$sunday_duty_amount,
                                                         'spc' => (float)$special_holiday, 'spc_amt' => (float)$special_holiday_amount,
                                                         'legal_rate' => round((float)$hol_rates['legal'], 4), 'spc_rate' => round((float)$hol_rates['special'], 4),
+                                                        // Monthly, holidays paid in full on their own line: what
+                                                        // those days took off the half-month share (0 otherwise).
+                                                        'hol_basic' => round(holiday_basic_moved($row), 2),
                                                         'basic_earned' => (float)$total_amount, 'gross' => (float)$gross_salary,
                                                         'deds' => $pcw_row_deds,
                                                         'sss_fund' => (float)$sss_fund, 'jei' => (float)$jei_advances, 'jcc' => (float)$jcc_advances, 'tax' => (float)$tax, 'other_ded' => 0.0,
@@ -2675,6 +2678,9 @@ $refund_names = [];   // refund id => display name
                                                         'rest' => (float)$sunday_duty, 'rest_amt' => (float)$sunday_duty_amount,
                                                         'spc' => (float)$special_holiday, 'spc_amt' => (float)$special_holiday_amount,
                                                         'legal_rate' => round((float)$hol_rates['legal'], 4), 'spc_rate' => round((float)$hol_rates['special'], 4),
+                                                        // Monthly, holidays paid in full on their own line: what
+                                                        // those days took off the half-month share (0 otherwise).
+                                                        'hol_basic' => round(holiday_basic_moved($row), 2),
                                                         'basic_earned' => (float)$total_basic_rate, 'gross' => (float)$gross_salary,
                                                         'deds' => $pcw_row_deds,
                                                         'sss_fund' => (float)$sss_fund, 'jei' => (float)$jei_advances, 'jcc' => (float)$jcc_advances, 'tax' => (float)$tax, 'other_ded' => (float)$other_deduction,

@@ -236,8 +236,12 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <?php foreach ($ps_extras as $x): if ((int)$x['kind'] !== 2) continue; ?>
     <table class="item"><tr><td class="sub-lbl"><?= htmlspecialchars($x['label']) ?></td><td class="sub-amt">₱ <?= number_format($x['amount'],2) ?></td></tr></table>
     <?php endforeach; endif; ?>
-    <?php if ($p['absent'] > 0 || $late_amount > 0 || $undertime_amount > 0): ?>
+    <?php $hol_moved = holiday_basic_moved($p);   // monthly: holiday days paid in full above
+    if ($p['absent'] > 0 || $late_amount > 0 || $undertime_amount > 0 || $hol_moved > 0): ?>
     <div class="grp-lbl">Adjustments (deducted)</div>
+    <?php if ($hol_moved > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Holiday day(s) — paid under Holidays</td><td class="sub-amt">– ₱ <?= number_format($hol_moved, 2) ?></td></tr></table>
+    <?php endif; ?>
     <?php if ($p['absent'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Absences (<?= $p['absent'] ?> day)</td><td class="sub-amt">– ₱ <?= number_format($absent_amount, 2) ?></td></tr></table>
     <?php endif; if ($late_amount > 0): ?>

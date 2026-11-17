@@ -604,10 +604,14 @@
         // B. Earnings
         h += '<div class="pp-sec"><div class="pp-sec-title"><span class="ltr">B</span> Earnings'
             + '<span class="sec-amt" id="pp-sect-earn">' + fmt(e.gross) + '</span></div><table class="pp-table">';
+        // Monthly with holidays paid in full on their own line: those days'
+        // plain rate comes off the half-month share, so say so — otherwise
+        // 25,858 ÷ 2 would not read as the 11,753.64 printed beside it.
+        var halfLbl = fmt(e.monthly) + ' ÷ 2 − absences' + (+e.hol_basic > 0 ? ' − holiday ' + fmt(e.hol_basic) : '');
         if (isMonthlyBatch) {
-            h += earnRow('Half-Month Basic (Quinsena)', fmt(e.monthly) + ' ÷ 2 − absences', e.basic_earned, false);
+            h += earnRow('Half-Month Basic (Quinsena)', halfLbl, e.basic_earned, false);
         } else if (monthlyRate) {
-            h += earnRow('Half-Month Basic', fmt(e.monthly) + ' ÷ 2 − absences', e.basic_earned, false);
+            h += earnRow('Half-Month Basic', halfLbl, e.basic_earned, false);
         } else if (e.pleave > 0) {
             // Daily rate with approved paid leave: split the basic figure so the
             // leave credit is a visible line (worked + leave = total basic rate).

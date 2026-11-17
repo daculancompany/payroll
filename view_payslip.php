@@ -763,6 +763,11 @@ body.has-toolbar { padding-top: 50px; }
     <?php if ($payroll['absent'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Less: Absences (<?= $payroll['absent'] ?> day)</td><td class="sub-amt red">– ₱ <?= number_format($absent_amount, 2) ?></td></tr></table>
     <?php endif; ?>
+    <?php // Holidays paid in full on their own line below: those days' plain
+    // rate comes off the share here, so the two together equal the old premium. ?>
+    <?php if (($__e['holiday_basic'] ?? 0) > 0): ?>
+    <table class="item"><tr><td class="sub-lbl">Less: Holiday day(s) — paid under Holidays</td><td class="sub-amt red">– ₱ <?= number_format($__e['holiday_basic'], 2) ?></td></tr></table>
+    <?php endif; ?>
     <table class="item bold"><tr><td>Basic Pay for Period</td><td class="amt">₱ <?= number_format($semi_monthly_amount, 2) ?></td></tr></table>
     <?php if ($allowance_amount > 0): ?>
     <?php // The hand-typed slot and each configured allowance type get their own

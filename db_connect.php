@@ -1184,18 +1184,22 @@ if (!function_exists('special_holiday_premium')) {
 // ── Holiday pay rates for ONE payroll item (GLOBAL) ─────────────────────
 // Two ways a worked holiday can be shown, same money either way:
 //
-//   premium mode (holiday_separate = 0, every item before Nov 2026, and all
-//   monthly/fixed items): the day itself is inside `present` (or inside the
-//   salary), so the holiday line is only the extra — special +30%, legal +100%.
+//   premium mode (holiday_separate = 0, every item calculated before the flag
+//   was set for its basis, and all fixed items): the day itself is inside
+//   `present` (or inside the salary), so the holiday line is only the extra —
+//   special +30%, legal +100%.
 //
-//   separate mode (holiday_separate = 1, daily-rate items calculated since):
-//   calculate_payroll took the holiday days OUT of `present`, so the holiday
-//   line pays the whole day — special 130%, legal 200%. This is how clients
-//   read their paysheet: basic days are regular days only.
+//   separate mode (holiday_separate = 1): the holiday line pays the whole day
+//   — special 130%, legal 200% — and the day leaves basic. This is how clients
+//   read their paysheet: basic is regular days only.
+//     daily   — calculate_payroll took the holiday days OUT of `present`.
+//     monthly — the half-month salary already covers the day, so the day's
+//               own rate is taken off Half-Month Basic instead
+//               (holiday_basic_moved()). Half-Month Basic 12,929.00 with one
+//               special holiday at 1,175.36 reads 11,753.64 + 1,527.97.
 //
-// The flag is frozen on the item, so reopening an old payroll can never
-// restate it. Only the daily basis can be separate: a monthly salary already
-// covers the day, so there is nothing to move out of basic.
+// Same gross either way. The flag is frozen on the item, so reopening an old
+// payroll can never restate it.
 if (!defined('SPECIAL_HOLIDAY_FULL_RATE')) define('SPECIAL_HOLIDAY_FULL_RATE', 1.30);
 if (!defined('LEGAL_HOLIDAY_FULL_RATE'))   define('LEGAL_HOLIDAY_FULL_RATE', 2.00);
 if (!function_exists('holiday_pay_rates')) {
@@ -1204,12 +1208,28 @@ if (!function_exists('holiday_pay_rates')) {
         $rt         = $row['rate_type'] ?? 'daily';
         $is_monthly = $rt === 'monthly' || $rt === 'fixed'
                    || ((int) ($row['payroll_type'] ?? 0) === 5);
-        $separate   = !$is_monthly && (int) ($row['holiday_separate'] ?? 0) === 1;
+        $separate   = (int) ($row['holiday_separate'] ?? 0) === 1;
         return [
             'separate' => $separate,
+            'monthly'  => $is_monthly,
             'legal'    => $separate ? LEGAL_HOLIDAY_FULL_RATE : 1.00,
             'special'  => $separate ? SPECIAL_HOLIDAY_FULL_RATE : SPECIAL_HOLIDAY_PREMIUM_RATE,
         ];
+    }
+}
+
+// What leaves Half-Month Basic on a MONTHLY item in separate mode: the worked
+// holiday days at the plain daily rate. The holiday line then pays those same
+// days at 130% / 200%, so the two together equal the old premium — gross is
+// unchanged. 0 on the daily basis (the days left `present` instead) and on any
+// item in premium mode.
+if (!function_exists('holiday_basic_moved')) {
+    function holiday_basic_moved($row): float
+    {
+        $r = holiday_pay_rates($row);
+        if (!$r['separate'] || !$r['monthly']) return 0.0;
+        return ((float) ($row['legal_holiday'] ?? 0) + (float) ($row['special_holiday'] ?? 0))
+             * (float) ($row['per_day'] ?? 0);
     }
 }
 
@@ -1695,10 +1715,20 @@ if (!function_exists('withholding_tax_cumulative')) {
 if (!function_exists('sql_holiday_pay')) {
     function sql_holiday_pay(string $a = 'pi'): string
     {
-        $sep    = "(COALESCE($a.holiday_separate, 0) = 1 AND $a.rate_type NOT IN ('monthly','fixed'))";
+        $sep    = "(COALESCE($a.holiday_separate, 0) = 1)";
         $legalR = "CASE WHEN $sep THEN " . (float) LEGAL_HOLIDAY_FULL_RATE . " ELSE 1 END";
         $specR  = "CASE WHEN $sep THEN " . (float) SPECIAL_HOLIDAY_FULL_RATE . " ELSE " . (float) SPECIAL_HOLIDAY_PREMIUM_RATE . " END";
         return "($a.legal_holiday * $a.per_day * ($legalR) + $a.special_holiday * $a.per_day * ($specR))";
+    }
+}
+
+// SQL twin of holiday_basic_moved(): the holiday days a monthly item in
+// separate mode has taken off its Half-Month Basic. $a is the payroll_items alias.
+if (!function_exists('sql_holiday_basic_moved')) {
+    function sql_holiday_basic_moved(string $a = 'pi'): string
+    {
+        return "(CASE WHEN COALESCE($a.holiday_separate, 0) = 1 AND $a.rate_type IN ('monthly','fixed')
+                      THEN ($a.legal_holiday + $a.special_holiday) * $a.per_day ELSE 0 END)";
     }
 }
 
@@ -1709,10 +1739,11 @@ if (!function_exists('sql_gross')) {
         $monthly = "$a.rate_type IN ('monthly','fixed')";
         $rest    = (float) REST_DAY_PREMIUM_RATE;
         $holiday = sql_holiday_pay($a);
+        $moved   = sql_holiday_basic_moved($a);
 
         return "(
             CASE WHEN $monthly
-                 THEN $a.basic_pay / 2 - ($a.absent * $a.per_day)
+                 THEN $a.basic_pay / 2 - ($a.absent * $a.per_day) - $moved
                  ELSE ($a.present + COALESCE($a.paid_leave, 0)) * $a.per_day
             END
             + ($a.allowance_amount * $a.allowance_days)
@@ -1750,9 +1781,10 @@ if (!function_exists('sql_gross')) {
 //   premium mode — the day is already inside the half-month salary (monthly/
 //     fixed) or inside `present` (older daily items), so the holiday line is
 //     only the extra: legal +100%, special +30%.
-//   separate mode — daily items calculated since Nov 2026 have the holiday days
-//     taken OUT of `present`, so the holiday line pays the whole day: legal
-//     200%, special 130%. Same gross; basic days are regular days only.
+//   separate mode — the holiday line pays the whole day, legal 200% / special
+//     130%, and the day leaves basic: out of `present` on the daily basis, off
+//     the half-month share on the monthly one (`holiday_basic` below). Same
+//     gross; basic is regular days only.
 // Only days actually worked carry a count (calculate_payroll fills them from
 // the holiday calendar), so an unworked holiday adds nothing here: monthly staff
 // keep their salary, daily staff are paid nothing for it.
@@ -1805,11 +1837,15 @@ if (!function_exists('payroll_earnings')) {
         // allowance and premiums, less lost time.
         if ($is_monthly) {
             $basic    = (float) ($row['basic_pay'] ?? 0);
-            $subtotal = $basic / 2 - $absent_amt;
+            // Separate mode: the worked holiday days are paid in full on the
+            // holiday lines above, so their plain rate comes off the share.
+            $hol_basic = holiday_basic_moved($row);
+            $subtotal = $basic / 2 - $absent_amt - $hol_basic;
         } else {
             // Daily staff are paid per day worked, so there is no absence line.
             $basic    = ((float) ($row['present'] ?? 0) + (float) ($row['paid_leave'] ?? 0)) * $perDay;
             $subtotal = $basic;
+            $hol_basic = 0.0;
         }
         $gross = $subtotal + $allowance + $overtime
                + $legal_amt + $rest_amt + $special_amt + $nsd_amt
@@ -1833,6 +1869,9 @@ if (!function_exists('payroll_earnings')) {
             'gross'      => $gross,
             // Holiday multipliers this item was paid at, for payslip labels.
             'holiday_separate' => $hol_rates['separate'],
+            // Monthly, separate mode: what the holiday days took off the
+            // half-month share (0 otherwise) — the "less holiday" line.
+            'holiday_basic' => $hol_basic,
             'legal_rate'   => $hol_rates['legal'],
             'special_rate' => $hol_rates['special'],
         ];

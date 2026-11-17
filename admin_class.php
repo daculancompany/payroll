@@ -7314,12 +7314,18 @@ class Action
                     // only where the day is counted moves; on a shorter shift the
                     // whole credit leaves and the holiday line pays the hours.
                     //
+                    // Monthly staff get the same reading: the flag makes
+                    // payroll_earnings() take the day's plain rate off the
+                    // half-month share (holiday_basic_moved()) and pay the whole
+                    // day on the holiday line. `present` is not paid on that
+                    // basis; it is reduced only so Days on Duty means regular
+                    // days there too.
+                    //
                     // Done AFTER the monthly absence block above, which needs the
-                    // full day count, and only on the daily basis: a monthly salary
-                    // already covers the day. Items calculated before this keep
-                    // holiday_separate = 0 and read exactly as issued.
+                    // full day count. Fixed-rate items and items calculated before
+                    // this keep holiday_separate = 0 and read exactly as issued.
                     $holiday_separate = 0;
-                    if ($rate_type === 'daily') {
+                    if ($rate_type === 'daily' || $rate_type === 'monthly') {
                         $present = max(0, (float) $present - $holiday_credit);
                         $holiday_separate = 1;
                     }

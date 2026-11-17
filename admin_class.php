@@ -6216,10 +6216,12 @@ class Action
         $frozenEmpList = $frozenEmp ? implode(',', array_unique($frozenEmp)) : '';
 
         if ($recalculate) {
+            // Excess Day(s) is hand-typed too (2026_11_excess_days.sql).
+            $excessCol = $this->columnExists('payroll_items', 'excess_days') ? 'excess_days' : '0 AS excess_days';
             $mq = $this->db->query(
                 "SELECT employee_id, allowance_days, jei_advances, jcc_advances, tax,
                         COALESCE(tax_override, 0) AS tax_override,
-                        other_deduction, adjustment, adjustment_remarks
+                        other_deduction, adjustment, adjustment_remarks, $excessCol
                  FROM payroll_items WHERE payroll_id = " . $id
                  . ($frozenIdList ? " AND id NOT IN ($frozenIdList)" : '')
             );
@@ -6229,6 +6231,7 @@ class Action
                     if (!(float)$m['allowance_days'] && !(float)$m['jei_advances']
                         && !(float)$m['jcc_advances'] && !(float)$m['tax']
                         && !(float)$m['other_deduction'] && !(float)$m['adjustment']
+                        && !(float)$m['excess_days']
                         && trim((string)$m['adjustment_remarks']) === '') {
                         continue;
                     }
@@ -8142,7 +8145,15 @@ class Action
             $upd->bind_param('idddiddsii', $ad, $jei, $jcc, $tax, $tov, $od, $adj, $rem, $payrollId, $eid);
             $upd->execute();
 
-            if ($upd->affected_rows > 0) {
+            // Excess Day(s) — written separately so a database without the
+            // column (migration not run) still restores everything else.
+            if ((float) ($m['excess_days'] ?? 0) != 0.0) {
+                $xd = (float) $m['excess_days'];
+                $ux = $this->db->prepare("UPDATE payroll_items SET excess_days = ? WHERE payroll_id = ? AND employee_id = ?");
+                if ($ux) { $ux->bind_param('dii', $xd, $payrollId, $eid); $ux->execute(); }
+            }
+
+            if ($upd->affected_rows > 0 || (float) ($m['excess_days'] ?? 0) != 0.0) {
                 $find = $this->db->query(
                     "SELECT id FROM payroll_items
                       WHERE payroll_id = $payrollId AND employee_id = $eid LIMIT 1"
@@ -11271,6 +11282,8 @@ class Action
                 'overtime_amount'      => $overtime_amount,
                 'late_amount'          => $late_amount,
                 'undertime_amount'     => $__e['under_amt'],
+                'excess_days'          => (float) ($row['excess_days'] ?? 0),
+                'excess_amount'        => $__e['excess_amt'],
                 'legal_amount'         => $legal_amount,
                 'sunday_amount'        => $sunday_amount,
                 'special_amount'       => $special_amount,
@@ -11312,7 +11325,7 @@ class Action
             'late', 'under_time', 'absent', 'legal_holiday', 'sunday_duty', 'special_holiday',
             'nsd_amount',
             'sss_fund', 'jei_advances', 'jcc_advances', 'tax', 'other_deduction',
-            'adjustment', 'adjustment_remarks', 'net',
+            'adjustment', 'adjustment_remarks', 'net', 'excess_days',
             'contribution', 'deduction', 'loan', 'refund',
         ];
         if (!in_array($field, $allowed_fields, true)) {
@@ -12242,7 +12255,7 @@ class Action
             $stmt->execute();
             $result = $stmt->get_result();
             $emp = $result->fetch_assoc();
-            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Rest Day Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys", 'adjustment' => "Adjustment", 'adjustment_remarks' => "Adjustment Remarks", 'nsd_amount' => "Night Differential"];
+            $files_types = ['present' => 'No. of Days', 'per_day' => 'Basic Rate', 'allowance_amount' => 'Allowance', 'ot' => "Overtime", 'ot_rate' => "Overtime Rate", 'under_time' => "Undertime", "other_deduction" => "Other Deduction", 'late' => 'Late', 'absent' => 'Absent', 'legal_holiday' => 'Legal Holiday', 'sunday_duty' => "Rest Day Duty", "special_holiday" => 'Special Holiday', "sss_fund" => "SSS PROVIDENT FUND", "jei_advances" => "JEI ADVANCE", "jcc_advances" => "JCC ADVANCES", "tax" => "Tax", 'allowance_days' => "Allowance No. dys", 'adjustment' => "Adjustment", 'excess_days' => "Excess Days", 'adjustment_remarks' => "Adjustment Remarks", 'nsd_amount' => "Night Differential"];
             $details = "Employee: " . $emp['lastname'] . ", " . $emp['firstname'] . " & Field: {$files_types[$field]} & Value: $value";
         }
 

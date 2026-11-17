@@ -226,6 +226,11 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <?php endif; if ($p['special_holiday'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= (float) $p['special_holiday'] ?> day × <?= holiday_rate_label($hol_rates['special']) ?>)</td><td class="sub-amt">₱ <?= number_format($special_amt, 2) ?></td></tr></table>
     <?php endif; endif; ?>
+    <?php $xs_days = (float) ($p['excess_days'] ?? 0);   // monthly: days paid on top of the half-month salary
+    if ($xs_days > 0): ?>
+    <div class="grp-lbl">Excess Day(s)</div>
+    <table class="item"><tr><td class="sub-lbl"><?= $xs_days ?> day(s) × ₱<?= number_format($p['per_day'],2) ?></td><td class="sub-amt">₱ <?= number_format($xs_days * (float) $p['per_day'], 2) ?></td></tr></table>
+    <?php endif; ?>
     <?php if ($p['ot'] > 0): ?>
     <div class="grp-lbl">Overtime</div>
     <table class="item"><tr><td class="sub-lbl"><?= number_format($p['ot'], 2) ?> hrs × ₱<?= number_format($p['ot_rate'],2) ?>/hr</td><td class="sub-amt">₱ <?= number_format($overtime_amount, 2) ?></td></tr></table>

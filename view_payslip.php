@@ -192,7 +192,8 @@ $curTo = $conn->real_escape_string($payroll['date_to']);
 $ytd_taxable = 0;
 $ytdq = $conn->query("SELECT pi.present, pi.paid_leave, pi.basic_pay, pi.allowance_amount, pi.allowance_days,
         pi.absent, pi.per_day, pi.ot, pi.ot_rate, pi.late, pi.legal_holiday, pi.sunday_duty,
-        pi.special_holiday, pi.rate_type, pi.day_hours, pi.adjustment, pi.holiday_separate
+        pi.special_holiday, pi.rate_type, pi.day_hours, pi.adjustment, pi.holiday_separate,
+        " . (payroll_has_excess_days() ? 'pi.excess_days' : '0 AS excess_days') . "
     FROM payroll_items pi INNER JOIN payroll p ON p.id = pi.payroll_id
     WHERE pi.employee_id = $eid AND YEAR(p.date_from) = $yy AND p.date_to <= '$curTo'");
 if ($ytdq) while ($yr = $ytdq->fetch_assoc()) {
@@ -206,7 +207,8 @@ if ($ytdq) while ($yr = $ytdq->fetch_assoc()) {
     // /8 * 2.4 is the 30% special-holiday premium, not a day-length divisor.
     $ySpecial = (($yPerDay / 8) * 2.4) * (float)$yr['special_holiday'];
     if (in_array($yr['rate_type'] ?? 'daily', ['monthly', 'fixed'], true)) {
-        $yGross = (($yr['basic_pay'] + $yAllow - $yAbsent) / 2) + $yOt + $yLegal + $ySunday + $ySpecial - $yLate;
+        $yGross = (($yr['basic_pay'] + $yAllow - $yAbsent) / 2) + $yOt + $yLegal + $ySunday + $ySpecial - $yLate
+                + (float) ($yr['excess_days'] ?? 0) * $yPerDay;
     } else {
         // Items with holidays out of Basic Days carry those days in
         // legal/special_holiday instead of `present`; add them back so this
@@ -820,6 +822,11 @@ body.has-toolbar { padding-top: 50px; }
     <?php if ($payroll['ot'] > 0): ?>
     <div class="grp-lbl">Overtime</div>
     <table class="item"><tr><td class="sub-lbl"><?= number_format($payroll['ot'], 2) ?> hrs × ₱<?= number_format($payroll['ot_rate'],2) ?>/hr</td><td class="sub-amt">₱ <?= number_format($overtime_amount, 2) ?></td></tr></table>
+    <?php endif; ?>
+
+    <?php if (($__e['excess_amt'] ?? 0) > 0): ?>
+    <div class="grp-lbl">Excess Day(s)</div>
+    <table class="item"><tr><td class="sub-lbl"><?= (float) $payroll['excess_days'] ?> day(s) × ₱<?= number_format($payroll['per_day'], 2) ?></td><td class="sub-amt">₱ <?= number_format($__e['excess_amt'], 2) ?></td></tr></table>
     <?php endif; ?>
 
     <?php if ($nsd_amount > 0 || (float)($payroll['nsd_hours'] ?? 0) > 0): ?>

@@ -598,6 +598,12 @@
         if (ed || e.absent > 0) h += earnRow('Absences', fld(e, 'absent', days2(e.absent)) + ' day(s) × ' + fmt(e.per_day), e.absent_amt, true);
         if (ed || e.late_min > 0) h += earnRow('Late', fld(e, 'late', Math.round(e.late_min)) + ' min', e.late_amt, true);
         if (ed || e.ut_min > 0) h += earnRow('Undertime', fld(e, 'under_time', fmt2(e.ut_min)) + ' min', e.ut_amt, true);
+        // Excess Day(s) — monthly staff only: days HR pays on top of the
+        // half-month salary, at the daily rate. Added to gross (mirrored in
+        // Earnings below so those rows still add up to Gross Pay).
+        if (monthlyRate && ((ed && tIn(e, 'excess_days')) || e.excess > 0)) {
+            h += earnRow('Excess Day', fld(e, 'excess_days', days2(e.excess)) + ' day(s) × ' + fmt(e.per_day), e.excess_amt, false);
+        }
         if (!ed && !(e.absent > 0) && !(e.late_min > 0) && !(e.ut_min > 0)) h += '<tr><td colspan="3" style="color:#4a7d4a;font-size:11.5px;">No absences or tardiness this period.</td></tr>';
         h += '</table></div>';
 
@@ -652,6 +658,7 @@
         // Night differential — always on the sheet (even at 0) so it is never
         // invisible-because-empty; the amount is the editable figure.
         h += earnRow('Night Differential', fmt2(e.nsd_hrs) + ' hr(s) 10PM–6AM', edAmt(e, 'nsd_amount', e.nsd_amt), false);
+        if (e.excess_amt > 0) h += earnRow('Excess Day', days2(e.excess) + ' day(s) × ' + fmt(e.per_day), e.excess_amt, false);
         // Was Math.round() here while section A prints the same figure to 2dp —
         // one sheet, one quantity, two different numbers.
         if (e.late_amt) h += earnRow('Less: Late', fmt2(e.late_min) + ' min', e.late_amt, true);
@@ -2049,6 +2056,7 @@
             e.legal = pick(inp('legal_holiday'), e.legal);
             e.rest = pick(inp('sunday_duty'), e.rest);
             e.spc = pick(inp('special_holiday'), e.spc);
+            e.excess = pick(inp('excess_days'), e.excess);
             e.sss_fund = pick(inp('sss_fund'), e.sss_fund);
             e.jei = pick(inp('jei_advances'), e.jei);
             e.jcc = pick(inp('jcc_advances'), e.jcc);
@@ -2076,6 +2084,7 @@
             e.ot_amt = pick(cell('overtime_amount'), e.ot_amt);
             e.late_amt = pick(cell('late_amount'), e.late_amt);
             e.ut_amt = pick(cell('undertime_amount'), e.ut_amt);
+            e.excess_amt = pick(cell('excess_amount'), e.excess_amt);
             var be = cell('total_basic_rate');
             if (be === null) be = cell('total_amount');
             if (be !== null) e.basic_earned = be;

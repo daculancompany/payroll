@@ -697,7 +697,7 @@ body.has-toolbar { padding-top: 50px; }
     <td><div class="sum-val amber"><?= number_format($payroll['ot'], 1) ?></div><div class="sum-lbl">OT Hours</div></td>
     <td><div class="sum-val warn"><?= number_format($payroll['late']) ?></div><div class="sum-lbl">Late (min)</div></td>
     <td><div class="sum-val warn"><?= number_format($payroll['under_time']) ?></div><div class="sum-lbl">Undertime (min)</div></td>
-    <td><div class="sum-val"><?= number_format($payroll['legal_holiday'] + $payroll['sunday_duty'] + $payroll['special_holiday'], 0) ?></div><div class="sum-lbl">Holiday/Special</div></td>
+    <td><div class="sum-val"><?= (float) round($payroll['legal_holiday'] + $payroll['sunday_duty'] + $payroll['special_holiday'], 2) ?></div><div class="sum-lbl">Holiday/Special</div></td>
     <?php if ($is_monthly): ?>
     <td><div class="sum-val">₱<?= number_format($monthly_basic, 0) ?></div><div class="sum-lbl">Monthly Rate</div></td>
     <?php else: ?>
@@ -802,14 +802,14 @@ body.has-toolbar { padding-top: 50px; }
     if ($payroll['legal_holiday'] > 0 || $payroll['sunday_duty'] > 0 || $payroll['special_holiday'] > 0): ?>
     <div class="grp-lbl">Holidays &amp; Extra</div>
     <?php if ($payroll['legal_holiday'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $payroll['legal_holiday'] ?> day<?= $payroll['legal_holiday'] > 1 ? 's' : '' ?><?= $__e['legal_rate'] != 1 ? ' × ' . holiday_rate_label($__e['legal_rate']) : '' ?>)</td><td class="sub-amt">₱ <?= number_format($legal_holiday_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= (float) $payroll['legal_holiday'] ?> day<?= $payroll['legal_holiday'] > 1 ? 's' : '' ?><?= $__e['legal_rate'] != 1 ? ' × ' . holiday_rate_label($__e['legal_rate']) : '' ?>)</td><td class="sub-amt">₱ <?= number_format($legal_holiday_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['sunday_duty'] > 0): ?>
     <?php // Daily staff already have the rest day inside Days Present, so what is
     // added here is the +30% premium — the label has to say so or the figure
     // reads as a short-paid whole day. ?>
     <table class="item"><tr><td class="sub-lbl"><?= $is_monthly ? 'Rest Day Duty' : 'Rest Day Premium' ?> (<?= $payroll['sunday_duty'] ?> day<?= $payroll['sunday_duty'] > 1 ? 's' : '' ?><?= $is_monthly ? '' : ' × 30%' ?>)</td><td class="sub-amt">₱ <?= number_format($sunday_duty_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['special_holiday'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $payroll['special_holiday'] ?> day<?= $payroll['special_holiday'] > 1 ? 's' : '' ?> × <?= holiday_rate_label($__e['special_rate']) ?>)</td><td class="sub-amt">₱ <?= number_format($special_holiday_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= (float) $payroll['special_holiday'] ?> day<?= $payroll['special_holiday'] > 1 ? 's' : '' ?> × <?= holiday_rate_label($__e['special_rate']) ?>)</td><td class="sub-amt">₱ <?= number_format($special_holiday_amt, 2) ?></td></tr></table>
     <?php endif; endif; ?>
 
     <?php if ($payroll['ot'] > 0): ?>

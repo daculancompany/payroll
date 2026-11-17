@@ -7241,8 +7241,12 @@ class Action
                         // undertime fractions that are not absences: rounding that residual
                         // to the centavo would bill an employee who worked a 13-hour rest
                         // day for a third of a day they never missed.
-                        // Days of the period nobody has accounted for.
-                        $gap = max(0, $expected_days - $present - $paid_leave);
+                        // Days of the period nobody has accounted for. Worked holiday
+                        // days leave `present` here, not just at insert: expected_days
+                        // already excludes every holiday date, so counting their credit
+                        // on the attended side let a worked holiday cover a missed day —
+                        // two holidays worked silently cancelled two days of LWOP.
+                        $gap = max(0, $expected_days - max(0, (float) $present - $holiday_credit) - $paid_leave);
                         // Filed unpaid leave is charged to the exact fraction filed, but
                         // never beyond the gap: a half-day of leave on a day `present`
                         // already credits in full (an early-out is charged as undertime in

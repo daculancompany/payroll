@@ -1334,7 +1334,10 @@ $refund_names = [];   // refund id => display name
                                                 $perDay = $row['per_day'];
                                                 $t_perDay += $perDay;
                                                 $legal_holiday = $row['legal_holiday'];
-                                                $legal_holiday_amount =  $legal_holiday * $perDay;
+                                                // Full 200% / 130% when the item's days exclude holidays,
+                                                // the premium only otherwise — see holiday_pay_rates().
+                                                $hol_rates = holiday_pay_rates($row);
+                                                $legal_holiday_amount = $legal_holiday * $perDay * $hol_rates['legal'];
                                                 $sunday_duty = $row['sunday_duty'];
                                                 // Daily rate → the +30% premium only; the worked rest day is already
                                                 // inside `present`. Monthly/fixed keep the full-day figure, which is
@@ -1344,8 +1347,7 @@ $refund_names = [];   // refund id => display name
                                                     ? $sunday_duty * $perDay
                                                     : rest_day_premium($sunday_duty, $perDay);
                                                 $special_holiday = $row['special_holiday'];
-                                                // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
-                                                $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
+                                                $special_holiday_amount = $special_holiday * $perDay * $hol_rates['special'];
                                                 // Night differential — hours from the DTR, amount priced at calc
                                                 // time (stored on the item), both editable-visible on the sheet.
                                                 $nsd_hours  = (float)($row['nsd_hours'] ?? 0);
@@ -1863,6 +1865,7 @@ $refund_names = [];   // refund id => display name
                                                         'legal' => (float)$legal_holiday, 'legal_amt' => (float)$legal_holiday_amount,
                                                         'rest' => (float)$sunday_duty, 'rest_amt' => (float)$sunday_duty_amount,
                                                         'spc' => (float)$special_holiday, 'spc_amt' => (float)$special_holiday_amount,
+                                                        'legal_rate' => round((float)$hol_rates['legal'], 4), 'spc_rate' => round((float)$hol_rates['special'], 4),
                                                         'basic_earned' => (float)$total_amount, 'gross' => (float)$gross_salary,
                                                         'deds' => $pcw_row_deds,
                                                         'sss_fund' => (float)$sss_fund, 'jei' => (float)$jei_advances, 'jcc' => (float)$jcc_advances, 'tax' => (float)$tax, 'other_ded' => 0.0,
@@ -2133,7 +2136,10 @@ $refund_names = [];   // refund id => display name
                                                 $perDay = $row['per_day'];
                                                 $t_perDay += $perDay;
                                                 $legal_holiday = $row['legal_holiday'];
-                                                $legal_holiday_amount =  $legal_holiday * $perDay;
+                                                // Full 200% / 130% when the item's days exclude holidays,
+                                                // the premium only otherwise — see holiday_pay_rates().
+                                                $hol_rates = holiday_pay_rates($row);
+                                                $legal_holiday_amount = $legal_holiday * $perDay * $hol_rates['legal'];
                                                 $sunday_duty = $row['sunday_duty'];
                                                 // Daily rate → the +30% premium only; the worked rest day is already
                                                 // inside `present`. Monthly/fixed keep the full-day figure, which is
@@ -2143,8 +2149,7 @@ $refund_names = [];   // refund id => display name
                                                     ? $sunday_duty * $perDay
                                                     : rest_day_premium($sunday_duty, $perDay);
                                                 $special_holiday = $row['special_holiday'];
-                                                // /8 * 2.4 is the 30% special-holiday premium (= * 0.3), NOT a day-length divisor.
-                                                $special_holiday_amount =  (($perDay / 8) * 2.4) *  $special_holiday;
+                                                $special_holiday_amount = $special_holiday * $perDay * $hol_rates['special'];
                                                 // Night differential — hours from the DTR, amount priced at calc
                                                 // time (stored on the item), both editable-visible on the sheet.
                                                 $nsd_hours  = (float)($row['nsd_hours'] ?? 0);
@@ -2669,6 +2674,7 @@ $refund_names = [];   // refund id => display name
                                                         'legal' => (float)$legal_holiday, 'legal_amt' => (float)$legal_holiday_amount,
                                                         'rest' => (float)$sunday_duty, 'rest_amt' => (float)$sunday_duty_amount,
                                                         'spc' => (float)$special_holiday, 'spc_amt' => (float)$special_holiday_amount,
+                                                        'legal_rate' => round((float)$hol_rates['legal'], 4), 'spc_rate' => round((float)$hol_rates['special'], 4),
                                                         'basic_earned' => (float)$total_basic_rate, 'gross' => (float)$gross_salary,
                                                         'deds' => $pcw_row_deds,
                                                         'sss_fund' => (float)$sss_fund, 'jei' => (float)$jei_advances, 'jcc' => (float)$jcc_advances, 'tax' => (float)$tax, 'other_ded' => (float)$other_deduction,

@@ -192,7 +192,7 @@ $curTo = $conn->real_escape_string($payroll['date_to']);
 $ytd_taxable = 0;
 $ytdq = $conn->query("SELECT pi.present, pi.paid_leave, pi.basic_pay, pi.allowance_amount, pi.allowance_days,
         pi.absent, pi.per_day, pi.ot, pi.ot_rate, pi.late, pi.legal_holiday, pi.sunday_duty,
-        pi.special_holiday, pi.rate_type, pi.day_hours, pi.adjustment
+        pi.special_holiday, pi.rate_type, pi.day_hours, pi.adjustment, pi.holiday_separate
     FROM payroll_items pi INNER JOIN payroll p ON p.id = pi.payroll_id
     WHERE pi.employee_id = $eid AND YEAR(p.date_from) = $yy AND p.date_to <= '$curTo'");
 if ($ytdq) while ($yr = $ytdq->fetch_assoc()) {
@@ -208,7 +208,12 @@ if ($ytdq) while ($yr = $ytdq->fetch_assoc()) {
     if (in_array($yr['rate_type'] ?? 'daily', ['monthly', 'fixed'], true)) {
         $yGross = (($yr['basic_pay'] + $yAllow - $yAbsent) / 2) + $yOt + $yLegal + $ySunday + $ySpecial - $yLate;
     } else {
-        $yGross = (($yr['present'] + (float)($yr['paid_leave'] ?? 0)) * $yPerDay) + $yOt + $yAllow - $yLate;
+        // Items with holidays out of Basic Days carry those days in
+        // legal/special_holiday instead of `present`; add them back so this
+        // year-to-date base reads the same as it did before the split.
+        $yHolDays = (int)($yr['holiday_separate'] ?? 0) === 1
+            ? (float)$yr['legal_holiday'] + (float)$yr['special_holiday'] : 0;
+        $yGross = (($yr['present'] + (float)($yr['paid_leave'] ?? 0) + $yHolDays) * $yPerDay) + $yOt + $yAllow - $yLate;
     }
     $ytd_taxable += $yGross + (float)($yr['adjustment'] ?? 0);
 }
@@ -797,14 +802,14 @@ body.has-toolbar { padding-top: 50px; }
     if ($payroll['legal_holiday'] > 0 || $payroll['sunday_duty'] > 0 || $payroll['special_holiday'] > 0): ?>
     <div class="grp-lbl">Holidays &amp; Extra</div>
     <?php if ($payroll['legal_holiday'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $payroll['legal_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($legal_holiday_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $payroll['legal_holiday'] ?> day<?= $payroll['legal_holiday'] > 1 ? 's' : '' ?><?= $__e['legal_rate'] != 1 ? ' × ' . holiday_rate_label($__e['legal_rate']) : '' ?>)</td><td class="sub-amt">₱ <?= number_format($legal_holiday_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['sunday_duty'] > 0): ?>
     <?php // Daily staff already have the rest day inside Days Present, so what is
     // added here is the +30% premium — the label has to say so or the figure
     // reads as a short-paid whole day. ?>
     <table class="item"><tr><td class="sub-lbl"><?= $is_monthly ? 'Rest Day Duty' : 'Rest Day Premium' ?> (<?= $payroll['sunday_duty'] ?> day<?= $payroll['sunday_duty'] > 1 ? 's' : '' ?><?= $is_monthly ? '' : ' × 30%' ?>)</td><td class="sub-amt">₱ <?= number_format($sunday_duty_amt, 2) ?></td></tr></table>
     <?php endif; if ($payroll['special_holiday'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $payroll['special_holiday'] ?> day<?= $payroll['special_holiday'] > 1 ? 's' : '' ?> × 30%)</td><td class="sub-amt">₱ <?= number_format($special_holiday_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $payroll['special_holiday'] ?> day<?= $payroll['special_holiday'] > 1 ? 's' : '' ?> × <?= holiday_rate_label($__e['special_rate']) ?>)</td><td class="sub-amt">₱ <?= number_format($special_holiday_amt, 2) ?></td></tr></table>
     <?php endif; endif; ?>
 
     <?php if ($payroll['ot'] > 0): ?>

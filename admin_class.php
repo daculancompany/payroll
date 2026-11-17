@@ -7236,11 +7236,29 @@ class Action
                         $absent = round(min($gap, $unpaid_charge + $residual), 2);
                     }
 
+                    // Holidays out of Basic Days (daily rate). Clients read a worked
+                    // holiday as its own line at the full rate — special 130%, legal
+                    // 200% — with basic days counting regular days only. So the same
+                    // whole-day counts the holiday lines pay are taken out of
+                    // `present` here, and the item is flagged so payroll_earnings()
+                    // pays those lines at the full rate instead of the premium.
+                    // Gross is unchanged; only where the day is counted moves.
+                    //
+                    // Done AFTER the monthly absence block above, which needs the
+                    // full day count, and only on the daily basis: a monthly salary
+                    // already covers the day. Items calculated before this keep
+                    // holiday_separate = 0 and read exactly as issued.
+                    $holiday_separate = 0;
+                    if ($rate_type === 'daily') {
+                        $present = max(0, (float) $present - $legal_duty - $special_duty);
+                        $holiday_separate = 1;
+                    }
+
                     $sql2 = "INSERT INTO payroll_items
                     (payroll_id, employee_id, salary, allowance_amount, contribute_amount,
                      deduction_amount, deductions, contributions, total_hours,
-                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours,nsd_hours,nsd_amount,legal_holiday,special_holiday,allowances,allowance_total)
-                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                     per_day, under_time, late, present, ot_rate, per_minute, ot, site_id, loans,basic_pay,sss_fund,refunds,sunday_duty,absent,paid_leave,rate_type,day_hours,nsd_hours,nsd_amount,legal_holiday,special_holiday,allowances,allowance_total,holiday_separate)
+                 VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
 
                     $stmt2 = $this->db->prepare($sql2);
                     if (!$stmt2) {
@@ -7248,7 +7266,7 @@ class Action
                     }
 
                     $stmt2->bind_param(
-                        'ssssssssssssssssssssssssssssssss',
+                        'sssssssssssssssssssssssssssssssss',
                         $payroll_id,
                         $employee_id,
                         $salary,
@@ -7280,7 +7298,8 @@ class Action
                         $legal_duty,
                         $special_duty,
                         $allowances_json,
-                        $allowance_total
+                        $allowance_total,
+                        $holiday_separate
                     );
 
                     try {

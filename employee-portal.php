@@ -201,7 +201,7 @@ $s2 = $conn->prepare("
            pi.allowance_amount, pi.allowance_days, pi.absent, pi.late, pi.ot, pi.ot_rate,
            pi.deduction_amount, pi.other_deduction, pi.tax,
            pi.jei_advances, pi.jcc_advances, pi.sss_fund, pi.under_time,
-           pi.legal_holiday, pi.sunday_duty, pi.special_holiday,
+           pi.legal_holiday, pi.sunday_duty, pi.special_holiday, pi.holiday_separate,
            p.ref_no, p.date_from, p.date_to, p.id AS payroll_id, p.status AS payroll_status,
            r.status AS review_status, r.comment AS review_comment, r.reviewed_at AS review_reviewed_at,
            r.admin_reply AS review_admin_reply, r.resolved_at AS review_resolved_at
@@ -328,9 +328,10 @@ foreach ($payslips as $ps) {
         $_ot   = $ps['ot'] * $ps['ot_rate'];
         $_la   = $ps['late'] * $_pm;
         $_ab   = $ps['absent'] * $ps['per_day'];
-        $_lgl  = $ps['legal_holiday'] * $ps['per_day'];
+        $_hr   = holiday_pay_rates($ps);
+        $_lgl  = $ps['legal_holiday'] * $ps['per_day'] * $_hr['legal'];
         $_sun  = $ps['sunday_duty']   * $ps['per_day'];
-        $_spc  = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
+        $_spc  = $ps['special_holiday'] * $ps['per_day'] * $_hr['special'];
         $_p    = pp_pay_x($ps);
         $_sub  = $_p['sub'];
         $_gr   = $_p['gross'];
@@ -356,9 +357,10 @@ foreach ($chart_src as $cp) {
     $c_ot  = $cp['ot'] * $cp['ot_rate'];
     $c_la  = $cp['late'] * payroll_per_minute($cp);
     $c_ab  = $cp['absent'] * $cp['per_day'];
-    $c_lgl = $cp['legal_holiday'] * $cp['per_day'];
+    $c_hr  = holiday_pay_rates($cp);
+    $c_lgl = $cp['legal_holiday'] * $cp['per_day'] * $c_hr['legal'];
     $c_sun = $cp['sunday_duty'] * $cp['per_day'];
-    $c_spc = ($cp['per_day']/8*2.4) * $cp['special_holiday'];
+    $c_spc = $cp['special_holiday'] * $cp['per_day'] * $c_hr['special'];
     $c_p   = pp_pay_x($cp);
     $c_sub = $c_p['sub'];
     $c_gr  = $c_p['gross'];
@@ -380,9 +382,10 @@ foreach ($payslips as $cp) {
     $lav = $cp['late'] * $pmn;
     $utv = $cp['under_time'] * $pmn;
     $abv = $cp['absent'] * $cp['per_day'];
-    $lgl = $cp['legal_holiday'] * $cp['per_day'];
+    $hr_ = holiday_pay_rates($cp);
+    $lgl = $cp['legal_holiday'] * $cp['per_day'] * $hr_['legal'];
     $sun = $cp['sunday_duty'] * $cp['per_day'];
-    $spc = ($cp['per_day']/8*2.4) * $cp['special_holiday'];
+    $spc = $cp['special_holiday'] * $cp['per_day'] * $hr_['special'];
     $pp  = pp_pay_x($cp);
     $sub = $pp['sub'];
     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
@@ -750,12 +753,13 @@ if ($latest) {
     $all_tot  = $latest['allowance_amount'] * $latest['allowance_days'];
     $abs_amt  = $latest['absent'] * $latest['per_day'];
     $ot_amt   = $latest['ot'] * $latest['ot_rate'];
-    $lgl_amt  = $latest['legal_holiday'] * $latest['per_day'];
+    $hr_l     = holiday_pay_rates($latest);
+    $lgl_amt  = $latest['legal_holiday'] * $latest['per_day'] * $hr_l['legal'];
     $__rt_l   = $latest['rate_type'] ?? 'daily';
     $sun_amt  = ($__rt_l === 'monthly' || $__rt_l === 'fixed')
         ? $latest['sunday_duty'] * $latest['per_day']
         : rest_day_premium($latest['sunday_duty'], $latest['per_day']);
-    $spc_amt  = ($latest['per_day'] / 8 * 2.4) * $latest['special_holiday'];
+    $spc_amt  = $latest['special_holiday'] * $latest['per_day'] * $hr_l['special'];
     $_pp      = pp_pay_x($latest);
     $sub_tot  = $_pp['sub'];
     // Gross mirrors the admin payroll view, honoring the employee's rate basis.
@@ -3255,12 +3259,13 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     $ot2    = $ps['ot'] * $ps['ot_rate'];
                     $la2    = $ps['late'] * $pm2;
                     $ab2    = $ps['absent'] * $ps['per_day'];
-                    $lgl2   = $ps['legal_holiday'] * $ps['per_day'];
+                    $hr2    = holiday_pay_rates($ps);
+                    $lgl2   = $ps['legal_holiday'] * $ps['per_day'] * $hr2['legal'];
                     $__rt2  = $ps['rate_type'] ?? 'daily';
                     $sun2   = ($__rt2 === 'monthly' || $__rt2 === 'fixed')
                         ? $ps['sunday_duty'] * $ps['per_day']
                         : rest_day_premium($ps['sunday_duty'], $ps['per_day']);
-                    $spc2   = ($ps['per_day']/8*2.4) * $ps['special_holiday'];
+                    $spc2   = $ps['special_holiday'] * $ps['per_day'] * $hr2['special'];
                     $ut2    = $ps['under_time'] * $pm2;   // deducted from gross, like late
                     $_pp2   = pp_pay_x($ps);
                     $sub2   = $_pp2['sub'];

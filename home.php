@@ -460,9 +460,8 @@ if ($show_finance && $snap) {
                             ELSE (pi.present + COALESCE(pi.paid_leave,0)) * pi.per_day END),0) AS basic,
           COALESCE(SUM(pi.allowance_amount*pi.allowance_days + COALESCE(pi.allowance_total,0)),0) AS allow,
           COALESCE(SUM(pi.ot*pi.ot_rate),0) AS ot,
-          COALESCE(SUM(pi.legal_holiday*pi.per_day
-                     + CASE WHEN pi.rate_type IN ('monthly','fixed') THEN pi.sunday_duty*pi.per_day ELSE pi.sunday_duty*pi.per_day*$rest END
-                     + pi.special_holiday*pi.per_day*$spec),0) AS hol,
+          COALESCE(SUM(" . sql_holiday_pay('pi') . "
+                     + CASE WHEN pi.rate_type IN ('monthly','fixed') THEN pi.sunday_duty*pi.per_day ELSE pi.sunday_duty*pi.per_day*$rest END),0) AS hol,
           COALESCE(SUM(COALESCE(pi.nsd_amount,0)),0) AS nsd,
           COALESCE(SUM(pi.deduction_amount),0) AS ded_main,
           COALESCE(SUM(pi.tax),0) AS tax,

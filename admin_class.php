@@ -13293,6 +13293,14 @@ class Action
         $excluded_clasif = "'" . implode("','", array_map([$this->db, 'real_escape_string'], PAYROLL_EXCLUDED_CLASSIFICATIONS)) . "'";
 
         $leave_term = $inc_leave ? " + COALESCE(pi.paid_leave, 0)" : "";
+        // Daily items calculated since holidays left Basic Days carry `present`
+        // WITHOUT the worked holiday (it is paid on its own line at 130% / 200%).
+        // The plain 100% of that day is still basic salary earned, so the days
+        // are added back here — otherwise every holiday an employee worked
+        // would quietly shrink their 13th month. Monthly needs nothing: its
+        // basic is the half-month share less absences, holidays or not.
+        $hol_term = " + CASE WHEN COALESCE(pi.holiday_separate, 0) = 1
+                             THEN pi.legal_holiday + pi.special_holiday ELSE 0 END";
         $allow_term = $inc_allow ? " + (pi.allowance_amount * pi.allowance_days)" : "";
 
         // Per-cutoff basic actually paid, following each item's frozen rate_type.
@@ -13302,7 +13310,7 @@ class Action
                    SUM(p.status <> 2) AS unlocked_cutoffs,
                    SUM(CASE WHEN pi.rate_type IN ('monthly','fixed')
                         THEN pi.basic_pay / 2 - (pi.absent * pi.per_day) $allow_term
-                        ELSE ((pi.present $leave_term) * pi.per_day) $allow_term
+                        ELSE ((pi.present $leave_term $hol_term) * pi.per_day) $allow_term
                    END) AS basic_earned
             FROM payroll_items pi
             INNER JOIN payroll p ON p.id = pi.payroll_id

@@ -1,0 +1,14 @@
+-- Holidays out of Basic Days (daily-rate staff).
+--
+-- Clients want a worked holiday paid on its OWN line at the full rate
+-- (special 130%, legal 200%) and NOT counted in the basic days, instead of
+-- "days present includes the holiday + a premium-only line (30% / 100%)".
+-- Gross is the same either way; only where the day is counted moves.
+--
+-- The mode is frozen per item, like rate_type and day_hours: calculate_payroll
+-- sets holiday_separate = 1 on new daily-rate items and subtracts the holiday
+-- days from `present`. Existing rows stay 0 and keep computing exactly as
+-- they were issued.
+--
+-- Additive only. Run on live BEFORE deploying the code that writes it.
+ALTER TABLE payroll_items ADD COLUMN holiday_separate TINYINT(1) NOT NULL DEFAULT 0;

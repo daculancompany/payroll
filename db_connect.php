@@ -1129,6 +1129,46 @@ if (!function_exists('special_holiday_premium')) {
     }
 }
 
+// ── Holiday pay rates for ONE payroll item (GLOBAL) ─────────────────────
+// Two ways a worked holiday can be shown, same money either way:
+//
+//   premium mode (holiday_separate = 0, every item before Nov 2026, and all
+//   monthly/fixed items): the day itself is inside `present` (or inside the
+//   salary), so the holiday line is only the extra — special +30%, legal +100%.
+//
+//   separate mode (holiday_separate = 1, daily-rate items calculated since):
+//   calculate_payroll took the holiday days OUT of `present`, so the holiday
+//   line pays the whole day — special 130%, legal 200%. This is how clients
+//   read their paysheet: basic days are regular days only.
+//
+// The flag is frozen on the item, so reopening an old payroll can never
+// restate it. Only the daily basis can be separate: a monthly salary already
+// covers the day, so there is nothing to move out of basic.
+if (!defined('SPECIAL_HOLIDAY_FULL_RATE')) define('SPECIAL_HOLIDAY_FULL_RATE', 1.30);
+if (!defined('LEGAL_HOLIDAY_FULL_RATE'))   define('LEGAL_HOLIDAY_FULL_RATE', 2.00);
+if (!function_exists('holiday_pay_rates')) {
+    function holiday_pay_rates($row): array
+    {
+        $rt         = $row['rate_type'] ?? 'daily';
+        $is_monthly = $rt === 'monthly' || $rt === 'fixed'
+                   || ((int) ($row['payroll_type'] ?? 0) === 5);
+        $separate   = !$is_monthly && (int) ($row['holiday_separate'] ?? 0) === 1;
+        return [
+            'separate' => $separate,
+            'legal'    => $separate ? LEGAL_HOLIDAY_FULL_RATE : 1.00,
+            'special'  => $separate ? SPECIAL_HOLIDAY_FULL_RATE : SPECIAL_HOLIDAY_PREMIUM_RATE,
+        ];
+    }
+}
+
+// Printable multiplier for a payslip label: 0.3 → "30%", 1.3 → "130%".
+if (!function_exists('holiday_rate_label')) {
+    function holiday_rate_label(float $rate): string
+    {
+        return rtrim(rtrim(number_format($rate * 100, 2, '.', ''), '0'), '.') . '%';
+    }
+}
+
 // ── Rest-day premium (GLOBAL) ───────────────────────────────────────────
 // Extra paid for rendering duty on a rest day, as a fraction of the daily rate.
 // 0.30 = the Labor Code's +30%, i.e. 130% for the day in total.
@@ -1597,13 +1637,26 @@ if (!function_exists('withholding_tax_cumulative')) {
 //   2. Absences (and allowance) halved, the same bug fixed in payroll_earnings.
 //
 // $a is the payroll_items alias. Emits one parenthesised expression.
+// SQL twin of the legal + special holiday lines of payroll_earnings(): whole-day
+// rates when the item's days exclude holidays (holiday_pay_rates()), the premium
+// only otherwise. $a is the payroll_items alias.
+if (!function_exists('sql_holiday_pay')) {
+    function sql_holiday_pay(string $a = 'pi'): string
+    {
+        $sep    = "(COALESCE($a.holiday_separate, 0) = 1 AND $a.rate_type NOT IN ('monthly','fixed'))";
+        $legalR = "CASE WHEN $sep THEN " . (float) LEGAL_HOLIDAY_FULL_RATE . " ELSE 1 END";
+        $specR  = "CASE WHEN $sep THEN " . (float) SPECIAL_HOLIDAY_FULL_RATE . " ELSE " . (float) SPECIAL_HOLIDAY_PREMIUM_RATE . " END";
+        return "($a.legal_holiday * $a.per_day * ($legalR) + $a.special_holiday * $a.per_day * ($specR))";
+    }
+}
+
 if (!function_exists('sql_gross')) {
     function sql_gross(string $a = 'pi'): string
     {
         $pm      = sql_per_minute($a);
         $monthly = "$a.rate_type IN ('monthly','fixed')";
-        $spec    = (float) SPECIAL_HOLIDAY_PREMIUM_RATE;
         $rest    = (float) REST_DAY_PREMIUM_RATE;
+        $holiday = sql_holiday_pay($a);
 
         return "(
             CASE WHEN $monthly
@@ -1613,12 +1666,11 @@ if (!function_exists('sql_gross')) {
             + ($a.allowance_amount * $a.allowance_days)
             + COALESCE($a.allowance_total, 0)
             + ($a.ot * $a.ot_rate)
-            + ($a.legal_holiday * $a.per_day)
+            + $holiday
             + CASE WHEN $monthly
                    THEN $a.sunday_duty * $a.per_day
                    ELSE $a.sunday_duty * $a.per_day * $rest
               END
-            + ($a.special_holiday * $a.per_day * $spec)
             + COALESCE($a.nsd_amount, 0)
             - ($a.late * $pm)
             - ($a.under_time * $pm)
@@ -1640,11 +1692,16 @@ if (!function_exists('sql_gross')) {
 //   monthly / fixed → half-month salary share, minus absences; premiums added
 //   daily           → (days present + paid leave) × daily rate
 //
-// Holiday duty is paid on BOTH bases. The day worked is already paid once —
-// inside the half-month salary for monthly/fixed, inside `present` for daily —
-// so the holiday line is the SECOND payment: a legal holiday lands at 200% of
-// the daily rate and a special holiday at 130%, whichever basis the employee is
-// on. Only days actually worked carry a count (calculate_payroll fills them from
+// Holiday duty is paid on BOTH bases, and always totals 200% (legal) / 130%
+// (special) of the daily rate for the day. WHERE the 100% sits depends on the
+// item (holiday_pay_rates()):
+//   premium mode — the day is already inside the half-month salary (monthly/
+//     fixed) or inside `present` (older daily items), so the holiday line is
+//     only the extra: legal +100%, special +30%.
+//   separate mode — daily items calculated since Nov 2026 have the holiday days
+//     taken OUT of `present`, so the holiday line pays the whole day: legal
+//     200%, special 130%. Same gross; basic days are regular days only.
+// Only days actually worked carry a count (calculate_payroll fills them from
 // the holiday calendar), so an unworked holiday adds nothing here: monthly staff
 // keep their salary, daily staff are paid nothing for it.
 //
@@ -1668,8 +1725,9 @@ if (!function_exists('payroll_earnings')) {
         $overtime    = (float) ($row['ot'] ?? 0) * (float) ($row['ot_rate'] ?? 0);
         $late_amt    = (float) ($row['late'] ?? 0) * $perMinute;
         $under_amt   = (float) ($row['under_time'] ?? 0) * $perMinute;
-        $legal_amt   = (float) ($row['legal_holiday'] ?? 0) * $perDay;
-        $special_amt = special_holiday_premium($row['special_holiday'] ?? 0, $perDay);
+        $hol_rates   = holiday_pay_rates($row);
+        $legal_amt   = (float) ($row['legal_holiday'] ?? 0) * $perDay * $hol_rates['legal'];
+        $special_amt = (float) ($row['special_holiday'] ?? 0) * $perDay * $hol_rates['special'];
         $nsd_amt     = (float) ($row['nsd_amount'] ?? 0);
         // Rest day: a premium on the daily basis (the day is already inside
         // `present`), a whole extra day on the monthly basis as it always was.
@@ -1721,6 +1779,10 @@ if (!function_exists('payroll_earnings')) {
             'special_amt' => $special_amt,
             'nsd_amt'    => $nsd_amt,
             'gross'      => $gross,
+            // Holiday multipliers this item was paid at, for payslip labels.
+            'holiday_separate' => $hol_rates['separate'],
+            'legal_rate'   => $hol_rates['legal'],
+            'special_rate' => $hol_rates['special'],
         ];
     }
 }

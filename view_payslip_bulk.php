@@ -216,14 +216,15 @@ body { font-family:'Segoe UI',Calibri,Arial,sans-serif; font-size:10pt; color:#1
     <?php if ($allowance_amount > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Allowance (<?= $p['allowance_days'] ?>d × ₱<?= number_format($p['allowance_amount'],2) ?>)</td><td class="sub-amt">₱ <?= number_format($allowance_amount, 2) ?></td></tr></table>
     <?php endif; ?>
-    <?php if ($p['legal_holiday'] > 0 || $p['sunday_duty'] > 0 || $p['special_holiday'] > 0): ?>
+    <?php if ($p['legal_holiday'] > 0 || $p['sunday_duty'] > 0 || $p['special_holiday'] > 0):
+        $hol_rates = holiday_pay_rates($p); ?>
     <div class="grp-lbl">Holidays &amp; Extra</div>
     <?php if ($p['legal_holiday'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $p['legal_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($legal_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Legal Holiday (<?= $p['legal_holiday'] ?> day<?= $hol_rates['legal'] != 1 ? ' × ' . holiday_rate_label($hol_rates['legal']) : '' ?>)</td><td class="sub-amt">₱ <?= number_format($legal_amt, 2) ?></td></tr></table>
     <?php endif; if ($p['sunday_duty'] > 0): ?>
     <table class="item"><tr><td class="sub-lbl">Rest Day Duty (<?= $p['sunday_duty'] ?> day)</td><td class="sub-amt">₱ <?= number_format($sunday_amt, 2) ?></td></tr></table>
     <?php endif; if ($p['special_holiday'] > 0): ?>
-    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $p['special_holiday'] ?> day)</td><td class="sub-amt">₱ <?= number_format($special_amt, 2) ?></td></tr></table>
+    <table class="item"><tr><td class="sub-lbl">Special Holiday (<?= $p['special_holiday'] ?> day × <?= holiday_rate_label($hol_rates['special']) ?>)</td><td class="sub-amt">₱ <?= number_format($special_amt, 2) ?></td></tr></table>
     <?php endif; endif; ?>
     <?php if ($p['ot'] > 0): ?>
     <div class="grp-lbl">Overtime</div>

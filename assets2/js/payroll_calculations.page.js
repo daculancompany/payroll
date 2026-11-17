@@ -626,7 +626,13 @@
         (e.allow_types || []).forEach(function (a) {
             if (a.amt || ed) h += earnRow(esc(a.label), 'allowance type', a.amt, false);
         });
-        if (ed || e.legal_amt) h += earnRow('Legal Holiday Pay', fld(e, 'legal_holiday', e.legal) + ' × ' + fmt(e.per_day), e.legal_amt, false);
+        // Holiday multipliers come from the server (holiday_pay_rates): the full
+        // 200% / 130% when this item's basic days exclude holidays, the premium
+        // only (100% / 30%) on older and monthly items. Fallbacks = the old mode.
+        var hPct = function (r) { return (Math.round(r * 10000) / 100) + '%'; };
+        var legalRate = e.legal_rate != null ? +e.legal_rate : 1;
+        var spcRate   = e.spc_rate != null ? +e.spc_rate : 0.3;
+        if (ed || e.legal_amt) h += earnRow('Legal Holiday Pay', fld(e, 'legal_holiday', e.legal) + ' day(s) × ' + fmt(e.per_day) + (legalRate !== 1 ? ' × ' + hPct(legalRate) : ''), e.legal_amt, false);
         // Rest-day pay is a PREMIUM for daily staff — the day itself is already
         // counted in Days on Duty above, so the line has to say "+30%" and show
         // the premium, not a full day's rate that was never added to gross.
@@ -637,7 +643,7 @@
                 : fld(e, 'sunday_duty', e.rest) + ' × ' + fmt(e.per_day) + ' × 30%';
             h += earnRow(restLbl, restCalc, e.rest_amt, false);
         }
-        if (ed || e.spc_amt) h += earnRow('Special Holiday Pay', fld(e, 'special_holiday', e.spc) + ' day(s)', e.spc_amt, false);
+        if (ed || e.spc_amt) h += earnRow('Special Holiday Pay', fld(e, 'special_holiday', e.spc) + ' day(s) × ' + fmt(e.per_day) + ' × ' + hPct(spcRate), e.spc_amt, false);
         if (ed || e.ot_amt) h += earnRow('Overtime', fld(e, 'ot', e.ot_hrs) + ' hr(s) × ' + fmt(e.ot_rate), e.ot_amt, false);
         // Night differential — always on the sheet (even at 0) so it is never
         // invisible-because-empty; the amount is the editable figure.

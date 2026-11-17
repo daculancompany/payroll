@@ -1680,6 +1680,31 @@ if (!function_exists('sql_holiday_basic_moved')) {
     }
 }
 
+// Excess Day(s): days HR pays a monthly employee on top of the half-month
+// salary (migrations/2026_11_excess_days.sql), priced at the daily rate.
+// The column check keeps every SQL gross working on a database where the
+// migration has not run yet: the term is simply 0 there.
+if (!function_exists('payroll_has_excess_days')) {
+    function payroll_has_excess_days(): bool
+    {
+        static $has = null;
+        if ($has !== null) return $has;
+        global $conn;
+        $has = false;
+        if ($conn instanceof mysqli) {
+            $r = $conn->query("SHOW COLUMNS FROM payroll_items LIKE 'excess_days'");
+            $has = $r && $r->num_rows > 0;
+        }
+        return $has;
+    }
+}
+if (!function_exists('sql_excess_pay')) {
+    function sql_excess_pay(string $a = 'pi'): string
+    {
+        return payroll_has_excess_days() ? "($a.excess_days * $a.per_day)" : '0';
+    }
+}
+
 if (!function_exists('sql_gross')) {
     function sql_gross(string $a = 'pi'): string
     {
@@ -1688,6 +1713,7 @@ if (!function_exists('sql_gross')) {
         $rest    = (float) REST_DAY_PREMIUM_RATE;
         $holiday = sql_holiday_pay($a);
         $moved   = sql_holiday_basic_moved($a);
+        $excess  = sql_excess_pay($a);
 
         return "(
             CASE WHEN $monthly
@@ -1703,6 +1729,7 @@ if (!function_exists('sql_gross')) {
                    ELSE $a.sunday_duty * $a.per_day * $rest
               END
             + COALESCE($a.nsd_amount, 0)
+            + $excess
             - ($a.late * $pm)
             - ($a.under_time * $pm)
         )";
@@ -1761,6 +1788,8 @@ if (!function_exists('payroll_earnings')) {
         $legal_amt   = (float) ($row['legal_holiday'] ?? 0) * $perDay * $hol_rates['legal'];
         $special_amt = (float) ($row['special_holiday'] ?? 0) * $perDay * $hol_rates['special'];
         $nsd_amt     = (float) ($row['nsd_amount'] ?? 0);
+        // Excess Day(s), typed by HR on monthly rows: whole days at the daily rate.
+        $excess_amt  = (float) ($row['excess_days'] ?? 0) * $perDay;
         // Rest day: a premium on the daily basis (the day is already inside
         // `present`), a whole extra day on the monthly basis as it always was.
         $rest_amt    = $is_monthly
@@ -1796,7 +1825,7 @@ if (!function_exists('payroll_earnings')) {
             $hol_basic = 0.0;
         }
         $gross = $subtotal + $allowance + $overtime
-               + $legal_amt + $rest_amt + $special_amt + $nsd_amt
+               + $legal_amt + $rest_amt + $special_amt + $nsd_amt + $excess_amt
                - $late_amt - $under_amt;
 
         return [
@@ -1814,6 +1843,7 @@ if (!function_exists('payroll_earnings')) {
             'rest_amt'   => $rest_amt,
             'special_amt' => $special_amt,
             'nsd_amt'    => $nsd_amt,
+            'excess_amt' => $excess_amt,
             'gross'      => $gross,
             // Holiday multipliers this item was paid at, for payslip labels.
             'holiday_separate' => $hol_rates['separate'],

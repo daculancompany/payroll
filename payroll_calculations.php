@@ -1268,6 +1268,7 @@ $refund_names = [];   // refund id => display name
                                             $t_nsd_hrs = 0; $t_nsd_amt = 0;
                                             $t_late_min = 0; $t_late_amt = 0;
                                             $t_ut_min = 0; $t_ut_amt = 0;
+                                            $t_xs_d = 0; $t_xs_amt = 0;
                                             $t_sss_fund = 0; $t_jei = 0; $t_jcc = 0; $t_tax = 0;
                                             $t_contrib = []; $t_refund = [];
 
@@ -1366,6 +1367,11 @@ $refund_names = [];   // refund id => display name
                                                 $t_late_amt    += $late_amount;
                                                 $t_ut_min      += $row['under_time'];
                                                 $t_ut_amt      += $undertime_amount;
+                                                // Excess Day(s) — monthly / fixed rows only (see the cell below).
+                                                $excess_days   = (float) ($row['excess_days'] ?? 0);
+                                                $excess_amount = $excess_days * (float) $row['per_day'];
+                                                $t_xs_d       += $excess_days;
+                                                $t_xs_amt     += $excess_amount;
                                                 $t_sss_fund    += $sss_fund;
                                                 $t_jei         += $jei_advances;
                                                 $t_jcc         += $jcc_advances;
@@ -1820,6 +1826,7 @@ $refund_names = [];   // refund id => display name
                                                         'nsd_hrs' => (float)($row['nsd_hours'] ?? 0), 'nsd_amt' => (float)($row['nsd_amount'] ?? 0),
                                                         'late_min' => (float)$row['late'], 'late_amt' => (float)$late_amount,
                                                         'ut_min' => (float)$row['under_time'], 'ut_amt' => (float)$undertime_amount,
+                                                        'excess' => (float) ($row['excess_days'] ?? 0), 'excess_amt' => round((float) ($row['excess_days'] ?? 0) * (float) $row['per_day'], 2),
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
                                                         'allow_types' => $pcw_row_allow,
@@ -1939,6 +1946,8 @@ $refund_names = [];   // refund id => display name
                                                 <th colspan="2" class="text-center info-header">Night Diff</th>
                                                 <th colspan="3" class="text-center info-header">Late</th>
                                                 <th colspan="3" class="text-center info-header">Undertime</th>
+                                                <?php /* Excess Day(s): monthly staff only, typed by HR, paid at the daily rate. */ ?>
+                                                <th colspan="2" class="text-center info-header">Excess Day</th>
                                                 <?php /* Holiday + rest-day duty. Days are auto-counted from the holiday
                                                         calendar during calculation (rest day from the roster); the inputs
                                                         stay editable so an admin can still override a day. */ ?>
@@ -1980,6 +1989,9 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-center  info-header">Min</th>
                                                 <th class="text-center  info-header">Rate</th>
                                                 <th class="text-center  info-header">Amount</th>
+
+                                                <th class="text-center  info-header">Excess dys</th>
+                                                <th class="text-center  info-header">Excess Amount</th>
 
                                                 <th class="text-center  info-header">Legal Hol. dys</th>
                                                 <th class="text-center  info-header">Legal Hol. Amount</th>
@@ -2073,6 +2085,7 @@ $refund_names = [];   // refund id => display name
                                             $t_nsd_hrs = 0; $t_nsd_amt = 0;
                                             $t_late_min = 0; $t_late_amt = 0;
                                             $t_ut_min = 0; $t_ut_amt = 0;
+                                            $t_xs_d = 0; $t_xs_amt = 0;
                                             $t_sss_fund = 0; $t_jei = 0; $t_jcc = 0; $t_tax = 0;
                                             $t_contrib = []; $t_refund = [];
 
@@ -2177,6 +2190,11 @@ $refund_names = [];   // refund id => display name
                                                 $t_late_amt    += $late_amount;
                                                 $t_ut_min      += $row['under_time'];
                                                 $t_ut_amt      += $undertime_amount;
+                                                // Excess Day(s) — monthly / fixed rows only (see the cell below).
+                                                $excess_days   = (float) ($row['excess_days'] ?? 0);
+                                                $excess_amount = $excess_days * (float) $row['per_day'];
+                                                $t_xs_d       += $excess_days;
+                                                $t_xs_amt     += $excess_amount;
                                                 $t_sss_fund    += $sss_fund;
                                                 $t_jei         += $jei_advances;
                                                 $t_jcc         += $jcc_advances;
@@ -2400,6 +2418,22 @@ $refund_names = [];   // refund id => display name
                                                         <b data-computed="undertime_amount"><?= number_format($undertime_amount, 2) ?></b>
                                                     </td>
                                                     <!-- /Undertime -->
+
+                                                    <!-- Excess Day(s): days paid on top of the half-month salary,
+                                                         typed by HR. Monthly / fixed rows only — a daily employee
+                                                         is already paid per day worked. -->
+                                                    <td style="min-width: 90px;" class="text-center">
+                                                        <?php if ($rowShowInputs && ($rt_row === 'monthly' || $rt_row === 'fixed')) { ?>
+                                                            <div class="input-group mb-3">
+                                                                <input type="text" value="<?= $excess_days ?>" data-id="<?= $row['id'] ?>" data-type="excess_days" class="form-control input-class"<?= $rowRO ?> placeholder="Days" aria-label="Excess days">
+                                                            </div>
+                                                        <?php } else { ?>
+                                                            <b><?= (float) $excess_days ?></b>
+                                                        <?php } ?>
+                                                    </td>
+                                                    <td class="text-right" style="min-width: 90px;">
+                                                        <b data-computed="excess_amount"><?= number_format($excess_amount, 2) ?></b>
+                                                    </td>
 
                                                     <!-- Holiday / Rest Day. The day counts come from the calculation
                                                          (holiday calendar + roster) and stay overridable here; the
@@ -2632,6 +2666,7 @@ $refund_names = [];   // refund id => display name
                                                         'nsd_hrs' => (float)($row['nsd_hours'] ?? 0), 'nsd_amt' => (float)($row['nsd_amount'] ?? 0),
                                                         'late_min' => (float)$row['late'], 'late_amt' => (float)$late_amount,
                                                         'ut_min' => (float)$row['under_time'], 'ut_amt' => (float)$undertime_amount,
+                                                        'excess' => (float) ($row['excess_days'] ?? 0), 'excess_amt' => round((float) ($row['excess_days'] ?? 0) * (float) $row['per_day'], 2),
                                                         'ot_hrs' => (float)$row['ot'], 'ot_rate' => (float)$row['ot_rate'], 'ot_amt' => (float)$overtime_amount,
                                                         'allow_days' => (float)$allowance_days, 'allow_rate' => (float)$allowance_amount, 'allow_amt' => (float)$total_allowance,
                                                         'allow_types' => $pcw_row_allow,
@@ -2708,6 +2743,8 @@ $refund_names = [];   // refund id => display name
                                                 <th class="text-center"><?= number_format($t_ut_min, 0) ?></th>
                                                 <th class="text-right"><?= number_format($t_late, 2) ?></th>
                                                 <th class="text-right"><?= number_format($t_ut_amt, 2) ?></th>
+                                                <th class="text-center"><?= (float) round($t_xs_d, 3) ?></th>
+                                                <th class="text-right"><?= number_format($t_xs_amt, 2) ?></th>
                                                 <th class="text-center"><?= (float) round($t_legal_d, 3) ?></th>
                                                 <th class="text-right"><?= number_format($t_legal_amt, 2) ?></th>
                                                 <th class="text-center"><?= number_format($t_sun_d, 0) ?></th>

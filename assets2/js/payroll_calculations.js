@@ -617,6 +617,7 @@ function refreshPayrollRows(payrollId) {
                     set('overtime_amount',   r.overtime_amount);
                     set('late_amount',       r.late_amount);
                     set('undertime_amount',  r.undertime_amount);
+                    set('excess_amount',     r.excess_amount);
                     set('gross',             r.gross);
                     set('total_deductions',  r.total_deductions);
                     set('net',               r.net);

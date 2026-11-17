@@ -196,12 +196,14 @@ $portal_must_change = $portal_acct ? ((int)$portal_acct['must_change'] === 1) : 
 // ── All payroll items ───────────────────────────────────────────
 // Only payroll batches that are Ready for Review (3) or Locked (2) are visible here —
 // employees shouldn't see draft/unfinished numbers before HR sends them for review.
+// Excess Day(s) feeds payroll_earnings(); selected only once the column exists.
+$xsCol = payroll_has_excess_days() ? 'pi.excess_days' : '0 AS excess_days';
 $s2 = $conn->prepare("
     SELECT pi.id AS item_id, pi.net, pi.basic_pay, pi.present, pi.paid_leave, pi.per_day, pi.rate_type,
            pi.allowance_amount, pi.allowance_days, pi.absent, pi.late, pi.ot, pi.ot_rate,
            pi.deduction_amount, pi.other_deduction, pi.tax,
            pi.jei_advances, pi.jcc_advances, pi.sss_fund, pi.under_time,
-           pi.legal_holiday, pi.sunday_duty, pi.special_holiday, pi.holiday_separate,
+           pi.legal_holiday, pi.sunday_duty, pi.special_holiday, pi.holiday_separate, $xsCol,
            p.ref_no, p.date_from, p.date_to, p.id AS payroll_id, p.status AS payroll_status,
            r.status AS review_status, r.comment AS review_comment, r.reviewed_at AS review_reviewed_at,
            r.admin_reply AS review_admin_reply, r.resolved_at AS review_resolved_at
@@ -3063,6 +3065,9 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                     <div class="ps-row"><span class="ps-lbl">Holiday day(s) — paid under Holiday</span><span class="ps-val ded">−₱<?= n2($hol_moved) ?></span></div>
                     <?php endif; ?>
                     <div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span><span class="ps-val earn" style="font-weight:800;">₱<?= n2($sub_tot) ?></span></div>
+                    <?php $xs_l = (float) ($_pp['parts']['excess_amt'] ?? 0); if ($xs_l > 0): ?>
+                    <div class="ps-row"><span class="ps-lbl">Excess Day(s) (<?= nd($latest['excess_days'] ?? 0) ?> × ₱<?= n2($latest['per_day']) ?>)</span><span class="ps-val earn">₱<?= n2($xs_l) ?></span></div>
+                    <?php endif; ?>
                     <?php if ($ot_amt > 0): ?>
                     <div class="ps-row"><span class="ps-lbl">Overtime (<?= n2($latest['ot']) ?> hrs)</span><span class="ps-val earn">₱<?= n2($ot_amt) ?></span></div>
                     <?php endif; ?>
@@ -3231,6 +3236,7 @@ html, body { overscroll-behavior-y: contain; } /* let our own indicator handle t
                         // Monthly, holidays paid in full: taken off the half-month share.
                         'hol_moved'  => n2((float) ($_pp2['parts']['holiday_basic'] ?? 0)),
                         'subtotal'   => n2($sub2),
+                        'xs_days'    => nd($ps['excess_days'] ?? 0), 'xs_amt' => n2((float) ($_pp2['parts']['excess_amt'] ?? 0)),
                         'ot_hrs'     => nd($ps['ot']), 'ot_rate' => n2($ps['ot_rate']), 'ot_amt' => n2($ot2),
                         'lgl_days'   => nd($ps['legal_holiday']),   'lgl_amt' => n2($lgl2),
                         'sun_days'   => (float) $ps['sunday_duty'],     'sun_amt' => n2($sun2),
@@ -5947,6 +5953,7 @@ function buildPayrollReviewBreakdown(d) {
         + (pos(d.hol_moved) ? eRow('Holiday day(s) — paid under Holiday', d.hol_moved, true) : '')
         + '<div class="ps-row"><span class="ps-lbl" style="font-weight:700;">Sub-Total</span>'
         + '<span class="ps-val earn" style="font-weight:800;">₱' + d.subtotal + '</span></div>'
+        + (pos(d.xs_amt) ? eRow('Excess Day(s) (' + d.xs_days + ' × ₱' + d.per_day + ')', d.xs_amt) : '')
         + (pos(d.ot_amt) ? eRow('Overtime (' + d.ot_hrs + ' hrs × ₱' + d.ot_rate + ')', d.ot_amt) : '')
         + (pos(d.lgl_amt) ? eRow('Legal Holiday (' + d.lgl_days + ')', d.lgl_amt) : '')
         + (pos(d.sun_amt) ? eRow((d.rate_type === 'monthly' || d.rate_type === 'fixed' ? 'Rest Day Duty (' + d.sun_days + ')' : 'Rest Day Premium (' + d.sun_days + ' \u00d7 30%)'), d.sun_amt) : '')

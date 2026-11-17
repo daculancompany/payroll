@@ -457,7 +457,7 @@ if ($show_finance && $snap) {
     $cmr  = $conn->query("
         SELECT
           COALESCE(SUM(CASE WHEN pi.rate_type IN ('monthly','fixed') THEN pi.basic_pay/2 - pi.absent*pi.per_day - " . sql_holiday_basic_moved('pi') . "
-                            ELSE (pi.present + COALESCE(pi.paid_leave,0)) * pi.per_day END),0) AS basic,
+                            ELSE (pi.present + COALESCE(pi.paid_leave,0)) * pi.per_day END) + SUM(" . sql_excess_pay('pi') . "),0) AS basic,
           COALESCE(SUM(pi.allowance_amount*pi.allowance_days + COALESCE(pi.allowance_total,0)),0) AS allow,
           COALESCE(SUM(pi.ot*pi.ot_rate),0) AS ot,
           COALESCE(SUM(" . sql_holiday_pay('pi') . "

@@ -66,6 +66,7 @@ $(document).ready(function () {
         columns: [
             { data: "ref_no" },
             { data: "period" },
+            { data: "totals", orderable: false, className: "text-end" },
             { data: "status" },
             { data: "action", orderable: false, className: "text-center" },
         ],

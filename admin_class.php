@@ -11270,7 +11270,9 @@ class Action
             $net = $gross - $total_ded + $total_ref + $adjustment;
 
             $t_gross      += $gross;
-            $t_net        += $net;
+            // Totalled from centavo-rounded rows (half to even), like the paysheet,
+            // so Total Net Pay here matches the paysheet / Payroll list exactly.
+            $t_net        += round($net, 2, PHP_ROUND_HALF_EVEN);
             $t_deductions += $total_ded;
             $t_absent     += $row['absent'];
             $t_late       += $row['late'];

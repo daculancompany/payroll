@@ -5,10 +5,18 @@
     .payroll-period { font-size:12px; color:#444; white-space:nowrap; }
     .type-badge { font-size:11px; }
     /* ── Summary stat cards ── */
+    /* All four cards in a row share the tallest one's height (a two-line sub
+       under Latest Net Pay used to make that card alone taller). */
+    .pay-stat-col { display:flex; }
+    .pay-stat-card { flex:1 1 auto; width:100%; }
+    .pay-stat-card > .card-body > div:last-child { min-width:0; }
     .pay-stat-icon { width:48px; height:48px; flex-shrink:0; }
     .pay-stat-sub { font-size:11px; display:block; line-height:1.5; }
     .pay-stat-sub .badge { font-size:10px; font-weight:600; padding:2px 6px; }
     #pay-sum-latest-net { letter-spacing:.2px; }
+    /* Net Pay column: paysheet NET on top, head count + gross underneath */
+    .pr-net { font-weight:700; font-variant-numeric:tabular-nums; white-space:nowrap; }
+    .pr-net-sub { font-size:11px; color:var(--bs-secondary-color); white-space:nowrap; font-variant-numeric:tabular-nums; }
 </style>
 <div class="main-content">
 	<div class="page-content">
@@ -28,8 +36,8 @@
 				</div>
 
 				<!-- ── Payroll summary cards (values filled by payroll.js on every table refresh) ── -->
-				<div class="col-xl-3 col-md-6">
-					<div class="card card-animate">
+				<div class="col-xl-3 col-md-6 pay-stat-col">
+					<div class="card card-animate pay-stat-card">
 						<div class="card-body d-flex align-items-center">
 							<div class="rounded bg-primary-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
 								<i class="ri-stack-line fs-22 text-primary"></i>
@@ -42,8 +50,8 @@
 						</div>
 					</div>
 				</div>
-				<div class="col-xl-3 col-md-6">
-					<div class="card card-animate">
+				<div class="col-xl-3 col-md-6 pay-stat-col">
+					<div class="card card-animate pay-stat-card">
 						<div class="card-body d-flex align-items-center">
 							<div class="rounded bg-warning-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
 								<i class="ri-loader-4-line fs-22 text-warning"></i>
@@ -56,8 +64,8 @@
 						</div>
 					</div>
 				</div>
-				<div class="col-xl-3 col-md-6">
-					<div class="card card-animate">
+				<div class="col-xl-3 col-md-6 pay-stat-col">
+					<div class="card card-animate pay-stat-card">
 						<div class="card-body d-flex align-items-center">
 							<div class="rounded bg-danger-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
 								<i class="ri-lock-fill fs-22 text-danger"></i>
@@ -70,8 +78,8 @@
 						</div>
 					</div>
 				</div>
-				<div class="col-xl-3 col-md-6">
-					<div class="card card-animate">
+				<div class="col-xl-3 col-md-6 pay-stat-col">
+					<div class="card card-animate pay-stat-card">
 						<div class="card-body d-flex align-items-center">
 							<div class="rounded bg-success-subtle d-flex align-items-center justify-content-center me-3 pay-stat-icon">
 								<i class="ri-money-dollar-circle-line fs-22 text-success"></i>
@@ -103,6 +111,7 @@
 									<tr>
 										<th><i class="ri-hashtag me-1"></i>Payroll ID</th>
 										<th><i class="ri-calendar-2-line me-1"></i>Period</th>
+										<th class="text-end"><i class="ri-wallet-3-line me-1"></i>Net Pay</th>
 										<th><i class="ri-pulse-line me-1"></i>Status</th>
 										<th class="text-center"><i class="ri-settings-3-line me-1"></i>Action</th>
 									</tr>

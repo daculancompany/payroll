@@ -3,20 +3,41 @@ require_once __DIR__ . '/includes/require_login.php';
 
 require_once __DIR__ . '/includes/session_bootstrap.php';
 include 'db_connect.php';
+require_once __DIR__ . '/includes/paysheet.php';
+
+// Period label; a run saved without dates (0000-00-00) printed "Nov 30, -0001".
+function pr_period_label($from, $to, $html = true)
+{
+    $blank = function ($d) { return !$d || strpos($d, '0000-00-00') === 0 || strtotime($d) === false; };
+    if ($blank($from) || $blank($to)) return $html ? '<span class="text-muted fst-italic">No period set</span>' : 'No period set';
+    return date("M d", strtotime($from)) . ($html ? ' &ndash; ' : ' – ') . date("M d, Y", strtotime($to));
+}
+
+// Employee count + GROSS / NET exactly as the paysheet prints them. The stored
+// payroll_items.net goes stale after Calculate (deductions, extras, settings
+// changed later), so it is never summed here — see includes/payslip_figures.php.
+function pr_batch_totals(mysqli $conn, int $payroll_id)
+{
+    $ps = paysheet_build($conn, $payroll_id);
+    $n = 0;
+    foreach ($ps['groups'] as $g) $n += count($g['rows']);
+    return ['emp_count' => $n, 'gross' => round((float) ($ps['grand']['gross'] ?? 0), 2), 'net' => round((float) ($ps['grand']['net'] ?? 0), 2)];
+}
+function pr_peso($v) { return '&#8369;' . number_format((float) $v, 2); }
 
 // Initialize response array
 $response = array();
 
 // Get the request parameters
-$limit = $_POST['length'];
-$offset = $_POST['start'];
+$limit = (int) $_POST['length']; if ($limit < 1) $limit = 1000;   // -1 = DataTables "All"
+$offset = max(0, (int) $_POST['start']);
 $search = $_POST['search']['value'];
 $orderColumnIndex = $_POST['order'][0]['column'];
 $orderDirection = $_POST['order'][0]['dir'];
 $p2 = $_POST['p2'];
 
 // Define column mappings (Period sorts by the actual start date, not the label).
-$columns = ["ref_no", "date_from", "status"];
+$columns = ["ref_no", "date_from", null, "status"];   // [2] Employees / Net Pay is computed, not sortable
 $orderColumn = $columns[$orderColumnIndex] ?? "date_from";
 $orderDirection = strtoupper($orderDirection) === 'ASC' ? 'ASC' : 'DESC';
 
@@ -49,10 +70,20 @@ while ($row = $result->fetch_assoc()) {
     $data[] = array(
         "ref_no" => '<span class="payroll-ref">' . htmlspecialchars($row['ref_no']) . '</span>',
         "period" => '<span class="payroll-period"><i class="ri-calendar-2-line me-1 text-muted"></i>'
-                  . date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M d, Y", strtotime($row['date_to'])) . '</span>',
+                  . pr_period_label($row['date_from'], $row['date_to']) . '</span>',
+        "totals" => pr_totals_cell(pr_batch_totals($conn, (int) $row['id'])),
         "status" => getStatusBadge($row['status']),
         "action" => getActionButtons($row)
     );
+}
+
+// Employees / Net Pay cell: net on top, head count + gross underneath.
+function pr_totals_cell(array $t)
+{
+    if ($t['emp_count'] === 0) return '<span class="text-muted">&mdash;</span>';
+    return '<div class="pr-net">' . pr_peso($t['net']) . '</div>'
+         . '<div class="pr-net-sub"><i class="ri-group-line me-1"></i>' . number_format($t['emp_count']) . ' employee' . ($t['emp_count'] === 1 ? '' : 's')
+         . ' &middot; Gross ' . pr_peso($t['gross']) . '</div>';
 }
 
 // Function to return status badges
@@ -135,11 +166,10 @@ $counts = $conn->query("SELECT COUNT(*) AS total,
         COALESCE(SUM(YEAR(date_from) = YEAR(CURDATE())), 0) AS this_year
     FROM payroll WHERE p2 = '$p2esc'")->fetch_assoc();
 
-$latest = $conn->query("SELECT p.ref_no, p.date_from, p.date_to, p.status,
-        (SELECT COUNT(*) FROM payroll_items pi WHERE pi.payroll_id = p.id) AS emp_count,
-        (SELECT COALESCE(SUM(pi.net), 0) FROM payroll_items pi WHERE pi.payroll_id = p.id) AS net_total
+$latest = $conn->query("SELECT p.id, p.ref_no, p.date_from, p.date_to, p.status
     FROM payroll p WHERE p.p2 = '$p2esc'
     ORDER BY p.date_from DESC, p.id DESC LIMIT 1")->fetch_assoc();
+$latestT = $latest ? pr_batch_totals($conn, (int) $latest['id']) : null;
 
 $summary = array(
     "total"        => (int) $counts['total'],
@@ -151,9 +181,9 @@ $summary = array(
     "s_locked"     => (int) $counts['s_locked'],
     "latest"       => $latest ? array(
         "ref_no"    => htmlspecialchars($latest['ref_no']),
-        "period"    => date("M d", strtotime($latest['date_from'])) . " – " . date("M d, Y", strtotime($latest['date_to'])),
-        "emp_count" => (int) $latest['emp_count'],
-        "net_total" => round((float) $latest['net_total'], 2),
+        "period"    => pr_period_label($latest['date_from'], $latest['date_to'], false),
+        "emp_count" => $latestT['emp_count'],
+        "net_total" => $latestT['net'],
     ) : null,
 );
 }

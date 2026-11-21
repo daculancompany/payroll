@@ -367,11 +367,11 @@ $prev_q = $conn->query("SELECT id, date_from, date_to FROM payroll
     ORDER BY date_to DESC, id DESC LIMIT 1");
 if ($prev_q && $prev_q->num_rows) {
     $prevPayroll = $prev_q->fetch_assoc();
-    $pn_q = $conn->query("SELECT employee_id, site_id, SUM(net) AS n FROM payroll_items
-        WHERE payroll_id = " . (int)$prevPayroll['id'] . " GROUP BY employee_id, site_id");
-    if ($pn_q) while ($pn = $pn_q->fetch_assoc()) {
-        $prevNetByEmpSite[$pn['employee_id'] . '-' . $pn['site_id']] = (float)$pn['n'];
-        $prevNetByEmp[$pn['employee_id']] = ($prevNetByEmp[$pn['employee_id']] ?? 0) + (float)$pn['n'];
+    // Previous nets as the paysheet printed them — the stored payroll_items.net
+    // goes stale after Calculate, which skewed every ▲/▼ percentage.
+    require_once __DIR__ . '/includes/paysheet.php';
+    foreach (paysheet_build($conn, (int)$prevPayroll['id'])['groups'] as $pg) {
+        foreach ($pg['rows'] as $pr) $prevNetByEmp[$pr['employee_id']] = ($prevNetByEmp[$pr['employee_id']] ?? 0) + (float)$pr['net'];
     }
 }
 
@@ -542,6 +542,10 @@ $sum_q = $conn->prepare("SELECT COUNT(*) as emp_count, SUM(net) as total_net, SU
 $sum_q->bind_param("i", $id);
 $sum_q->execute();
 $summary = $sum_q->get_result()->fetch_assoc();
+// Net as the paysheet / Payroll list show it, not SUM(payroll_items.net):
+// that stored column goes stale after Calculate (₱203k short on #61).
+require_once __DIR__ . '/includes/paysheet.php';
+$summary['total_net'] = paysheet_build($conn, (int) $id)['grand']['net'] ?? $summary['total_net'];
 
 // What this run applies / shows as columns (see payroll_settings_split()):
 // configured contributions/loans/deductions, refunds and per-type allowance
@@ -2848,7 +2852,7 @@ $refund_names = [];   // refund id => display name
     .ps-view-tab { border:0; background:transparent; padding:3px 10px; font-size:12px; border-radius:5px; color:#4e3483; cursor:pointer; }
     .ps-view-tab.active { background:#fff; font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.15); }
     .ps-pane .paysheet-table thead th { position:sticky; top:0; z-index:2; }
-    .ps-pane .paysheet-table tbody tr:not(.ps-dept):not(.ps-total):not(.ps-grand):hover td { background:#f5f3fa; }
+    .ps-pane .paysheet-table tbody tr:not(.ps-dept):not(.ps-total):not(.ps-grand):hover td { background:var(--ps-row-hover, #f5f3fa); }
     .ps-loading { padding:24px; text-align:center; color:#888; }
     /* Summary footer boxes are layout tables — no grid lines (their own
        inline border-top on the TOTAL rows still shows). */

@@ -12,6 +12,9 @@ body.v2 {
 }
 html.ui-ct body.v2 { background: var(--ct-gradient) fixed; }
 html[data-bs-theme="dark"]:not(.ui-ct) body.v2 { background-image: radial-gradient(circle, rgba(255, 255, 255, .06) 1.2px, transparent 1.3px); }
+/* Paysheet row hover (Table View): a solid step off the dialog surface —
+   the page's light #f5f3fa turned the hovered row white on dark themes. */
+html[data-bs-theme="dark"] body.v2, html.ui-ct body.v2 { --ps-row-hover: color-mix(in srgb, var(--v2-raised) 88%, var(--v2-text)); }
 
 /* ── Payroll details workbench (payroll_calculations.php) ───────────────
    Editor layout, like a PDF/Word editor:

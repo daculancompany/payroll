@@ -106,6 +106,7 @@
        page restyles once instead of being re-read element by element. */
     var orig = new WeakMap();
     var known = [];
+    var hidden = new Set();             // skipped while display:none, see unhide()
     var SIDES = ['top', 'right', 'bottom', 'left'];
 
     function read(el) {
@@ -114,7 +115,7 @@
         if (SKIP_TAGS[el.tagName] || el.closest(KEEP)) o = { skip: true };
         else {
             var cs = getComputedStyle(el);
-            if (cs.display === 'none') return null;          // read again once shown
+            if (cs.display === 'none') { hidden.add(el); return null; }   // read again once shown (unhide)
             var bi = cs.backgroundImage;
             o = {
                 // Inside a printable document: accent swap only, never darkened.
@@ -124,6 +125,11 @@
                 // popovers / dropdowns float over content: translucent theme
                 // surfaces would let the page show through, so use the opaque one
                 floating: (cs.position === 'absolute' || cs.position === 'fixed') && (cs.boxShadow !== 'none' || parseInt(cs.zIndex, 10) > 0),
+                // Must be solid on a colour theme: a dialog's own panel (the
+                // page showed through the payroll Table View) and sticky
+                // headers / frozen columns that rows scroll underneath.
+                solid: el.matches('.modal-content, .offcanvas, .dropdown-menu, .popover') || cs.position === 'sticky',
+                th: el.tagName === 'TH',
                 bg: parse(cs.backgroundColor),
                 stops: bi && bi.indexOf('gradient') !== -1 ? (bi.match(/rgba?\([^)]+\)/g) || []).map(parse).filter(Boolean) : null,
                 fg: parse(cs.color),
@@ -134,6 +140,7 @@
             };
         }
         orig.set(el, o);
+        hidden.delete(el);
         known.push(el);
         return o;
     }
@@ -166,6 +173,13 @@
         if (bg && bg[3] > 0.5) {
             var nb = bgFor(bg, m);
             if (o.floating && m.themed && nb && nb.indexOf('--v2-surface') !== -1) nb = 'var(--v2-raised)';
+            if (nb && o.solid && m.themed && !(o.stops && o.stops.length)) {
+                // Same look, on an opaque base: neutral surfaces → the raised
+                // surface; a tint (rgba wash) is layered over it, not see-through.
+                var base = o.th ? 'var(--v2-table-head)' : 'var(--v2-raised)';
+                if (nb.indexOf('--v2-surface') !== -1) nb = base;
+                else if (nb.indexOf('rgba(') === 0) { set(el, 'background-image', 'linear-gradient(' + nb + ', ' + nb + ')'); nb = base; }
+            }
             if (nb) set(el, 'background-color', nb);
         }
         var stops = o.stops;
@@ -300,17 +314,45 @@
 
     // JS-rendered components (cards, rows, modals filled over ajax).
     new MutationObserver(function (muts) {
-        var list = [], changed = [];
+        var list = [], changed = [], shown = new Set();
         muts.forEach(function (mu) {
             mu.addedNodes.forEach(function (node) {
                 if (node.nodeType === 1 && node.closest && node.closest(SCOPE)) collect(node, list);
             });
             if (mu.type === 'childList' && mu.target.classList && mu.target.classList.contains('btn')) markIconBtn(mu.target);
-            if (mu.type === 'attributes' && mu.target.closest && mu.target.closest(SCOPE) && changed.indexOf(mu.target) === -1) changed.push(mu.target);
+            if (mu.type !== 'attributes') return;
+            if (mu.attributeName === 'class') {
+                if (mu.target.closest && mu.target.closest(SCOPE) && changed.indexOf(mu.target) === -1) changed.push(mu.target);
+            } else if (hidden.size) {
+                // style / hidden: something may have just been un-hidden
+                // (the payroll Table View swaps its panes with style.display).
+                // Our own writes land here too; a Set keeps that cheap.
+                shown.add(mu.target);
+            }
         });
         if (list.length) process(list);
         if (changed.length) reclass(changed);
-    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+        if (shown.size) unhide(shown);
+    }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
+
+    /* Elements skipped while display:none (read() returns null for them) are
+       remembered here and adapted the moment they, or an ancestor, show. */
+    function unhide(targets) {
+        var list = [];
+        hidden.forEach(function (el) {
+            if (!el.isConnected) { hidden.delete(el); return; }
+            // the changed element is el itself or one of its ancestors
+            var a = el;
+            while (a && !targets.has(a)) a = a.parentElement;
+            if (!a) return;
+            if (getComputedStyle(el).display === 'none') return;
+            hidden.delete(el);
+            list.push(el);
+            var kids = el.querySelectorAll('*');
+            for (var i = 0; i < kids.length; i++) if (!orig.has(kids[i])) list.push(kids[i]);
+        });
+        if (list.length) process(list);
+    }
 
     /* Class change (a toggle gaining .active, a popover opening): re-adapt
        right away, inside the observer callback, so it never paints in the old
@@ -332,9 +374,7 @@
             var kids = el.querySelectorAll('*');
             for (var i = 0; i < kids.length; i++) if (!orig.has(kids[i])) list.push(kids[i]);
         });
-        batch = [];
-        for (var i = 0; i < list.length && i < SYNC_BUDGET; i++) if (list[i].isConnected) adapt(list[i], m);
-        flush();
+        process(list);   // a big table past the sync budget spills to idle time instead of being dropped
         requestAnimationFrame(function () { els.forEach(function (el) { el.style.removeProperty('transition'); }); });
     }
 
@@ -372,9 +412,19 @@
         if (el.closest(PAPER)) return;
         var prevT = [el.style.getPropertyValue('transition'), el.style.getPropertyPriority('transition')];
         el.style.setProperty('transition', 'none', 'important');
+        // Only a real :hover colour gets a wash. Hovering any child bubbles up
+        // to its card / dialog panel; reading our own override (or the plain
+        // translucent surface) as a "hover colour" turned cards and modals
+        // see-through under the pointer on the light colour themes.
+        var o = orig.get(el), rec = saved.get(el);
+        var ours = rec && ('background-color' in rec) ? [el.style.getPropertyValue('background-color'), el.style.getPropertyPriority('background-color')] : null;
+        if (ours) el.style.removeProperty('background-color');   // read the page's own hover colour
         var cs = getComputedStyle(el), done = [];
         var bg = parse(cs.backgroundColor);
-        if (bg && bg[3] > 0.5) {
+        if (ours) el.style.setProperty('background-color', ours[0], ours[1]);
+        var ownHover = !(o && o.solid)                                          // solid panels never wash
+            && !(o && o.bg && bg && o.bg.join() === bg.join());                 // same as at rest = no :hover rule
+        if (ownHover && bg && bg[3] > 0.5) {
             var nb = inBtn ? (isBrandPurple(bg) ? 'var(--acc-bg-hover)' : null) : bgFor(bg, m);
             if (nb) {
                 if (nb.indexOf('--v2-surface') !== -1) nb = 'var(--v2-active)';   // neutral hover wash

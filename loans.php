@@ -107,56 +107,33 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
                 </div>
             </div>
 
-            <!-- Loan Types (master list behind the Add Loan dropdown) -->
-            <div class="card" id="loan-types-card">
-                <div class="card-header d-flex align-items-center py-2">
-                    <h6 class="card-title mb-0 flex-grow-1"><i class="ri-price-tag-3-line me-2" style="color:#6642aa;"></i>Loan Types</h6>
-                    <?php if ($loan_types_editable): ?>
-                        <button type="button" class="btn btn-sm" style="background:#6642aa;color:#fff;" onclick="loanTypeOpen()">
+            <!-- Loan Records | Loan Types, one card with tabs (Records first) -->
+            <div class="card" id="loans-tabs-card">
+                <div class="card-header d-flex align-items-center flex-wrap gap-2 pt-1 pb-0">
+                    <ul class="nav nav-tabs card-header-tabs flex-grow-1" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="loans-records-tab" data-bs-toggle="tab" data-bs-target="#loans-records-pane" type="button" role="tab" aria-controls="loans-records-pane" aria-selected="true">
+                                <i class="ri-list-check me-1"></i>Loan Records
+                                <span class="badge rounded-pill bg-primary-subtle text-primary ms-1"><?= number_format($loans_res->num_rows) ?></span>
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="loans-types-tab" data-bs-toggle="tab" data-bs-target="#loans-types-pane" type="button" role="tab" aria-controls="loans-types-pane" aria-selected="false">
+                                <i class="ri-price-tag-3-line me-1"></i>Loan Types
+                                <span class="badge rounded-pill bg-secondary-subtle text-secondary ms-1"><?= number_format($loan_types_res->num_rows) ?></span>
+                            </button>
+                        </li>
+                    </ul>
+                    <div class="pb-2">
+                        <?php if ($loan_types_editable): ?>
+                        <button type="button" class="btn btn-sm loans-tab-action" data-tab-for="loans-types-pane" hidden style="background:#6642aa;color:#fff;" onclick="loanTypeOpen()">
                             <i class="ri-add-line align-bottom me-1"></i>Add Loan Type
                         </button>
                     <?php endif; ?>
-                </div>
-                <div class="card-body py-2">
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle mb-0" id="loan-types-table">
-                            <thead>
-                                <tr>
-                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Loan Type</th>
-                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;width:140px;">Loans Using It</th>
-                                    <?php if ($loan_types_editable): ?>
-                                        <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;width:100px;">Action</th>
-                                    <?php endif; ?>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php if ($loan_types_res->num_rows === 0): ?>
-                                    <tr><td colspan="3" class="text-center text-muted" style="padding:14px;font-size:12px;">No loan types yet. Add one so it appears in the Add Loan dropdown.</td></tr>
-                                <?php endif; ?>
-                                <?php while ($t = $loan_types_res->fetch_assoc()): $inUse = (int) $t['in_use']; ?>
-                                    <tr>
-                                        <td style="padding:8px 12px;">
-                                            <span style="background:#f0ecf6;color:#4e3483;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;"><?= htmlspecialchars($t['loan_type']) ?></span>
-                                        </td>
-                                        <td style="padding:8px 12px;text-align:right;font-size:12px;color:<?= $inUse ? '#4e3483' : '#aaa' ?>;font-weight:<?= $inUse ? '700' : '400' ?>;"><?= number_format($inUse) ?></td>
-                                        <?php if ($loan_types_editable): ?>
-                                            <td style="padding:6px 12px;text-align:right;white-space:nowrap;">
-                                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loanTypeOpen(<?= (int) $t['clt_id'] ?>, this)" data-name="<?= htmlspecialchars($t['loan_type'], ENT_QUOTES) ?>">Edit</button>
-                                            </td>
-                                        <?php endif; ?>
-                                    </tr>
-                                <?php endwhile; ?>
-                            </tbody>
-                        </table>
                     </div>
                 </div>
-            </div>
-
-            <!-- Table -->
-            <div class="card">
-                <div class="card-header d-flex align-items-center py-2">
-                    <h6 class="card-title mb-0 flex-grow-1"><i class="ri-list-check me-2" style="color:#6642aa;"></i>Loan Records</h6>
-                </div>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="loans-records-pane" role="tabpanel" aria-labelledby="loans-records-tab">
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-hover table-sm align-middle mb-0" id="loans-table">
@@ -206,6 +183,43 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
                         </table>
                     </div>
                 </div>
+                    </div>
+                    <div class="tab-pane fade" id="loans-types-pane" role="tabpanel" aria-labelledby="loans-types-tab">
+                <div class="card-body py-2">
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0" id="loan-types-table">
+                            <thead>
+                                <tr>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;">Loan Type</th>
+                                    <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;width:140px;">Loans Using It</th>
+                                    <?php if ($loan_types_editable): ?>
+                                        <th style="background:#6642aa;color:#fff;padding:9px 12px;font-size:11px;border:none;text-align:right;width:100px;">Action</th>
+                                    <?php endif; ?>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if ($loan_types_res->num_rows === 0): ?>
+                                    <tr><td colspan="3" class="text-center text-muted" style="padding:14px;font-size:12px;">No loan types yet. Add one so it appears in the Add Loan dropdown.</td></tr>
+                                <?php endif; ?>
+                                <?php while ($t = $loan_types_res->fetch_assoc()): $inUse = (int) $t['in_use']; ?>
+                                    <tr>
+                                        <td style="padding:8px 12px;">
+                                            <span style="background:#f0ecf6;color:#4e3483;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;"><?= htmlspecialchars($t['loan_type']) ?></span>
+                                        </td>
+                                        <td style="padding:8px 12px;text-align:right;font-size:12px;color:<?= $inUse ? '#4e3483' : '#aaa' ?>;font-weight:<?= $inUse ? '700' : '400' ?>;"><?= number_format($inUse) ?></td>
+                                        <?php if ($loan_types_editable): ?>
+                                            <td style="padding:6px 12px;text-align:right;white-space:nowrap;">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="loanTypeOpen(<?= (int) $t['clt_id'] ?>, this)" data-name="<?= htmlspecialchars($t['loan_type'], ENT_QUOTES) ?>">Edit</button>
+                                            </td>
+                                        <?php endif; ?>
+                                    </tr>
+                                <?php endwhile; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -213,6 +227,26 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
 </div>
 
 <script>
+    // Header actions that belong to one tab (Add Loan Type) follow the active tab.
+    document.querySelectorAll('#loans-tabs-card [data-bs-toggle="tab"]').forEach(function (t) {
+        t.addEventListener('shown.bs.tab', function () {
+            var pane = t.getAttribute('data-bs-target').slice(1);
+            document.querySelectorAll('#loans-tabs-card .loans-tab-action').forEach(function (b) {
+                b.hidden = b.getAttribute('data-tab-for') !== pane;
+            });
+        });
+    });
+    // "Manage types" in the employee form links to loans#loan-types-card: open that tab.
+    (function () {
+        function openTypes() {
+            if (!/^#(loan-types-card|loans-types-pane)$/.test(location.hash) || !window.bootstrap) return;
+            var tab = document.getElementById('loans-types-tab');
+            if (tab) bootstrap.Tab.getOrCreateInstance(tab).show();
+        }
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', openTypes); else openTypes();
+        window.addEventListener('hashchange', openTypes);
+    })();
+
     // DataTable: search / sort / paging (Progress column not sortable)
     document.addEventListener('DOMContentLoaded', function() {
         if (window.jQuery && jQuery.fn.DataTable && !jQuery.fn.DataTable.isDataTable('#loans-table')) {

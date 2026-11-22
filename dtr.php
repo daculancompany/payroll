@@ -20,6 +20,21 @@ function dtr_status_badge($s) {
     if ($s === 1) return '<span class="badge bg-warning text-dark"><i class="ri-time-line me-1"></i>Pending</span>';
     return '<span class="badge bg-secondary"><i class="ri-loader-2-line me-1"></i>Open</span>';
 }
+
+// Hours, trimmed: 304.1 h, 1,650.2 h, 0 h.
+function dtr_hrs($h) {
+    return rtrim(rtrim(number_format((float)$h, 1), '0'), '.') . ' h';
+}
+
+// Payroll run per period (DTR dates are 'Y-m-d' strings, payroll's are DATE —
+// same text), so each batch can show which payroll uses it.
+$dtr_payrolls = [];
+$pq = $conn->query("SELECT id, ref_no, status, date_from, date_to FROM payroll ORDER BY id DESC");
+while ($pq && ($p = $pq->fetch_assoc())) {
+    $k = $p['date_from'] . '|' . $p['date_to'];
+    if (!isset($dtr_payrolls[$k])) $dtr_payrolls[$k] = $p;   // newest run for that period
+}
+$dtr_payroll_status = [0 => ['New', 'primary'], 1 => ['Calculated', 'success'], 3 => ['Ready for Review', 'warning'], 2 => ['Locked', 'danger']];
 ?>
 <style>
     .dtr-period { font-weight:700; color:#673bb6; font-size:13px; font-family:'Segoe UI',monospace; }
@@ -30,6 +45,14 @@ function dtr_status_badge($s) {
     .dtr-user { font-size:13px; font-weight:600; }
     .dtr-user small { font-size:10px; color:#888; font-weight:400; display:block; }
     .dtr-action { display:flex; gap:4px; justify-content:center; }
+    /* Coverage / totals / payroll lines under the main figures */
+    .dtr-sub { font-size:11px; color:var(--bs-secondary-color, #888); margin-top:4px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .dtr-sub i { opacity:.8; }
+    .dtr-progress { height:4px; max-width:160px; margin-top:4px; background:var(--bs-secondary-bg, #e9ecef); border-radius:2px; overflow:hidden; }
+    .dtr-progress > span { display:block; height:100%; background:var(--bs-primary, #673bb6); border-radius:2px; }
+    .dtr-chip { font-size:10.5px; font-weight:600; }
+    .dtr-payroll { font-size:11px; margin-top:5px; white-space:nowrap; }
+    .dtr-payroll a { font-weight:700; text-decoration:none; }
 </style>
 
 <div class="main-content">
@@ -74,7 +97,15 @@ function dtr_status_badge($s) {
                                         timekeeper.name AS timekeeper_name, uploaded.name AS uploaded_by, approved.name AS approve_by, employer_name,
                                         SUM(CASE WHEN DTR_details.status = 0 THEN 1 ELSE 0 END) AS pending_count,
                                         SUM(CASE WHEN DTR_details.status = 1 THEN 1 ELSE 0 END) AS approved_count,
-                                        SUM(CASE WHEN DTR_details.status = 2 THEN 1 ELSE 0 END) AS disapproved_count
+                                        SUM(CASE WHEN DTR_details.status = 2 THEN 1 ELSE 0 END) AS disapproved_count,
+                                        COUNT(DISTINCT DTR_details.employee_id) AS emp_count,
+                                        COUNT(DISTINCT DTR_details.date_time) AS day_count,
+                                        COALESCE(SUM(DTR_details.is_complete = 0), 0) AS incomplete_count,
+                                        COALESCE(SUM(DTR_details.attendance_type = 'manual'), 0) AS manual_count,
+                                        COALESCE(SUM(DTR_details.late), 0) AS late_hrs,
+                                        COALESCE(SUM(DTR_details.undertime), 0) AS ut_hrs,
+                                        COALESCE(SUM(DTR_details.overtime), 0) AS ot_hrs,
+                                        COALESCE(SUM(DTR_details.nsd_hours), 0) AS nd_hrs
                                         FROM DTR
                                         LEFT JOIN sites ON DTR.site_id = sites.id
                                         LEFT JOIN users AS timekeeper ON DTR.timekeeper_id = timekeeper.id
@@ -89,6 +120,10 @@ function dtr_status_badge($s) {
                                     while ($row = $query->fetch_assoc()):
                                         $status = (int)$row['status'];
                                         $period = date("M d", strtotime($row['date_from'])) . ' &ndash; ' . date("M j, Y", strtotime($row['date_to']));
+                                        $periodDays = max(1, (int) round((strtotime($row['date_to']) - strtotime($row['date_from'])) / 86400) + 1);
+                                        $dayCount   = min((int) $row['day_count'], $periodDays);
+                                        $empCount   = (int) $row['emp_count'];
+                                        $payrollRun = $dtr_payrolls[$row['date_from'] . '|' . $row['date_to']] ?? null;
                                         $viewUrl = "dtr-documents.php?id=" . base64_encode($row['id'])
                                             . "&timekeeper_name=" . base64_encode($row['timekeeper_name'])
                                             . "&device_id=" . base64_encode($row['device_id'])
@@ -100,6 +135,13 @@ function dtr_status_badge($s) {
                                                 <div class="dtr-period">
                                                     <i class="ri-calendar-2-line me-1 text-muted"></i><?= $period ?>
                                                 </div>
+                                                <div class="dtr-sub">
+                                                    <i class="ri-group-line me-1"></i><?= number_format($empCount) ?> employee<?= $empCount === 1 ? '' : 's' ?>
+                                                    &middot; <?= $dayCount ?> of <?= $periodDays ?> days
+                                                </div>
+                                                <?php if ($dayCount < $periodDays && $status !== 2): // still filling in ?>
+                                                <div class="dtr-progress" title="<?= $dayCount ?> of <?= $periodDays ?> days have punches"><span style="width:<?= round($dayCount / $periodDays * 100) ?>%"></span></div>
+                                                <?php endif; ?>
                                             </td>
                                             <td>
                                                 <span class="dtr-site-code"><?= htmlspecialchars($row['site_code']) ?></span>
@@ -108,12 +150,40 @@ function dtr_status_badge($s) {
                                             </td>
                                             <td>
                                                 <div class="d-flex gap-1 flex-wrap">
-                                                    <span class="badge bg-warning text-dark"><?= (int)$row['pending_count'] ?> Pending</span>
-                                                    <span class="badge bg-success"><?= (int)$row['approved_count'] ?> Approved</span>
-                                                    <span class="badge bg-danger"><?= (int)$row['disapproved_count'] ?> Disapproved</span>
+                                                    <?php // Counts are DAY RECORDS (one per employee per day), not employees. ?>
+                                                    <span class="badge bg-warning text-dark" title="Day records waiting for a decision"><?= number_format((int)$row['pending_count']) ?> days pending</span>
+                                                    <span class="badge bg-success"><?= number_format((int)$row['approved_count']) ?> approved</span>
+                                                    <span class="badge bg-danger"><?= number_format((int)$row['disapproved_count']) ?> disapproved</span>
+                                                </div>
+                                                <?php if ($row['incomplete_count'] > 0 || $row['manual_count'] > 0): ?>
+                                                <div class="d-flex gap-1 flex-wrap mt-1">
+                                                    <?php if ($row['incomplete_count'] > 0): ?>
+                                                    <span class="badge dtr-chip bg-danger-subtle text-danger" title="Days with a missing time-in or time-out — fix before approving"><i class="ri-error-warning-line me-1"></i><?= number_format((int)$row['incomplete_count']) ?> incomplete</span>
+                                                    <?php endif; ?>
+                                                    <?php if ($row['manual_count'] > 0): ?>
+                                                    <span class="badge dtr-chip bg-info-subtle text-info" title="Days entered or edited by hand, not from the device"><i class="ri-edit-line me-1"></i><?= number_format((int)$row['manual_count']) ?> manual</span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <?php endif; ?>
+                                                <div class="dtr-sub" title="Totals for the whole batch">
+                                                    Late <?= dtr_hrs($row['late_hrs']) ?> &middot; UT <?= dtr_hrs($row['ut_hrs']) ?>
+                                                    &middot; OT <?= dtr_hrs($row['ot_hrs']) ?> &middot; ND <?= dtr_hrs($row['nd_hrs']) ?>
                                                 </div>
                                             </td>
-                                            <td class="text-center"><?= dtr_status_badge($row['status']) ?></td>
+                                            <td class="text-center">
+                                                <?= dtr_status_badge($row['status']) ?>
+                                                <?php if ($payrollRun):
+                                                    [$plabel, $ptone] = $dtr_payroll_status[(int) $payrollRun['status']] ?? ['Unknown', 'secondary']; ?>
+                                                <div class="dtr-payroll">
+                                                    <i class="ri-money-dollar-circle-line text-muted"></i>
+                                                    <a href="index.php?page=payroll_calculations&id=<?= (int) $payrollRun['id'] ?>" title="Open this period's payroll"><?= htmlspecialchars($payrollRun['ref_no']) ?></a>
+                                                    <span class="text-<?= $ptone ?>">&middot; <?= $plabel ?></span>
+                                                </div>
+                                                <?php if ($status !== 2): ?>
+                                                <span class="badge dtr-chip bg-warning-subtle text-warning mt-1" title="A payroll already exists for this period but the DTR isn't approved — its figures may still change"><i class="ri-alert-line me-1"></i>Payroll before approval</span>
+                                                <?php endif; ?>
+                                                <?php endif; ?>
+                                            </td>
                                             <td>
                                                 <?php if (!empty($row['approve_by'])): ?>
                                                 <div class="dtr-user"><i class="ri-shield-check-line me-1 text-muted"></i><?= htmlspecialchars($row['approve_by']) ?></div>

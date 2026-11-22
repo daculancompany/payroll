@@ -42,6 +42,13 @@ $loan_types_res = $conn->query("
 $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
 ?>
 
+<style>
+    /* Tab counts: one style for both tabs, tinted from the tab's own text colour
+       (accent when active, muted otherwise) so it reads right on every theme. */
+    .loans-tab-count { display:inline-block; margin-left:.35rem; padding:.1rem .45rem; border-radius:999px;
+        font-size:.7rem; font-weight:700; line-height:1.4; color:inherit;
+        background:color-mix(in srgb, currentColor 16%, transparent); }
+</style>
 <div class="main-content">
     <div class="page-content">
         <div class="container-fluid">
@@ -114,13 +121,13 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active" id="loans-records-tab" data-bs-toggle="tab" data-bs-target="#loans-records-pane" type="button" role="tab" aria-controls="loans-records-pane" aria-selected="true">
                                 <i class="ri-list-check me-1"></i>Loan Records
-                                <span class="badge rounded-pill bg-primary-subtle text-primary ms-1"><?= number_format($loans_res->num_rows) ?></span>
+                                <span class="loans-tab-count" data-v2-keep><?= number_format($loans_res->num_rows) ?></span>
                             </button>
                         </li>
                         <li class="nav-item" role="presentation">
                             <button class="nav-link" id="loans-types-tab" data-bs-toggle="tab" data-bs-target="#loans-types-pane" type="button" role="tab" aria-controls="loans-types-pane" aria-selected="false">
                                 <i class="ri-price-tag-3-line me-1"></i>Loan Types
-                                <span class="badge rounded-pill bg-secondary-subtle text-secondary ms-1"><?= number_format($loan_types_res->num_rows) ?></span>
+                                <span class="loans-tab-count" data-v2-keep><?= number_format($loan_types_res->num_rows) ?></span>
                             </button>
                         </li>
                     </ul>

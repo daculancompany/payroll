@@ -1185,3 +1185,86 @@ html[data-bs-theme="dark"] .v2 .apexcharts-donut-series path,
 html.ui-ct .v2 .apexcharts-donut-series path { stroke: transparent !important; }
 .v2 .apexcharts-legend-marker { border: 0 !important; box-shadow: none !important; }
 .v2 .apexcharts-legend-marker path, .v2 .apexcharts-legend-marker circle { stroke: none !important; }
+
+/* ── Sidebar tree groups (collapsible, with connector lines) ────────── */
+/* Geometry: a row's icon is centred at .65rem padding + half of 1.25rem =
+   1.275rem, its label starts at 2.65rem. The trunk runs under the group icon
+   and each leaf's elbow curves into the leaf, whose label lines up with the
+   group label. */
+.v2-nav { --v2-tree-line: color-mix(in srgb, var(--v2-side-text) 32%, transparent); }
+.v2-nav__group--flat { margin-top: .2rem; }
+.v2-nav__group.v2-tree { margin-top: 1px; }
+.v2-nav__group--flat + .v2-tree { margin-top: .55rem; }
+
+.v2-tree__head { cursor: pointer; }
+.v2-tree__head .v2-tree__chev { width: auto; font-size: 1.05rem; opacity: .55; margin-left: auto; transition: transform .2s ease, opacity .12s; }
+.v2-tree__head:hover .v2-tree__chev { opacity: .9; }
+.v2-tree.is-open > .v2-tree__head .v2-tree__chev { transform: rotate(180deg); }
+.v2-tree:has(.v2-tree__leaf.is-active) > .v2-tree__head { color: var(--v2-side-active-text); font-weight: 600; }
+.v2-tree:has(.v2-tree__leaf.is-active) > .v2-tree__head > i:first-child { opacity: 1; color: var(--brand-500); }
+html.ui-dark-sidebar .v2-tree:has(.v2-tree__leaf.is-active) > .v2-tree__head > i:first-child,
+html[data-bs-theme="dark"] .v2-tree:has(.v2-tree__leaf.is-active) > .v2-tree__head > i:first-child { color: var(--brand-300); }
+.v2-tree__dot { width: 7px; height: 7px; border-radius: 50%; background: #f59e0b; flex-shrink: 0; }
+.v2-tree.is-open .v2-tree__dot { display: none; }
+
+.v2-tree__body { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows .22s ease, visibility 0s linear .22s; }
+.v2-tree.is-open > .v2-tree__body { grid-template-rows: 1fr; visibility: visible; transition: grid-template-rows .22s ease, visibility 0s; }
+.v2-tree__inner { min-height: 0; overflow: hidden; }
+.v2-tree.is-open .v2-tree__inner { padding: 1px 0 4px; }
+
+.v2-nav .v2-tree__leaf {
+    width: calc(100% - 2.1rem); margin: 0 0 0 2.1rem; padding: .44rem .65rem .44rem .55rem;
+    font-size: .84rem; font-weight: 500; overflow: visible;
+    color: color-mix(in srgb, var(--v2-side-text) 80%, transparent);
+}
+.v2-nav .v2-tree__leaf > i { display: none; }
+.v2-nav .v2-tree__leaf:hover { color: var(--v2-side-text); }
+.v2-nav .v2-tree__leaf.is-active { color: var(--v2-side-active-text); font-weight: 600; }
+/* trunk: continues past every leaf but the last */
+.v2-nav .v2-tree__leaf::before {
+    content: ""; position: absolute; left: -.825rem; top: 0; bottom: 0; width: 0;
+    border-radius: 0; background: none; border-left: 1.5px solid var(--v2-tree-line);
+}
+.v2-nav .v2-tree__leaf:last-child::before { display: none; }
+/* elbow into the leaf */
+.v2-nav .v2-tree__leaf::after {
+    content: ""; position: absolute; left: -.825rem; top: 0; height: 50%; width: .825rem;
+    border-left: 1.5px solid var(--v2-tree-line); border-bottom: 1.5px solid var(--v2-tree-line);
+    border-bottom-left-radius: 9px; pointer-events: none;
+}
+html.ui-compact .v2-nav .v2-tree__leaf { padding-top: .32rem; padding-bottom: .32rem; }
+
+/* icon rail: group icon only; a click widens the sidebar and opens the group */
+@media (min-width: 992px) {
+    html.ui-sidebar-collapsed .v2-nav__group.v2-tree { margin-top: 2px; padding-top: 0; border-top: 0; }
+    html.ui-sidebar-collapsed .v2-tree__body,
+    html.ui-sidebar-collapsed .v2-tree__chev { display: none; }
+    html.ui-sidebar-collapsed .v2-tree:has(.v2-tree__leaf.is-active) > .v2-tree__head { background: var(--v2-side-active-bg); }
+    html.ui-sidebar-collapsed .v2-tree__dot,
+    html.ui-sidebar-collapsed .v2-tree.is-open .v2-tree__dot { display: block; position: absolute; top: 7px; right: 12px; }
+}
+
+/* ── Sidebar user card (moved from the topbar) ──────────────────────── */
+.v2-side-user { margin-top: .45rem; }
+.v2-side-user__btn {
+    display: flex; align-items: center; gap: .7rem; width: 100%;
+    padding: .55rem .6rem; border-radius: 12px; text-align: left;
+    background: color-mix(in srgb, var(--v2-side-text) 4%, transparent);
+    border: 1px solid var(--v2-side-divider); color: var(--v2-side-text);
+    transition: background .12s;
+}
+.v2-side-user__btn:hover, .v2-side-user__btn[aria-expanded="true"] { background: var(--v2-side-hover); }
+.v2-side-user .v2-side-user__btn .v2-avatar { width: 36px; height: 36px; border-radius: 50%; }
+.v2-side-user__copy { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.2; }
+.v2-side-user__copy strong { font-size: .86rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.ui-dark-sidebar .v2-side-user__copy strong, html[data-bs-theme="dark"] .v2-side-user__copy strong { color: #fff; }
+.v2-side-user__copy small { font-size: .74rem; color: var(--brand-600); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html.ui-dark-sidebar .v2-side-user__copy small, html[data-bs-theme="dark"] .v2-side-user__copy small { color: var(--brand-300); }
+.v2-side-user__more { font-size: 1rem; opacity: .55; flex-shrink: 0; }
+.v2-side-user .dropdown-menu { width: 100%; min-width: 240px; }
+
+@media (min-width: 992px) {
+    html.ui-sidebar-collapsed .v2-side-user__btn { justify-content: center; padding: .4rem; background: none; border-color: transparent; }
+    html.ui-sidebar-collapsed .v2-side-user__copy,
+    html.ui-sidebar-collapsed .v2-side-user__more { display: none; }
+}

@@ -20,6 +20,41 @@
     });
     window.addEventListener('v2:navigated', closeDrawer);
 
+    /* ── tree groups ────────────────────────────────────────────────── */
+    var NAV_KEY = 'pr_nav_open';
+    function setOpen(g, on) {
+        g.classList.toggle('is-open', on);
+        var h = g.querySelector('[data-v2-tree]');
+        if (h) h.setAttribute('aria-expanded', on ? 'true' : 'false');
+    }
+    function saveOpen() {
+        try {
+            var keys = Array.prototype.map.call(document.querySelectorAll('.v2-tree.is-open'), function (g) { return g.dataset.tree; });
+            localStorage.setItem(NAV_KEY, JSON.stringify(keys));
+        } catch (e) {}
+    }
+    function railMode() {
+        return root.classList.contains('ui-sidebar-collapsed') && window.matchMedia('(min-width: 992px)').matches;
+    }
+    document.addEventListener('click', function (e) {
+        var head = e.target.closest('[data-v2-tree]');
+        if (!head) return;
+        var g = head.closest('.v2-tree');
+        if (railMode()) {
+            // The icon rail has no room for leaves: widen the sidebar and open this group.
+            T.set({ sidebarCollapsed: false });
+            setOpen(g, true);
+        } else {
+            setOpen(g, !g.classList.contains('is-open'));
+        }
+        saveOpen();
+    });
+    // After an in-place navigation the router moves .is-active; make sure its group is open.
+    window.addEventListener('v2:navigated', function () {
+        var a = document.querySelector('.v2-tree .v2-nav__item.is-active');
+        if (a) setOpen(a.closest('.v2-tree'), true);
+    });
+
     /* ── light / dark quick toggle ──────────────────────────────────── */
     document.addEventListener('click', function (e) {
         if (!e.target.closest('[data-v2-mode-toggle]')) return;
@@ -51,7 +86,7 @@
                 href: a.getAttribute('href'),
                 label: a.querySelector('span').textContent.trim(),
                 icon: a.querySelector('i').className,
-                group: group ? group.querySelector('.v2-nav__title').textContent.trim() : '',
+                group: group ? (group.dataset.title || '') : '',
                 nav: a.hasAttribute('data-nav')
             };
         });

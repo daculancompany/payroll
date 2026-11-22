@@ -54,7 +54,11 @@
     <link rel="stylesheet" href="assets2/css/modal-stacking.css">
     <link rel="stylesheet" href="<?= av('assets2/css/custom-select.css') ?>">
     <link rel="stylesheet" href="<?= av('assets2/css/app-tooltip.css') ?>">
-    <script defer src="<?= av('assets2/js/app-tooltip.js') ?>"></script>
+    <?php /* Not defer: app-router.js (end of body) starts the first page's
+             phase synchronously, and a deferred script runs after that — its
+             document listeners were then filed as page listeners and stripped
+             on the first in-place navigation, killing every tooltip. */ ?>
+    <script src="<?= av('assets2/js/app-tooltip.js') ?>"></script>
 
     <!-- v2 design system: loaded last so it wins. -->
     <link rel="stylesheet" href="<?= av('assets3/css/app.css') ?>">

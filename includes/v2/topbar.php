@@ -45,29 +45,7 @@
         <button type="button" class="v2-icon-btn d-none d-sm-inline-flex" data-v2-settings title="Appearance settings" aria-label="Appearance settings">
             <i class="ri-settings-3-line"></i>
         </button>
-
-        <div class="dropdown">
-            <button type="button" class="v2-user" data-bs-toggle="dropdown" aria-expanded="false">
-                <span class="v2-avatar"><?= e(v2_initials($user_name)) ?></span>
-                <span class="v2-user__copy d-none d-md-flex">
-                    <strong><?= e($user_name) ?></strong>
-                    <small><?= e(getRole($login_role)) ?></small>
-                </span>
-                <i class="ri-arrow-down-s-line d-none d-md-inline"></i>
-            </button>
-            <div class="dropdown-menu dropdown-menu-end v2-pop">
-                <div class="v2-pop__head v2-pop__head--user">
-                    <span class="v2-avatar v2-avatar--lg"><?= e(v2_initials($user_name)) ?></span>
-                    <div><strong><?= e($user_name) ?></strong><small><?= e(getRole($login_role)) ?></small></div>
-                </div>
-                <a class="dropdown-item" href="app/profile" data-nav><i class="ri-user-3-line"></i> My profile</a>
-                <button type="button" class="dropdown-item" data-v2-settings><i class="ri-palette-line"></i> Appearance</button>
-                <a class="dropdown-item" href="#" data-pwa-install data-pwa-display="flex" style="display:none;"><i class="ri-smartphone-line"></i> Install app</a>
-                <button type="button" class="dropdown-item" data-v2-classic><i class="ri-history-line"></i> Switch to classic UI</button>
-                <div class="dropdown-divider"></div>
-                <a class="dropdown-item text-danger" href="ajax.php?action=logout"><i class="ri-logout-box-r-line"></i> Sign out</a>
-            </div>
-        </div>
+        <!-- The user menu lives in the sidebar footer (includes/v2/sidebar.php). -->
     </div>
 </header>
 

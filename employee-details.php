@@ -196,7 +196,52 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
     .emp-side-stat-lbl { font-size:11px; color:var(--app-text-2, #888); text-transform:uppercase; letter-spacing:.3px; font-weight:700; }
     .emp-side-stat-val { font-size:14px; font-weight:700; color:var(--emp-brand); font-family:'Segoe UI',monospace; }
     .emp-side-barcode { text-align:center; padding:12px 14px; border-top:1px solid #eef0f8; background:var(--app-surface-2, #f8f9fa); }
+    /* Sticky card. When it is taller than the window, the script below sets a
+       negative `top` so it rides up with the page until its bottom edge is in
+       view and then stays fixed — no inner scrollbar, every row reachable. */
     @media (min-width:992px){ .emp-sidebar-sticky { position:sticky; top:80px; } }
+    /* Find employee (header) */
+    .emp-jump-menu { width:360px; max-width:calc(100vw - 24px); overflow:hidden; }
+    .emp-jump-input { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid var(--app-tint-border, #e5e7eb); }
+    .emp-jump-input > i { font-size:16px; opacity:.6; }
+    .emp-jump-input input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:inherit; font-size:14px; }
+    .emp-jump-spin { width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; opacity:.5; animation:empJumpSpin .7s linear infinite; }
+    @keyframes empJumpSpin { to { transform:rotate(360deg); } }
+    .emp-jump-list { max-height:340px; overflow-y:auto; padding:4px; }
+    .emp-jump-item { display:flex; align-items:center; gap:10px; padding:7px 9px; border-radius:8px; color:inherit; text-decoration:none; cursor:pointer; }
+    .emp-jump-item:hover, .emp-jump-item.is-sel { background:rgba(125,135,160,.15); color:inherit; }
+    .emp-jump-item.is-cur { opacity:.55; }
+    .emp-jump-no { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; font-weight:700; color:var(--emp-brand); flex-shrink:0; min-width:84px; }
+    .emp-jump-main { min-width:0; flex:1; line-height:1.25; }
+    .emp-jump-main b { display:block; font-size:13px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .emp-jump-main small { display:block; font-size:11px; opacity:.65; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .emp-jump-item mark { padding:0; background:none !important; color:var(--emp-brand); font-weight:800; text-decoration:underline; text-underline-offset:2px; }
+    .emp-jump-off { font-size:10px; font-weight:700; padding:1px 6px; border-radius:99px; border:1px solid rgba(214,57,57,.4); color:#d63939; flex-shrink:0; }
+    .emp-jump-hint { padding:18px 12px; text-align:center; font-size:12.5px; opacity:.7; }
+    .emp-jump-foot { padding:6px 12px; border-top:1px solid var(--app-tint-border, #e5e7eb); font-size:10.5px; opacity:.6; }
+    .emp-jump-foot kbd { font-size:10px; padding:0 4px; margin-right:2px; }
+
+    /* Extra sections: Work / Employment / Payout / Leave / Contact / Kiosk */
+    .emp-side-sec { display:flex; align-items:center; gap:6px; padding:12px 16px 4px; border-top:1px solid var(--app-tint-border, #eef0f8);
+                    font-size:10.5px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--emp-brand); }
+    .emp-side-sec i { font-size:13px; }
+    .emp-side-sec-link { margin-left:auto; font-size:10.5px; font-weight:700; letter-spacing:0; text-transform:none; color:var(--app-text-2, #6b7280); }
+    .emp-side-sec-link:hover { color:var(--emp-brand); }
+    .emp-side-sec + .emp-side-stats .emp-side-stat { padding-top:7px; padding-bottom:7px; }
+    .emp-side-stat .emp-side-stat-lbl { flex-shrink:0; max-width:48%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .emp-side-stat .emp-side-lbl-wrap { white-space:normal; max-width:58%; line-height:1.3; }
+    .emp-side-stat--wrap { flex-wrap:wrap; row-gap:6px; }
+    .emp-side-stat--wrap .emp-side-stat-val { margin-left:auto; }
+    .emp-side-txt { font-size:12.5px; font-weight:600; color:var(--app-text, #1f2937); text-align:right; min-width:0; margin-left:10px; overflow-wrap:anywhere; }
+    .emp-side-txt small { display:block; font-size:11px; font-weight:500; color:var(--app-text-2, #6b7280); margin-top:1px; }
+    .emp-side-txt a { color:inherit; text-decoration:none; }
+    .emp-side-txt a:hover { color:var(--emp-brand); text-decoration:underline; }
+    .emp-side-txt.is-low { color:#d63939; }
+    .emp-side-none { font-weight:500; font-style:italic; color:var(--app-text-2, #98a1b0); }
+    .emp-side-chips { display:flex; flex-wrap:wrap; gap:6px; padding:6px 16px 14px; }
+    .emp-side-chip { display:inline-flex; align-items:center; gap:4px; font-size:11px; font-weight:600; padding:3px 9px; border-radius:99px;
+                     border:1px solid var(--app-tint-border, #e1e4e8); color:var(--app-text-2, #6b7280); }
+    .emp-side-chip.is-on { color:var(--emp-brand); }
 
     /* ---- Section cards (Overview) ---- */
     .detail-section { border:1px solid var(--app-tint-border, #d0d7ee); border-radius:6px; margin-bottom:12px; overflow:hidden; }
@@ -376,6 +421,26 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                     <?php endif; ?>
                                 <?php endforeach; ?>
                             </div>
+                            <!-- Find: jump to any employee without going back to the list.
+                                 Server-side autocomplete (employee-search.php), debounced. -->
+                            <div class="dropdown emp-jump">
+                                <button type="button" class="btn btn-sm btn-outline-primary" id="emp-jump-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside"
+                                        aria-expanded="false" title="Find employee (press /)">
+                                    <i class="ri-search-line"></i><span class="d-none d-md-inline ms-1">Find</span>
+                                </button>
+                                <div class="dropdown-menu v2-pop emp-jump-menu p-0" aria-labelledby="emp-jump-btn">
+                                    <div class="emp-jump-input">
+                                        <i class="ri-search-line"></i>
+                                        <input type="text" id="emp-jump-q" placeholder="Employee no. or last name…" autocomplete="off" spellcheck="false"
+                                               role="combobox" aria-controls="emp-jump-list" aria-expanded="true">
+                                        <span class="emp-jump-spin" id="emp-jump-spin" hidden></span>
+                                    </div>
+                                    <div class="emp-jump-list" id="emp-jump-list" role="listbox">
+                                        <div class="emp-jump-hint">Type an employee no. or last name<br><small>e.g. <b>2026-0028</b>, <b>bacayan</b>, or <b>bacayan, hen</b></small></div>
+                                    </div>
+                                    <div class="emp-jump-foot"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>Enter</kbd> open · <kbd>Esc</kbd> close</div>
+                                </div>
+                            </div>
                         </div>
                         <div class="flex-shrink-0 d-flex gap-2">
                             <?php /* No "201 File" button here: it only jumped to the 201 File tab
@@ -411,6 +476,60 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
 
                         <!-- ============ LEFT PROFILE SIDEBAR ============ -->
                         <div class="col-lg-3">
+                            <?php
+                            // ---- Extra profile-card facts. Each block is read-only and
+                            // only rendered when there is something real to show.
+                            $side = ['shift' => null, 'last' => null, 'bank' => null, 'prof' => null, 'leave' => []];
+                            // Shift in force today (same "covering today" rule as the day-off pills).
+                            $__q = $conn->query("SELECT ws.description, ws.start_time, ws.end_time, ws.is_graveyard
+                                FROM employee_schedules es JOIN work_schedules ws ON ws.id = es.schedule_id
+                                WHERE es.employee_id = $emp_id AND es.effective_from <= CURDATE()
+                                  AND (es.effective_to IS NULL OR es.effective_to >= CURDATE())
+                                ORDER BY es.effective_from DESC LIMIT 1");
+                            if ($__q && ($__r = $__q->fetch_assoc())) $side['shift'] = $__r;
+                            $__q = $conn->query("SELECT MAX(datetime_log) t FROM attendance WHERE employee_id = $emp_id");
+                            if ($__q && ($__r = $__q->fetch_assoc()) && $__r['t']) $side['last'] = strtotime($__r['t']);
+                            if (!empty($bank_id)) {
+                                $__q = $conn->query("SELECT bank_name FROM banks WHERE id = " . (int) $bank_id);
+                                if ($__q && ($__r = $__q->fetch_assoc())) $side['bank'] = $__r['bank_name'];
+                            }
+                            if ($conn->query("SHOW TABLES LIKE 'employee_profile'")->num_rows) {
+                                $__q = $conn->query("SELECT date_hired, employment_status, regularization_date, mobile_no,
+                                        emergency_name, emergency_relation, emergency_mobile
+                                    FROM employee_profile WHERE employee_id = $emp_id");
+                                if ($__q) $side['prof'] = $__q->fetch_assoc() ?: null;
+                            }
+                            // Leave: the same credits − approved-days sum the Leave tab shows.
+                            $__ly = leave_current_year();
+                            $__elig = $conn->query("SELECT UPPER(COALESCE(cl.clasification,'')) c, e.leave_override FROM employee e
+                                LEFT JOIN clasification cl ON cl.id = e.clasification_id WHERE e.id = $emp_id")->fetch_assoc();
+                            $side_leave_ok = $__elig && leave_eligibility_from($__elig['c'], $__elig['leave_override']);
+                            if ($side_leave_ok) {
+                                $__q = $conn->query("SELECT lt.name, lt.no_limit, COALESCE(c.credits,0) credits, COALESCE(u.used,0) used
+                                    FROM leave_types lt
+                                    LEFT JOIN employee_leave_credits c ON c.leave_type_id = lt.id AND c.employee_id = $emp_id AND c.year = $__ly
+                                    LEFT JOIN (SELECT leave_type_id, SUM(duration) used FROM leave_requests
+                                               WHERE employee_id = $emp_id AND status = 1 AND YEAR(date_from) = $__ly GROUP BY leave_type_id) u
+                                           ON u.leave_type_id = lt.id
+                                    WHERE lt.status = 1 AND lt.is_paid = 1 ORDER BY lt.name");
+                                // Only types that mean something for this person: credits set,
+                                // days used, or no-limit (always fileable). 0 / 0 rows are noise here.
+                                if ($__q) while ($__r = $__q->fetch_assoc()) {
+                                    if ((float) $__r['credits'] > 0 || (float) $__r['used'] > 0 || (int) $__r['no_limit'] === 1) $side['leave'][] = $__r;
+                                }
+                            }
+                            $side_fmt_d = function ($n) { return rtrim(rtrim(number_format((float) $n, 1), '0'), '.'); };
+                            $side_time  = function ($t) { return $t ? date('g:i A', strtotime($t)) : ''; };
+                            $side_tenure = function ($from) {
+                                $d = (new DateTime($from))->diff(new DateTime('today'));
+                                if ($d->invert) return 'starts soon';
+                                $p = [];
+                                if ($d->y) $p[] = $d->y . ' yr' . ($d->y > 1 ? 's' : '');
+                                if ($d->m) $p[] = $d->m . ' mo' . ($d->m > 1 ? 's' : '');
+                                return $p ? implode(' ', $p) : $d->days . ' day' . ($d->days == 1 ? '' : 's');
+                            };
+                            $sp = $side['prof'] ?: [];
+                            ?>
                             <div class="emp-sidebar emp-sidebar-sticky">
                                 <div class="emp-sidebar-head">
                                     <?php
@@ -487,9 +606,9 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                         <span class="emp-side-stat-lbl">Allowance</span>
                                         <span class="emp-side-stat-val">&#8369;<?= number_format($allowance_rate, 2) ?></span>
                                     </div>
-                                    <div class="emp-side-stat">
+                                    <div class="emp-side-stat emp-side-stat--wrap">
                                         <span class="emp-side-stat-lbl"><i class="ri-moon-line me-1"></i>Day Off</span>
-                                        <span class="emp-side-stat-val d-flex align-items-center gap-2">
+                                        <span class="emp-side-stat-val d-flex align-items-center flex-wrap justify-content-end gap-1">
                                             <?= ed_rest_pills($cur_rest_days) ?>
                                             <?php if (!$emp_readonly): ?>
                                             <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" style="font-size:11px;"
@@ -505,6 +624,131 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                         <span class="emp-side-stat-val" style="color:#d63939;">&#8369;<?= number_format($loan_agg['bal'], 2) ?></span>
                                     </div>
                                     <?php endif; ?>
+                                </div>
+
+                                <!-- Work -->
+                                <div class="emp-side-sec"><i class="ri-briefcase-line"></i>Work</div>
+                                <div class="emp-side-stats">
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Area</span>
+                                        <span class="emp-side-txt"><?= !empty($area_name) ? esc($area_name) : '<span class="emp-side-none">Not assigned</span>' ?></span>
+                                    </div>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Shift</span>
+                                        <?php if ($side['shift']): $sh = $side['shift']; ?>
+                                            <span class="emp-side-txt" title="<?= esc($sh['description']) ?>">
+                                                <?= $side_time($sh['start_time']) ?> – <?= $side_time($sh['end_time']) ?>
+                                                <?php if ((int) $sh['is_graveyard'] === 1): ?><i class="ri-moon-clear-line ms-1" title="Graveyard shift"></i><?php endif; ?>
+                                                <small><?= esc($sh['description']) ?></small>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="emp-side-txt"><span class="emp-side-none">No schedule</span></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Pay Basis</span>
+                                        <span class="emp-side-txt"><?= strtolower((string) $rate_type) === 'monthly' ? 'Monthly' : 'Daily' ?></span>
+                                    </div>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Last Punch</span>
+                                        <span class="emp-side-txt">
+                                            <?php if ($side['last']): ?>
+                                                <?= date('M j, Y', $side['last']) ?><small><?= date('g:i A', $side['last']) ?></small>
+                                            <?php else: ?><span class="emp-side-none">None yet</span><?php endif; ?>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <?php if (!empty($sp['employment_status']) || !empty($sp['date_hired']) || !empty($sp['regularization_date'])): ?>
+                                <!-- Employment (201 file) -->
+                                <div class="emp-side-sec"><i class="ri-award-line"></i>Employment</div>
+                                <div class="emp-side-stats">
+                                    <?php if (!empty($sp['employment_status'])): ?>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Status</span>
+                                        <span class="emp-side-txt"><?= esc(ucwords($sp['employment_status'])) ?></span>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($sp['date_hired'])): ?>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Hired</span>
+                                        <span class="emp-side-txt"><?= date('M j, Y', strtotime($sp['date_hired'])) ?><small><?= $side_tenure($sp['date_hired']) ?></small></span>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($sp['regularization_date'])): ?>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Regularized</span>
+                                        <span class="emp-side-txt"><?= date('M j, Y', strtotime($sp['regularization_date'])) ?></span>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+
+                                <!-- Payout -->
+                                <div class="emp-side-sec"><i class="ri-bank-line"></i>Payout</div>
+                                <div class="emp-side-stats">
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Bank</span>
+                                        <?php if ($side['bank']):
+                                            $__acct = preg_replace('/\s+/', '', (string) $bank_account_no); ?>
+                                            <span class="emp-side-txt"><?= esc($side['bank']) ?>
+                                                <?php if ($__acct !== ''): ?><small title="Account ending <?= esc(substr($__acct, -4)) ?>">•••• <?= esc(substr($__acct, -4)) ?></small><?php endif; ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="emp-side-txt"><span class="emp-side-none">No bank account</span></span>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+
+                                <?php if ($side_leave_ok): ?>
+                                <!-- Leave credits (same figures as the Leave tab) -->
+                                <div class="emp-side-sec"><i class="ri-calendar-check-line"></i>Leave <?= (int) $__ly ?>
+                                    <a href="#arrow-leave" class="emp-side-sec-link" onclick="var t=document.querySelector('#emp-tabs a[href=&quot;#arrow-leave&quot;]'); if(t){bootstrap.Tab.getOrCreateInstance(t).show(); t.scrollIntoView({block:'nearest'});} return false;">View</a>
+                                </div>
+                                <div class="emp-side-stats">
+                                    <?php foreach ($side['leave'] as $lv):
+                                        $__rem = (float) $lv['credits'] - (float) $lv['used']; ?>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl emp-side-lbl-wrap"><?= esc($lv['name']) ?></span>
+                                        <?php if ((int) $lv['no_limit'] === 1): ?>
+                                            <span class="emp-side-txt" title="Filing is never blocked by balance for this type">No limit<?php if ((float) $lv['used'] > 0): ?><small><?= $side_fmt_d($lv['used']) ?> used</small><?php endif; ?></span>
+                                        <?php else: ?>
+                                            <span class="emp-side-txt <?= $__rem <= 0 ? 'is-low' : '' ?>"><?= $side_fmt_d($__rem) ?> / <?= $side_fmt_d($lv['credits']) ?><small>days left</small></span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <?php endforeach; ?>
+                                    <?php if (!$side['leave']): ?>
+                                    <div class="emp-side-stat"><span class="emp-side-none" style="font-size:12px;">No credits set for <?= (int) $__ly ?></span></div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($sp['mobile_no']) || !empty($sp['emergency_name'])): ?>
+                                <!-- Contact (201 file) -->
+                                <div class="emp-side-sec"><i class="ri-phone-line"></i>Contact</div>
+                                <div class="emp-side-stats">
+                                    <?php if (!empty($sp['mobile_no'])): ?>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Mobile</span>
+                                        <span class="emp-side-txt"><a href="tel:<?= esc(preg_replace('/[^0-9+]/', '', $sp['mobile_no'])) ?>"><?= esc($sp['mobile_no']) ?></a></span>
+                                    </div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($sp['emergency_name'])): ?>
+                                    <div class="emp-side-stat">
+                                        <span class="emp-side-stat-lbl">Emergency</span>
+                                        <span class="emp-side-txt"><?= esc($sp['emergency_name']) ?>
+                                            <small><?= esc(trim(($sp['emergency_relation'] ?? '') . (!empty($sp['emergency_mobile']) ? ' · ' . $sp['emergency_mobile'] : ''), ' ·')) ?></small>
+                                        </span>
+                                    </div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endif; ?>
+
+                                <!-- Kiosk access -->
+                                <div class="emp-side-sec"><i class="ri-fingerprint-line"></i>Kiosk</div>
+                                <div class="emp-side-chips">
+                                    <span class="emp-side-chip <?= !empty($mobile_punch_enabled) ? 'is-on' : '' ?>"><i class="<?= !empty($mobile_punch_enabled) ? 'ri-smartphone-line' : 'ri-forbid-line' ?>"></i>Mobile punch <?= !empty($mobile_punch_enabled) ? 'on' : 'off' ?></span>
+                                    <span class="emp-side-chip <?= !empty($kiosk_pin) ? 'is-on' : '' ?>"><i class="ri-lock-password-line"></i><?= !empty($kiosk_pin) ? 'PIN set' : 'No PIN' ?></span>
                                 </div>
                                 <!-- <div class="emp-side-barcode">
                                     <div class="barcode-wrap">
@@ -2199,7 +2443,8 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                             <thead class="table-light">
                                                 <tr>
                                                     <th>Leave Type</th>
-                                                    <th class="text-center" style="width:150px;">Available</th>
+                                                    <?php /* Wide enough for the input + Set / Add / Deduct on one line. */ ?>
+                                                    <th class="text-center" style="width:<?= ($can_edit_credits && $emp_leave_eligible) ? '250' : '150' ?>px;">Available</th>
                                                     <th class="text-center" style="width:90px;">Used</th>
                                                     <th class="text-center" style="width:110px;">Remaining</th>
                                                 </tr>
@@ -2235,8 +2480,8 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                                                     </td>
                                                     <td class="text-center">
                                                         <?php if ($can_edit_credits && $emp_leave_eligible): ?>
-                                                            <div class="input-group input-group-sm" style="max-width:220px;margin:0 auto;">
-                                                                <input type="number" min="0" step="0.5" class="form-control text-center leave-credit-input"
+                                                            <div class="input-group input-group-sm flex-nowrap" style="max-width:230px;margin:0 auto;">
+                                                                <input type="number" min="0" step="0.5" class="form-control text-center leave-credit-input" style="min-width:70px;"
                                                                     value="<?= rtrim(rtrim(number_format($avail, 1), '0'), '.') ?>"
                                                                     data-employee="<?= $emp_id ?>" data-type="<?= $c['id'] ?>">
                                                                 <button class="btn btn-success leave-credit-save" type="button" title="Set balance"><i class="ri-save-line"></i></button>
@@ -2864,6 +3109,128 @@ $allow_has_to = (bool) $conn->query("SHOW COLUMNS FROM employee_allowances LIKE 
                 start();
             }
         })();
+    </script>
+    <!-- Find employee: debounced server autocomplete (employee-search.php) -->
+    <script>
+    (function () {
+        var btn = document.getElementById('emp-jump-btn');
+        var input = document.getElementById('emp-jump-q');
+        var list = document.getElementById('emp-jump-list');
+        var spin = document.getElementById('emp-jump-spin');
+        if (!btn || !input || !list) return;
+
+        var CUR_ID = <?= (int) $emp_id ?>;
+        var DELAY = 300;            // wait this long after the last keystroke
+        var cache = {};             // q → items: repeat searches never hit the server
+        var timer = null, ctrl = null, seq = 0, items = [], sel = 0;
+        var hintHtml = list.innerHTML;
+
+        function go(id) {
+            var href = 'index.php?page=employee-details&id=' + id;
+            var dd = bootstrap.Dropdown.getInstance(btn); if (dd) dd.hide();
+            if (window.v2Go) window.v2Go(href); else location.href = href;
+        }
+        function mark(parent, text, q) {
+            // Highlight the typed text without ever parsing names as HTML.
+            var i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
+            if (i < 0) { parent.appendChild(document.createTextNode(text)); return; }
+            parent.appendChild(document.createTextNode(text.slice(0, i)));
+            var m = document.createElement('mark'); m.textContent = text.slice(i, i + q.length); parent.appendChild(m);
+            parent.appendChild(document.createTextNode(text.slice(i + q.length)));
+        }
+        function message(txt) { list.innerHTML = ''; var d = document.createElement('div'); d.className = 'emp-jump-hint'; d.textContent = txt; list.appendChild(d); }
+        function render(q) {
+            if (!items.length) { message('No employee matches “' + q + '”'); return; }
+            var term = q.split(',')[0].trim();
+            list.innerHTML = '';
+            items.forEach(function (it, i) {
+                var a = document.createElement('a');
+                a.className = 'emp-jump-item' + (i === sel ? ' is-sel' : '') + (it.id === CUR_ID ? ' is-cur' : '');
+                a.href = 'index.php?page=employee-details&id=' + it.id;
+                a.setAttribute('role', 'option');
+                a.dataset.i = i;
+                var no = document.createElement('span'); no.className = 'emp-jump-no'; mark(no, it.no || '—', term);
+                var main = document.createElement('span'); main.className = 'emp-jump-main';
+                var b = document.createElement('b'); mark(b, it.name, term);
+                var s = document.createElement('small'); s.textContent = it.id === CUR_ID ? 'You are here' : (it.sub || '');
+                main.appendChild(b); main.appendChild(s);
+                a.appendChild(no); a.appendChild(main);
+                if (!it.active) { var off = document.createElement('span'); off.className = 'emp-jump-off'; off.textContent = 'Inactive'; a.appendChild(off); }
+                list.appendChild(a);
+            });
+        }
+        function search(q) {
+            if (cache[q]) { items = cache[q]; sel = 0; render(q); return; }
+            if (ctrl) ctrl.abort();                       // drop the request still in flight
+            ctrl = window.AbortController ? new AbortController() : null;
+            var my = ++seq;
+            spin.hidden = false;
+            fetch('employee-search.php?q=' + encodeURIComponent(q), {
+                credentials: 'same-origin', headers: { 'Accept': 'application/json' }, signal: ctrl ? ctrl.signal : undefined
+            }).then(function (r) {
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            }).then(function (data) {
+                if (my !== seq) return;                    // a newer search won
+                cache[q] = items = (data && data.items) || [];
+                sel = 0; render(q);
+            }).catch(function (e) {
+                if (e && e.name === 'AbortError') return;
+                if (my === seq) message('Search failed — please try again.');
+            }).then(function () { if (my === seq) spin.hidden = true; });
+        }
+
+        input.addEventListener('input', function () {
+            clearTimeout(timer);
+            var q = input.value.trim().replace(/\s+/g, ' ');
+            if (!q) { if (ctrl) ctrl.abort(); seq++; spin.hidden = true; items = []; list.innerHTML = hintHtml; return; }
+            if (cache[q]) { search(q); return; }          // instant, no request
+            timer = setTimeout(function () { search(q); }, DELAY);
+        });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                if (!items.length) return;
+                e.preventDefault();
+                sel = (sel + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+                list.querySelectorAll('.emp-jump-item').forEach(function (a, i) { a.classList.toggle('is-sel', i === sel); if (i === sel) a.scrollIntoView({ block: 'nearest' }); });
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                var q = input.value.trim().replace(/\s+/g, ' ');
+                if (items[sel]) go(items[sel].id);
+                else if (q) { clearTimeout(timer); search(q); }  // Enter before the delay ran out
+            }
+        });
+        list.addEventListener('click', function (e) {
+            var a = e.target.closest('.emp-jump-item'); if (!a) return;
+            if (e.metaKey || e.ctrlKey || e.shiftKey) return;  // let new-tab clicks through
+            e.preventDefault(); go(items[+a.dataset.i].id);
+        });
+        btn.addEventListener('shown.bs.dropdown', function () { input.focus(); input.select(); });
+        // "/" opens Find from anywhere on the page (not while typing in a field).
+        document.addEventListener('keydown', function (e) {
+            if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+            var t = e.target;
+            if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || document.querySelector('.modal.show')) return;
+            e.preventDefault();
+            bootstrap.Dropdown.getOrCreateInstance(btn).show();
+        });
+    })();
+    </script>
+    <!-- Profile card: stick at the top when it fits, stick at the bottom when it doesn't -->
+    <script>
+    (function () {
+        var card = document.querySelector('.emp-sidebar-sticky');
+        if (!card) return;
+        var TOP = 80, GAP = 16;
+        function fit() {
+            if (!window.matchMedia('(min-width: 992px)').matches) { card.style.top = ''; return; }
+            var room = window.innerHeight - TOP - GAP;
+            card.style.top = (card.offsetHeight > room ? window.innerHeight - card.offsetHeight - GAP : TOP) + 'px';
+        }
+        fit();
+        window.addEventListener('resize', fit);
+        if (window.ResizeObserver) new ResizeObserver(fit).observe(card);
+    })();
     </script>
     <!-- Tab bar: keep all eleven tabs on one line, whatever the window width -->
     <script>

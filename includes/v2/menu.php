@@ -7,13 +7,17 @@
  *
  * Item: [slug, label, remixicon, (optional) href for standalone pages,
  *        (optional) extra slugs that also mark it active]
+ *
+ * Group: 'flat' => true renders its items as top-level rows (no header);
+ * otherwise the group is a collapsible tree headed by 'title' + 'icon', and
+ * its items show as tree leaves (their icon is kept for the ⌘K palette).
  */
 return [
-    ['title' => 'Overview', 'items' => [
+    ['title' => 'Overview', 'flat' => true, 'items' => [
         ['home',         'Dashboard',        'ri-dashboard-3-line'],
         ['daily-board',  'Daily Board',      'ri-layout-masonry-line'],
     ]],
-    ['title' => 'Payroll', 'items' => [
+    ['title' => 'Payroll', 'icon' => 'ri-wallet-3-line', 'items' => [
         ['payroll',          'Payroll Runs',      'ri-money-dollar-circle-line', null, ['payroll_items', 'payroll_calculations']],
         ['dtr',              'DTR',               'ri-calendar-check-line', null, ['dtr-details']],
         ['loans',            'Loans',             'ri-hand-coin-line'],
@@ -24,19 +28,19 @@ return [
         ['refunds',          'Refunds',           'ri-refund-2-line'],
         ['pay-settings',     'Pay Settings',      'ri-settings-4-line'],
     ]],
-    ['title' => 'People', 'items' => [
+    ['title' => 'People', 'icon' => 'ri-group-line', 'items' => [
         ['employee',    'Employees',   'ri-team-line', null, ['employee-details']],
         ['department',  'Departments', 'ri-building-line'],
         ['area',        'Areas',       'ri-map-pin-line'],
         ['position',    'Positions',   'ri-briefcase-line'],
     ]],
-    ['title' => 'HR', 'items' => [
+    ['title' => 'HR', 'icon' => 'ri-user-heart-line', 'items' => [
         ['hr-overview',      'HR Overview',       'ri-user-heart-line'],
         ['hr-announcements', 'Announcements',     'ri-megaphone-line'],
         ['hr-requests',      'Document Requests', 'ri-file-paper-2-line'],
         ['hr-offboarding',   'Offboarding',       'ri-logout-box-r-line'],
     ]],
-    ['title' => 'Time & Attendance', 'items' => [
+    ['title' => 'Time & Attendance', 'icon' => 'ri-fingerprint-line', 'items' => [
         ['attendance',          'Attendance',        'ri-fingerprint-line'],
         ['punch-logs',          'Punch Logs',        'ri-time-line'],
         ['pin-attendance',      'PIN Attendance',    'ri-lock-password-line'],
@@ -52,14 +56,14 @@ return [
         ['duty-roster',         'Duty Roster',       'ri-table-line', 'duty-roster.php'],
         ['similarity-reports',  'Face Similarity',   'ri-user-search-line'],
     ]],
-    ['title' => 'Leave', 'items' => [
+    ['title' => 'Leave', 'icon' => 'ri-suitcase-line', 'items' => [
         ['leave-dashboard', 'Leave Dashboard', 'ri-pie-chart-2-line'],
         ['leaves',          'Leave Requests',  'ri-suitcase-line'],
         ['leave_balances',  'Leave Credits',   'ri-scales-3-line'],
         ['leave_types',     'Leave Types',     'ri-list-settings-line'],
         ['calendar',        'Calendar',        'ri-calendar-event-line'],
     ]],
-    ['title' => 'Reports', 'items' => [
+    ['title' => 'Reports', 'icon' => 'ri-file-chart-line', 'items' => [
         ['reports',               'All Reports',        'ri-file-chart-line'],
         ['payroll-register',      'Payroll Register',   'ri-file-list-3-line'],
         ['remittance-report',     'Remittances',        'ri-government-line'],
@@ -68,7 +72,7 @@ return [
         ['employee-masterlist',   'Masterlist',         'ri-contacts-book-line'],
         ['attendance-summary',    'Attendance Summary', 'ri-time-line'],
     ]],
-    ['title' => 'System', 'items' => [
+    ['title' => 'System', 'icon' => 'ri-settings-3-line', 'items' => [
         ['sites',          'Sites',        'ri-community-line'],
         ['users',          'Users',        'ri-user-settings-line'],
         ['visitors-logs',  'Audit Logs',   'ri-history-line'],

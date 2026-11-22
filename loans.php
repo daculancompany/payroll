@@ -48,11 +48,10 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
     .loans-tab-count { display:inline-block; margin-left:.35rem; padding:.1rem .45rem; border-radius:999px;
         font-size:.7rem; font-weight:700; line-height:1.4; color:inherit;
         background:color-mix(in srgb, currentColor 16%, transparent); }
-    /* Borderless tab header: only the active tab's underline marks it (no
-       header line for the tabs to overlap — card-header-tabs pushed them
-       below it). */
-    #loans-tabs-card .loans-tabs-head { border-bottom:0; background:transparent; }
-    #loans-tabs-card .loans-tabs-head .nav-tabs { border-bottom:0; margin-bottom:0; }
+    /* Tabs sit ON the header's bottom border: the nav draws no line of its
+       own, and the active underline covers the header line exactly (-1px).
+       card-header-tabs' negative margin used to push the tabs below it. */
+    #loans-tabs-card .loans-tabs-head .nav-tabs { border-bottom:0; margin-bottom:-1px; }
     #loans-tabs-card .loans-tabs-head .nav-tabs .nav-link { margin-bottom:0; }
 </style>
 <div class="main-content">

@@ -48,6 +48,12 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
     .loans-tab-count { display:inline-block; margin-left:.35rem; padding:.1rem .45rem; border-radius:999px;
         font-size:.7rem; font-weight:700; line-height:1.4; color:inherit;
         background:color-mix(in srgb, currentColor 16%, transparent); }
+    /* Borderless tab header: only the active tab's underline marks it (no
+       header line for the tabs to overlap — card-header-tabs pushed them
+       below it). */
+    #loans-tabs-card .loans-tabs-head { border-bottom:0; background:transparent; }
+    #loans-tabs-card .loans-tabs-head .nav-tabs { border-bottom:0; margin-bottom:0; }
+    #loans-tabs-card .loans-tabs-head .nav-tabs .nav-link { margin-bottom:0; }
 </style>
 <div class="main-content">
     <div class="page-content">
@@ -116,8 +122,8 @@ $loan_types_editable = function_exists('can_edit') ? can_edit('loans') : true;
 
             <!-- Loan Records | Loan Types, one card with tabs (Records first) -->
             <div class="card" id="loans-tabs-card">
-                <div class="card-header d-flex align-items-center flex-wrap gap-2 pt-1 pb-0">
-                    <ul class="nav nav-tabs card-header-tabs flex-grow-1" role="tablist">
+                <div class="card-header loans-tabs-head d-flex align-items-end flex-wrap gap-2 pt-1 pb-0">
+                    <ul class="nav nav-tabs flex-grow-1" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active" id="loans-records-tab" data-bs-toggle="tab" data-bs-target="#loans-records-pane" type="button" role="tab" aria-controls="loans-records-pane" aria-selected="true">
                                 <i class="ri-list-check me-1"></i>Loan Records
